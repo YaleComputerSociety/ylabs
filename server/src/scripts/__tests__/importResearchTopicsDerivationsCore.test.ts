@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
   RESEARCH_PAGE_TOPICS_PROMPT,
@@ -34,6 +35,7 @@ import {
   type ImportedTopicsStore,
 } from '../importResearchTopicsDerivationsCore';
 
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SLUG = 'tidepool-lab-fixture';
 const HOME = 'https://tidepool-lab.example.org/';
 const pages = [
@@ -84,13 +86,19 @@ function memoryStore(existing: ResearchTopicsDerivationRecord[] = []) {
 const importOnce = (
   readings: unknown,
   store: ImportedTopicsStore | null,
-  options: { apply?: boolean; mode?: 'import' | 'validate-only'; rowsOverride?: typeof rows } = {},
+  options: {
+    apply?: boolean;
+    mode?: 'import' | 'validate-only';
+    rowsOverride?: typeof rows;
+    knownSlugs?: ReadonlySet<string>;
+  } = {},
 ) =>
   importResearchTopicReadings({
     mode: options.mode ?? 'import',
     apply: options.apply ?? true,
     readings: parseImportedTopicReadings(readings),
     rows: options.rowsOverride ?? rows,
+    knownSlugs: options.knownSlugs,
     store,
   });
 
@@ -138,12 +146,6 @@ describe('parseImportedTopicReadings', () => {
     );
     expect(fromObject.extraction).toEqual(parsePageQuotedTopicExtraction(rawOutput));
     expect(fromText.extraction).toEqual(fromObject.extraction);
-    expect(() =>
-      parseImportedTopicReadings(readingsFile([readingRow({ rawOutput: 'not json' })])),
-    ).toThrow(/rawOutput/);
-    expect(() =>
-      parseImportedTopicReadings(readingsFile([readingRow({ rawOutput: undefined })])),
-    ).toThrow(/rawOutput/);
   });
 
   it('needs a writer, the exported key, and each slug once', () => {
@@ -254,7 +256,7 @@ describe('importResearchTopicReadings', () => {
     expect(records.size).toBe(0);
   });
 
-  it('validates as accepted or refused without reading or writing the cache', async () => {
+  it('validates a reading as accepted exactly when an import would store it, without touching the cache', async () => {
     const accepted = await importOnce(readingsFile(), null, {
       mode: 'validate-only',
       apply: false,
@@ -263,12 +265,13 @@ describe('importResearchTopicReadings', () => {
     expect(accepted.rowsWithTopicsAfterFilters).toBe(1);
     expect(accepted.plannedStores).toBe(0);
 
-    const refused = await importOnce(
+    const empty = await importOnce(
       readingsFile([readingRow({ rawOutput: { topics: [], field: null } })]),
       null,
       { mode: 'validate-only', apply: false },
     );
-    expect(refused.rows[0].outcome).toBe('refused');
+    expect(empty.rows[0].outcome).toBe('accepted');
+    expect(empty.rowsWithTopicsAfterFilters).toBe(0);
   });
 
   it('stores a reading raw, so the filters judge it at resolve and a filter change re-judges it at no model cost', async () => {
@@ -282,16 +285,90 @@ describe('importResearchTopicReadings', () => {
     expect([...records.values()][0]).toMatchObject({ extractedTopics: [] });
   });
 
-  it('counts a row with no current page text', async () => {
-    const report = await importOnce(readingsFile(), memoryStore().store, { rowsOverride: [] });
-    expect(report.noText).toBe(1);
+  it('counts a row with no current page text apart from a slug no row has', async () => {
+    const noText = await importOnce(readingsFile(), memoryStore().store, {
+      rowsOverride: [],
+      knownSlugs: new Set([SLUG]),
+    });
+    expect(noText).toMatchObject({ noText: 1, notFound: 0 });
+    const missing = await importOnce(readingsFile(), memoryStore().store, {
+      rowsOverride: [],
+      knownSlugs: new Set(),
+    });
+    expect(missing).toMatchObject({ noText: 0, notFound: 1 });
+    expect(missing.rows[0].outcome).toBe('not-found');
+  });
+
+  it.each([
+    ['a misspelled topics key', { Topics: [], field: null }, /topics is not an array/],
+    ['a string topics', { topics: 'Kelp forests', field: null }, /topics is not an array/],
+    ['a missing field', { topics: [] }, /field is missing/],
+    ['a string field', { topics: [], field: 'Marine ecology' }, /field is not an object/],
+    [
+      'an item without a topic',
+      { topics: [{ quote: 'how coastal kelp forests recover', url: HOME }], field: null },
+      /topics\[0\]\.topic is not a string/,
+    ],
+    [
+      'an item without a quote',
+      { topics: [{ topic: 'Kelp forests', url: HOME }], field: null },
+      /topics\[0\]\.quote is not a string/,
+    ],
+    [
+      'an item without a url',
+      {
+        topics: [{ topic: 'Kelp forests', quote: 'how coastal kelp forests recover' }],
+        field: null,
+      },
+      /topics\[0\]\.url is not a string/,
+    ],
+    [
+      'an empty topic',
+      {
+        topics: [{ topic: ' ', quote: 'how coastal kelp forests recover', url: HOME }],
+        field: null,
+      },
+      /topics\[0\]\.topic is empty/,
+    ],
+    [
+      'a non-object item',
+      { topics: ['Kelp forests'], field: null },
+      /topics\[0\] is not an object/,
+    ],
+    [
+      'a field without a quote',
+      { topics: [], field: { topic: 'Marine ecology', url: HOME } },
+      /field\.quote is not a string/,
+    ],
+    ['an array answer', [], /rawOutput is not a JSON object/],
+    ['unparseable text', 'not json', /rawOutput is not a JSON object/],
+    ['no answer', undefined, /rawOutput is not a JSON object/],
+  ])('refuses %s as malformed output and stores nothing', async (_label, malformed, problem) => {
+    const { store, records } = memoryStore();
+    for (const mode of ['import', 'validate-only'] as const) {
+      const report = await importOnce(readingsFile([readingRow({ rawOutput: malformed })]), store, {
+        mode,
+        apply: mode === 'import',
+      });
+      expect(report.rows[0].outcome).toBe('malformed-output');
+      expect(report.rows[0].malformedOutput).toMatch(problem);
+      expect(report).toMatchObject({ malformedOutput: 1, stored: 0, plannedStores: 0 });
+    }
+    expect(records.size).toBe(0);
+    expect(store.insertIfAbsent).not.toHaveBeenCalled();
+
+    const corrected = await importOnce(readingsFile(), store);
+    expect(corrected.rows[0].outcome).toBe('stored');
   });
 });
 
 describe('buildResearchTopicsExport', () => {
   it('hands the reader exactly the lane input, frozen at its capture time', () => {
     const capturedAt = new Date('2026-11-13T00:00:00Z');
-    const exported = buildResearchTopicsExport(rows, [SLUG, 'row-without-text'], { capturedAt });
+    const exported = buildResearchTopicsExport(rows, [SLUG, 'row-without-text', 'no-such-row'], {
+      capturedAt,
+      knownSlugs: new Set([SLUG, 'row-without-text']),
+    });
     expect(exported.capturedAt).toBe('2026-11-13T00:00:00.000Z');
     expect(exported.systemPrompt).toBe(RESEARCH_PAGE_TOPICS_PROMPT);
     expect(exported.promptHash).toBe(RESEARCH_PAGE_TOPICS_PROMPT_HASH);
@@ -306,6 +383,7 @@ describe('buildResearchTopicsExport', () => {
       },
     ]);
     expect(exported.noText).toEqual(['row-without-text']);
+    expect(exported.notFound).toEqual(['no-such-row']);
     expect(exported.gradingGate).toMatch(/0 topics unsupported/);
     expect(JSON.stringify(buildResearchTopicsExport(rows, [SLUG], { capturedAt }))).toBe(
       JSON.stringify(buildResearchTopicsExport(rows, [SLUG], { capturedAt })),
@@ -409,6 +487,21 @@ describe('parseImportResearchTopicsArgs and the apply guard', () => {
     expect(() => parseImportResearchTopicsArgs(['--input=/tmp/r.json', '--force'], env)).toThrow(
       /Unknown/,
     );
+  });
+
+  it('never reads a model API key in either import file', () => {
+    for (const file of [
+      'importResearchTopicsDerivations.ts',
+      'importResearchTopicsDerivationsCore.ts',
+    ]) {
+      const source = fs.readFileSync(path.join(HERE, '..', file), 'utf8');
+      expect(source).not.toMatch(/OPENAI_API_KEY|API_KEY|apiKey/);
+    }
+    const cli = fs.readFileSync(
+      path.join(HERE, '..', 'importResearchTopicsDerivations.ts'),
+      'utf8',
+    );
+    expect(cli).toMatch(/withoutModelCalls\(IMPORT_RESEARCH_TOPICS_SCRIPT, main\)/);
   });
 
   it('states the owner grading gate in its help text', () => {

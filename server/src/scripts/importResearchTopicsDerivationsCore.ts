@@ -42,7 +42,7 @@ export const IMPORT_RESEARCH_TOPICS_USAGE = [
   '  Import, dry run:        --input=<a.json[,b.json]> [--output=<path.json>]',
   `  Import, apply:          --input=<a.json[,b.json]> --apply ${IMPORT_RESEARCH_TOPICS_CONFIRM_FLAG} (Development only, DEV_WRITE_OWNER set, takes the Development write lease)`,
   '  Files are written mode 600 under a temp root or ~/Personal/ylabs-experiments (batch runs: descriptions/batch-run/).',
-  '  A readings file is {"writer": "claude-agent:topics-<first 8 of promptHash>", "promptHash", "rows": [{"slug", "inputHash", "rawOutput"}]}; an openai or any other writer, a promptHash mismatch, and a stale inputHash are refused; a reading is stored raw and judged by the filters at resolve.',
+  '  A readings file is {"writer": "claude-agent:topics-<first 8 of promptHash>", "promptHash", "rows": [{"slug", "inputHash", "rawOutput"}]}; an openai or any other writer, a promptHash mismatch, a stale inputHash and a rawOutput not in outputSchema (malformed-output) are refused; a well-formed reading is stored raw and judged by the filters at resolve. `writer` is the provenance of an imported reading; `model` keeps the lane model name because it is part of the cache key contract.',
   `  ${IMPORT_RESEARCH_TOPICS_GRADING_GATE}`,
 ].join('\n');
 
@@ -227,6 +227,7 @@ export interface ResearchTopicsExport {
   gradingGate: string;
   rows: ResearchTopicsExportRow[];
   noText: string[];
+  notFound: string[];
 }
 
 const QUOTED_TOPIC_OUTPUT_SCHEMA = {
@@ -257,13 +258,23 @@ export const IMPORTED_READING_ANSWER_SHAPE =
 export function buildResearchTopicsExport(
   rows: readonly ScopedPageTextRow[],
   requestedSlugs: readonly string[],
-  options: { capturedAt?: Date; inputs?: ResearchTopicsDerivationInputs } = {},
+  options: {
+    capturedAt?: Date;
+    inputs?: ResearchTopicsDerivationInputs;
+    knownSlugs?: ReadonlySet<string>;
+  } = {},
 ): ResearchTopicsExport {
   const inputs = options.inputs ?? CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS;
+  const knownSlugs = options.knownSlugs ?? new Set(rows.map((row) => row.slug));
+  const notFound: string[] = [];
   const bySlug = new Map(rows.map((row) => [row.slug, row]));
   const exported: ResearchTopicsExportRow[] = [];
   const noText: string[] = [];
   for (const slug of requestedSlugs) {
+    if (!knownSlugs.has(slug)) {
+      notFound.push(slug);
+      continue;
+    }
     const row = bySlug.get(slug);
     const pages = row ? researchPageTextEntriesForTopics(row.value) : [];
     if (pages.length === 0) {
@@ -287,6 +298,7 @@ export function buildResearchTopicsExport(
     gradingGate: IMPORT_RESEARCH_TOPICS_GRADING_GATE,
     rows: exported,
     noText,
+    notFound,
   };
 }
 
@@ -301,6 +313,7 @@ export function chunkResearchTopicsExport(
       ...exported,
       rows: exported.rows.slice(start, start + chunkSize),
       noText: start === 0 ? exported.noText : [],
+      notFound: start === 0 ? exported.notFound : [],
     });
   }
   return chunks;
@@ -317,6 +330,7 @@ export interface ImportedTopicReading {
   writer: string;
   inputHash: string;
   extraction: PageQuotedTopicExtraction;
+  malformedOutput?: string;
 }
 
 export function parseImportedTopicReadings(
@@ -356,25 +370,56 @@ export function parseImportedTopicReadings(
     }
     if (seen.has(slug)) throw new Error(`row ${position} repeats a slug already in the file`);
     seen.add(slug);
-    return {
-      slug,
-      writer,
-      inputHash,
-      extraction: parsePageQuotedTopicExtraction(rawOutputOf(record.rawOutput, position)),
-    };
+    const rawOutput = rawOutputOf(record.rawOutput);
+    const malformedOutput =
+      rawOutput === undefined ? 'rawOutput is not a JSON object' : rawOutputShapeProblem(rawOutput);
+    if (malformedOutput) {
+      return { slug, writer, inputHash, extraction: { topics: [], field: null }, malformedOutput };
+    }
+    return { slug, writer, inputHash, extraction: parsePageQuotedTopicExtraction(rawOutput) };
   });
 }
 
-function rawOutputOf(rawOutput: unknown, position: number): unknown {
-  if (rawOutput && typeof rawOutput === 'object' && !Array.isArray(rawOutput)) return rawOutput;
-  if (typeof rawOutput === 'string') {
+function rawOutputOf(rawOutput: unknown): Record<string, unknown> | undefined {
+  let value = rawOutput;
+  if (typeof value === 'string') {
     try {
-      return JSON.parse(rawOutput);
+      value = JSON.parse(value);
     } catch {
-      throw new Error(`row ${position} rawOutput is not the JSON object the lane parses`);
+      return undefined;
     }
   }
-  throw new Error(`row ${position} needs rawOutput, the JSON object the lane parses`);
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function quotedTopicShapeProblem(value: unknown, where: string): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return `${where} is not an object`;
+  }
+  const item = value as Record<string, unknown>;
+  for (const key of ['topic', 'quote', 'url'] as const) {
+    if (typeof item[key] !== 'string') return `${where}.${key} is not a string`;
+  }
+  if (!(item.topic as string).trim()) return `${where}.topic is empty`;
+  return null;
+}
+
+/**
+ * The lane parser forgives a malformed answer into an empty reading, and an empty reading
+ * stored under `$setOnInsert` would hold the key against every corrected re-import, so an
+ * import checks the answer's shape first. This judges validity, not topics: the filters
+ * still run only at resolve (#5396).
+ */
+export function rawOutputShapeProblem(rawOutput: Record<string, unknown>): string | null {
+  if (!Array.isArray(rawOutput.topics)) return 'topics is not an array';
+  if (!('field' in rawOutput)) return 'field is missing';
+  for (const [index, item] of rawOutput.topics.entries()) {
+    const problem = quotedTopicShapeProblem(item, `topics[${index}]`);
+    if (problem) return problem;
+  }
+  return rawOutput.field === null ? null : quotedTopicShapeProblem(rawOutput.field, 'field');
 }
 
 export function mergeImportedTopicReadings(
@@ -396,13 +441,21 @@ export interface ImportedTopicsStore {
 }
 
 export type ImportedReadingOutcome =
-  'no-text' | 'stale-input' | 'accepted' | 'refused' | 'planned' | 'stored' | 'already-cached';
+  | 'not-found'
+  | 'no-text'
+  | 'malformed-output'
+  | 'stale-input'
+  | 'accepted'
+  | 'planned'
+  | 'stored'
+  | 'already-cached';
 
 export interface ImportedReadingRowReport {
   slug: string;
   writer: string;
   outcome: ImportedReadingOutcome;
   inputHash?: string;
+  malformedOutput?: string;
   topics?: string[];
   refusals?: Array<{ reason: TopicRefusalReason; count: number }>;
 }
@@ -414,6 +467,8 @@ export interface ImportResearchTopicsReport {
   plannedStores: number;
   alreadyCached: number;
   staleInput: number;
+  malformedOutput: number;
+  notFound: number;
   noText: number;
   rowsWithTopicsAfterFilters: number;
   modelCalls: 0;
@@ -441,10 +496,12 @@ export async function importResearchTopicReadings(input: {
   apply: boolean;
   readings: readonly ImportedTopicReading[];
   rows: readonly ScopedPageTextRow[];
+  knownSlugs?: ReadonlySet<string>;
   store: ImportedTopicsStore | null;
   inputs?: ResearchTopicsDerivationInputs;
   now?: () => Date;
 }): Promise<ImportResearchTopicsReport> {
+  const knownSlugs = input.knownSlugs ?? new Set(input.rows.map((row) => row.slug));
   const inputs = input.inputs ?? CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS;
   const now = input.now ?? (() => new Date());
   const bySlug = new Map(input.rows.map((row) => [row.slug, row]));
@@ -456,6 +513,8 @@ export async function importResearchTopicReadings(input: {
     plannedStores: 0,
     alreadyCached: 0,
     staleInput: 0,
+    malformedOutput: 0,
+    notFound: 0,
     noText: 0,
     rowsWithTopicsAfterFilters: 0,
     modelCalls: 0,
@@ -471,6 +530,11 @@ export async function importResearchTopicReadings(input: {
       outcome: 'no-text',
     };
     report.rows.push(row);
+    if (!knownSlugs.has(reading.slug)) {
+      row.outcome = 'not-found';
+      report.notFound += 1;
+      continue;
+    }
     const current = bySlug.get(reading.slug);
     const pages = current ? researchPageTextEntriesForTopics(current.value) : [];
     if (pages.length === 0) {
@@ -484,6 +548,12 @@ export async function importResearchTopicReadings(input: {
       report.staleInput += 1;
       continue;
     }
+    if (reading.malformedOutput) {
+      row.outcome = 'malformed-output';
+      row.malformedOutput = reading.malformedOutput;
+      report.malformedOutput += 1;
+      continue;
+    }
     const preview = derivePageQuotedResearchTopics(
       reading.extraction,
       pages,
@@ -494,7 +564,7 @@ export async function importResearchTopicReadings(input: {
     if (preview.topics.length > 0) report.rowsWithTopicsAfterFilters += 1;
 
     if (input.mode === 'validate-only') {
-      row.outcome = preview.topics.length > 0 ? 'accepted' : 'refused';
+      row.outcome = 'accepted';
       continue;
     }
     const store = input.store as ImportedTopicsStore;
@@ -580,7 +650,7 @@ export function gradingSampleOf(
     const pages = current ? researchPageTextEntriesForTopics(current.value) : [];
     if (pages.length === 0) return [];
     if (reading.inputHash !== researchTopicsDerivationInputHash(pages, inputs)) return [];
-    if (reading.extraction.topics.length === 0) return [];
+    if (reading.malformedOutput || reading.extraction.topics.length === 0) return [];
     return [{ reading, pages, order: computeContentHash(`${reading.slug}\n${reading.inputHash}`) }];
   });
   eligible.sort((a, b) => a.order.localeCompare(b.order));

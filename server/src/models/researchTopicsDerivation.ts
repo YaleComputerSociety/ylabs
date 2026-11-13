@@ -10,7 +10,9 @@
  *
  * `writer` names who produced a reading that did not come from the lane's own model call, such
  * as a local agent reading imported by `research-topics:import-derivations`; absent means the
- * lane's OpenAI call. It is not part of the key, so the materializer reads either alike.
+ * lane's OpenAI call. It is not part of the key, so the materializer reads either alike. For an
+ * imported reading `writer` is the provenance: `model` still names the lane model, because the
+ * key is computed under it.
  *
  * Environment-local by policy, listed in scripts/mirrorCollectionPolicy.ts: every entry is a
  * paid call or an audited import, and a Development refresh must not clear it.

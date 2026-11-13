@@ -22,6 +22,7 @@ import {
 import { containsAsciiControl } from '../utils/asciiControl';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { withoutModelCalls } from '../utils/modelClient';
 import { approvedTempRootFor } from '../utils/tempArtifactRoots';
 import { loadStoredPageTextRowsBySlug } from './deriveResearchTopics';
 import {
@@ -95,6 +96,13 @@ async function ownOrgUnitLabelsBySlug(slugs: string[]): Promise<Map<string, stri
   );
 }
 
+async function existingSlugs(slugs: string[]): Promise<Set<string>> {
+  const found = (await ResearchEntity.find({ slug: { $in: slugs } })
+    .select('slug')
+    .lean()) as Array<{ slug: string }>;
+  return new Set(found.map((row) => row.slug));
+}
+
 async function scopedRows(slugs: string[], withLabels: boolean): Promise<ScopedPageTextRow[]> {
   const rows = await loadStoredPageTextRowsBySlug(slugs);
   if (!withLabels) return rows.map(({ slug, value }) => ({ slug, value }));
@@ -149,7 +157,9 @@ async function runExport(args: ImportResearchTopicsArgs, dbLabel: string, output
     ]),
   ];
   await initializeConnections();
-  const exported = buildResearchTopicsExport(await scopedRows(slugs, false), slugs);
+  const exported = buildResearchTopicsExport(await scopedRows(slugs, false), slugs, {
+    knownSlugs: await existingSlugs(slugs),
+  });
   const chunks = chunkResearchTopicsExport(exported, args.chunkSize);
   const files = chunks.map((chunk, index) => {
     const file = chunkOutputPath(output, index, chunks.length);
@@ -167,6 +177,7 @@ async function runExport(args: ImportResearchTopicsArgs, dbLabel: string, output
         requested: slugs.length,
         exported: exported.rows.length,
         noText: exported.noText.length,
+        notFound: exported.notFound.length,
         files,
         modelCalls: 0,
       },
@@ -206,22 +217,27 @@ async function main() {
     inputFiles(args.input as string).map((file) => parseImportedTopicReadings(readJson(file))),
   );
   await initializeConnections();
-  const rows = await scopedRows(
-    readings.map((reading) => reading.slug),
-    true,
-  );
+  const slugs = readings.map((reading) => reading.slug);
+  const rows = await scopedRows(slugs, true);
   const report = await importResearchTopicReadings({
     mode: args.mode,
     apply: args.apply,
     readings,
     rows,
+    knownSlugs: await existingSlugs(slugs),
     store: args.mode === 'import' ? mongoImportStore : null,
   });
   if (args.mode === 'validate-only') {
     for (const row of report.rows) {
-      const refusals = (row.refusals ?? []).map((item) => `${item.reason}x${item.count}`).join(' ');
+      const verdict = row.outcome === 'accepted' ? 'accepted' : `refused:${row.outcome}`;
+      const filtered = (row.refusals ?? []).map((item) => `${item.reason}x${item.count}`).join(' ');
       console.log(
-        `${row.outcome}\t${row.slug}\t${(row.topics ?? []).join('; ')}${refusals ? `\trefused: ${refusals}` : ''}`,
+        [
+          verdict,
+          row.slug,
+          (row.topics ?? []).join('; '),
+          row.malformedOutput ?? (filtered ? `topics dropped at resolve: ${filtered}` : ''),
+        ].join('\t'),
       );
     }
   }
@@ -235,6 +251,8 @@ async function main() {
     plannedStores: report.plannedStores,
     alreadyCached: report.alreadyCached,
     staleInput: report.staleInput,
+    malformedOutput: report.malformedOutput,
+    notFound: report.notFound,
     noText: report.noText,
     rowsWithTopicsAfterFilters: report.rowsWithTopicsAfterFilters,
     modelCalls: report.modelCalls,
@@ -256,7 +274,7 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  main()
+  withoutModelCalls(IMPORT_RESEARCH_TOPICS_SCRIPT, main)
     .catch((error) => {
       console.error(`Failed to run ${IMPORT_RESEARCH_TOPICS_SCRIPT}:`, sanitizeLogValue(error));
       process.exitCode = 1;
