@@ -225,3 +225,10 @@ Two things make it safe, and the second is a check rather than an assumption:
 - The collection set is listed with the raw driver before and after, and the run fails naming any collection that appeared or disappeared.
 
 Corpus counts come from the raw driver, not the models.
+
+## Reading one route instead
+
+The scoreboard reads the research detail route over a fixed slug set.
+To read any single GET route as a student, use `yarn served-check <path>` for an anonymous visitor or `yarn served-check --as student <path>` for a signed-in undergraduate, which a route behind sign-in such as `/api/programs/search` needs (#6079).
+Both go through the real middleware and route stack; the student mode runs in a process that refuses every MongoDB write and ends with a `refusedWrites` line.
+`skills/auth-security/SKILL.md` describes the identity and why the student hook cannot be enabled in a deployed server.

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
+import readline from 'node:readline';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -16,22 +17,38 @@ const READY_POLL_MS = 1_000;
 const STOP_GRACE_MS = 10_000;
 const SERVED_CHECK_PROFILE = 'development';
 const INTERRUPT_EXIT_CODES = { SIGINT: 130, SIGTERM: 143 };
+const READERS = ['anonymous', 'student'];
+const STUDENT_RESULT_FD = 3;
 
 export const USAGE = [
-  'Usage: node scripts/served-check.mjs [--api <loopback origin>] <GET path>...',
+  'Usage: node scripts/served-check.mjs [--as anonymous|student] [--api <loopback origin>] <GET path>...',
   '',
   'Reads each path as an anonymous visitor and prints one JSON line per path.',
   'Without --api it starts its own short-lived API on a free port with LOCAL_AUTH_BYPASS=false',
   'for that one process, so your dev server and every .env file keep the bypass as they are.',
   'With --api it reads an API you already run, and refuses if that API signs a cookieless request in.',
   '',
+  '--as student reads each path as a synthetic signed-in undergraduate held only in memory,',
+  'through the real middleware and routes of an API process that refuses every MongoDB write,',
+  'and ends with a {"refusedWrites": [...]} line. It always starts its own API, so it takes no --api.',
+  '',
   'Example: yarn served-check /api/research/<slug>',
+  'Example: yarn served-check --as student "/api/programs/search?pageSize=500"',
 ].join('\n');
 
 export function parseServedCheckArgs(argv) {
-  const options = { apiBase: undefined, paths: [] };
+  const options = { apiBase: undefined, as: 'anonymous', paths: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg === '--as') {
+      const value = argv[index + 1];
+      if (!READERS.includes(value)) {
+        throw new Error(`--as must be one of ${READERS.join(', ')}.\n\n${USAGE}`);
+      }
+      options.as = value;
+      index += 1;
+      continue;
+    }
     if (arg === '--api') {
       const value = argv[index + 1];
       if (value === undefined) throw new Error(`${arg} needs a value.\n\n${USAGE}`);
@@ -43,6 +60,11 @@ export function parseServedCheckArgs(argv) {
     options.paths.push(servedApiPath(arg));
   }
   if (options.paths.length === 0) throw new Error(`Name at least one path.\n\n${USAGE}`);
+  if (options.as === 'student' && options.apiBase) {
+    throw new Error(
+      `--as student starts its own write-refusing API, so it takes no --api.\n\n${USAGE}`,
+    );
+  }
   return options;
 }
 
@@ -82,6 +104,13 @@ export function servedCheckServerEnv(profileEnv, port) {
   };
   delete env.GATE_REFRESH_INTERVAL_MINUTES;
   delete env.ALLOW_NON_PROD_SCRAPER_WRITES;
+  return env;
+}
+
+export function servedCheckStudentEnv(profileEnv) {
+  const env = servedCheckServerEnv(profileEnv, 0);
+  delete env.PORT;
+  env.SERVER_BASE_URL = 'http://localhost';
   return env;
 }
 
@@ -189,6 +218,12 @@ const DEFAULT_SERVER_COMMAND = [
   path.join(SERVER_ROOT, 'node_modules', '.bin', 'tsx'),
   'src/index.ts',
 ];
+const DEFAULT_STUDENT_COMMAND = [
+  process.execPath,
+  '--import',
+  'tsx',
+  'src/scripts/servedCheckStudent.ts',
+];
 
 function stopOnInterrupt(child) {
   const handlers = Object.entries(INTERRUPT_EXIT_CODES).map(([signal, exitCode]) => {
@@ -239,8 +274,60 @@ async function startCheckServer(serverCommand = DEFAULT_SERVER_COMMAND) {
   return { apiBase, stop };
 }
 
-export async function runServedCheck(argv, { serverCommand, write } = {}) {
+function checkServerLogFile() {
+  const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-served-check-'));
+  return path.join(logDir, 'server.log');
+}
+
+export async function readServedPathsAsStudent({
+  paths,
+  studentCommand = DEFAULT_STUDENT_COMMAND,
+  write = console.log,
+}) {
+  const { childEnv } = profileChildEnvironment({
+    profileName: SERVED_CHECK_PROFILE,
+    processEnv: process.env,
+  });
+  const logFile = checkServerLogFile();
+  const logFd = fs.openSync(logFile, 'a', 0o600);
+  const [command, ...args] = studentCommand;
+  const child = spawn(command, [...args, ...paths], {
+    cwd: SERVER_ROOT,
+    env: servedCheckStudentEnv(childEnv),
+    stdio: ['ignore', logFd, logFd, 'pipe'],
+    detached: true,
+  });
+  fs.closeSync(logFd);
+  const releaseInterruptHandlers = stopOnInterrupt(child);
+  console.error(
+    `Student check server: pid ${child.pid}, loopback only, writes refused, log ${logFile}`,
+  );
+  const exited = new Promise((resolve) => child.once('exit', (code) => resolve(code)));
+  let failure;
+  try {
+    const lines = readline.createInterface({ input: child.stdio[STUDENT_RESULT_FD] });
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      const parsed = JSON.parse(line);
+      if (typeof parsed.error === 'string') failure = parsed.error;
+      else write(line);
+    }
+    const code = await exited;
+    if (failure) throw new Error(failure);
+    if (code !== 0)
+      throw new Error(`The student check server exited with ${code}; see ${logFile}.`);
+  } finally {
+    await stopProcessGroup(child);
+    releaseInterruptHandlers();
+  }
+}
+
+export async function runServedCheck(argv, { serverCommand, studentCommand, write } = {}) {
   const options = parseServedCheckArgs(argv);
+  if (options.as === 'student') {
+    await readServedPathsAsStudent({ paths: options.paths, studentCommand, write });
+    return;
+  }
   if (options.apiBase) {
     await readServedPaths({ apiBase: options.apiBase, paths: options.paths, write });
     return;

@@ -5,6 +5,14 @@ export const OUTBOUND_FETCH_SCAN_ROOTS = ['server/src'];
 
 export const REVIEWED_OUTBOUND_FETCHES = new Map([
   [
+    'server/src/scripts/servedCheckStudentCore.ts',
+    {
+      calls: 1,
+      reason:
+        'reads the served-check student API this process just bound to 127.0.0.1; only the operator-named /api/ path varies and redirects are refused',
+    },
+  ],
+  [
     'server/src/utils/publicDnsResolution.ts',
     {
       calls: 1,

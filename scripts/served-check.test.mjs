@@ -11,6 +11,7 @@ import {
   readServedPaths,
   runServedCheck,
   servedCheckServerEnv,
+  servedCheckStudentEnv,
 } from './served-check.mjs';
 
 const BYPASS_ON_DOTENV = [
@@ -138,8 +139,15 @@ test('an anonymous API has each served path read and reported', async () => {
 test('arguments accept only /api/ paths and a loopback --api origin', () => {
   assert.deepEqual(parseServedCheckArgs(['/api/research/x']), {
     apiBase: undefined,
+    as: 'anonymous',
     paths: ['/api/research/x'],
   });
+  assert.equal(parseServedCheckArgs(['--as', 'student', '/api/programs/search']).as, 'student');
+  assert.throws(() => parseServedCheckArgs(['--as', 'admin', '/api/x']), /--as must be one of/);
+  assert.throws(
+    () => parseServedCheckArgs(['--as', 'student', '--api', 'http://localhost:4076', '/api/x']),
+    /takes no --api/,
+  );
   assert.throws(() => parseServedCheckArgs([]), /at least one path/);
   assert.throws(
     () => parseServedCheckArgs(['https://example.com/api/x']),
@@ -246,5 +254,61 @@ test('interrupting a run during server startup stops the check server it started
       const serverPid = fs.existsSync(pidFile) ? Number(fs.readFileSync(pidFile, 'utf8')) : 0;
       if (serverPid && processIsAlive(serverPid)) process.kill(serverPid, 'SIGKILL');
     }
+  });
+});
+
+const fakeStudentServer = (lines) => `
+const net = require('net');
+const out = new net.Socket({ fd: 3, readable: false, writable: true });
+const env = { bypass: process.env.LOCAL_AUTH_BYPASS, writes: process.env.ALLOW_NON_PROD_SCRAPER_WRITES ?? null, paths: process.argv.slice(2) };
+const lines = ${JSON.stringify(lines)}.map((line) => line === 'ENV' ? JSON.stringify(env) : line);
+out.end(lines.join('\\n') + '\\n', () => process.exit(0));
+`;
+
+test('the student check env keeps the bypass and scraper writes off and drops the port', () => {
+  const env = servedCheckStudentEnv({
+    PORT: '4038',
+    LOCAL_AUTH_BYPASS: 'true',
+    ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+  });
+  assert.equal(env.LOCAL_AUTH_BYPASS, 'false');
+  assert.equal('PORT' in env, false);
+  assert.equal('ALLOW_NON_PROD_SCRAPER_WRITES' in env, false);
+  assert.equal(env.NODE_ENV, 'development');
+});
+
+test('student mode relays the check server result lines and passes it the paths', async () => {
+  await withSyntheticDevelopmentProfile(async (dir) => {
+    const serverScript = path.join(dir, 'fake-student.cjs');
+    fs.writeFileSync(serverScript, fakeStudentServer(['ENV', '{"refusedWrites":[]}']));
+    const lines = [];
+    await runServedCheck(['--as', 'student', '/api/programs/search'], {
+      studentCommand: [process.execPath, serverScript],
+      write: (line) => lines.push(line),
+    });
+    const [env, summary] = lines.map((line) => JSON.parse(line));
+    assert.deepEqual(env, { bypass: 'false', writes: null, paths: ['/api/programs/search'] });
+    assert.deepEqual(summary, { refusedWrites: [] });
+  });
+});
+
+test('student mode fails with the refusal the check server reports', async () => {
+  await withSyntheticDevelopmentProfile(async (dir) => {
+    const serverScript = path.join(dir, 'fake-refusing-student.cjs');
+    fs.writeFileSync(
+      serverScript,
+      fakeStudentServer([
+        '{"error":"The student session carries admin authority. Nothing was read."}',
+      ]),
+    );
+    const lines = [];
+    await assert.rejects(
+      runServedCheck(['--as', 'student', '/api/programs/search'], {
+        studentCommand: [process.execPath, serverScript],
+        write: (line) => lines.push(line),
+      }),
+      /admin authority\. Nothing was read/,
+    );
+    assert.deepEqual(lines, []);
   });
 });
