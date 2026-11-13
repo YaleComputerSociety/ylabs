@@ -1137,6 +1137,10 @@ A refusal counts toward the same two-read quorum and drop guard as an absence cl
 The retired rows carry their own rollback reason, decided per observation, and the dry-run report's `refusalSupportedObservations` counts the observations whose quorum needed a refusal.
 A retraction whose every observation needed a refusal skips the sole-holder liveness probe, because the refused page still answers and the refusal is already the positive evidence the probe stands in for; a retraction that mixes refusals with absence claims is still probed.
 No production contract declares `refusalClassifiers` yet, so this path is inert until a lane emits refusals and its contract opts in; `dept-faculty-roster` is the first planned lane.
+Declaring a refusal classifier for any lane takes its own pull request, never a rider on the lane change that emits the refusals.
+That pull request carries a blind-graded precision sample of 20 live links the classifier refused, and it lands only with 0 WRONG, meaning no correct link refused.
+The rule sits at declaration time because a refusal-carried retraction skips the liveness probe: a wrong refusal of a correct link that still answers would otherwise retract it.
+A unit test fails while any production contract declares one, so the declaring pull request must also update that test.
 
 The stored value is cleared only when the retraction removed the last live observation for that field **and** the stored value is still the retracted one, folded through `normalizeWebsiteUrlIdentityKey`.
 A retraction on a merged-in loser's key decides and clears on the live survivor that key's tombstone chain reaches, with the survivor's locks, and counts rival evidence across every key and id merged into the survivor; keys of one survivor retracting the same field in one pass are decided together, and the sole-holder probe withholding any of them cancels the survivor's clear (#3609).

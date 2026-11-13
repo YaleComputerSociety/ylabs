@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertFieldRetractionContractsAreDeclarable,
+  fieldRetractionContracts,
   planFieldRetractions,
   refusalsFromWitnessRows,
   withholdSoleHolderRetractionsThatStillAnswer,
@@ -229,6 +230,35 @@ describe('a source retracts a value it now refuses on the same page (#5803)', ()
     expect(result.retractions[0].refusalObservationIds).toEqual(['obs-old']);
     expect(result.counts.refusalSupportedObservations).toBe(1);
   });
+
+  it('does not carry a refusal label onto a sibling planned after it', () => {
+    const absenceRead = (scrapeRunId: string, iso: string): FieldRetractionCompleteRead => ({
+      entityKey: ENTITY_KEY,
+      scrapeRunId,
+      observedAt: at(iso),
+      assertsNoValueFor: ['websiteUrl'],
+      refusals: [],
+    });
+    const reads = [
+      absenceRead('run-x', '2026-11-03T00:00:00Z'),
+      absenceRead('run-y', '2026-11-04T00:00:00Z'),
+      ...TWO_REFUSING_READS,
+    ];
+    const observations = [
+      assertion({ scrapeRunId: 'run-mid', observedAt: at('2026-11-06T00:00:00Z') }),
+      assertion({
+        observationId: 'obs-absent',
+        value: OTHER_LINK,
+        scrapeRunId: 'run-older',
+        observedAt: at('2026-11-01T00:00:00Z'),
+      }),
+    ];
+    const result = plan(reads, observations, CONTRACT, [
+      { ...entity, liveObservationCountByField: { websiteUrl: 2 } },
+    ]);
+    expect(result.retractions[0].observationIds).toEqual(['obs-old', 'obs-absent']);
+    expect(result.retractions[0].refusalObservationIds).toEqual(['obs-old']);
+  });
 });
 
 describe('the sole-holder liveness probe and a refusal (#5803)', () => {
@@ -297,6 +327,13 @@ describe('refusals loaded from witness rows', () => {
 });
 
 describe('refusal classifier declarations', () => {
+  it('is declared by no production lane until one ships its own precision-graded PR', () => {
+    const declaring = Object.entries(fieldRetractionContracts)
+      .filter(([, contract]) => (contract.refusalClassifiers ?? []).length > 0)
+      .map(([sourceName]) => sourceName);
+    expect(declaring).toEqual([]);
+  });
+
   it('refuses a declaration for a field the contract cannot retract', () => {
     expect(() =>
       assertFieldRetractionContractsAreDeclarable({
