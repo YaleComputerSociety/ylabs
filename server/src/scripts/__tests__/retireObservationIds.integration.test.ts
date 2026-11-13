@@ -229,9 +229,10 @@ describe('observations:retire-ids arguments and write gate (#6029)', () => {
   const parse = (argv: string[], env: NodeJS.ProcessEnv = {}) =>
     parseRetireObservationIdsArgs(argv, env, () => JSON.stringify([id]));
 
-  it('reads a JSON array or one id per line', () => {
-    expect(readIdsFile(`["${id}"]`)).toEqual([id]);
-    expect(readIdsFile(`${id}\n\n`)).toEqual([id]);
+  it('reads a JSON array of ids and refuses any other file shape', () => {
+    expect(readIdsFile(`["${id.toUpperCase()}"]`)).toEqual([id]);
+    expect(() => readIdsFile(`${id}\n`)).toThrow();
+    expect(() => readIdsFile(`{"ids":["${id}"]}`)).toThrow(/JSON array/);
   });
 
   it('requires a floor sha with the restore flag and refuses one without it', () => {

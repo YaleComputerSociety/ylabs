@@ -38,7 +38,7 @@ const VALUE_FLAGS = ['run', 'ids-file', 'reason', 'actor', 'floor-sha'];
 
 export const RETIRE_OBSERVATION_IDS_HELP = `${RETIRE_OBSERVATION_IDS_SCRIPT}: retires a named set of live observations from ONE scrape run.
   --run=<scrapeRunId> --ids-file=<path> --reason=<text> [--apply ${CONFIRM_FLAG}] [${RESTORE_FLAG} --floor-sha=<sha>] [--actor=<who>]
-The ids file is a JSON array of observation ids or one id per line. The whole batch is refused, writing
+The ids file is a JSON array of observation ids. The whole batch is refused, writing
 nothing, when an id does not exist, belongs to another run, is not live, or backs an owner-decided value
 (an operator-authored source or a manuallyLockedFields provenance). Ids this tool already retired are
 reported and skipped, so a second run is a no-op. It reports how many retired observations had superseded
@@ -60,18 +60,13 @@ export interface RetireObservationIdsArgs {
 }
 
 export function readIdsFile(text: string): string[] {
-  const trimmed = text.trim();
-  if (!trimmed) return [];
-  const raw: unknown[] = trimmed.startsWith('[')
-    ? (JSON.parse(trimmed) as unknown[])
-    : trimmed.split(/\r?\n/);
-  return raw
-    .map((id) =>
-      String(id ?? '')
-        .trim()
-        .toLowerCase(),
-    )
-    .filter(Boolean);
+  const parsed: unknown = JSON.parse(text);
+  if (!Array.isArray(parsed)) throw new Error('--ids-file must hold a JSON array of observation ids');
+  return parsed.map((id) =>
+    String(id ?? '')
+      .trim()
+      .toLowerCase(),
+  );
 }
 
 export function parseRetireObservationIdsArgs(
