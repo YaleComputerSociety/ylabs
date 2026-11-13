@@ -197,6 +197,7 @@ import {
   NO_SURNAME_ROSTER,
   eponymMatchesIdentity,
   eponymousLabNameSurnameCandidates,
+  isBarePersonNameEntityName,
   isPersonScopedResearchEntity,
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
@@ -495,6 +496,7 @@ import { normalizePersonNameCasing } from './utils/personNameCasing';
 import { sanitizePersonGivenName, sanitizePersonName } from '../utils/personNameHygiene';
 import {
   anyNamesStateConflictingMiddleInitials,
+  listedPersonIsTheNamedLead,
   observedPersonNameAgreesWith,
 } from './utils/personNameAgreement';
 import { namesStatedAtPersonPages, personPagesStatingOrcid } from './utils/personPageStatedNames';
@@ -664,6 +666,7 @@ import {
 import { reconcileFieldRetractionsFromRun, type FieldRetractionOutcome } from './fieldRetraction';
 import {
   entryIsRefused,
+  liveFieldValueRefusals,
   refusedResolverObservations,
   valueIsRefused,
 } from '../utils/researchEntityFieldValueRefusals';
@@ -11882,6 +11885,27 @@ function enforceResearchEntityNameAuthority(input: {
     authority: input.nameIdentityAuthority,
     siteStatedLab,
   });
+  fieldsWritten += composeFacultyResearchIdentityForAFullyRefusedPersonRow({
+    set,
+    unset,
+    confidenceByField,
+    entityDoc,
+    manuallyLockedFields: input.manuallyLockedFields,
+    manualValues: input.manualValues,
+    materializationObs: input.materializationObs,
+    authority: input.nameIdentityAuthority,
+    personRow,
+  });
+  fieldsWritten += rederiveFacultyResearchNameFromItsLead({
+    set,
+    unset,
+    confidenceByField,
+    entityDoc,
+    manuallyLockedFields: input.manuallyLockedFields,
+    manualValues: input.manualValues,
+    authority: input.nameIdentityAuthority,
+    siteDeclaredOwnNames,
+  });
   // A heading composed from a bare person name gains its suffix here, after the
   // observation normalizer ran on the suffix-less value.
   for (const field of RESEARCH_ENTITY_IDENTITY_NAME_FIELDS) {
@@ -12277,6 +12301,117 @@ function reclassifyUnstatedOrganizationTypeOnFacultyResearchName(input: {
     if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
   }
   return 1;
+}
+
+// A wrong_owner refusal of a colleague's grafted lab name and type leaves a person's own row
+// with no admissible name or type evidence, and the sole lead is the one identity that needs
+// none (#5979 C3).
+function composeFacultyResearchIdentityForAFullyRefusedPersonRow(input: {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  manuallyLockedFields: string[];
+  manualValues: Record<string, unknown>;
+  materializationObs: MaterializerObservationLike[];
+  authority: ResearchEntityNameIdentityAuthority;
+  personRow: boolean;
+}): number {
+  const { set, unset, confidenceByField, entityDoc, authority } = input;
+  const nameFields: readonly string[] = RESEARCH_ENTITY_IDENTITY_NAME_FIELDS;
+  const identityFields = ['entityType', 'kind', ...nameFields];
+  if (!input.personRow) return 0;
+  if (!textValue(authority.leadPersonName) || !textValue(authority.leadPersonId)) return 0;
+  if (identityFields.some((field) => input.manuallyLockedFields.includes(field))) return 0;
+  if (nameFields.some((field) => textValue(input.manualValues?.[field]))) return 0;
+  const refusals = entityDoc?.fieldValueRefusals;
+  if (!nameFields.some((field) => liveFieldValueRefusals(refusals, field).length > 0)) return 0;
+  const projected = documentAsProjected(set, unset, entityDoc);
+  const absentOrRefused = (field: string) =>
+    !textValue(projected[field]) || valueIsRefused(refusals, field, projected[field]);
+  if (!nameFields.every(absentOrRefused) || !absentOrRefused('entityType')) return 0;
+  const anyNameValueSurvives = input.materializationObs.some(
+    (observation) =>
+      nameFields.includes(String(observation.field)) &&
+      textValue(observation.value) &&
+      !valueIsRefused(refusals, String(observation.field), observation.value),
+  );
+  if (anyNameValueSurvives) return 0;
+  const facultyResearchIdentity = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: mapEntityTypeToResearchGroupKind('FACULTY_RESEARCH_AREA'),
+  };
+  const leadsName = personScopedResearchEntityNameFromLeadPersonName({
+    ...facultyResearchIdentity,
+    slug: projected.slug,
+    leadPersonName: authority.leadPersonName,
+  });
+  if (!leadsName || valueIsRefused(refusals, 'name', leadsName)) return 0;
+  if (valueIsRefused(refusals, 'entityType', facultyResearchIdentity.entityType)) return 0;
+
+  set.entityType = facultyResearchIdentity.entityType;
+  set.kind = facultyResearchIdentity.kind;
+  set.name = leadsName;
+  delete set.displayName;
+  if (textValue(entityDoc?.displayName)) unset.displayName = '';
+  for (const field of identityFields) {
+    delete set[`fieldProvenance.${field}`];
+    delete confidenceByField[field];
+    if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
+  }
+  return 1;
+}
+
+// Lanes compose "<person> Faculty Research" from the spelling on the page they read,
+// which never learns that the lead was renamed, so the name follows the lead's current
+// display name on every resolve (#5967). A head that does not name the lead (an identity
+// correction, or a wrong lead edge) keeps its name, and so does a name the row's own
+// site declares.
+function rederiveFacultyResearchNameFromItsLead(input: {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  manuallyLockedFields: string[];
+  manualValues: Record<string, unknown>;
+  authority: ResearchEntityNameIdentityAuthority;
+  siteDeclaredOwnNames: readonly string[];
+}): number {
+  const { set, unset, confidenceByField, entityDoc, authority } = input;
+  const lead = textValue(authority.leadPersonName);
+  if (!lead || !textValue(authority.leadPersonId)) return 0;
+  const projected = documentAsProjected(set, unset, entityDoc);
+  if (textValue(projected.entityType).toUpperCase() !== 'FACULTY_RESEARCH_AREA') return 0;
+  const leadsName = personScopedResearchEntityNameFromLeadPersonName({
+    entityType: projected.entityType,
+    kind: projected.kind,
+    slug: projected.slug,
+    leadPersonName: lead,
+  });
+  if (!leadsName) return 0;
+  const operatorOwnsTheHeading = RESEARCH_ENTITY_IDENTITY_NAME_FIELDS.some(
+    (field) =>
+      input.manuallyLockedFields.includes(field) ||
+      textValue(input.manualValues?.[field]) ||
+      valueIsRefused(entityDoc?.fieldValueRefusals, field, leadsName),
+  );
+  if (operatorOwnsTheHeading) return 0;
+  const siteDeclaredNames = new Set(input.siteDeclaredOwnNames.map(comparableName));
+  let fieldsWritten = 0;
+  for (const field of RESEARCH_ENTITY_IDENTITY_NAME_FIELDS) {
+    if (field in unset) continue;
+    const served = textValue(set[field] ?? entityDoc?.[field]);
+    if (!served || served === leadsName || siteDeclaredNames.has(comparableName(served))) continue;
+    const head = served.replace(FACULTY_RESEARCH_NAME_SUFFIX, '');
+    if (head === served || !isBarePersonNameEntityName(head)) continue;
+    if (!listedPersonIsTheNamedLead(head, lead)) continue;
+    set[field] = leadsName;
+    delete set[`fieldProvenance.${field}`];
+    delete confidenceByField[field];
+    if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
+    if (textValue(entityDoc?.[field]) !== leadsName) fieldsWritten++;
+  }
+  return fieldsWritten;
 }
 
 /**
