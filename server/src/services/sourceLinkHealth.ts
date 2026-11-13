@@ -133,7 +133,12 @@ export interface SourceLinkProbeResult {
  * `RETRYABLE_ERROR_CODES` and only reach this set once a second attempt agrees -
  * the same confirm-before-recording rule #2725 established for DNS.
  */
-export const DEAD_LINK_ERROR_CODES: ReadonlySet<string> = new Set(['ENOTFOUND', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
+export const DEAD_LINK_ERROR_CODES: ReadonlySet<string> = new Set([
+  'ENOTFOUND',
+  'ECONNREFUSED',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+]);
 
 const CONNECTION_LEVEL_ERROR_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
 

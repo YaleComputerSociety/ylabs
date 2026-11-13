@@ -1588,9 +1588,9 @@ const comparableRegistrableHost = (url: string | undefined): string | null => {
 
 /**
  * A different question from "is the host up": does the address we cited still serve
- * the thing we cited? A redirect loop and a landing on another registrable host both
- * answer no, deterministically and repeatably, which is what separates them from the
- * throttle and timeout that `UNKNOWN` exists for.
+ * the thing we cited? A landing on another registrable host answers no, deterministically
+ * and repeatably, which is what separates it from the throttle and timeout that `UNKNOWN`
+ * exists for.
  *
  * A lapsed academic domain re-registered as an unrelated commercial site is the case
  * that forces this. It answers `200`, so reachability protects it, and it is worse
