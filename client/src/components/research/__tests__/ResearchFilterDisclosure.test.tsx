@@ -7,6 +7,9 @@ import { candidatesIn, compileStylesheet } from '../../../testUtils/tailwind';
 
 const originalMatchMedia = window.matchMedia;
 
+const parsePercentOrNumber = (value: string): number =>
+  value.endsWith('%') ? Number(value.slice(0, -1)) / 100 : Number(value);
+
 const renderFilters = (
   overrides: Partial<ComponentProps<typeof ResearchFilterDisclosure>> = {},
 ) => {
@@ -312,18 +315,34 @@ describe('ResearchFilterDisclosure', () => {
 
     const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
     const label = taking.closest('label');
-    expect(label?.className).toContain('text-muted');
-    expect(label?.className).not.toContain('opacity');
+    const labelStylesheet = await compileStylesheet(
+      candidatesIn(`<span class="${label?.className}"></span>`),
+    );
+    const labelClassNames = (label?.className ?? '').split(' ').filter(Boolean);
+    const labelOpacity: string[] = [];
+    labelStylesheet.walkDecls('opacity', (declaration) => {
+      const selector = (declaration.parent as { selector?: string })?.selector || '';
+      if (labelClassNames.some((name) => selector.includes(`.${name}`))) {
+        labelOpacity.push(declaration.value);
+      }
+    });
+    expect(labelOpacity).toEqual([]);
+    const mutedColors: string[] = [];
+    labelStylesheet.walkRules((rule) => {
+      if (rule.selector !== '.text-muted') return;
+      rule.walkDecls('color', (declaration) => {
+        mutedColors.push(declaration.value);
+      });
+    });
+    expect(mutedColors).toEqual(['var(--yr-muted)']);
 
     const stylesheet = await compileStylesheet(candidatesIn(taking.outerHTML));
-    const dimmed: string[] = [];
+    const dimmed: number[] = [];
     stylesheet.walkDecls('opacity', (declaration) => {
       const selector = (declaration.parent as { selector?: string })?.selector || '';
-      if (selector.includes('aria-disabled')) dimmed.push(declaration.value);
+      if (selector.includes('aria-disabled')) dimmed.push(parsePercentOrNumber(declaration.value));
     });
-    expect(dimmed).toHaveLength(1);
-    expect(Number(dimmed[0])).toBeGreaterThan(0);
-    expect(Number(dimmed[0])).toBeLessThan(1);
+    expect(dimmed).toEqual([0.6]);
   });
 
   it('ignores a press on an unavailable option and reports nothing', () => {
