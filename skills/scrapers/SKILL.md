@@ -643,15 +643,19 @@ A script that checks whether a URL is live today passes `validatorCache: false`:
 `scrapeCanary` and `laneBenchmarkRun` pass it too, because each measures a lane against what the site serves now.
 A reused body would make a page that has since died read alive, so a refusal wins whichever call ran first and detaches a cache an earlier call installed.
 `src/scripts/__tests__/scraperFetchHookCoverage.test.ts`, in the `test:guards` suite, fails when a fetching script entry point reaches neither `installScraperFetchHooks` nor `initializeConnections`, or when a liveness check leaves the validator cache on.
-A request to the model API carries `HOST_BUDGET_EXEMPT` (`utils/hostBudgetExempt.ts`), so the host budget, pause and refusal record leave it alone, because the provider meters model calls and the page budget would otherwise queue them four at a time.
+A request to a host on `MODEL_API_HOSTS_EXEMPT_FROM_HOST_BUDGET` (`utils/hostBudgetExempt.ts`) skips the host budget, pause and refusal record, because the provider meters model calls and the page budget would otherwise queue them four at a time.
+The list holds `api.openai.com`, the only model API host the codebase calls, since `modelClient.ts` is the only OpenAI caller and the Claude writer runs locally rather than over HTTP.
+The match is the exact hostname from `hostnameForLimiter`, with no config flag and no suffix match, so a scraped host, or a lookalike such as `api.openai.com.evil.example`, always takes a slot and has its refusals recorded.
+A new model provider host must be added to the list, or its calls queue behind the page budget.
 The rendered fetch is the documented exception: its headless browser runs in a Python child that no axios hook reaches, and it takes its own host slot before each render.
 The known-dead URL skip (#6210) is not on `beta` yet; when it lands, the raw-axios path takes it in this install point's request arm.
 
 #### One User-Agent (#6211)
 
-Every fetch path sends exactly `SCRAPER_USER_AGENT` from `utils/scraperUserAgent.ts`, shaped `ylabs-scraper/1.0 (+<info URL>; <contact>)`.
-`SCRAPER_UA_INFO_URL` names the information page and `SCRAPER_UA_CONTACT` names a project or role address, never a person's.
-The contact is a named placeholder until the owner supplies the address, which is a one-line change.
+Every fetch path sends exactly `SCRAPER_USER_AGENT` from `utils/scraperUserAgent.ts`, which today is `ylabs-scraper/1.0 (+https://yalelabs.io)`.
+`SCRAPER_UA_INFO_URL` names the information page, and `SCRAPER_UA_CONTACT` is unset until the owner supplies a project or role address, never a person's.
+Setting it is a one-line change that appends `; <contact>` after the information page.
+`recheckDescriptionGrounding` reports `refused403` with a per-host breakdown in its report and console summary, so a firewall that refuses the honest User-Agent is counted rather than spoofed past.
 `fetchPageWithPolicy`, `postFormWithPolicy` and `fetchPublicHttpUrl` replace any User-Agent a caller passes, the link-health probe and the rendered fetch's redirect preflight send it, and the fetch hooks stamp it on every other axios request.
 No fetch presents itself as a desktop browser or claims a Yale domain, and the guard test fails on a User-Agent header set to anything else.
 The Scrapling headless browser still sends its own browser User-Agent, as part of the rendered fetch exception above.

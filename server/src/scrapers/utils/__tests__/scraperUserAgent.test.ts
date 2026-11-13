@@ -11,12 +11,7 @@ import { fetchRecheckPage } from '../../../scripts/recheckDescriptionGrounding';
 import { resolveFinalUrls } from '../../../scripts/retireOrganizationIdentityWebsiteGrafts';
 import { readPageOverHttp } from '../../../scripts/retypeFromDeclaredPageType';
 import { fetchPageWithPolicy, fetchPublicHttpUrl } from '../httpFetch';
-import {
-  SCRAPER_UA_CONTACT,
-  SCRAPER_UA_INFO_URL,
-  SCRAPER_USER_AGENT,
-  withScraperUserAgent,
-} from '../scraperUserAgent';
+import { SCRAPER_USER_AGENT, scraperUserAgentFor, withScraperUserAgent } from '../scraperUserAgent';
 
 const sent: InternalAxiosRequestConfig[] = [];
 
@@ -43,11 +38,15 @@ beforeEach(() => {
 });
 
 describe('SCRAPER_USER_AGENT', () => {
-  it('names the scraper, its information page and a contact, and claims no browser or Yale domain', () => {
-    expect(SCRAPER_USER_AGENT).toBe(
-      `ylabs-scraper/1.0 (+${SCRAPER_UA_INFO_URL}; ${SCRAPER_UA_CONTACT})`,
-    );
+  it('names the scraper and its information page only, and claims no browser or Yale domain', () => {
+    expect(SCRAPER_USER_AGENT).toBe('ylabs-scraper/1.0 (+https://yalelabs.io)');
     expect(SCRAPER_USER_AGENT).not.toMatch(/Mozilla|Chrome|Safari|yale\.edu/i);
+  });
+
+  it('adds a contact after the information page once one is set', () => {
+    expect(scraperUserAgentFor('scraper@example.org')).toBe(
+      'ylabs-scraper/1.0 (+https://yalelabs.io; scraper@example.org)',
+    );
   });
 
   it("replaces a caller's User-Agent in any letter case and keeps its other headers", () => {

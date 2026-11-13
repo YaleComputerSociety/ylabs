@@ -13,9 +13,12 @@ import {
 } from '../recheckDescriptionGroundingCore';
 import {
   assertRecheckDescriptionGroundingApplyAllowed,
+  formatRecheckRefusals,
   parseRecheckDescriptionGroundingArgs,
   probeDescriptionPage,
+  summarizeRecheckRefusals,
 } from '../recheckDescriptionGrounding';
+import type { SourceLinkHealth } from '../../services/sourceLinkHealth';
 
 const PROSE =
   'The Ferrant lab studies how ribosome stalling reshapes the proteome, combining ribosome profiling with targeted proteomics in yeast and mammalian cells.';
@@ -336,6 +339,52 @@ describe('probeDescriptionPage (#2879)', () => {
         candidateDescriptions: [PROSE],
       }),
     ).toBe('UNKNOWN');
+  });
+});
+
+describe('recheck-description-grounding refusal count (#6211)', () => {
+  const stubbedLinks: Record<string, SourceLinkHealth> = {
+    'https://walled.example.edu/a': { healthStatus: 'UNKNOWN', httpStatusCode: 403 },
+    'https://walled.example.edu/b': { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+    'https://other.example.org/c': { healthStatus: 'UNKNOWN', httpStatusCode: 403 },
+    'https://busy.example.org/d': { healthStatus: 'UNKNOWN', httpStatusCode: 429 },
+    'https://gone.example.org/e': { healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+    'https://open.example.org/f': { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+  };
+
+  const probeAll = async () => {
+    const pages = new Map();
+    for (const url of Object.keys(stubbedLinks)) {
+      await probeDescriptionPage(url, pages, {
+        checkLink: async (link) => stubbedLinks[link],
+        fetchPage: async (link) => {
+          if (link.endsWith('/b')) throw new Error('Request failed with status code 403');
+          return { html: `<main><p>${PROSE}</p></main>`, status: 200 };
+        },
+      });
+    }
+    return pages;
+  };
+
+  it('counts every fetch answered 403, by host, apart from other refusals and gone pages', async () => {
+    expect(summarizeRecheckRefusals(await probeAll())).toEqual({
+      refused403: 3,
+      refused403ByHost: { 'walled.example.edu': 2, 'other.example.org': 1 },
+      refusedOtherByStatus: { '429': 1 },
+    });
+  });
+
+  it('prints the 403 count and its hosts on the console summary', async () => {
+    expect(formatRecheckRefusals(summarizeRecheckRefusals(await probeAll()))).toBe(
+      'refused403: 3 (walled.example.edu=2, other.example.org=1)\nrefusedOther: 429=1',
+    );
+  });
+
+  it('reports a run with no refusal as zero rather than omitting the count', () => {
+    const refusals = summarizeRecheckRefusals(new Map());
+
+    expect(refusals.refused403).toBe(0);
+    expect(formatRecheckRefusals(refusals)).toBe('refused403: 0\nrefusedOther: none');
   });
 });
 

@@ -326,11 +326,11 @@ function recordHostOutcomeFromResponse(response: unknown): void {
       }
     | undefined;
   if (typeof typed?.status !== 'number' || typed.config?.[HOST_PAUSE_POLICY_FETCH]) return;
-  if (isSweepPageReuseHit(typed.config) || isHostBudgetExempt(typed.config)) return;
+  if (isSweepPageReuseHit(typed.config)) return;
   const host =
     hostnameForLimiter(typed.request?.res?.responseUrl) ??
     hostnameForLimiter(typed.config?.url, typed.config?.baseURL);
-  if (!host) return;
+  if (!host || isHostBudgetExempt(host)) return;
   if (typed.status >= 200 && typed.status < 300) {
     recordHostSuccess(host);
     return;
@@ -353,8 +353,8 @@ export function installScraperHostConcurrencyInterceptor(
   installed = true;
   const acquireTimeoutMs = options.acquireTimeoutMs ?? HOST_SLOT_WAIT_TIMEOUT_MS;
   axios.interceptors.request.use(async (config) => {
-    if (isHostBudgetExempt(config)) return config;
     const host = hostnameForLimiter(config.url, config.baseURL);
+    if (isHostBudgetExempt(host)) return config;
     const knownPause = activeHostPause(host);
     if (knownPause && !isSweepPageReuseHit(config)) throw new HostPausedError(knownPause);
     const redirectable = config as {

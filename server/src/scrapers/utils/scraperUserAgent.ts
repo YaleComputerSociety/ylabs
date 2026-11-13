@@ -1,8 +1,12 @@
 export const SCRAPER_UA_INFO_URL = 'https://yalelabs.io';
-// The owner supplies a project or role address here, never a person's (#6211).
-export const SCRAPER_UA_CONTACT = '<PLACEHOLDER: owner to supply a project or role address>';
+// Only ever a project or role address, never a person's (#6211); unset until the owner names one.
+export const SCRAPER_UA_CONTACT: string | undefined = undefined;
 
-export const SCRAPER_USER_AGENT = `ylabs-scraper/1.0 (+${SCRAPER_UA_INFO_URL}; ${SCRAPER_UA_CONTACT})`;
+export function scraperUserAgentFor(contact: string | undefined): string {
+  return `ylabs-scraper/1.0 (+${SCRAPER_UA_INFO_URL}${contact ? `; ${contact}` : ''})`;
+}
+
+export const SCRAPER_USER_AGENT = scraperUserAgentFor(SCRAPER_UA_CONTACT);
 
 const isUserAgentHeader = (name: string): boolean => name.toLowerCase() === 'user-agent';
 

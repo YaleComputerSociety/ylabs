@@ -2,9 +2,10 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import axios, { AxiosHeaders, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { HostSlotLimiter } from '../hostConcurrencyLimiter';
-import { HOST_BUDGET_EXEMPT } from '../hostBudgetExempt';
+import { MODEL_API_HOSTS_EXEMPT_FROM_HOST_BUDGET } from '../hostBudgetExempt';
+import { hostBackoffState, resetHostPauseStateForTests } from '../hostPauseState';
 import { installScraperFetchHooks } from '../scraperFetchHooks';
 import { SCRAPER_USER_AGENT } from '../scraperUserAgent';
 import { isSweepPageReuseHit } from '../sweepPageReuseHit';
@@ -19,12 +20,15 @@ const recordingLimiter: HostSlotLimiter = {
   },
 };
 
+const LEGACY_EXEMPT_MARKER = { __scraperHostBudgetExempt: true };
+
 const stubNetwork: AxiosAdapter = async (config) => {
   sent.push(config);
+  const refused = String(config.url).endsWith('/refuse');
   return {
     data: '<html><body>synthetic page</body></html>',
-    status: 200,
-    statusText: 'OK',
+    status: refused ? 429 : 200,
+    statusText: refused ? 'Too Many Requests' : 'OK',
     headers: { 'content-type': 'text/html; charset=utf-8', etag: '"v1"' },
     config,
     request: {},
@@ -55,6 +59,10 @@ beforeAll(async () => {
   process.env.SCRAPER_REQUEST_LOG = requestLogPath;
   axios.defaults.adapter = stubNetwork;
   installScraperFetchHooks({ hostSlotLimiter: recordingLimiter });
+});
+
+afterEach(() => {
+  resetHostPauseStateForTests();
 });
 
 afterAll(async () => {
@@ -105,18 +113,47 @@ describe('installScraperFetchHooks', () => {
     expect(sentUserAgent(sent.at(-1)!)).toBe(SCRAPER_USER_AGENT);
   });
 
-  it('leaves a model API call out of the host budget', async () => {
+  it('exempts exactly the model API hosts the codebase calls', () => {
+    expect([...MODEL_API_HOSTS_EXEMPT_FROM_HOST_BUDGET]).toEqual(['api.openai.com']);
+  });
+
+  it('leaves a model API call out of the host budget and the refusal record', async () => {
     const slots = slotsTaken.length;
 
-    await axios.post(
-      'https://model-fixture.invalid/v1/chat',
-      {},
-      { timeout: 1_000, ...HOST_BUDGET_EXEMPT },
-    );
+    await axios.post('https://api.openai.com/v1/refuse', {}, { timeout: 1_000 });
 
-    expect(sent.at(-1)?.url).toBe('https://model-fixture.invalid/v1/chat');
+    expect(sent.at(-1)?.url).toBe('https://api.openai.com/v1/refuse');
     expect(slotsTaken.length).toBe(slots);
+    expect(hostBackoffState('api.openai.com')).toBeUndefined();
   });
+
+  it.each([
+    ['with the old exemption marker', LEGACY_EXEMPT_MARKER],
+    ['without a marker', {}],
+  ])('charges a scraped host %s a budget slot and records its refusal', async (_label, marker) => {
+    const slots = slotsTaken.length;
+
+    await axios.post('https://scraped-fixture.invalid/refuse', {}, { timeout: 1_000, ...marker });
+
+    expect(slotsTaken.slice(slots)).toEqual(['scraped-fixture.invalid']);
+    expect(hostBackoffState('scraped-fixture.invalid')?.lastStatus).toBe(429);
+  });
+
+  it.each(['api.openai.com.evil.example', 'evil.example'])(
+    'charges a lookalike of the model API host, %s, like any scraped host',
+    async (host) => {
+      const slots = slotsTaken.length;
+      const url =
+        host === 'evil.example'
+          ? 'https://api.openai.com@evil.example/refuse'
+          : `https://${host}/refuse`;
+
+      await axios.post(url, {}, { timeout: 1_000, ...LEGACY_EXEMPT_MARKER });
+
+      expect(slotsTaken.slice(slots)).toEqual([host]);
+      expect(hostBackoffState(host)?.lastStatus).toBe(429);
+    },
+  );
 
   it('detaches the validator cache when a later caller refuses it', async () => {
     const url = 'https://hooks-fixture.invalid/refused-later';
