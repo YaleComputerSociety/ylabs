@@ -38,6 +38,8 @@ const queueItem = (
   ...overrides,
 });
 
+const noProtectedLeadEdge = vi.fn().mockResolvedValue(null);
+
 const facultyLeadCandidate = vi.fn().mockResolvedValue({
   holdsLiveLeadEdge: false,
   entry: {
@@ -220,6 +222,7 @@ describe('visibilityRepairQueueService', () => {
     updateProgram: vi.fn(),
     runGate: vi.fn(),
     findLeadCandidateEntry: facultyLeadCandidate,
+    findProtectedLeadEdge: noProtectedLeadEdge,
     ...overrides,
   });
 
@@ -326,6 +329,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -357,6 +361,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -384,6 +389,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -438,6 +444,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -492,6 +499,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -541,6 +549,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -592,6 +601,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -632,6 +642,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -686,6 +697,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -733,6 +745,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -782,6 +795,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -813,6 +827,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -852,6 +867,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0, promoted: 0 } }),
     };
 
@@ -881,6 +897,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -918,6 +935,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -948,6 +966,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -997,6 +1016,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -1056,6 +1076,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -1126,6 +1147,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1175,6 +1197,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -1233,6 +1256,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1293,6 +1317,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1353,6 +1378,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1412,6 +1438,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1470,6 +1497,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1528,6 +1556,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1593,6 +1622,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1654,6 +1684,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -1714,6 +1745,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -1771,6 +1803,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1814,6 +1847,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1858,6 +1892,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -1915,6 +1950,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -1963,6 +1999,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -2007,6 +2044,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -2058,6 +2096,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -2113,6 +2152,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -2153,6 +2193,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -2215,6 +2256,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -2263,6 +2305,7 @@ describe('visibilityRepairQueueService', () => {
       findProgram: vi.fn(),
       updateProgram: vi.fn().mockResolvedValue(undefined),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -2308,6 +2351,7 @@ describe('visibilityRepairQueueService', () => {
       updateProgram: vi.fn(),
       recordOverrideAudit: vi.fn().mockResolvedValue(undefined),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -2351,6 +2395,7 @@ describe('visibilityRepairQueueService', () => {
       updateProgram: vi.fn().mockResolvedValue(undefined),
       recordOverrideAudit: vi.fn().mockResolvedValue(undefined),
       findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 

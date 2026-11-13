@@ -164,7 +164,7 @@ function toVisibilityRepairObjectId(value: unknown): mongoose.Types.ObjectId | u
   return id ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
-interface RepairDeps {
+export interface RepairDeps {
   findOpenQueueItems: (
     options: VisibilityRepairQueueOptions,
   ) => Promise<VisibilityRepairQueueItemInput[]>;
@@ -184,7 +184,7 @@ interface RepairDeps {
     researchEntityId: string,
     userId: string,
   ) => Promise<{ holdsLiveLeadEdge: boolean; entry: Record<string, unknown> } | null>;
-  findProtectedLeadEdge?: (
+  findProtectedLeadEdge: (
     researchEntityId: string,
     userId: string,
   ) => Promise<ProtectedRoleEdge | null>;
@@ -1285,7 +1285,7 @@ async function attemptResearchRepair(
       remainingBlockers: uniqueStrings([...plan.blockerReasons, reason]),
       repairSource: sourceUrl,
     });
-    const protectedEdge = await deps.findProtectedLeadEdge?.(plan.recordId, userId);
+    const protectedEdge = await deps.findProtectedLeadEdge(plan.recordId, userId);
     if (protectedEdge) {
       return blocked(
         protectedEdge === 'disputed' ? 'lead_edge_disputed' : 'lead_edge_operator_ended',
