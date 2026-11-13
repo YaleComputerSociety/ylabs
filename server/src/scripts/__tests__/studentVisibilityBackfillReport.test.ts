@@ -129,5 +129,9 @@ describe('studentVisibilityBackfillReport', () => {
       'Attach a source-backed PI, director, or lead member.',
     );
     expect(nextRepairActionForReasons(['missing_action_evidence'])).toBe('Operator review.');
+    expect(nextRepairActionForReasons(['formalization_only', 'exact_url_duplicate_risk'])).toBe(
+      'Suppress the duplicate shell; preserve the stronger canonical research profile.',
+    );
+    expect(nextRepairActionForReasons(['formalization_only'])).not.toMatch(/keep capped/i);
   });
 });
