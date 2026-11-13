@@ -123,7 +123,7 @@ const DISCLAIMS_PRIMARY_RESEARCH_FOCUS =
 // degree) funds coursework toward a degree rather than research, unless its own text names
 // research as an eligible use (#6216, #4675).
 const FUNDS_DEGREE_COURSE_OF_STUDY =
-  /\b(?:support|supports|fund|funds|cover|covers)\s+(?:[\w-]+\s+){0,3}(?:graduate|postgraduate|master'?s)\s+(?:degree\s+)?(?:courses?|programs?|programmes?|study)\b/i;
+  /\b(?:(?:support|supports|fund|funds|cover|covers|pay|pays)\s+(?:[\w-]+\s+){0,3}|tuition(?:\s+fees)?\s+for\s+(?:(?:a|an)\s+)?)(?:graduate|postgraduate|master['’]?s)\s+(?:degree\s+)?(?:courses?|programs?|programmes?|study)\b/i;
 
 const LANGUAGE_STUDY_PURPOSE = 'Language Study';
 
@@ -181,9 +181,7 @@ export function classifyProgramResearchRelevance(
   const disclaimsPrimaryResearchFocus = disclaimerFields.some((field) =>
     DISCLAIMS_PRIMARY_RESEARCH_FOCUS.test(field),
   );
-  const fundsDegreeCourseOfStudy = disclaimerFields.some((field) =>
-    FUNDS_DEGREE_COURSE_OF_STUDY.test(field),
-  );
+  const fundsDegreeCourseOfStudy = affirmedIn(disclaimerFields, FUNDS_DEGREE_COURSE_OF_STUDY);
 
   if (purposeResearch) reasons.push('research_purpose');
   if (kindResearch) reasons.push('research_program_kind');
@@ -196,20 +194,19 @@ export function classifyProgramResearchRelevance(
   if (disclaimsPrimaryResearchFocus) reasons.push('disclaims_primary_research_focus');
   if (fundsDegreeCourseOfStudy) reasons.push('funds_degree_course_of_study');
 
-  if (
-    (disclaimsPrimaryResearchFocus || fundsDegreeCourseOfStudy) &&
-    !inherentKind &&
-    !researchUseStated
-  ) {
-    return { researchRelated: false, reasons };
-  }
-
   // A title that explicitly disclaims research (e.g. "...Non-Research Projects", journalism,
   // language study, study/tuition scholarship), or a facet naming only language study, is not
   // research-related even if a generic "Research" purpose tag is attached, unless the program
   // kind is research by construction or its own page text names research as an eligible use.
   // A kind derived from travel wording does not exempt it.
-  if ((titleSaysNonResearch || facetSaysLanguageStudy) && !inherentKind && !researchUseStated) {
+  if (
+    (titleSaysNonResearch ||
+      facetSaysLanguageStudy ||
+      disclaimsPrimaryResearchFocus ||
+      fundsDegreeCourseOfStudy) &&
+    !inherentKind &&
+    !researchUseStated
+  ) {
     return { researchRelated: false, reasons };
   }
 

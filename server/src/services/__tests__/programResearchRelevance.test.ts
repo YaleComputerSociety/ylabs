@@ -526,6 +526,33 @@ describe('programs that are not research by their own account (#6216)', () => {
     expect(result.reasons).toContain('funds_degree_course_of_study');
   });
 
+  it.each([
+    'The award pays all tuition fees for a graduate degree course abroad.',
+    'Covers tuition for a postgraduate course of study abroad.',
+    'Funds one year of a master’s degree course abroad.',
+  ])('withholds a non-research award whose text says "%s"', (description) => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Fixture Study Abroad Award',
+        purpose: ['Study Abroad'],
+        description,
+      }),
+    ).toMatchObject({
+      researchRelated: false,
+      reasons: expect.arrayContaining(['funds_degree_course_of_study']),
+    });
+  });
+
+  it('does not withhold a degree award whose text says it does not cover graduate study', () => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Fixture Research Fund',
+        purpose: ['Research'],
+        description: 'The fund does not cover graduate tuition or graduate study programs.',
+      }).reasons,
+    ).not.toContain('funds_degree_course_of_study');
+  });
+
   it('keeps a degree award whose own text names research as an eligible use', () => {
     expect(
       classifyProgramResearchRelevance({
