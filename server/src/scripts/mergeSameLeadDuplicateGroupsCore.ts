@@ -34,6 +34,7 @@ export type SameLeadMergeHold =
   | 'only-a-shared-url-and-a-shared-lead'
   | 'already-planned-by-the-url-identity-lane'
   | 'quarantined-by-the-conflation-guard'
+  | 'shares-a-row-with-an-earlier-merge'
   | 'no-ownership-evidence-on-either-side';
 
 export type SameLeadCorroboration =
@@ -157,8 +158,13 @@ export function planSameLeadCorroboratedMerges(
 ): SameLeadMergeOutcome {
   const merges: SameLeadMergePlan[] = [];
   const held: Array<{ url: string; reason: SameLeadMergeHold }> = [];
+  const claimedIds = new Set<string>();
 
   for (const group of groups) {
+    if (group.members.some((member) => claimedIds.has(member.id))) {
+      held.push({ url: group.url, reason: 'shares-a-row-with-an-earlier-merge' });
+      continue;
+    }
     const excludedUpstream = group.alreadyPlannedByUrlLane || group.quarantinedByConflationGuard;
     const twinAnchor = excludedUpstream ? null : subjectTwinAnchor(group.members);
     if (twinAnchor) {
@@ -171,6 +177,7 @@ export function planSameLeadCorroboratedMerges(
         survivorGainsFunding:
           twinAnchor.fundingRichness === 0 && losers.some((member) => member.fundingRichness > 0),
       });
+      group.members.forEach((member) => claimedIds.add(member.id));
       continue;
     }
     if (!group.everyMemberHasALead) {
@@ -210,6 +217,7 @@ export function planSameLeadCorroboratedMerges(
       survivorGainsFunding:
         survivor.fundingRichness === 0 && losers.some((member) => member.fundingRichness > 0),
     });
+    group.members.forEach((member) => claimedIds.add(member.id));
   }
 
   return { merges, held };
@@ -224,6 +232,7 @@ export function summarizeSameLeadMergeHolds(
     'only-a-shared-url-and-a-shared-lead': 0,
     'already-planned-by-the-url-identity-lane': 0,
     'quarantined-by-the-conflation-guard': 0,
+    'shares-a-row-with-an-earlier-merge': 0,
     'no-ownership-evidence-on-either-side': 0,
   };
   for (const row of held) counts[row.reason] += 1;

@@ -70,6 +70,18 @@ describe('one lab stored twice on its own site (#6206)', () => {
     expect(subjectTwinAnchor([member({ id: 'a' }), member({ id: 'b' })])).toBeNull();
   });
 
+  it('plans no row in two merges, leaving the later overlapping group held', () => {
+    const outcome = planSameLeadCorroboratedMerges([
+      group([anchor, member({ id: 'c', leadPersonIds: [] })], { url: 'first.example.edu' }),
+      group([anchor, member({ id: 'b' })], { url: 'second.example.edu' }),
+    ]);
+
+    expect(outcome.merges.map((merge) => merge.url)).toEqual(['first.example.edu']);
+    expect(outcome.held).toEqual([
+      { url: 'second.example.edu', reason: 'shares-a-row-with-an-earlier-merge' },
+    ]);
+  });
+
   it('leaves a twin the conflation guard fences to that guard', () => {
     const outcome = planSameLeadCorroboratedMerges([
       group([anchor, member({ id: 'b' })], { quarantinedByConflationGuard: true }),
