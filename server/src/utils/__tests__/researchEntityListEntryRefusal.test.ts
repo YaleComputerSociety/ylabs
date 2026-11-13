@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  attributeRefusedValueLanes,
   entryIsRefused,
   fieldValueRefusalKey,
+  liveFieldValueRefusals,
+  observationAssertsRefusedValue,
+  planFieldValueRefusal,
+  planFieldValueRefusalWithdrawal,
   planListEntryRefusalRemoval,
   refusedResolverObservations,
   type FieldValueRefusal,
@@ -129,5 +134,81 @@ describe('the refusal tool reports what a list-entry refusal would remove (#6012
         observationValues: [FOREIGN_PAGE],
       }),
     ).toBeUndefined();
+  });
+});
+
+describe('a list-entry refusal keeps the query that names a citation (#6012)', () => {
+  const OWNER_PROFILE = 'https://scholar.example.org/citations?user=AAA';
+  const NAMESAKE_PROFILE = 'https://scholar.example.org/citations?user=BBB';
+
+  it('removes only the refused citation when siblings differ by query', () => {
+    const screened = refusedResolverObservations(
+      [{ field: 'sourceUrls', value: [OWNER_PROFILE, NAMESAKE_PROFILE] }],
+      refusing('sourceUrls', NAMESAKE_PROFILE),
+    );
+    expect(screened.kept).toEqual([{ field: 'sourceUrls', value: [OWNER_PROFILE] }]);
+    expect(
+      entryIsRefused(refusing('sourceUrls', NAMESAKE_PROFILE), 'sourceUrls', OWNER_PROFILE),
+    ).toBe(false);
+  });
+
+  it('counts only the refused citation in the dry run', () => {
+    expect(
+      planListEntryRefusalRemoval({
+        field: 'sourceUrls',
+        value: NAMESAKE_PROFILE,
+        storedValue: [OWNER_PROFILE],
+        observationValues: [[OWNER_PROFILE, NAMESAKE_PROFILE], [OWNER_PROFILE]],
+      }),
+    ).toEqual({ observations: 1, entries: 1, storedListCarriesEntry: false });
+  });
+
+  it('credits the citing lane rather than a lane that asserted the URL as a website', () => {
+    expect(
+      attributeRefusedValueLanes('sourceUrls', fieldValueRefusalKey('sourceUrls', FOREIGN_PAGE), [
+        { field: 'websiteUrl', value: FOREIGN_PAGE, sourceName: 'website-lane' },
+        { field: 'sourceUrls', value: [FOREIGN_PAGE], sourceName: 'citing-lane' },
+      ]),
+    ).toEqual(['citing-lane']);
+  });
+});
+
+describe('a refusal stored under the earlier plain-text key stays manageable (#6012)', () => {
+  const legacyRefusals = () => ({
+    sourceUrls: [
+      { ...refusalOf('sourceUrls', FOREIGN_PAGE), valueKey: FOREIGN_PAGE.toLowerCase() },
+    ],
+  });
+
+  it('is withdrawn by withdrawing the same URL', () => {
+    const update = planFieldValueRefusalWithdrawal(
+      legacyRefusals(),
+      'sourceUrls',
+      FOREIGN_PAGE,
+      'reviewed again',
+    );
+    expect(update['fieldValueRefusals.sourceUrls']).toHaveLength(1);
+    expect(
+      liveFieldValueRefusals({ sourceUrls: update['fieldValueRefusals.sourceUrls'] }, 'sourceUrls'),
+    ).toEqual([]);
+  });
+
+  it('is not duplicated by re-refusing the same URL', () => {
+    const update = planFieldValueRefusal(legacyRefusals(), {
+      field: 'sourceUrls',
+      value: FOREIGN_PAGE,
+      rule: 'operator_judgement',
+      refusedBy: 'test',
+      note: 'synthetic',
+    });
+    expect(update['fieldValueRefusals.sourceUrls']).toHaveLength(1);
+  });
+
+  it('is still matched against a cited entry for lane attribution', () => {
+    expect(
+      observationAssertsRefusedValue('sourceUrls', FOREIGN_PAGE.toLowerCase(), {
+        value: [OWN_PAGE, FOREIGN_PAGE],
+      }),
+    ).toBe(true);
   });
 });

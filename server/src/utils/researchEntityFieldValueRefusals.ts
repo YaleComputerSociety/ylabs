@@ -83,11 +83,15 @@ export const FIELD_VALUE_REFUSALS_PATH = 'fieldValueRefusals';
  * each other. Anything else compares on trimmed, case-folded text, because a
  * refusal that missed on a trailing space would read as a clean row.
  */
-const URL_VALUED_FIELDS: ReadonlySet<string> = new Set(['websiteUrl', 'website', 'sourceUrls']);
+const URL_VALUED_FIELDS: ReadonlySet<string> = new Set(['websiteUrl', 'website']);
 
-// The person-record URL fields (#5641) keep the query, because a query names the page there:
-// every Google Scholar profile is `scholar.google.com/citations?user=<id>`.
-const QUERY_IDENTIFIED_URL_FIELDS: ReadonlySet<string> = new Set(['profileLink', 'imageUrl']);
+// The person-record URL fields (#5641) and citation entries (#6012) keep the query, because a
+// query names the page there: every Google Scholar profile is `scholar.google.com/citations?user=<id>`.
+const QUERY_IDENTIFIED_URL_FIELDS: ReadonlySet<string> = new Set([
+  'profileLink',
+  'imageUrl',
+  'sourceUrls',
+]);
 
 function queryIdentifiedUrlKey(text: string): string {
   const pageKey = foldDefaultDocumentLeaf(normalizeWebsiteUrlIdentityKey(text));
@@ -144,6 +148,20 @@ export function fieldValueRefusalKey(field: string, value: unknown): string {
   if (QUERY_IDENTIFIED_URL_FIELDS.has(field)) return queryIdentifiedUrlKey(text);
   if (!URL_VALUED_FIELDS.has(field)) return text.toLowerCase();
   return foldDefaultDocumentLeaf(normalizeWebsiteUrlIdentityKey(text) || text.toLowerCase());
+}
+
+export const ENTRY_REFUSABLE_LIST_FIELDS: ReadonlySet<string> = new Set(['sourceUrls']);
+
+function listEntryKeys(field: string, entry: string): string[] {
+  const textKey = collapseRefusalWhitespace(entry).toLowerCase();
+  return [...new Set([fieldValueRefusalKey(field, entry), textKey].filter(Boolean))];
+}
+
+function refusalKeyMatches(field: string, value: unknown, valueKey: string): boolean {
+  if (ENTRY_REFUSABLE_LIST_FIELDS.has(field) && typeof value === 'string') {
+    return listEntryKeys(field, value).includes(valueKey);
+  }
+  return fieldValueRefusalKey(field, value) === valueKey;
 }
 
 function assertRefusableFieldName(field: string): void {
@@ -238,7 +256,11 @@ export function planFieldValueRefusal(
     );
   }
   const existing = refusalList(currentFieldValueRefusals, field);
-  if (existing.some((refusal) => refusal.valueKey === valueKey && !refusal.withdrawnAt)) {
+  if (
+    existing.some(
+      (refusal) => !refusal.withdrawnAt && refusalKeyMatches(field, value, refusal.valueKey),
+    )
+  ) {
     return { [fieldValueRefusalsPath(field)]: existing };
   }
   const sourceName = declaration.sourceName?.trim();
@@ -272,10 +294,9 @@ export function planFieldValueRefusalWithdrawal(
   if (!withdrawnReason.trim()) {
     throw new Error(`Withdrawing a refusal at ${field} requires a reason.`);
   }
-  const key = fieldValueRefusalKey(field, value);
   return {
     [fieldValueRefusalsPath(field)]: refusalList(currentFieldValueRefusals, field).map((refusal) =>
-      refusal.valueKey === key && !refusal.withdrawnAt
+      !refusal.withdrawnAt && refusalKeyMatches(field, value, refusal.valueKey)
         ? { ...refusal, withdrawnAt, withdrawnReason: withdrawnReason.trim() }
         : refusal,
     ),
@@ -339,22 +360,14 @@ export function refusedResolverObservations<T extends RefusableResolverObservati
   return { kept, refused };
 }
 
-export const ENTRY_REFUSABLE_LIST_FIELDS: ReadonlySet<string> = new Set(['sourceUrls']);
-
-function listEntryKeys(field: string, entry: string): string[] {
-  const textKey = collapseRefusalWhitespace(entry).toLowerCase();
-  return [...new Set([fieldValueRefusalKey(field, entry), textKey].filter(Boolean))];
-}
-
 function refusedListEntryRule(
   fieldValueRefusals: unknown,
   field: string,
   entry: unknown,
 ): FieldValueRefusalRule | undefined {
   if (!ENTRY_REFUSABLE_LIST_FIELDS.has(field) || typeof entry !== 'string') return undefined;
-  const keys = listEntryKeys(field, entry);
   return liveFieldValueRefusals(fieldValueRefusals, field).find((refusal) =>
-    keys.includes(refusal.valueKey),
+    refusalKeyMatches(field, entry, refusal.valueKey),
   )?.rule;
 }
 
@@ -455,10 +468,10 @@ export function observationAssertsRefusedValue(
   observation: { value?: unknown },
 ): boolean {
   return (
-    fieldValueRefusalKey(field, observation.value) === valueKey ||
+    refusalKeyMatches(field, observation.value, valueKey) ||
     (Array.isArray(observation.value) &&
-      observedEntries(observation.value).some(
-        (entry) => fieldValueRefusalKey(field, entryValue(entry)) === valueKey,
+      observedEntries(observation.value).some((entry) =>
+        refusalKeyMatches(field, entryValue(entry), valueKey),
       ))
   );
 }
