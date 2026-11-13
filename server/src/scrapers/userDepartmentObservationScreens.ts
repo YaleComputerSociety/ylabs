@@ -2,6 +2,7 @@ import { withoutDepartmentHeadingObservations } from './departmentHeadingObserva
 import { withDirectoryDepartmentsCatalogGated } from './directoryDepartmentCatalogGate';
 import { withDirectoryExportDepartmentsDecoded } from './directoryExportDepartmentEvidence';
 import type { CanonicalDepartment } from './utils/directoryExportDepartment';
+import { withoutUncataloguedYsmHomeDepartments } from './ysmHomeDepartmentScreen';
 
 export interface UserDepartmentObservation {
   field?: string;
@@ -30,6 +31,7 @@ export const USER_DEPARTMENT_OBSERVATION_SCREENS: ReadonlyArray<UserDepartmentOb
     withDirectoryExportDepartmentsDecoded(observations, canonicalDepartment),
   withDirectoryDepartmentsCatalogGated,
   (observations) => withoutDepartmentHeadingObservations(observations),
+  withoutUncataloguedYsmHomeDepartments,
 ];
 
 export function withUserDepartmentObservationsScreened<T extends UserDepartmentObservation>(
