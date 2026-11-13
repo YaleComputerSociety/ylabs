@@ -5269,6 +5269,7 @@ export type LeadPiSchoolInheritanceSkip =
   | 'has-school'
   | 'has-school-and-department'
   | 'multi-pi-kind'
+  | 'core-facility'
   | 'no-single-lead'
   | 'no-department'
   | 'no-school-derivable'
@@ -5299,16 +5300,23 @@ export function leadPiSchoolInheritanceGate(input: {
   school?: unknown;
   schools?: unknown;
   kind?: unknown;
+  entityType?: unknown;
   departments?: unknown;
 }):
   | Extract<
       LeadPiSchoolInheritanceSkip,
-      'locked' | 'has-school' | 'has-school-and-department' | 'multi-pi-kind'
+      'locked' | 'has-school' | 'has-school-and-department' | 'multi-pi-kind' | 'core-facility'
     >
   | LeadPiInheritanceScope {
   const locked = input.manuallyLockedFields ?? [];
   if (locked.includes('school') || locked.includes('departments')) return 'locked';
   if (MULTI_PI_ORG_KINDS.has(textValue(input.kind).toLowerCase())) return 'multi-pi-kind';
+  if (
+    textValue(input.kind).toLowerCase() === 'core_facility' ||
+    textValue(input.entityType).toUpperCase() === 'CORE_FACILITY'
+  ) {
+    return 'core-facility';
+  }
   const existingSchools = Array.isArray(input.schools)
     ? (input.schools as unknown[]).map((value) => textValue(value)).filter(Boolean)
     : [];
@@ -5382,6 +5390,7 @@ export async function inheritSchoolFromLeadPi(
     departments?: unknown;
     schools?: unknown;
     kind?: unknown;
+    entityType?: unknown;
   } | null;
   if (!entity) return { inherited: false };
   const gate = leadPiSchoolInheritanceGate({
@@ -5389,6 +5398,7 @@ export async function inheritSchoolFromLeadPi(
     school: entity.school,
     schools: entity.schools,
     kind: entity.kind,
+    entityType: entity.entityType,
     departments: entity.departments,
   });
   if (gate !== 'school-and-department' && gate !== 'department-only') {

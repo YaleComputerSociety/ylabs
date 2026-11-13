@@ -77,7 +77,9 @@ interface CandidateRow {
  * entity, so a row materialized before its lead's department was known, or before
  * that department was in the `OrgUnit` catalog, never picks it up. Catalog work is
  * therefore invisible until this pass runs: adding an alias changes what a string
- * resolves to, not what any served row stores.
+ * resolves to, not what any served row stores. The Development sweep runs it as the
+ * `lead-department-inheritance` stage, after person-side materialization and before
+ * the visibility gate (#6033).
  */
 export async function runLeadDepartmentBackfill(options: {
   dryRun: boolean;
