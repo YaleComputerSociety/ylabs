@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { ScrapeRun } from '../../models/scrapeRun';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
@@ -48,6 +49,7 @@ import {
 } from './labMicrositeDescriptionLLMExtractor';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 import { isTransientFetchFailure } from '../utils/transientFetchFailure';
+import { describeHostPauses, hostPauseInErrorChain, type HostPause } from '../utils/hostPause';
 import {
   HostCompletionTracker,
   orderRowsBySmallestSharedHost,
@@ -140,13 +142,46 @@ export interface ResearchPageTextScraperDeps {
   rowFinder?: ResearchPageTextRowFinderFn;
   storedHashLoader?: StoredContentHashLoaderFn;
   citerCountsLoader?: () => Promise<ReadonlyMap<string, number>>;
-  storedReadingHostsLoader?: StoredReadingHostsLoaderFn;
+  storedReadingLoader?: StoredReadingLoaderFn;
   releaseFinishedHost?: ReleaseFinishedHost;
+  previousThrottledRowsLoader?: PreviousThrottledRowsLoaderFn;
+  sleep?: (ms: number) => Promise<void>;
 }
 
-export type StoredReadingHostsLoaderFn = (
-  entity: ContentHashEntityRef,
-) => Promise<ReadonlySet<string>>;
+export interface StoredReading {
+  hosts: ReadonlySet<string>;
+}
+
+export type StoredReadingLoaderFn = (entity: ContentHashEntityRef) => Promise<StoredReading>;
+
+/**
+ * The rows the latest earlier run found throttled, by host, so this run can say how many are
+ * throttled again. A refusing host keeps its rows' readings at any age and is only ever paused,
+ * never dropped (owner decision, #6166), so this repeat count is what makes a host that keeps
+ * refusing visible (#6195).
+ */
+export type PreviousThrottledRowsLoaderFn = () => Promise<Record<string, readonly string[]>>;
+
+/** When only paused rows remain, the run waits for the earliest pause if it ends this soon. */
+export const IN_RUN_PAUSE_WAIT_MS = 5 * 60_000;
+const MAX_PAUSE_ROUNDS = 12;
+
+interface TransientPageFailure {
+  url: string;
+  throttled: boolean;
+  pause?: HostPause;
+}
+
+interface RowOutcome {
+  observations: ObservationInput[];
+  pauses?: HostPause[];
+}
+
+/** A row that met a paused host: left untouched now and read again once the pause ends. */
+interface DeferredRow<T> {
+  entry: T;
+  pauses: HostPause[];
+}
 
 const pageHost = (url: string): string => {
   try {
@@ -156,13 +191,16 @@ const pageHost = (url: string): string => {
   }
 };
 
+const NO_STORED_READING: StoredReading = { hosts: new Set() };
+
 /**
- * The hosts of the pages the row's current stored reading was built from. Fails open like the
- * content-hash gate: with no connection, or no stored reading, there is nothing to keep.
+ * The hosts of the pages the row's current stored reading was built from, and when it was read.
+ * Fails open like the content-hash gate: with no connection, or no stored reading, there is
+ * nothing to keep.
  */
-async function loadStoredReadingHosts(entity: ContentHashEntityRef): Promise<ReadonlySet<string>> {
-  if (!entity.entityId && !entity.entityKey) return new Set();
-  if (!mongooseConnectionWasOpened()) return new Set();
+async function loadStoredReading(entity: ContentHashEntityRef): Promise<StoredReading> {
+  if (!entity.entityId && !entity.entityKey) return NO_STORED_READING;
+  if (!mongooseConnectionWasOpened()) return NO_STORED_READING;
   const filter: Record<string, unknown> = {
     entityType: entity.entityType,
     sourceName: RESEARCH_PAGE_TEXT_SOURCE,
@@ -173,11 +211,38 @@ async function loadStoredReadingHosts(entity: ContentHashEntityRef): Promise<Rea
   else filter.entityKey = entity.entityKey;
   const stored = await Observation.findOne(filter).sort({ observedAt: -1 }).select('value').lean();
   const value = (stored as { value?: unknown } | null)?.value;
-  if (!Array.isArray(value)) return new Set();
-  return new Set(
-    value.map((entry) => pageHost(String((entry as { url?: unknown })?.url ?? ''))).filter(Boolean),
-  );
+  if (!Array.isArray(value)) return NO_STORED_READING;
+  return {
+    hosts: new Set(
+      value
+        .map((entry) => pageHost(String((entry as { url?: unknown })?.url ?? '')))
+        .filter(Boolean),
+    ),
+  };
 }
+
+async function loadPreviousThrottledRows(): Promise<Record<string, readonly string[]>> {
+  if (!mongooseConnectionWasOpened()) return {};
+  const previous = await ScrapeRun.findOne(
+    {
+      sourceName: RESEARCH_PAGE_TEXT_SOURCE,
+      status: 'success',
+      'metrics.throttledRowsByHost': { $exists: true },
+    },
+    { 'metrics.throttledRowsByHost': 1 },
+  )
+    .sort({ startedAt: -1 })
+    .lean();
+  const byHost = (previous as { metrics?: { throttledRowsByHost?: unknown } } | null)?.metrics
+    ?.throttledRowsByHost;
+  return byHost && typeof byHost === 'object' ? (byHost as Record<string, string[]>) : {};
+}
+
+const THROTTLE_STATUSES: ReadonlySet<number> = new Set([403, 429, 503]);
+
+const isThrottle = (error: unknown): boolean =>
+  hostPauseInErrorChain(error) !== undefined ||
+  THROTTLE_STATUSES.has((error as { status?: unknown } | null)?.status as number);
 
 async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null> {
   const page = await fetchPageWithPolicy(url, {
@@ -349,6 +414,7 @@ interface LaneCounts {
   rowsWithoutText: number;
   noReadablePage: number;
   keptAfterTransientFailure: number;
+  throttledRowsByHost: Map<string, Set<string>>;
   contentUnchanged: number;
   charsStored: number;
 }
@@ -373,7 +439,9 @@ export class ResearchPageTextScraper implements IScraper {
   private readonly rowFinder: ResearchPageTextRowFinderFn;
   private readonly storedHashLoader: StoredContentHashLoaderFn;
   private readonly citerCountsLoader: () => Promise<ReadonlyMap<string, number>>;
-  private readonly storedReadingHostsLoader: StoredReadingHostsLoaderFn;
+  private readonly storedReadingLoader: StoredReadingLoaderFn;
+  private readonly previousThrottledRowsLoader: PreviousThrottledRowsLoaderFn;
+  private readonly sleep: (ms: number) => Promise<void>;
   private readonly releaseFinishedHost?: ReleaseFinishedHost;
 
   constructor(deps: ResearchPageTextScraperDeps = {}) {
@@ -381,7 +449,10 @@ export class ResearchPageTextScraper implements IScraper {
     this.rowFinder = deps.rowFinder || defaultRowFinder;
     this.storedHashLoader = deps.storedHashLoader || loadStoredContentHash;
     this.citerCountsLoader = deps.citerCountsLoader || loadConnectedEvidenceUrlCiterCounts;
-    this.storedReadingHostsLoader = deps.storedReadingHostsLoader || loadStoredReadingHosts;
+    this.storedReadingLoader = deps.storedReadingLoader || loadStoredReading;
+    this.previousThrottledRowsLoader =
+      deps.previousThrottledRowsLoader || loadPreviousThrottledRows;
+    this.sleep = deps.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.releaseFinishedHost = deps.releaseFinishedHost;
   }
 
@@ -389,7 +460,7 @@ export class ResearchPageTextScraper implements IScraper {
     url: string,
     row: CandidateDescriptionLab,
     ctx: ScraperContext,
-    transientFailures: string[],
+    transientFailures: TransientPageFailure[],
   ) {
     try {
       const page = await this.fetchPage(url);
@@ -403,9 +474,11 @@ export class ResearchPageTextScraper implements IScraper {
       return personProfileSourceMatchesEntity(page.url, row) ? page : null;
     } catch (error) {
       if (isTransientFetchFailure(error)) {
-        transientFailures.push(url);
+        const throttled = isThrottle(error);
+        const pause = hostPauseInErrorChain(error)?.pause;
+        transientFailures.push({ url, throttled, ...(pause ? { pause } : {}) });
         if (error instanceof HttpStatusError && error.finalUrl) {
-          transientFailures.push(error.finalUrl);
+          transientFailures.push({ url: error.finalUrl, throttled });
         }
       }
       ctx.log(`[${row.slug || 'candidate'}] research page skipped: ${sanitizeLogValue(error)}`);
@@ -424,7 +497,7 @@ export class ResearchPageTextScraper implements IScraper {
     row: CandidateDescriptionLab,
     ctx: ScraperContext,
     citerCounts: ReadonlyMap<string, number> = new Map(),
-    transientFailures: string[] = [],
+    transientFailures: TransientPageFailure[] = [],
   ): Promise<FetchedDescriptionPage[]> {
     const cited = citedResearchPageUrls(row, citerCounts);
     const labSiteUrl = cited.find((url) => !isPersonProfileUrl(url));
@@ -462,49 +535,69 @@ export class ResearchPageTextScraper implements IScraper {
     ctx: ScraperContext,
     counts: LaneCounts,
     citerCounts: ReadonlyMap<string, number>,
-  ): Promise<ObservationInput[]> {
-    const transientFailures: string[] = [];
+  ): Promise<RowOutcome> {
+    const transientFailures: TransientPageFailure[] = [];
     const fetched = await this.readCitedResearchPages(row, ctx, citerCounts, transientFailures);
     const entityRef: ContentHashEntityRef = {
       entityType: 'researchEntity',
       entityId: serializedDocumentId(row._id) || undefined,
       entityKey: row.slug,
     };
+    const rowKey = entityRef.entityId ?? entityRef.entityKey ?? '';
+    for (const failure of transientFailures) {
+      if (!failure.throttled || !rowKey) continue;
+      const host = failure.pause?.host ?? pageHost(failure.url);
+      const throttled = counts.throttledRowsByHost.get(host) ?? new Set<string>();
+      throttled.add(rowKey);
+      counts.throttledRowsByHost.set(host, throttled);
+    }
+    const pauses = transientFailures.flatMap((failure) => (failure.pause ? [failure.pause] : []));
+    if (pauses.length > 0) {
+      ctx.log(
+        `[${row.slug || 'candidate'}] research page text deferred: a cited host is pausing this run's requests, so the row is read again once the pause ends`,
+      );
+      return { observations: [], pauses };
+    }
     if (transientFailures.length > 0) {
-      const storedHosts = await this.storedReadingHostsLoader(entityRef);
-      if (transientFailures.some((url) => storedHosts.has(pageHost(url)))) {
+      const stored = await this.storedReadingLoader(entityRef);
+      const fedTheStoredReading = transientFailures.filter((failure) =>
+        stored.hosts.has(pageHost(failure.url)),
+      );
+      if (fedTheStoredReading.length > 0) {
         counts.keptAfterTransientFailure += 1;
         ctx.log(
           `[${row.slug || 'candidate'}] research page text kept: a cited page its stored reading drew on failed transiently, so this run leaves that reading for the next one`,
         );
-        return [];
+        return { observations: [] };
       }
     }
     if (fetched.length === 0) {
       counts.noReadablePage += 1;
-      return [];
+      return { observations: [] };
     }
     const value = researchPageTextValue(fetched);
     const contentHash = researchPageTextContentHash(value);
     const storedHash = await this.storedHashLoader(this.name, entityRef);
     if (contentUnchanged(storedHash, contentHash, false)) {
       counts.contentUnchanged += 1;
-      return [];
+      return { observations: [] };
     }
     const sourceUrl = value[0]?.url ?? fetched[0].url;
     if (value.length === 0) counts.rowsWithoutText += 1;
     else counts.rowsWithText += 1;
     counts.charsStored += value.reduce((sum, entry) => sum + entry.text.length, 0);
-    return [
-      {
-        ...entityRef,
-        field: RESEARCH_PAGE_TEXT_FIELD,
-        value,
-        sourceUrl,
-        ...(value.length === 0 ? { assertsNoValueFor: [RESEARCH_PAGE_TEXT_FIELD] } : {}),
-      },
-      contentHashObservation(entityRef, sourceUrl, contentHash),
-    ];
+    return {
+      observations: [
+        {
+          ...entityRef,
+          field: RESEARCH_PAGE_TEXT_FIELD,
+          value,
+          sourceUrl,
+          ...(value.length === 0 ? { assertsNoValueFor: [RESEARCH_PAGE_TEXT_FIELD] } : {}),
+        },
+        contentHashObservation(entityRef, sourceUrl, contentHash),
+      ],
+    };
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -524,6 +617,7 @@ export class ResearchPageTextScraper implements IScraper {
       rowsWithoutText: 0,
       noReadablePage: 0,
       keptAfterTransientFailure: 0,
+      throttledRowsByHost: new Map(),
       contentUnchanged: 0,
       charsStored: 0,
     };
@@ -537,17 +631,75 @@ export class ResearchPageTextScraper implements IScraper {
       rows.map((row) => ({ row, hosts: plannedHosts(citedResearchPageUrls(row, citerCounts)) })),
     );
     const hostCompletion = new HostCompletionTracker(planned, this.releaseFinishedHost);
-    await mapWithConcurrency(planned, concurrency, async ({ row, hosts }) => {
+    let deferred: DeferredRow<(typeof planned)[number]>[] = [];
+    const readPlanned = async (entry: (typeof planned)[number]): Promise<void> => {
+      const outcome = await this.readRow(entry.row, ctx, counts, citerCounts);
+      if (outcome.pauses?.length) {
+        deferred.push({ entry, pauses: outcome.pauses });
+        return;
+      }
+      if (outcome.observations.length === 0) return;
+      await ctx.emit(outcome.observations);
+      observationCount += outcome.observations.length;
+    };
+    await mapWithConcurrency(planned, concurrency, async (entry) => {
       try {
-        const observations = await this.readRow(row, ctx, counts, citerCounts);
-        if (observations.length === 0) return;
-        await ctx.emit(observations);
-        observationCount += observations.length;
+        await readPlanned(entry);
       } finally {
-        hostCompletion.rowFinished(hosts);
+        hostCompletion.rowFinished(entry.hosts);
       }
     });
     await hostCompletion.settled();
+
+    for (let round = 0; round < MAX_PAUSE_ROUNDS && deferred.length > 0; round += 1) {
+      const resumesAt = (row: DeferredRow<unknown>) =>
+        Math.max(...row.pauses.map((pause) => pause.until.getTime()));
+      const now = Date.now();
+      let ready = deferred.filter((row) => resumesAt(row) <= now);
+      if (ready.length === 0) {
+        const earliest = Math.min(...deferred.map(resumesAt));
+        if (earliest - now > IN_RUN_PAUSE_WAIT_MS) break;
+        await this.sleep(Math.max(0, earliest - now));
+        ready = deferred.filter((row) => resumesAt(row) <= Date.now());
+      }
+      deferred = deferred.filter((row) => !ready.includes(row));
+      await mapWithConcurrency(ready, concurrency, async ({ entry }) => readPlanned(entry));
+    }
+
+    const throttledRowsByHost = Object.fromEntries(
+      [...counts.throttledRowsByHost]
+        .sort(([hostA], [hostB]) => hostA.localeCompare(hostB))
+        .map(([host, rowKeys]) => [host, [...rowKeys].sort()]),
+    );
+    const previousThrottled = await this.previousThrottledRowsLoader();
+    const throttledNote = Object.entries(throttledRowsByHost)
+      .map(([host, rowKeys]) => {
+        const before = new Set(previousThrottled[host] ?? []);
+        const again = rowKeys.filter((rowKey) => before.has(rowKey)).length;
+        return `${host} ${rowKeys.length} (${again} also throttled last run)`;
+      })
+      .join(', ');
+    const deferredByHost = new Map<string, { rows: number; resumesAt: Date }>();
+    for (const row of deferred) {
+      for (const pause of row.pauses) {
+        const known = deferredByHost.get(pause.host);
+        deferredByHost.set(pause.host, {
+          rows: (known?.rows ?? 0) + 1,
+          resumesAt: known && known.resumesAt > pause.until ? known.resumesAt : pause.until,
+        });
+      }
+    }
+    const deferredRowsByHost = Object.fromEntries(
+      [...deferredByHost]
+        .sort(([hostA], [hostB]) => hostA.localeCompare(hostB))
+        .map(([host, { rows, resumesAt }]) => [host, { rows, resumesAt: resumesAt.toISOString() }]),
+    );
+    const deferredNote = Object.entries(deferredRowsByHost)
+      .map(([host, { rows, resumesAt }]) => `${host} ${rows} rows, resumes at ${resumesAt}`)
+      .join(', ');
+    const pausesMet = describeHostPauses(
+      [...deferredByHost].map(([host, { resumesAt }]) => ({ host, until: resumesAt })),
+    );
 
     return {
       observationCount,
@@ -556,7 +708,12 @@ export class ResearchPageTextScraper implements IScraper {
         `Research page text for ${counts.rowsWithText} of ${rows.length} rows: ` +
         `${counts.rowsWithoutText} read with no research text, ${counts.noReadablePage} with no readable page, ` +
         `${counts.keptAfterTransientFailure} kept after a transient fetch failure, ` +
-        `${counts.contentUnchanged} content unchanged, ${counts.charsStored} characters stored.`,
+        `${deferred.length} deferred to a later run, ` +
+        `${counts.contentUnchanged} content unchanged, ${counts.charsStored} characters stored.` +
+        (throttledNote ? ` Throttled rows, by host: ${throttledNote}.` : '') +
+        (deferredNote ? ` Deferred, by host: ${deferredNote}.` : '') +
+        (pausesMet ? ` Paused hosts: ${pausesMet}.` : ''),
+      metrics: { throttledRowsByHost, deferredRowsByHost },
     };
   }
 }

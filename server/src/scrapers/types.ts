@@ -193,6 +193,13 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
    * inconclusive; a zero reads as barren.
    */
   unitYields?: Record<string, number>;
+  /**
+   * research-page-text: the rows a host throttled, by host, so the next run can count how many
+   * are throttled again (#6166, #6195).
+   */
+  throttledRowsByHost?: Record<string, string[]>;
+  /** research-page-text: rows left for a later run because their host was paused, by host. */
+  deferredRowsByHost?: Record<string, { rows: number; resumesAt: string }>;
   removedByRequest?: number;
   rekeyedPersonKeys?: RekeyedPersonKeyRunSummary;
   descriptionSlotAttestation?: {

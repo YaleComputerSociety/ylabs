@@ -207,19 +207,22 @@ describe('fetchPageWithPolicy', () => {
     expect(sleep).toHaveBeenCalledWith(4321);
   });
 
-  it('clamps a pathological Retry-After to maxBackoff', async () => {
+  it('pauses the host for a Retry-After longer than its quick retries would wait, never shortening it', async () => {
     const sleep = vi.fn(async () => {});
     const request = vi
       .fn<HttpRequestFn>()
       .mockResolvedValueOnce({ status: 429, data: '', finalUrl: 'u', retryAfterMs: 86_400_000 })
       .mockResolvedValueOnce({ status: 200, data: 'body', finalUrl: 'u' });
-    await fetchPageWithPolicy('https://lab.example.edu/x', {
-      ...base,
-      request,
-      sleep,
-      maxBackoffMs: 8_000,
-    });
-    expect(sleep).toHaveBeenCalledWith(8_000);
+    await expect(
+      fetchPageWithPolicy('https://lab.example.edu/x', {
+        ...base,
+        request,
+        sleep,
+        maxBackoffMs: 8_000,
+      }),
+    ).rejects.toMatchObject({ name: 'HostPausedError' });
+    expect(sleep).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it('throws after exhausting retries on a persistent 403', async () => {

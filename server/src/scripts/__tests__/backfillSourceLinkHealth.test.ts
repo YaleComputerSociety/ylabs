@@ -143,6 +143,8 @@ describe('sourceLinkHealthBackfillStdoutSummary', () => {
       checked: 1,
       updated: 1,
       errors: 0,
+      deferredPausedHost: 0,
+      pausedHosts: '',
       preservedDecisiveVerdicts: 0,
       preservedUnreachedVerdicts: 0,
       heldConnectionFailures: 2,

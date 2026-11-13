@@ -12,6 +12,7 @@ import { accessSignalTypes } from '../models/researchAccessTypes';
 import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { activeHostPause, describeHostPauses, type HostPause } from '../scrapers/utils/hostPause';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   ResolverCircuitBreaker,
@@ -305,6 +306,13 @@ export interface SourceLinkHealthBackfillResult {
   updated: number;
   errors: number;
   /**
+   * URLs not probed because their host was pausing this run's requests after refusing them;
+   * each keeps its stored verdict and is probed again once the pause ends (#6166).
+   */
+  deferredPausedHost: number;
+  /** Each host that paused this run, with when it resumes (#6166). */
+  pausedHosts: string;
+  /**
    * How many URLs kept a decisive stored verdict because the fresh probe was
    * inconclusive. A large number means the pass did not verify what `checked`
    * implies, usually because a host throttled it (#2762).
@@ -481,7 +489,9 @@ export async function probeUncachedUrlsByHost(
     hostConcurrency: number;
     paceDelayMs: number;
     sleep: (ms: number) => Promise<void>;
-    result: { checked: number; errors: number };
+    result: { checked: number; errors: number; deferredPausedHost?: number };
+    /** Collects each pause met, for the run's `pausedHosts` report. */
+    pausesSeen?: HostPause[];
     /**
      * Halts the pass when our own resolver, rather than the corpus, is what is
      * failing. Omit only in tests that are not exercising that path (#2782).
@@ -518,11 +528,23 @@ export async function probeUncachedUrlsByHost(
   const probe = async (url: string, requestGate?: HostSlotLimiter): Promise<void> => {
     const host = hostOf(url);
     if (stoppedHosts.has(host)) return;
+    const knownPause = activeHostPause(host);
+    if (knownPause) {
+      deps.result.deferredPausedHost = (deps.result.deferredPausedHost ?? 0) + 1;
+      deps.pausesSeen?.push(knownPause);
+      return;
+    }
     const sent = probesByHost.get(host) ?? 0;
     if (deps.maxProbesPerHost !== undefined && sent >= deps.maxProbesPerHost) return;
     probesByHost.set(host, sent + 1);
     try {
       const health = await deps.checkLink(url, requestGate);
+      const pauseFound = activeHostPause(hostOf(url));
+      if (pauseFound && (health.excludedHost || health.httpStatusCode !== undefined)) {
+        deps.result.deferredPausedHost = (deps.result.deferredPausedHost ?? 0) + 1;
+        deps.pausesSeen?.push(pauseFound);
+        return;
+      }
       healthCache.set(url, health);
       deps.result.checked += 1;
       if (
@@ -582,7 +604,7 @@ export async function probeUncachedUrlsByHost(
       const [host, bucket] = buckets[cursor];
       cursor += 1;
       const budget = deps.hostThrottleFor?.(host);
-      if (budget && budget.concurrency > 1) await probeWithinBudget(bucket, budget);
+      if (budget) await probeWithinBudget(bucket, budget);
       else await probeSerially(bucket);
     }
   };
@@ -655,11 +677,14 @@ export async function runSourceLinkHealthBackfill(options: {
     sleep,
   });
 
+  const pausesSeen: HostPause[] = [];
   const result: SourceLinkHealthBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',
     scanned: 0,
     skippedFresh: 0,
     skippedAlreadyRechecked: 0,
+    deferredPausedHost: 0,
+    pausedHosts: '',
     carriedFreshHealthy: 0,
     unchangedRows: 0,
     checked: 0,
@@ -795,7 +820,13 @@ export async function runSourceLinkHealthBackfill(options: {
                 planNow,
               );
         noteStoredSourceLinkVerdicts(resolverBreaker, entity.sourceLinkHealth);
-        const excluded = new Set(candidates.filter((url) => isOnExcludedHost(url, excludeHosts)));
+        const excluded = new Set(
+          candidates.filter((url) => {
+            const pause = activeHostPause(hostOf(url));
+            if (pause) pausesSeen.push(pause);
+            return isOnExcludedHost(url, excludeHosts) || pause !== undefined;
+          }),
+        );
         if (excluded.size > 0) {
           const storedByUrl = storedSourceLinkHealthByUrl(entity.sourceLinkHealth);
           for (const url of excluded) {
@@ -840,6 +871,7 @@ export async function runSourceLinkHealthBackfill(options: {
       paceDelayMs,
       sleep,
       result,
+      pausesSeen,
       resolverBreaker,
       hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
       ...probeLimits,
@@ -867,6 +899,7 @@ export async function runSourceLinkHealthBackfill(options: {
         paceDelayMs,
         sleep,
         result,
+        pausesSeen,
         resolverBreaker,
         hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
         ...probeLimits,
@@ -1007,6 +1040,7 @@ export async function runSourceLinkHealthBackfill(options: {
       observedDueByHost,
     );
   }
+  result.pausedHosts = describeHostPauses(pausesSeen);
   return result;
 }
 
