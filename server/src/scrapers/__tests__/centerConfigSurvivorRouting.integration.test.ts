@@ -211,11 +211,15 @@ describe(
       );
     });
 
-    it('lets two complete reads retire a member the survivor roster stops listing', async () => {
+    it('lets two complete reads end a member the survivor roster lists as a past member', async () => {
       await runLane(ROSTER);
-      const withoutFinley = ROSTER.filter((entry) => !entry.name.startsWith('Finley'));
-      await runLane(withoutFinley);
-      await runLane(withoutFinley);
+      const finleyAsAlumni = ROSTER.map((entry) =>
+        entry.name.startsWith('Finley')
+          ? { ...entry, sections: [{ label: 'Alumni', kind: 'past' as const }] }
+          : entry,
+      );
+      await runLane(finleyAsAlumni);
+      await runLane(finleyAsAlumni);
 
       const served = await servedMemberNames(SURVIVOR_KEY);
       expect(served.some((name) => name.startsWith('Finley'))).toBe(false);
