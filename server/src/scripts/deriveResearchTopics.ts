@@ -23,6 +23,9 @@ import {
   RESEARCH_PAGE_TEXT_SOURCE,
 } from '../scrapers/utils/researchPageText';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { loadResearchEntityLeadPersonDisplayNames } from '../utils/researchHomeNameIdentityRoster';
+import { isPersonResearchRow } from '../utils/researchStatementPassage';
+import type { TopicEvidenceRow } from '../scrapers/researchPageTopicsDerivation';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -85,13 +88,68 @@ export async function loadStoredPageTextRows(
     if (!key) continue;
     byEntity.set(key, [...(byEntity.get(key) ?? []), observation]);
   }
-  return [...byEntity.values()].flatMap((group) => {
+  const rows = [...byEntity.values()].flatMap((group) => {
     const current = currentResearchPageTextObservation(group);
     if (!current) return [];
     const entityId = serializedDocumentId(current.entityId) || undefined;
     const entityKey = typeof current.entityKey === 'string' ? current.entityKey : undefined;
     return [{ entityId, entityKey, value: current.value }];
   });
+  const topicRows = await loadTopicEvidenceRows(rows);
+  return rows.map((row) => {
+    const topicRow =
+      (row.entityId ? topicRows.byId.get(row.entityId) : undefined) ??
+      (row.entityKey ? topicRows.bySlug.get(row.entityKey) : undefined);
+    return topicRow ? { ...row, topicRow } : row;
+  });
+}
+
+interface TopicEvidenceEntityRow {
+  _id?: unknown;
+  slug?: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+  name?: unknown;
+  websiteUrl?: unknown;
+}
+
+const TOPIC_EVIDENCE_ROW_BATCH = 500;
+
+async function loadTopicEvidenceRows(
+  rows: ReadonlyArray<{ entityId?: string; entityKey?: string }>,
+): Promise<{ byId: Map<string, TopicEvidenceRow>; bySlug: Map<string, TopicEvidenceRow> }> {
+  const byId = new Map<string, TopicEvidenceRow>();
+  const bySlug = new Map<string, TopicEvidenceRow>();
+  for (let start = 0; start < rows.length; start += TOPIC_EVIDENCE_ROW_BATCH) {
+    const batch = rows.slice(start, start + TOPIC_EVIDENCE_ROW_BATCH);
+    const ids = batch.flatMap((row) => (row.entityId ? [row.entityId] : []));
+    const slugs = batch.flatMap((row) => (!row.entityId && row.entityKey ? [row.entityKey] : []));
+    const entities = (await ResearchEntity.find({
+      $or: [{ _id: { $in: ids } }, { slug: { $in: slugs } }],
+    })
+      .select('_id slug entityType kind name websiteUrl')
+      .lean()) as TopicEvidenceEntityRow[];
+    const personIds = entities
+      .filter((entity) => isPersonResearchRow(entity))
+      .flatMap((entity) => {
+        const id = serializedDocumentId(entity._id);
+        return id ? [id] : [];
+      });
+    const leadNames = await loadResearchEntityLeadPersonDisplayNames(personIds);
+    for (const entity of entities) {
+      const id = serializedDocumentId(entity._id);
+      const topicRow: TopicEvidenceRow = {
+        entityType: entity.entityType,
+        kind: entity.kind,
+        name: entity.name,
+        websiteUrl: entity.websiteUrl,
+        ...(id && leadNames.has(id) ? { leadNames: leadNames.get(id) } : {}),
+      };
+      if (id) byId.set(id, topicRow);
+      if (typeof entity.slug === 'string' && entity.slug) bySlug.set(entity.slug, topicRow);
+    }
+  }
+  return { byId, bySlug };
 }
 
 const mongoDerivationStore: ResearchTopicsDerivationStore = {
@@ -143,6 +201,7 @@ async function main() {
     derived: result.derived,
     derivedWithTopics: result.derivedWithTopics,
     noText: result.noText,
+    noLeadPage: result.noLeadPage,
     modelFailures: result.modelFailures,
     next:
       result.derived > 0
