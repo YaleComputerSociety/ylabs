@@ -47,11 +47,9 @@ describe('researchStatementTextOfPage holds the kept heading block to the prose 
     expect(text).toBe(SUMMARY);
   });
 
-  it('drops a contact or link label line even when it reads as a sentence', () => {
+  it('drops a contact or link label line whose value is short, even when it ends as a sentence', () => {
     const text = researchStatementTextOfPage(
-      headingBlock(
-        `${SUMMARY}<br>Curriculum Vitae: the full record of appointments, grants and teaching is posted online.`,
-      ),
+      headingBlock(`${SUMMARY}<br>Curriculum Vitae: download the full record here.`),
       PAGE,
     );
     expect(text).toBe(SUMMARY);
@@ -110,6 +108,15 @@ describe('researchStatementTextOfPage drops a career-history year range from pag
     );
   });
 
+  it.each([
+    'Our group worked at field sites in coastal Belize from 2005 to 2015.',
+    'The reef served as our long-term monitoring station from 1990 to 2010.',
+  ])('keeps a research sentence where worked or served names no post: %s', (research) => {
+    expect(researchStatementTextOfPage(page(`${BIO} ${research}`), PAGE)).toBe(
+      `${BIO} ${research}`,
+    );
+  });
+
   it('keeps a research sentence that spans years', () => {
     const research =
       'The group tracked kelp recovery from 1997 to 2018 along northern rocky shores.';
@@ -159,6 +166,26 @@ describe('researchStatementTextOfPage drops skip and label lines anywhere on the
         'Screen reader usability',
       ].join('\n'),
     );
+  });
+
+  it('keeps the blurb a template puts after a link label', () => {
+    const blurb =
+      'The lab studies how coastal wetlands store carbon across tidal gradients in New England.';
+    expect(researchStatementTextOfPage(body([BIO, `Website: ${blurb}`]), PAGE)).toBe(
+      `${BIO}\n${blurb}`,
+    );
+  });
+
+  it('still drops a link label followed by a short value or a link', () => {
+    const text = researchStatementTextOfPage(
+      body([
+        BIO,
+        'Website: lab.example.edu',
+        'Website: https://lab.example.edu is the home of our news, data and every project we run',
+      ]),
+      PAGE,
+    );
+    expect(text).toBe(BIO);
   });
 
   it('keeps a research sentence about accessibility', () => {

@@ -76,12 +76,20 @@ const CITATION_FRAGMENT =
   /\b(?:doi|pmid|pmcid|isbn)\b|\b(?:19|20)\d{2}[a-z]?\s*[).]|\(\s*(?:19|20)\d{2}/i;
 
 // A past appointment told as a span of years: "taught at X from 1997-2018". It needs a career
-// verb bound to a post, so a research sentence that spans years ("tracked kelp recovery from
-// 1997 to 2018", "worked with fishing cooperatives from 2005 to 2015") is not one. Kept local to
-// page text, because isCurriculumVitaeRecordSentence also decides what a served description
-// shows (#6201).
-const CAREER_HISTORY_YEAR_RANGE_SENTENCE =
-  /\b(?:(?:taught|lectured)\s+(?:at|in)|served\s+(?:as|on|at|in)|worked\s+(?:at|as)|practi[cs]ed\s+(?:at|as|in)|chaired\s+the|directed\s+the\s+[^.]{0,60}?\b(?:center|centre|program(?:me)?|institute|department|school|division|museum|clinic))\b[^.]{0,120}?\bfrom\s+(?:19|20)\d{2}\s*(?:[-\u2013\u2014]|to|until|through)\s*(?:(?:19|20)\d{2}|present|now)\b/i;
+// verb bound to a post, and "worked" or "served" must name a post or an institution, so a
+// research sentence that spans years ("tracked kelp recovery from 1997 to 2018", "worked at
+// field sites from 2005 to 2015") is not one. Kept local to page text, because
+// isCurriculumVitaeRecordSentence also decides what a served description shows (#6201).
+const CAREER_POST_OR_INSTITUTION =
+  '(?:professor|lecturer|fellow|director|chair|dean|faculty|instructor|curator|editor|president|university|college|institute|hospital|school)';
+const CAREER_HISTORY_YEAR_RANGE_SENTENCE = new RegExp(
+  '\\b(?:(?:taught|lectured)\\s+(?:at|in)' +
+    `|(?:served\\s+(?:as|on|at|in)|worked\\s+(?:at|as))\\s+[^.]{0,60}?\\b${CAREER_POST_OR_INSTITUTION}` +
+    '|practi[cs]ed\\s+(?:at|as|in)|chaired\\s+the' +
+    '|directed\\s+the\\s+[^.]{0,60}?\\b(?:center|centre|program(?:me)?|institute|department|school|division|museum|clinic))' +
+    '\\b[^.]{0,120}?\\bfrom\\s+(?:19|20)\\d{2}\\s*(?:[-\\u2013\\u2014]|to|until|through)\\s*(?:(?:19|20)\\d{2}|present|now)\\b',
+  'i',
+);
 
 const isPageTextCvRecord = (text: string): boolean =>
   isCurriculumVitaeRecordSentence(text) || CAREER_HISTORY_YEAR_RANGE_SENTENCE.test(text);
@@ -111,23 +119,37 @@ const MAX_ACCESSIBILITY_LINE_WORDS = 12;
 const CONTACT_OR_LINK_LABEL_LINE =
   /^(?:curriculum vitae|c\.?v\.?|r[e\u00e9]sum[e\u00e9]|(?:lab |personal )?web\s?site|home\s?page|e-?mail|phone|tel(?:ephone)?|fax|mobile|office|address|orcid|google scholar|twitter|linkedin|bluesky|github|researchgate)\s*:/i;
 
-/**
- * A skip or accessibility link, or a contact or link label such as "Curriculum Vitae:" or
- * "Website:" (#6201). On a profile they sit beside the name and title, and once a recovered
- * biography lifts the row over the floor they would ride along into the stored text.
- */
-function isSkipOrLabelLine(line: string): boolean {
+const MAX_DROPPED_LABEL_VALUE_WORDS = 6;
+const LINK_OR_EMAIL_VALUE = /^(?:https?:\/\/|www\.|[\w.+-]+@[\w-]+\.)/i;
+
+/** A skip link or an accessibility link line (#6201). */
+function isSkipOrAccessibilityLine(line: string): boolean {
   return (
     SKIP_LINK_LINE.test(line) ||
-    (wordCount(line) <= MAX_ACCESSIBILITY_LINE_WORDS && ACCESSIBILITY_LINK_LINE.test(line)) ||
-    CONTACT_OR_LINK_LABEL_LINE.test(line)
+    (wordCount(line) <= MAX_ACCESSIBILITY_LINE_WORDS && ACCESSIBILITY_LINK_LINE.test(line))
   );
 }
 
-function statementTextOfLine(line: string): string {
-  if (wordCount(line) < MIN_LINE_WORDS || isContactLine(line) || isSkipOrLabelLine(line)) {
-    return '';
-  }
+/**
+ * The line without a leading contact or link label such as "Curriculum Vitae:" or "Website:"
+ * (#6201), or nothing when what follows the label is short, a link or an email address. On a
+ * profile those labels sit beside the name and title, and once a recovered biography lifts
+ * the row over the floor they would ride along into the stored text; a template that puts a
+ * label before a blurb keeps the blurb.
+ */
+function withoutContactOrLinkLabel(line: string): string {
+  const label = line.match(CONTACT_OR_LINK_LABEL_LINE);
+  if (!label) return line;
+  const value = line.slice(label[0].length).trim();
+  return wordCount(value) <= MAX_DROPPED_LABEL_VALUE_WORDS || LINK_OR_EMAIL_VALUE.test(value)
+    ? ''
+    : value;
+}
+
+function statementTextOfLine(rawLine: string): string {
+  if (isSkipOrAccessibilityLine(rawLine)) return '';
+  const line = withoutContactOrLinkLabel(rawLine);
+  if (wordCount(line) < MIN_LINE_WORDS || isContactLine(line)) return '';
   return isPageTextCvRecord(line) ? withoutCurriculumVitaeSentences(line) : line;
 }
 
@@ -158,9 +180,9 @@ function headingBlockSummaryText(paragraph: AnyNode): string {
     .map((line) => line.trim())
     .filter(Boolean);
   return lines
-    .filter(
-      (line) => (lines.length === 1 || ENDS_AS_A_SENTENCE.test(line)) && !isSkipOrLabelLine(line),
-    )
+    .filter((line) => !isSkipOrAccessibilityLine(line))
+    .map(withoutContactOrLinkLabel)
+    .filter((line) => line && (lines.length === 1 || ENDS_AS_A_SENTENCE.test(line)))
     .flatMap((line) => splitDescriptionSentences(line))
     .filter(isRecoverableResearchSentence)
     .join(' ');
