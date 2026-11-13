@@ -25,7 +25,7 @@ const KEY = `netid:${NETID}`;
 const LEGACY = 'Fixture Legacy Studies';
 const DIRECTORY = 'Fixture Directory Studies';
 
-describe('a fill-only department replaces a stored one no observation ever stated (#6049)', () => {
+describe('a fill-only department fills only an empty field, never-backed or not (#6049)', () => {
   let replSet: MongoMemoryReplSet;
 
   beforeAll(async () => {
@@ -105,15 +105,31 @@ describe('a fill-only department replaces a stored one no observation ever state
   const departmentOf = async (id: unknown) =>
     (await Researcher.findById(id).lean<any>())?.profile?.primaryDepartment;
 
-  it('lands a fill-only directory department on it, and a second resolve writes nothing', async () => {
+  it('keeps it against a fill-only directory department, and a second resolve writes nothing', async () => {
     const person = await seedPerson();
     await seedKey([reading('primaryDepartment', DIRECTORY, 'yale-directory')]);
 
     await resolve();
-    expect(await departmentOf(person._id)).toBe(DIRECTORY);
+    expect(await departmentOf(person._id)).toBe(LEGACY);
 
     expect((await resolve()).fieldsWritten).toBe(0);
+    expect(await departmentOf(person._id)).toBe(LEGACY);
+  });
+
+  it('lets a fill-only directory department fill the field once it is empty', async () => {
+    const person = await Researcher.create({
+      displayName: 'Fixture Zellner',
+      identifiers: { netid: NETID },
+      profile: {},
+      profileLinks: [],
+      status: 'UNKNOWN',
+      archived: false,
+    });
+    await seedKey([reading('primaryDepartment', DIRECTORY, 'yale-directory')]);
+
+    await resolve();
     expect(await departmentOf(person._id)).toBe(DIRECTORY);
+    expect((await resolve()).fieldsWritten).toBe(0);
   });
 
   it('keeps it when no evidence states a department, and a second resolve writes nothing', async () => {
