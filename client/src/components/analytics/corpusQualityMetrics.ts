@@ -136,7 +136,7 @@ const CORPUS_QUALITY_METRICS: CorpusQualityMetricDefinition[] = [
   {
     metric: 'personTitleFromSiteChromeReading',
     label: 'Person title is a site\u2019s menu or headline text',
-    hint: 'People whose shown title is text a site repeats on many profile pages',
+    hint: 'People whose shown title is text a site repeats on many profile pages; may include a long shared appointment',
     direction: 'lower-is-better',
     fromSnapshot: (row) => row.integrity.personTitleFromSiteChromeReading,
   },

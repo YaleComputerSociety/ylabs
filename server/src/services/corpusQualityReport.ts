@@ -138,6 +138,19 @@ export interface SiteChromePersonTitles {
 const servedTitleKey = (value: unknown): string =>
   normalizedTitleReading(servablePersonTitle(normalizedTitleReading(value)) ?? '');
 
+const NETID_SUBJECT_PREFIX = 'netid:';
+
+const researcherIdForSubject = (
+  subject: string,
+  researcherIdByNetid: ReadonlyMap<string, string>,
+  researcherIds: ReadonlySet<string>,
+): string => {
+  if (subject.startsWith(NETID_SUBJECT_PREFIX)) {
+    return researcherIdByNetid.get(subject.slice(NETID_SUBJECT_PREFIX.length).toLowerCase()) ?? '';
+  }
+  return researcherIds.has(subject) ? subject : '';
+};
+
 export async function readSiteChromePersonTitles(): Promise<SiteChromePersonTitles> {
   const [observations, researchers] = await Promise.all([
     Observation.find(
@@ -145,23 +158,32 @@ export async function readSiteChromePersonTitles(): Promise<SiteChromePersonTitl
       { value: 1, sourceUrl: 1, entityKey: 1, entityId: 1 },
     ).lean(),
     Researcher.find(
-      { archived: { $ne: true }, 'profile.title': { $exists: true, $ne: '' } },
-      { 'profile.title': 1 },
+      { archived: { $ne: true } },
+      { 'profile.title': 1, 'identifiers.netid': 1 },
     ).lean(),
   ]);
-  const readings = siteChromeTitleReadings(
-    (observations as any[]).map((observation) => ({
-      observationId: String(observation._id),
-      subject: String(observation.entityKey ?? observation.entityId ?? ''),
-      value: normalizedTitleReading(observation.value),
-      sourceUrl: typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '',
-    })),
-  );
+  const researcherIds = new Set<string>();
+  const researcherIdByNetid = new Map<string, string>();
   const servedTitleCounts = new Map<string, number>();
   for (const researcher of researchers as any[]) {
+    const id = String(researcher._id);
+    researcherIds.add(id);
+    const netid = normalizedTitleReading(researcher.identifiers?.netid).toLowerCase();
+    if (netid) researcherIdByNetid.set(netid, id);
     const key = servedTitleKey(researcher.profile?.title);
     if (key) servedTitleCounts.set(key, (servedTitleCounts.get(key) || 0) + 1);
   }
+  const readings = siteChromeTitleReadings(
+    (observations as any[]).map((observation) => {
+      const subject = String(observation.entityKey ?? observation.entityId ?? '');
+      return {
+        observationId: String(observation._id),
+        subject: researcherIdForSubject(subject, researcherIdByNetid, researcherIds) || subject,
+        value: normalizedTitleReading(observation.value),
+        sourceUrl: typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '',
+      };
+    }),
+  );
   const hits = readings.map((reading) => {
     const key = servedTitleKey(reading.value);
     return { ...reading, researchersServingIt: key ? servedTitleCounts.get(key) || 0 : 0 };
@@ -177,6 +199,7 @@ export async function readSiteChromePersonTitles(): Promise<SiteChromePersonTitl
 
 export async function readCorpusQualityReport(
   generatedAt = new Date(),
+  siteChromePersonTitles?: SiteChromePersonTitles,
 ): Promise<CorpusQualityReport> {
   const corpus = await readCorpusCoverageCounts();
   const servedRows = await ResearchEntity.find({
@@ -194,6 +217,6 @@ export async function readCorpusQualityReport(
     }
   }
 
-  const personTitles = (await readSiteChromePersonTitles()).counts;
+  const personTitles = (siteChromePersonTitles ?? (await readSiteChromePersonTitles())).counts;
   return buildCorpusQualityReport({ facts, corpus, personTitles, generatedAt });
 }

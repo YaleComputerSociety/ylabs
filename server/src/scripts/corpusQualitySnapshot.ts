@@ -57,7 +57,8 @@ async function main(): Promise<void> {
   assertOperatorEnvironmentMatchesDatabase(environment, databaseName);
 
   console.log(`Measuring ${environment} (${databaseName})`);
-  const report = await readCorpusQualityReport();
+  const siteChromePersonTitles = await readSiteChromePersonTitles();
+  const report = await readCorpusQualityReport(new Date(), siteChromePersonTitles);
 
   console.log(
     `  entities ${report.coverage.entities}, student_ready ${report.coverage.studentReady}`,
@@ -85,7 +86,7 @@ async function main(): Promise<void> {
   console.log(
     `  person title is site chrome ${formatRatio(report.integrity.personTitleFromSiteChromeReading)}`,
   );
-  for (const hit of (await readSiteChromePersonTitles()).hits) {
+  for (const hit of siteChromePersonTitles.hits) {
     console.log(
       `    ${SITE_CHROME_TITLE_LANE} title on ${hit.host}: ${hit.words} words on ${hit.subjects} subjects, served by ${hit.researchersServingIt}, observations ${hit.observationIds.join(' ')}`,
     );

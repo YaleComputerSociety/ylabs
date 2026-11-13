@@ -103,6 +103,20 @@ describe('the site chrome person title tripwire (#6199)', () => {
     expect((await readSiteChromePersonTitles()).hits).toEqual([]);
   });
 
+  it('counts one researcher read under a netid key and a researcher key once', async () => {
+    state.researchers = [
+      { _id: 'synthetic-researcher-1', identifiers: { netid: 'synthetic1' } },
+      { _id: 'synthetic-researcher-2', identifiers: { netid: 'synthetic2' } },
+    ];
+    state.observations = [
+      reading(1, SYNTHETIC_MENU),
+      { ...reading(9, SYNTHETIC_MENU), entityKey: 'synthetic-researcher-1' },
+      reading(2, SYNTHETIC_MENU),
+    ];
+
+    expect((await readSiteChromePersonTitles()).hits).toEqual([]);
+  });
+
   it('records the count as an integrity failure over people with a served title', () => {
     const report = buildCorpusQualityReport({
       facts: [],
