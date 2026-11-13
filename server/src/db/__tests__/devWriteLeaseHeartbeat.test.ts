@@ -17,6 +17,7 @@ import {
   devHostLeaseName,
   ensureDevHostLease,
   recordDevApplyIntent,
+  releaseDevHostLease,
   releaseHeldDevWriteLeases,
   resetDevWriteLeaseStateForTests,
   runDevWriteLeaseHeartbeatTick,
@@ -346,5 +347,73 @@ describe('idle host leases', () => {
       ownerId: 'sweep-owner',
     });
     expect(stops).toEqual([]);
+  });
+});
+
+describe('finished host leases', () => {
+  it('a finished host is released while the others stay held, and taken again on the next fetch', async () => {
+    await holdHosts(['done.example.edu', 'busy.example.edu']);
+    const ownerId = (await lease('host:busy.example.edu'))?.ownerId;
+
+    await releaseDevHostLease('done.example.edu');
+
+    expect(await lease('host:done.example.edu')).toMatchObject({
+      locked: false,
+      releaseReason: 'host-done',
+    });
+    expect(await lease('host:busy.example.edu')).toMatchObject({ locked: true, ownerId });
+    expect(logs.some((line) => line.includes('Released finished Development host lease'))).toBe(
+      true,
+    );
+
+    await ensureDevHostLease('done.example.edu');
+    expect(await lease('host:done.example.edu')).toMatchObject({ locked: true, ownerId });
+  });
+
+  it('a finished host taken by another run is not touched by the end-of-run cleanup', async () => {
+    await holdHosts(['done.example.edu', 'busy.example.edu']);
+    await releaseDevHostLease('done.example.edu');
+    await acquireDevWriteLease(
+      { name: 'host:done.example.edu', command: 'other run' },
+      { db, env: {}, now, newOwnerId: () => 'other-run' },
+    );
+
+    await releaseHeldDevWriteLeases();
+
+    expect(await lease('host:busy.example.edu')).toMatchObject({ locked: false });
+    expect(await lease('host:done.example.edu')).toMatchObject({
+      locked: true,
+      ownerId: 'other-run',
+    });
+  });
+
+  it('a child never releases the host lease it joined from its parent', async () => {
+    await acquireDevWriteLease(
+      { name: 'host:parent.example.edu', command: 'sweep' },
+      { db, env: {}, now, newOwnerId: () => 'sweep-owner' },
+    );
+    process.env[DEV_WRITE_LEASE_OWNER_ENV] = 'sweep-owner';
+    await holdHosts(['parent.example.edu']);
+
+    await releaseDevHostLease('parent.example.edu');
+
+    expect(await lease('host:parent.example.edu')).toMatchObject({
+      locked: true,
+      ownerId: 'sweep-owner',
+    });
+  });
+
+  it('does nothing for an unarmed run', async () => {
+    await acquireDevWriteLease(
+      { name: 'host:elsewhere.example.edu', command: 'other run' },
+      { db, env: {}, now, newOwnerId: () => 'other-run' },
+    );
+
+    await releaseDevHostLease('elsewhere.example.edu');
+
+    expect(await lease('host:elsewhere.example.edu')).toMatchObject({
+      locked: true,
+      ownerId: 'other-run',
+    });
   });
 });

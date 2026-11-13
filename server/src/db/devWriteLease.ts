@@ -150,6 +150,8 @@ export interface DevWriteLeaseRecord {
   leaseExpiresAt?: Date;
   progressAt?: Date;
   progressCount?: number;
+  releasedAt?: Date;
+  releaseReason?: 'success' | 'stopped' | HostLeaseReleaseReason;
 }
 
 export class DevWriteLeaseHeldError extends Error {
@@ -754,6 +756,45 @@ function groupByOwner(states: HeldLeaseState[]) {
   );
 }
 
+type HostLeaseReleaseReason = 'idle' | 'host-done';
+
+function releaseHostLeaseStates(
+  states: HeldLeaseState[],
+  at: Date,
+  reason: HostLeaseReleaseReason,
+): Promise<void> {
+  for (const state of states) heldLeases.delete(state.lease.name);
+  const described = reason === 'idle' ? 'idle' : 'finished';
+  return Promise.all(
+    groupByOwner(states).map(({ db, ownerId, members }) => {
+      const names = members.map(({ lease }) => lease.name);
+      const release = withinTimeout(
+        devWriteLeaseCollection(db).updateMany(
+          { _id: { $in: names.map(leaseId) }, ownerId, locked: true },
+          {
+            $set: { locked: false, releasedAt: at, releaseReason: reason },
+            $unset: { ownerId: '', leaseExpiresAt: '' },
+          },
+          boundedOptions(runtime.heartbeatTimeoutMs),
+        ),
+        runtime.heartbeatTimeoutMs,
+      ).then(
+        () => runtime.log(`Released ${described} Development host lease ${quoted(names)}.`),
+        (error) =>
+          runtime.log(
+            `Could not release ${described} Development host lease ${quoted(names)} (${(error as Error)?.message ?? error}); it expires on its own.`,
+          ),
+      );
+      for (const name of names) pendingIdleReleases.set(name, release);
+      return release.finally(() => {
+        for (const name of names) {
+          if (pendingIdleReleases.get(name) === release) pendingIdleReleases.delete(name);
+        }
+      });
+    }),
+  ).then(() => undefined);
+}
+
 /**
  * A host lease this process took under its own owner id and has not fetched through for
  * `DEV_HOST_LEASE_IDLE_RELEASE_MS` is released, and taken again on the next fetch. The apply lease
@@ -765,35 +806,7 @@ async function releaseIdleHostLeases(at: Date) {
       state.idleReleasable &&
       at.getTime() - state.lastUsedAt.getTime() >= DEV_HOST_LEASE_IDLE_RELEASE_MS,
   );
-  for (const state of idle) heldLeases.delete(state.lease.name);
-  await Promise.all(
-    groupByOwner(idle).map(({ db, ownerId, members }) => {
-      const names = members.map(({ lease }) => lease.name);
-      const release = withinTimeout(
-        devWriteLeaseCollection(db).updateMany(
-          { _id: { $in: names.map(leaseId) }, ownerId, locked: true },
-          {
-            $set: { locked: false, releasedAt: at, releaseReason: 'idle' },
-            $unset: { ownerId: '', leaseExpiresAt: '' },
-          },
-          boundedOptions(runtime.heartbeatTimeoutMs),
-        ),
-        runtime.heartbeatTimeoutMs,
-      ).then(
-        () => runtime.log(`Released idle Development host lease ${quoted(names)}.`),
-        (error) =>
-          runtime.log(
-            `Could not release idle Development host lease ${quoted(names)} (${(error as Error)?.message ?? error}); it expires on its own.`,
-          ),
-      );
-      for (const name of names) pendingIdleReleases.set(name, release);
-      return release.finally(() => {
-        for (const name of names) {
-          if (pendingIdleReleases.get(name) === release) pendingIdleReleases.delete(name);
-        }
-      });
-    }),
-  );
+  await releaseHostLeaseStates(idle, at, 'idle');
 }
 
 async function renewHeldLeases(at: Date) {
@@ -1031,6 +1044,20 @@ export function armDevHostLeases(
   if (resolveDevWriteLeaseTarget(connection).kind !== 'development') return;
   assertDevWriteOwnerLabel(command, env);
   armedHostLeaseConnection = { connection, command };
+}
+
+/**
+ * A lane that knows it has finished every row on a host calls this to hand the host back before the
+ * run ends. It releases only a host lease this process took under its own owner id, the same set
+ * the idle release may end; a later fetch to the host takes it again through the normal acquire.
+ */
+export async function releaseDevHostLease(host: string): Promise<void> {
+  if (!armedHostLeaseConnection || !host || stopped) return;
+  const name = devHostLeaseName(host);
+  await pendingHostLeases.get(name)?.catch(() => undefined);
+  const state = heldLeases.get(name);
+  if (!state?.idleReleasable) return;
+  await releaseHostLeaseStates([state], runtime.now(), 'host-done');
 }
 
 export function holdsDevApplyLease(): boolean {
