@@ -35,6 +35,7 @@ import {
   storedSourceLinkHealthByUrl,
   isStoredUnresolvableVerdict,
   tallySourceLinkVerdictTransition,
+  type SourceLinkVerdictTransitionSample,
   type StoredSourceLinkHealthEntry,
   needsRecheckSince,
   needsSourceLinkHealthRefresh,
@@ -199,6 +200,8 @@ export interface SourceLinkHealthBackfillResult {
   clearedTlsFlags: number;
   /** Websites of `student_ready` rows that stop being followable (gone, or a certificate failure). */
   servedWebsitesLost: number;
+  /** Each lost or certificate-cleared verdict, for a gate to re-check by hand. */
+  lostVerdictSamples: SourceLinkVerdictTransitionSample[];
   indexSyncFailures: number;
   indexSyncDeferred: number;
   /** What the resolver breaker did: control checks run, trips it avoided, trips. */
@@ -427,6 +430,7 @@ export async function runSourceLinkHealthBackfill(options: {
     verdictTransitions: {},
     clearedTlsFlags: 0,
     servedWebsitesLost: 0,
+    lostVerdictSamples: [],
     indexSyncFailures: 0,
     indexSyncDeferred: 0,
     resolver: resolverBreaker.stats,
@@ -632,6 +636,7 @@ export async function runSourceLinkHealthBackfill(options: {
             resolved.entry,
             entity.studentVisibilityTier === 'student_ready' &&
               (url === entity.websiteUrl || url === entity.website),
+            String(entity.slug ?? ''),
           );
           // Tally what is STORED, not what the probe returned, or the report claims
           // to have written verdicts the run deliberately declined to write (#2762).

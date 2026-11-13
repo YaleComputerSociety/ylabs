@@ -440,7 +440,12 @@ describe('resolveSourceLinkHealthEntry on a probe that never reached the host', 
 });
 
 describe('tallySourceLinkVerdictTransition', () => {
-  const emptyTally = () => ({ verdictTransitions: {}, clearedTlsFlags: 0, servedWebsitesLost: 0 });
+  const emptyTally = () => ({
+    verdictTransitions: {},
+    clearedTlsFlags: 0,
+    servedWebsitesLost: 0,
+    lostVerdictSamples: [] as Array<Record<string, unknown>>,
+  });
 
   it('ignores a renewed checkedAt on an unchanged verdict', () => {
     const tally = emptyTally();
@@ -465,6 +470,9 @@ describe('tallySourceLinkVerdictTransition', () => {
       verdictTransitions: { 'UNKNOWN+TLS->UNKNOWN': 1 },
       clearedTlsFlags: 1,
       servedWebsitesLost: 0,
+      lostVerdictSamples: [
+        { slug: '', url: URL_A, transition: 'UNKNOWN+TLS->UNKNOWN', servedWebsite: false },
+      ],
     });
   });
 
@@ -476,6 +484,19 @@ describe('tallySourceLinkVerdictTransition', () => {
     tallySourceLinkVerdictTransition(tally, before, after, false);
     expect(tally.servedWebsitesLost).toBe(1);
     expect(tally.verdictTransitions).toEqual({ 'HEALTHY->UNAVAILABLE': 2 });
+    expect(tally.lostVerdictSamples.map((sample) => sample.servedWebsite)).toEqual([true, false]);
+  });
+
+  it('does not list a first probe of an unprobed URL', () => {
+    const tally = emptyTally();
+    tallySourceLinkVerdictTransition(
+      tally,
+      undefined,
+      { url: URL_A, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+      true,
+    );
+    expect(tally.lostVerdictSamples).toEqual([]);
+    expect(tally.verdictTransitions).toEqual({ 'NONE->UNAVAILABLE': 1 });
   });
 
   it('labels a never-probed URL as NONE', () => {

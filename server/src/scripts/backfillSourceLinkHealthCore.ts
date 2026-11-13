@@ -511,11 +511,27 @@ export function sourceLinkVerdictSignature(entry: StoredSourceLinkHealthEntry | 
 
 const VERDICTS_A_STUDENT_CAN_FOLLOW = new Set(['HEALTHY', 'REDIRECTED']);
 
+export interface SourceLinkVerdictTransitionSample {
+  slug: string;
+  url: string;
+  transition: string;
+  servedWebsite: boolean;
+  httpStatusCode?: number;
+}
+
 export interface SourceLinkVerdictTransitionTally {
   verdictTransitions: Record<string, number>;
   clearedTlsFlags: number;
   servedWebsitesLost: number;
+  /**
+   * Every transition away from a verdict a student could follow, or that clears a
+   * certificate flag, so a gate can re-check each one by hand. A first probe of an
+   * unprobed URL is not listed.
+   */
+  lostVerdictSamples: SourceLinkVerdictTransitionSample[];
 }
+
+const MAX_LOST_VERDICT_SAMPLES = 200;
 
 /**
  * Counts what one URL's stored verdict becomes. A changed `checkedAt` alone is not a
@@ -528,6 +544,7 @@ export function tallySourceLinkVerdictTransition(
   before: StoredSourceLinkHealthEntry | undefined,
   after: StoredSourceLinkHealthEntry,
   servedWebsite: boolean,
+  slug = '',
 ): void {
   const from = sourceLinkVerdictSignature(before);
   const to = sourceLinkVerdictSignature(after);
@@ -542,4 +559,17 @@ export function tallySourceLinkVerdictTransition(
   const followableAfter =
     VERDICTS_A_STUDENT_CAN_FOLLOW.has(after.healthStatus) && !after.tlsVerificationFailed;
   if (servedWebsite && followableBefore && !followableAfter) tally.servedWebsitesLost += 1;
+  const clearsTls = !!before?.tlsVerificationFailed && !after.tlsVerificationFailed;
+  if (
+    ((followableBefore && !followableAfter) || clearsTls) &&
+    tally.lostVerdictSamples.length < MAX_LOST_VERDICT_SAMPLES
+  ) {
+    tally.lostVerdictSamples.push({
+      slug,
+      url: after.url,
+      transition: key,
+      servedWebsite,
+      ...(typeof after.httpStatusCode === 'number' ? { httpStatusCode: after.httpStatusCode } : {}),
+    });
+  }
 }
