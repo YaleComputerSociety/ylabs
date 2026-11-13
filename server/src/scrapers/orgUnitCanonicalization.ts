@@ -559,6 +559,29 @@ export function schoolNameFromProfileHosts(urls: string[]): string | null {
 }
 
 /**
+ * The URLs whose hosts the canonicalization may read a school from: the row's research
+ * website and its cited sources, each taken from the pending `$set` when this pass writes
+ * it and from the stored row otherwise.
+ */
+export function researchEntityOrgUnitProfileUrls(
+  set: Record<string, unknown>,
+  stored?: Record<string, unknown> | null,
+): string[] {
+  const websiteUrl =
+    typeof set.websiteUrl === 'string' && set.websiteUrl
+      ? [set.websiteUrl]
+      : typeof stored?.websiteUrl === 'string' && stored.websiteUrl
+        ? [stored.websiteUrl]
+        : [];
+  const sourceUrls = Array.isArray(set.sourceUrls)
+    ? set.sourceUrls
+    : Array.isArray(stored?.sourceUrls)
+      ? stored.sourceUrls
+      : [];
+  return [...websiteUrl, ...sourceUrls].filter((url): url is string => typeof url === 'string');
+}
+
+/**
  * A research entity carries a school but no department that is meaningfully
  * below the school level: either `departments` is empty, or every department
  * value is just one of the entity's own school names (the #1316/#1335 graceful-

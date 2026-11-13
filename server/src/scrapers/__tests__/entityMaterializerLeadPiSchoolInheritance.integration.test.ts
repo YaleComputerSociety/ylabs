@@ -24,6 +24,7 @@ import { RoleAssignment } from '../../models/roleAssignment';
 import { Source } from '../../models/source';
 import { LEAD_PI_SCHOOL_INHERITANCE_SOURCE, inheritSchoolFromLeadPi } from '../entityMaterializer';
 import { resetOrgUnitCanonicalizerCache } from '../orgUnitCanonicalization';
+import { planFieldValueRefusal } from '../../utils/researchEntityFieldValueRefusals';
 
 describe('inheritSchoolFromLeadPi (#2158)', () => {
   let replSet: MongoMemoryReplSet;
@@ -279,5 +280,26 @@ describe('inheritSchoolFromLeadPi (#2158)', () => {
     expect(result).toEqual({ inherited: false, skipped: 'locked' });
     const after = await persisted(entity._id);
     expect(after.school ?? '').toBe('');
+  });
+
+  it('does not inherit a school the row refuses, so a refusal survives the next materialize (#6155)', async () => {
+    const refusal = planFieldValueRefusal(undefined, {
+      field: 'school',
+      value: 'School of Medicine',
+      rule: 'operator_judgement',
+      refusedBy: 'synthetic reviewer',
+      note: 'synthetic refusal',
+    });
+    const entity = await seedShell({
+      fieldValueRefusals: { school: refusal['fieldValueRefusals.school'] },
+    });
+    await seedLead(entity._id, 'Dept. of Genetics');
+
+    const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+    expect(result).toMatchObject({ inherited: false, skipped: 'no-school-derivable' });
+    const after = await persisted(entity._id);
+    expect(after.school ?? '').toBe('');
+    expect(after.schools ?? []).not.toContain('School of Medicine');
   });
 });

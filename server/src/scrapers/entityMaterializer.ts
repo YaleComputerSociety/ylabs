@@ -550,7 +550,9 @@ import { archiveResearchEntities } from '../services/archivedResearchEntityRoleE
 import {
   applyResearchEntityOrgUnitCanonicalization,
   getOrgUnitCanonicalizer,
+  researchEntityOrgUnitProfileUrls,
 } from './orgUnitCanonicalization';
+import { withoutRefusedSchools } from './refusedSchools';
 import {
   applyResearchEntityResearchAreaCanonicalization,
   getResearchAreaCanonicalizer,
@@ -5529,7 +5531,7 @@ export async function inheritSchoolFromLeadPi(
       ? routedInheritanceRow.value
       : await ResearchEntity.findById(researchEntityId)
           .select(
-            'school departments schools kind entityType fieldProvenance.school fieldProvenance.departments',
+            'school departments schools kind entityType fieldProvenance.school fieldProvenance.departments fieldValueRefusals',
           )
           .lean()
   ) as {
@@ -5538,6 +5540,7 @@ export async function inheritSchoolFromLeadPi(
     schools?: unknown;
     kind?: unknown;
     fieldProvenance?: unknown;
+    fieldValueRefusals?: unknown;
   } | null;
   if (!entity) return { inherited: false };
   const gate = leadPiSchoolInheritanceGate({
@@ -5591,6 +5594,7 @@ export async function inheritSchoolFromLeadPi(
     ...(writesDepartments ? { departments: [canonicalDepartment] } : {}),
   };
   await applyResearchEntityOrgUnitCanonicalization(set, entity);
+  withoutRefusedSchools(set, entity.fieldValueRefusals);
   if (!writesSchool) {
     // Canonicalization derives a parent school from the department it just set, so
     // it would rewrite the school this row already holds to the lead's own school -
@@ -13050,18 +13054,7 @@ export async function projectFromLog(
     }
   }
   if (isResearchEntityObservationType(entityType)) {
-    const orgUnitProfileUrls = [
-      ...(typeof set.websiteUrl === 'string' && set.websiteUrl
-        ? [set.websiteUrl]
-        : typeof entityDoc?.websiteUrl === 'string' && entityDoc.websiteUrl
-          ? [entityDoc.websiteUrl]
-          : []),
-      ...(Array.isArray(set.sourceUrls)
-        ? set.sourceUrls
-        : Array.isArray(entityDoc?.sourceUrls)
-          ? entityDoc.sourceUrls
-          : []),
-    ].filter((url): url is string => typeof url === 'string');
+    const orgUnitProfileUrls = researchEntityOrgUnitProfileUrls(set, entityDoc);
     const canonicalizeResearchAreas =
       input.applyResearchEntityResearchAreaCanonicalization ??
       applyResearchEntityResearchAreaCanonicalization;
@@ -13073,6 +13066,7 @@ export async function projectFromLog(
     await (
       input.applyResearchEntityOrgUnitCanonicalization ?? applyResearchEntityOrgUnitCanonicalization
     )(set, entityDoc, orgUnitProfileUrls);
+    withoutRefusedSchools(set, entityDoc?.fieldValueRefusals);
     await canonicalizeResearchAreas(set, set.departments ?? entityDoc?.departments);
     const observedResearchAreasWhollyRejected =
       hasNonEmptyStringArray(observedResearchAreas) && isEmptyArray(set.researchAreas);

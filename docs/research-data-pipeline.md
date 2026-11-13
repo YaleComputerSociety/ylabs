@@ -1404,6 +1404,14 @@ A refusal that reaches one derivation path and not the other reaches neither.
 
 Clearing the stored value belongs to the operation, not to materialization, because a materializer that unsets a served field on a sweep is how a value disappears without a visibility re-gate.
 `yarn --cwd server research-entity:refuse-field-value` is per-row by construction, dry-run by default, clears the stored value only when it is the value being refused, and re-gates the row in that case.
+A refused member of the org-unit closure in `MATERIALIZER_DERIVED_FIELD_GROUPS` (`school`, `schools`, `departments`, `orgAffiliationLabels`) also re-derives the rest of that closure in the same write, through `planOrgUnitBackfillRow` over the row as it stands after the clear, so a refused `school` does not stay served through `schools[0]` (#6155).
+A refused school is removed from the whole closure whichever route derived it, a department's parent school, a profile host or a lead's appointment, and a locked sibling is left as stored.
+If the evidence really supports the school, the refusal is wrong and is withdrawn through `--withdraw`; a derivation never overrides it.
+The same test, `withoutRefusedSchools` in `server/src/scrapers/refusedSchools.ts`, runs after every org-unit canonicalization the materializer, the lead-school inheritance, `research-homes:backfill-org-units`, `research-homes:backfill-school-from-profile-host` and `research-homes:backfill-school-host-mismatch` perform, so the next pass does not re-add the school either.
+A stored `school` that is refused, for example through a refused `schools` entry, is cleared by `research-homes:backfill-org-units` and by the refusal's own re-derive rather than kept.
+Re-recording a refusal made before #6155 is idempotent for the record and re-derives the closure, which is the repair for rows that already carry one.
+A write that changes any closure member re-gates the row, even when the refused field itself was already clear.
+The grant and Yale-status closures derive from observations and researcher rows rather than stored fields, and `kind` maps `entityType` into another vocabulary, so the dry run reports those closures as `no-stored-state-derivation` and writes only the clear.
 `--withdraw` retires a refusal, because a rule can change and a judgement can be wrong.
 
 This is also layer 3's only writer, and `--rule=operator_judgement` is the one rule that demands both halves of its record: a `--note` saying why and a `--decided-by` saying whose.

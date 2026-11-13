@@ -4,6 +4,7 @@ import {
   setOrgUnitCanonicalizerForTesting,
   withAffiliationLabel,
 } from '../scrapers/orgUnitCanonicalization';
+import { withoutRefusedSchools } from '../scrapers/refusedSchools';
 
 export interface OrgUnitBackfillEntity {
   id: string;
@@ -13,6 +14,7 @@ export interface OrgUnitBackfillEntity {
   departments?: unknown;
   schools?: unknown;
   orgAffiliationLabels?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 export interface OrgUnitBackfillPlanRow {
@@ -49,6 +51,7 @@ const sameStringArray = (left: string[], right: string[]): boolean =>
 
 export async function planOrgUnitBackfillRow(
   entity: OrgUnitBackfillEntity,
+  profileUrls: string[] = [],
 ): Promise<OrgUnitBackfillPlanRow> {
   const hasSchool = Object.prototype.hasOwnProperty.call(entity, 'school');
   const hasDepartments = Object.prototype.hasOwnProperty.call(entity, 'departments');
@@ -56,10 +59,13 @@ export async function planOrgUnitBackfillRow(
   if (hasSchool) set.school = entity.school;
   if (hasDepartments) set.departments = entity.departments;
 
-  const canonicalization = await applyResearchEntityOrgUnitCanonicalization(set, {
-    school: entity.school,
-    departments: entity.departments,
-  });
+  const canonicalization = await applyResearchEntityOrgUnitCanonicalization(
+    set,
+    { school: entity.school, departments: entity.departments },
+    profileUrls,
+  );
+  withoutRefusedSchools(set, entity.fieldValueRefusals);
+  if (hasSchool && !('school' in set)) set.school = entity.school ? '' : entity.school;
 
   const beforeDepartments = asStringArray(entity.departments);
   const afterDepartments = asStringArray(set.departments);
