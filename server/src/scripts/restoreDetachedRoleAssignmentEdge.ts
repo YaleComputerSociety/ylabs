@@ -255,6 +255,9 @@ export async function restoreDetachedRoleAssignmentEdge(
           ...(edge.operatorEnd.previousEndedAt
             ? { endedAt: edge.operatorEnd.previousEndedAt }
             : {}),
+          ...(edge.operatorEnd.firstObservedAt && !edge.startedAt
+            ? { startedAt: edge.operatorEnd.firstObservedAt }
+            : {}),
         },
         $unset: {
           operatorEnd: '',

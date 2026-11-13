@@ -11,7 +11,9 @@
  * `--end-as-historical` records the other operator verdict: the person really held the role and
  * no longer does. It ends the edge as `HISTORICAL` at the required `--ended-at` date, citing the
  * page that says so (`--citation`), and writes an operator end record the evidence writers
- * honour, so a lane that still lists the person cannot revive it (#5979).
+ * honour, so a lane that still lists the person cannot revive it (#5979). A role edge's
+ * `startedAt` is only when a lane first saw it, so the end may precede it: the record keeps it as
+ * `firstObservedAt`, and the edge drops it rather than serve an end before its start.
  *
  *   yarn --cwd server role-assignments:detach-edge --edge=<id> --end-as-historical \
  *     --ended-at=2025-12-31 --citation=<page url> --note='<why>' --decided-by=owner|agent \
@@ -135,7 +137,6 @@ export interface DetachRoleAssignmentEdgeResult {
   targetKind?: string;
   detached: boolean;
   endedAsHistorical?: boolean;
-  refusal?: 'ended-before-started';
   regatedRow: boolean;
 }
 
@@ -159,13 +160,6 @@ export async function detachRoleAssignmentEdge(
     state: edge.state,
     targetKind: edge.target?.kind,
   };
-  if (
-    args.endAsHistorical &&
-    edge.startedAt &&
-    new Date(edge.startedAt) > args.endAsHistorical.endedAt
-  ) {
-    return { ...shape, detached: false, refusal: 'ended-before-started', regatedRow: false };
-  }
   if (!args.apply || !live) return { ...shape, detached: false, regatedRow: false };
   if (args.snapshot) {
     fs.mkdirSync(path.dirname(args.snapshot), { recursive: true });
@@ -174,6 +168,9 @@ export async function detachRoleAssignmentEdge(
     });
   }
   if (args.endAsHistorical) {
+    const firstObservedAfterEnd = Boolean(
+      edge.startedAt && new Date(edge.startedAt) > args.endAsHistorical.endedAt,
+    );
     const ended = await RoleAssignment.updateOne(
       { _id, ...LIVE_ROLE_EDGE_FILTER, 'operatorEnd.endedAt': { $exists: false } },
       {
@@ -187,6 +184,7 @@ export async function detachRoleAssignmentEdge(
             : {}),
           operatorEnd: {
             endedAt: args.endAsHistorical.endedAt,
+            ...(edge.startedAt ? { firstObservedAt: edge.startedAt } : {}),
             reason: args.note,
             citationUrl: args.endAsHistorical.citationUrl,
             decidedBy: args.decidedBy ?? 'owner',
@@ -196,6 +194,7 @@ export async function detachRoleAssignmentEdge(
             ...(edge.endedAt ? { previousEndedAt: edge.endedAt } : {}),
           },
         },
+        ...(firstObservedAfterEnd ? { $unset: { startedAt: '' } } : {}),
       },
     );
     const endedAsHistorical = (ended.modifiedCount ?? 0) === 1;

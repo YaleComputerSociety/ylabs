@@ -137,7 +137,11 @@ describe('canonical MongoDB validator registry', () => {
     // gate covers: no environment applies these validators (#752 declined), so a review
     // here approves what would be applied and asserts nothing about stored data (#3396).
     //
-    // Reviewed for #5979. The only drift is role_assignments gaining operatorEnd, an optional
+    // Reviewed for the #5979 follow-up. The only drift is operatorEnd gaining firstObservedAt,
+    // an optional date: the edge's first-observed startedAt, kept when an operator ends the edge
+    // before it, and put back by restore-detached-edge. No other collection or property changed.
+    //
+    // Reviewed for #5979 before that. The only drift is role_assignments gaining operatorEnd, an optional
     // object of endedAt, reason, citationUrl, decidedBy ('owner' or 'agent'), recordedBy,
     // recordedAt, previousState and previousEndedAt, which detach-edge --end-as-historical
     // writes and restore-detached-edge clears, and which the canonical membership writer and
@@ -269,6 +273,6 @@ describe('canonical MongoDB validator registry', () => {
     expect(
       canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
       'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
-    ).toBe('b456c778bf1d77608f65f60a9e6e3ab37a14de87040cf0d77165a15c6145f175');
+    ).toBe('ebcb1d88f762db74d5c5e1d59f33c88da2246c33fe792e2b808898cdb5e4d6da');
   });
 });
