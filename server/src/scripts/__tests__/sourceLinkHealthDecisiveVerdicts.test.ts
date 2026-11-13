@@ -6,6 +6,7 @@ import {
   sourceLinkVerdictSignature,
   storedSourceLinkHealthByUrl,
   tallySourceLinkVerdictTransition,
+  type SourceLinkVerdictTransitionTally,
 } from '../backfillSourceLinkHealthCore';
 
 const URL_A = 'https://ysph.yale.edu/a/b/';
@@ -417,7 +418,7 @@ describe('resolveSourceLinkHealthEntry on a probe that never reached the host', 
     });
   });
 
-  it('still records a confirmed DNS or connection negative as gone', () => {
+  it('still records a probe classified as a dead link (a confirmed DNS negative) as gone', () => {
     const resolved = resolveSourceLinkHealthEntry(
       URL_A,
       { healthStatus: 'UNAVAILABLE' },
@@ -440,11 +441,11 @@ describe('resolveSourceLinkHealthEntry on a probe that never reached the host', 
 });
 
 describe('tallySourceLinkVerdictTransition', () => {
-  const emptyTally = () => ({
+  const emptyTally = (): SourceLinkVerdictTransitionTally => ({
     verdictTransitions: {},
     clearedTlsFlags: 0,
     servedWebsitesLost: 0,
-    lostVerdictSamples: [] as Array<Record<string, unknown>>,
+    lostVerdictSamples: [],
   });
 
   it('ignores a renewed checkedAt on an unchanged verdict', () => {
