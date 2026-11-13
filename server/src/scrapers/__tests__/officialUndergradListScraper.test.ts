@@ -277,17 +277,33 @@ describe('OfficialUndergradListScraper', () => {
     expect(read.listings.map((listing) => listing.year)).toEqual([2026, 2026]);
   });
 
-  it('drops a CS archive listing dated after the next academic year ends (#5905)', async () => {
-    const archive = UNDERGRAD_LIST_SOURCE_CONFIGS.find(
-      (config) => config.source === 'cs-directed-research',
-    )!;
-    const index = '<a href="25-26b/index.html">Spring 2026</a>';
-    const term =
-      '<h2>Projects: Spring 2096</h2><ul><li>Student, <i>Title</i>, Adviser: Avery Synthetic.</li></ul>';
+  it('drops a listing from any source dated after the next academic year ends (#5905)', async () => {
+    const { emitted, result } = await run({
+      reads: {
+        'cs-directed-research': {
+          complete: true,
+          listings: [
+            listing('cs-directed-research', 'Avery Synthetic', 2096),
+            listing('cs-directed-research', 'Avery Synthetic', 2027),
+          ],
+        },
+        'tobin-research-assistantships': {
+          complete: true,
+          listings: [listing('tobin-research-assistantships', 'Avery Synthetic', 2028)],
+        },
+      },
+      resolve: resolveBy({ 'Avery Synthetic': 'synthetic-lab' }),
+    });
 
-    const read = await archive.read(async (url) => (url.endsWith('/cs290/') ? index : term), NOW);
-
-    expect(read).toEqual({ complete: true, listings: [] });
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        entityKey: 'synthetic-lab',
+        value: [
+          expect.objectContaining({ source: 'cs-directed-research', count: 1, latestYear: 2027 }),
+        ],
+      }),
+    ]);
+    expect((result.metrics as any).perSource['tobin-research-assistantships'].listings).toBe(0);
   });
 
   it('reads every semester of the Tobin board, and is incomplete when the board is unreadable', async () => {

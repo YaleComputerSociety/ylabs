@@ -136,8 +136,7 @@ export const csArchiveTermAcademicYearEnd = (termUrl: string, now: Date): number
 };
 
 const withinLookback = (year: number | undefined, now: Date) =>
-  year === undefined ||
-  (year >= now.getUTCFullYear() - LIST_LOOKBACK_YEARS && !isAfterLatestAcademicYearEnd(year, now));
+  year === undefined || year >= now.getUTCFullYear() - LIST_LOOKBACK_YEARS;
 
 const csArchive =
   (source: UndergradListSource, indexUrl: string): MentorSourceConfig['read'] =>
@@ -155,11 +154,7 @@ const csArchive =
         complete = false;
         continue;
       }
-      listings.push(
-        ...csArchiveTermListings(html, term, source).filter(
-          (listing) => !isAfterLatestAcademicYearEnd(listing.year, now),
-        ),
-      );
+      listings.push(...csArchiveTermListings(html, term, source));
     }
     return { listings, complete };
   };
@@ -606,8 +601,11 @@ export async function planMentorMatches(input: {
     }
     if (read.complete) completeSources.add(config.source);
     else partialFailures.push(`${config.source}: not every page could be read`);
-    stats.listings = read.listings.length;
-    for (const raw of read.listings) {
+    const listings = read.listings.filter(
+      (listing) => !isAfterLatestAcademicYearEnd(listing.year, input.now),
+    );
+    stats.listings = listings.length;
+    for (const raw of listings) {
       const listing =
         config.departmentScope && !raw.department
           ? { ...raw, departmentScope: config.departmentScope }
