@@ -182,6 +182,26 @@ describe("materializeEntity names a person's row after its lead once every graft
     expect(stored.entityType).toBeUndefined();
   });
 
+  it('leaves the type alone when the faculty research type is refused too', async () => {
+    const entity = await seedFullyRefusedRow({
+      fieldValueRefusals: {
+        name: [wrongOwnerRefusal('name', COLLEAGUE_LAB_NAME)],
+        displayName: [wrongOwnerRefusal('displayName', COLLEAGUE_LAB_NAME)],
+        entityType: [
+          wrongOwnerRefusal('entityType', 'LAB'),
+          wrongOwnerRefusal('entityType', 'FACULTY_RESEARCH_AREA'),
+        ],
+      },
+    });
+    await seedLead(entity._id);
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const stored = await persisted();
+    expect(stored.name).toBeUndefined();
+    expect(stored.entityType).toBeUndefined();
+  });
+
   it('writes nothing on a second resolve', async () => {
     const entity = await seedFullyRefusedRow();
     await seedLead(entity._id);
