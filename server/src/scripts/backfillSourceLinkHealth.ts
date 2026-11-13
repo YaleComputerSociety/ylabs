@@ -57,6 +57,26 @@ export interface SourceLinkHealthBackfillOptions {
   output?: string;
 }
 
+/**
+ * What the run prints. Both sample lists pair a row slug with a judgement about its
+ * links, and stdout is routinely pasted into logs and reports, so they appear here as
+ * counts only; the full lists go to the local `--output` file.
+ */
+export function sourceLinkHealthBackfillStdoutSummary(result: SourceLinkHealthBackfillResult): Omit<
+  SourceLinkHealthBackfillResult,
+  'samples' | 'lostVerdictSamples'
+> & {
+  sampleCount: number;
+  lostVerdictSampleCount: number;
+} {
+  const { samples, lostVerdictSamples, ...counts } = result;
+  return {
+    ...counts,
+    sampleCount: samples.length,
+    lostVerdictSampleCount: lostVerdictSamples.length,
+  };
+}
+
 export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHealthBackfillOptions {
   const options: SourceLinkHealthBackfillOptions = {
     dryRun: true,
@@ -716,7 +736,7 @@ async function main(): Promise<void> {
       fs.writeFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
       console.log(`Saved source-link-health backfill report to ${safeOutput}`);
     }
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(sourceLinkHealthBackfillStdoutSummary(result), null, 2));
     console.log(describeResolverBreakerStats(result.resolver));
     if (result.indexSyncDeferred > 0) {
       console.log(
