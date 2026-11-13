@@ -1,4 +1,8 @@
 import { spawn, spawnSync } from 'child_process';
+import {
+  probeSplitHorizonNetwork,
+  splitHorizonNetworkWarning,
+} from '../scrapers/utils/splitHorizonRefusals';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -2497,6 +2501,8 @@ export async function runScraperSweep(
   );
 
   if (isSweepPreflightEnabled(options)) {
+    const splitHorizonNetwork = splitHorizonNetworkWarning(await probeSplitHorizonNetwork());
+    if (splitHorizonNetwork) console.warn(`WARNING: ${splitHorizonNetwork}`);
     const pendingSources = sweepSources
       .map((source) => source.name)
       .filter((name) => !store.isDone(sourceStepId(name)));
