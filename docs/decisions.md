@@ -7,12 +7,23 @@ Track tactical work in GitHub issues and keep transient artifacts outside `docs/
 
 ## 2026-11-13: A Person's Own Profile Outranks A Roster From Another School's Site On `school` (#6157)
 
-Decision (manager, 2026-11-13, posted on #6157): pre-promotion, in the engine's school resolution, not in a lane.
+Decision (manager, 2026-11-13, posted on #6157, revised the same day to option D): pre-promotion, in the engine's school resolution, not in a lane.
 A department roster states the school of the roster's own unit, so a person listed on another school's department page read as that school; a blind check of 20 served rows whose roster site and own profile site name different schools graded 13 wrong.
 Where the lead's own official profile sits on a school's site, a `school` reading from a different school's site does not override it unless the own profile names that school too, and the profile host's school is a derived candidate (`own-profile-host-school`) re-derived on every resolve.
-The roster's school is kept as a secondary in `schools`, because graders found the own profile's school primary on 16 of 20 changed rows while 13 of those also held the roster's school; replacing it outright failed the bar (14 of 20 losing a correct school).
-A host that serves a profile for every secondary appointee is not primary-school evidence: the School of Medicine's site publishes one for anyone holding any YSM appointment, with Primary or Secondary on the appointment cards (#5800).
-Judged out of sample on 8 changed rows the first sample had not seen: 7 kept the right primary with no correct school lost, 1 failed, and 1 kept a wrong secondary.
+The own profile is picked behind the same namesake and retired-page guards the `sourceUrls` projection applies, so a namesake's profile never stands in as the lead's.
+
+The rule as first posted kept a roster school only if the own profile also named it.
+That failed its blind check: on a seeded 20 of the 31 changed rows, 14 were graded wrong, and 13 of those 14 were joint appointments that lost a correct second school, while the primary school was right on 16 of 20.
+The manager then chose option D:
+- The own-profile school becomes the primary `school`.
+- The roster school is retained as a secondary in `schools`.
+- A refused school is never retained.
+- Rows that keep a wrong secondary school are an accepted cost, with a stop if more than about 5 of 20 do.
+
+`medicine.yale.edu` is not primary-school evidence, because it publishes a profile for anyone with any School of Medicine appointment, with Primary or Secondary on the appointment cards (#5800).
+That rule was added after the first check, so the re-scored first 20 were treated as in-sample and did not count toward the verdict.
+On the 11 held-out rows, 8 still change: 7 pass and 1 fails (bar: at most 1), and 1 of 8 keeps a wrong secondary school.
+The rule steps aside when the row refuses the school the own profile's site names.
 
 ## 2026-11-13: A Profile's Home Department Is Its First Appointment, Never A Promoted Later One (#6070)
 

@@ -535,6 +535,21 @@ export const SCHOOL_PROFILE_HOSTS: Record<string, string> = {
   'drama.yale.edu': 'David Geffen School of Drama',
 };
 
+/**
+ * The `SCHOOL_PROFILE_HOSTS` entries whose site also publishes a profile for every
+ * secondary appointee, so a profile there says nothing about the person's primary school.
+ * The School of Medicine's site profiles anyone holding any YSM appointment, with the
+ * appointment cards stating which is Primary (#5800); a person whose primary school is Law
+ * or Management has a `medicine.yale.edu` profile too (#6157). `ysph.yale.edu` is not
+ * listed: a blind check of the own-profile rule found the YSPH school right as primary on
+ * 7 of 8 held-out rows. On Development 2026-11-13, 155 of the 792 profile slugs on
+ * `ysph.yale.edu` also have a `medicine.yale.edu` profile, which the medicine entry
+ * already explains.
+ */
+export const SCHOOL_PROFILE_HOSTS_SERVING_EVERY_APPOINTEE: ReadonlySet<string> = new Set([
+  'medicine.yale.edu',
+]);
+
 function hostnameOf(url: unknown): string {
   if (typeof url !== 'string' || !url) return '';
   try {

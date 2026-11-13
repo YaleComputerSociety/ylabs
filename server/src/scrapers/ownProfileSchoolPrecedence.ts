@@ -3,6 +3,7 @@ import { valueIsRefused } from '../utils/researchEntityFieldValueRefusals';
 import {
   getOrgUnitCanonicalizer,
   orgUnitMatchKey,
+  SCHOOL_PROFILE_HOSTS_SERVING_EVERY_APPOINTEE,
   schoolNameFromProfileHosts,
 } from './orgUnitCanonicalization';
 
@@ -15,17 +16,6 @@ const SCHOOL_FIELD = 'school';
  * always outranks the host inference it stands in for.
  */
 export const OWN_PROFILE_HOST_SCHOOL_CONFIDENCE = 0.6;
-
-/**
- * Profile hosts that also serve a profile for every secondary appointee, so where such a page
- * sits says nothing about the person's primary school. The School of Medicine's site publishes
- * a profile for anyone holding any YSM appointment, with the appointment cards stating which is
- * Primary (#5800); a person whose primary school is Law or Management therefore has a
- * `medicine.yale.edu` profile too, and that host cannot stand in for their school (#6157).
- */
-export const PROFILE_HOSTS_SERVING_SECONDARY_APPOINTEES: ReadonlySet<string> = new Set([
-  'medicine.yale.edu',
-]);
 
 export interface SchoolPrecedenceObservation {
   field?: unknown;
@@ -88,7 +78,8 @@ const schoolKey = (
  * that school (a joint appointment it names), and the profile's host school stands in as a
  * derived candidate, re-derived on every resolve and never written back as an observation.
  *
- * Nothing changes when there is no own profile on a school's site, when any other `school`
+ * Nothing changes when there is no own profile on a school's site, when the row refuses the
+ * school that site names, when any other `school`
  * reading shares the own profile's host (that page is the roster's own site, not an independent
  * profile), or when no reading is dropped.
  */
@@ -96,12 +87,15 @@ export function withOwnProfileSchoolPrecedence<T extends SchoolPrecedenceObserva
   observations: readonly T[],
   ownProfileUrl: string | undefined,
   canonicalizeSchool: (raw: unknown) => { value: string },
+  fieldValueRefusals?: unknown,
 ): OwnProfileSchoolPrecedence<T> {
   const unchanged = { observations: [...observations], dropped: [] };
   const ownSchool = siteSchoolOf(ownProfileUrl);
   const ownHost = hostOf(ownProfileUrl);
   if (!ownProfileUrl || !ownSchool || !ownHost) return unchanged;
-  if (PROFILE_HOSTS_SERVING_SECONDARY_APPOINTEES.has(ownHost)) return unchanged;
+  const derivedSchool = canonicalizeSchool(ownSchool).value || ownSchool;
+  if (valueIsRefused(fieldValueRefusals, SCHOOL_FIELD, derivedSchool)) return unchanged;
+  if (SCHOOL_PROFILE_HOSTS_SERVING_EVERY_APPOINTEE.has(ownHost)) return unchanged;
 
   const schoolReadings = observations.filter((observation) => observation.field === SCHOOL_FIELD);
   const fromOwnProfile = (observation: T) => textOf(observation.sourceUrl) === ownProfileUrl;
@@ -135,7 +129,7 @@ export function withOwnProfileSchoolPrecedence<T extends SchoolPrecedenceObserva
     dropped: [...crossSchool],
     candidate: {
       field: SCHOOL_FIELD,
-      value: canonicalizeSchool(ownSchool).value || ownSchool,
+      value: derivedSchool,
       sourceName: OWN_PROFILE_HOST_SCHOOL_SOURCE_NAME,
       sourceUrl: ownProfileUrl,
       confidence: OWN_PROFILE_HOST_SCHOOL_CONFIDENCE,
@@ -160,13 +154,17 @@ export function withOwnProfileSchoolPrecedence<T extends SchoolPrecedenceObserva
 export async function ownProfileSchoolPrecedenceAtResolve<T extends SchoolPrecedenceObservation>(
   observations: readonly T[],
   ownProfileUrl: string | undefined,
+  fieldValueRefusals?: unknown,
 ): Promise<OwnProfileSchoolPrecedence<T>> {
   if (!ownProfileUrl || !observations.some((observation) => observation.field === SCHOOL_FIELD)) {
     return { observations: [...observations], dropped: [] };
   }
   const canonicalizer = await getOrgUnitCanonicalizer();
-  return withOwnProfileSchoolPrecedence(observations, ownProfileUrl, (raw) =>
-    canonicalizer.canonicalizeSchool(raw),
+  return withOwnProfileSchoolPrecedence(
+    observations,
+    ownProfileUrl,
+    (raw) => canonicalizer.canonicalizeSchool(raw),
+    fieldValueRefusals,
   );
 }
 

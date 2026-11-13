@@ -111,6 +111,23 @@ describe('withOwnProfileSchoolPrecedence (#6157)', () => {
     expect(result.candidate).toBeUndefined();
   });
 
+  it('steps aside when the row refuses the school the own profile site names', () => {
+    const roster = reading('school', 'School of Medicine', ROSTER);
+    const refusals = planFieldValueRefusal(undefined, {
+      field: 'school',
+      value: 'School of Public Health',
+      rule: 'operator_judgement',
+      refusedBy: 'fixture',
+      note: 'fixture refusal',
+    })['fieldValueRefusals.school'];
+    const result = withOwnProfileSchoolPrecedence([roster], OWN_PROFILE, canonicalizeSchool, {
+      school: refusals,
+    });
+    expect(result.dropped).toEqual([]);
+    expect(result.observations).toEqual([roster]);
+    expect(result.candidate).toBeUndefined();
+  });
+
   it('pins the derived reading to its evidence, so an unchanged row re-derives it identically', () => {
     const roster = reading('school', 'School of Medicine', ROSTER);
     const first = withOwnProfileSchoolPrecedence([roster], OWN_PROFILE, canonicalizeSchool);

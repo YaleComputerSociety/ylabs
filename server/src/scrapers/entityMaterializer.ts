@@ -2963,6 +2963,48 @@ export function withObservedPersonPages(
     : entityIdentity;
 }
 
+export function researchEntitySourceIdentity(
+  entityDoc: Record<string, any> | null | undefined,
+): ResearchEntityIdentity {
+  return {
+    slug: entityDoc?.slug,
+    name: entityDoc?.name,
+    displayName: entityDoc?.displayName,
+    school: entityDoc?.school,
+    schools: entityDoc?.schools,
+    departments: entityDoc?.departments,
+    // The STORED citations, which `sanitizeResearchEntitySourceUrlsForMaterialization`
+    // must not overwrite with the list being written: the person-page owner check
+    // reads whose page the row has already committed to, and a projection that
+    // empties the list would otherwise lose the owner in the same pass that mints
+    // its replacement (#2945). The `sourceUrls` projections widen this to the
+    // citations projected this pass as well, via
+    // `researchEntityIdentityWithCitationsThroughThisPass`.
+    citedPersonPageUrls: entityDoc?.sourceUrls,
+    fullDescription: entityDoc?.fullDescription,
+    recentGrants: entityDoc?.recentGrants,
+  };
+}
+
+/**
+ * The lead's official profile as the stored row cites it, behind the same namesake and
+ * retired-path guards the `sourceUrls` projection applies, for a resolve-time reader that
+ * runs before that projection.
+ */
+export function officialLeadProfileSourceUrlForStoredRow(
+  observations: MaterializerObservationLike[],
+  entityDoc: Record<string, any> | null | undefined,
+  observedPersonPageUrls: readonly string[],
+): string | undefined {
+  const storedSourceUrls = Array.isArray(entityDoc?.sourceUrls) ? entityDoc.sourceUrls : [];
+  return officialLeadProfileSourceUrl(
+    observations,
+    entityDoc?.sourceLinkHealth,
+    storedSourceUrls,
+    withObservedPersonPages(researchEntitySourceIdentity(entityDoc), observedPersonPageUrls),
+  );
+}
+
 export function deriveResearchEntityWebsiteUrl(
   set: Record<string, unknown>,
   entityDoc?: Record<string, unknown> | null,
@@ -12540,27 +12582,8 @@ export async function projectFromLog(
   const confidenceByField: Record<string, number> = {
     ...(entityDoc?.confidenceByField || {}),
   };
-  const sourceEntityIdentity: ResearchEntityIdentity | undefined = isResearchEntityObservationType(
-    entityType,
-  )
-    ? {
-        slug: entityDoc?.slug,
-        name: entityDoc?.name,
-        displayName: entityDoc?.displayName,
-        school: entityDoc?.school,
-        schools: entityDoc?.schools,
-        departments: entityDoc?.departments,
-        // The STORED citations, which `sanitizeResearchEntitySourceUrlsForMaterialization`
-        // must not overwrite with the list being written: the person-page owner check
-        // reads whose page the row has already committed to, and a projection that
-        // empties the list would otherwise lose the owner in the same pass that mints
-        // its replacement (#2945). The `sourceUrls` projections widen this to the
-        // citations projected this pass as well, via
-        // `researchEntityIdentityWithCitationsThroughThisPass`.
-        citedPersonPageUrls: entityDoc?.sourceUrls,
-        fullDescription: entityDoc?.fullDescription,
-        recentGrants: entityDoc?.recentGrants,
-      }
+  const sourceEntityIdentity = isResearchEntityObservationType(entityType)
+    ? researchEntitySourceIdentity(entityDoc)
     : undefined;
   let conflicts = 0;
   let fieldsWritten = 0;
@@ -15107,7 +15130,12 @@ async function materializeEntityUnderRemovalGuard(
   const ownProfileSchool = isResearchEntityObservationType(entityType)
     ? await ownProfileSchoolPrecedenceAtResolve(
         micrositeOwnershipScreened,
-        officialLeadProfileSourceUrl(materializationObs, entityDoc?.sourceLinkHealth),
+        officialLeadProfileSourceUrlForStoredRow(
+          materializationObs,
+          entityDoc,
+          everyCitedPersonPageUrl(obs),
+        ),
+        entityDoc?.fieldValueRefusals,
       )
     : { observations: micrositeOwnershipScreened, dropped: [], candidate: undefined };
 

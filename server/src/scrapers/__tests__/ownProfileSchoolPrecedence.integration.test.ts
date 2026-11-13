@@ -20,6 +20,8 @@ import { OWN_PROFILE_HOST_SCHOOL_SOURCE_NAME } from '../ownProfileSchoolPreceden
 const KEY = 'fixture-precedence-lab';
 const OWN_PROFILE = 'https://ysph.yale.edu/profile/hollis-quintrell/';
 const ROSTER = 'https://medicine.yale.edu/fixture-department/people/';
+const NAMESAKE_PROFILE = 'https://ysph.yale.edu/profile/marta-quintrell/';
+const OWNER_PROFILE = 'https://medicine.yale.edu/profile/hollis-quintrell/';
 
 describe('the own profile school outranks a cross-school roster at resolve (#6157)', () => {
   let replSet: MongoMemoryReplSet;
@@ -89,7 +91,7 @@ describe('the own profile school outranks a cross-school roster at resolve (#615
       'fixture-lab-site',
     );
     await observe('school', 'School of Medicine', ROSTER, 'dept-faculty-roster');
-    await observe('inferredPiUserKey', 'netid:fx123', OWN_PROFILE, 'ysph-faculty-directory');
+    await observe('inferredPiUserKey', 'netid:fixture-001', OWN_PROFILE, 'ysph-faculty-directory');
   };
 
   const plan = async () => {
@@ -109,7 +111,7 @@ describe('the own profile school outranks a cross-school roster at resolve (#615
     });
   });
 
-  it('never brings back a school the row refuses', async () => {
+  it('steps aside, keeping the roster school, when the row refuses the own profile school', async () => {
     await seedRosterAndOwnProfile();
     await ResearchEntity.updateOne(
       { slug: KEY },
@@ -125,8 +127,11 @@ describe('the own profile school outranks a cross-school roster at resolve (#615
     );
     const planned = await plan();
 
-    expect(planned.school).not.toBe('School of Public Health');
+    expect(planned.school ?? 'School of Medicine').toBe('School of Medicine');
     expect(planned.schools ?? []).not.toContain('School of Public Health');
+    expect(planned['fieldProvenance.school']?.sourceName).not.toBe(
+      OWN_PROFILE_HOST_SCHOOL_SOURCE_NAME,
+    );
   });
 
   it('keeps the own profile school primary but never retains a refused roster school', async () => {
@@ -175,6 +180,26 @@ describe('the own profile school outranks a cross-school roster at resolve (#615
   it('keeps the roster school when the own profile names it too', async () => {
     await seedRosterAndOwnProfile();
     await observe('school', 'School of Medicine', OWN_PROFILE, 'ysph-faculty-directory');
+    const planned = await plan();
+
+    expect(planned.school ?? 'School of Medicine').toBe('School of Medicine');
+    expect(planned['fieldProvenance.school']?.sourceName).not.toBe(
+      OWN_PROFILE_HOST_SCHOOL_SOURCE_NAME,
+    );
+  });
+
+  it('takes no school from a namesake whose profile the row does not cite as its own', async () => {
+    await ResearchEntity.updateOne(
+      { slug: KEY },
+      { $set: { name: 'Hollis Quintrell Lab', sourceUrls: [OWNER_PROFILE] } },
+    );
+    await observe('school', 'School of Medicine', ROSTER, 'dept-faculty-roster');
+    await observe(
+      'inferredPiUserKey',
+      'netid:fixture-002',
+      NAMESAKE_PROFILE,
+      'ysph-faculty-directory',
+    );
     const planned = await plan();
 
     expect(planned.school ?? 'School of Medicine').toBe('School of Medicine');
