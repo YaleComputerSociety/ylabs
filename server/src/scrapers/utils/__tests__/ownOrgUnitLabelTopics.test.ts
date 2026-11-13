@@ -56,6 +56,18 @@ describe('program labels (#5957 ruling)', () => {
   });
 });
 
+describe('program-shaped topics under a department label (#5957 ruling)', () => {
+  it('still drops a program-named topic that restates a real department label', () => {
+    expect(restatesAnOwnOrgUnitLabel('Rheumatology Program', ['Department of Rheumatology'])).toBe(
+      true,
+    );
+    expect(
+      restatesAnOwnOrgUnitLabel('Program in Rheumatology', ['Department of Rheumatology']),
+    ).toBe(true);
+    expect(restatesAnOwnOrgUnitLabel('Rheumatology', ['Section of Rheumatology'])).toBe(true);
+  });
+});
+
 describe('orgUnitLabelWords', () => {
   it('reads only the unit name', () => {
     expect(orgUnitLabelWords('Yale University Department of the History of Art')).toEqual([

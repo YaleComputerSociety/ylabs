@@ -9,8 +9,8 @@ import { textScanForm } from '../researchAreaCanonicalization';
 export const OWN_ORG_UNIT_LABEL_FIELDS: ReadonlySet<string> = new Set(['departments', 'school']);
 
 const ORG_UNIT_NAME_PREFIX =
-  /^(?:the |yale |university |(?:department|dept|section|division|school)s? (?:of|in|for|on) )/;
-const ORG_UNIT_NAME_SUFFIX = / (?:department|dept|section|division)$/;
+  /^(?:the |yale |university |(?:department|dept|section|division|school|program|programme)s? (?:of|in|for|on) )/;
+const ORG_UNIT_NAME_SUFFIX = / (?:department|dept|section|division|program|programme)$/;
 const PROGRAM_WORD = / programm?e?s? /;
 
 function strippedRepeatedly(value: string, pattern: RegExp): string {
