@@ -1,3 +1,4 @@
+import { withoutUncataloguedBackfillHomeDepartments } from './backfillHomeDepartmentScreen';
 import { withoutDepartmentHeadingObservations } from './departmentHeadingObservationScreen';
 import { withDirectoryExportDepartmentsDecoded } from './directoryExportDepartmentEvidence';
 import type { CanonicalDepartment } from './utils/directoryExportDepartment';
@@ -27,6 +28,7 @@ export type UserDepartmentObservationScreen = <T extends UserDepartmentObservati
 export const USER_DEPARTMENT_OBSERVATION_SCREENS: ReadonlyArray<UserDepartmentObservationScreen> = [
   (observations, { canonicalDepartment }) =>
     withDirectoryExportDepartmentsDecoded(observations, canonicalDepartment),
+  withoutUncataloguedBackfillHomeDepartments,
   (observations) => withoutDepartmentHeadingObservations(observations),
 ];
 
