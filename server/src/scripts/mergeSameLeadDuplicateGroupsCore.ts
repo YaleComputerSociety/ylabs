@@ -100,7 +100,7 @@ const leadsSitInside = (twin: SameLeadMergeMember, anchor: SameLeadMergeMember):
 };
 
 /**
- * One research home stored twice on its own site, where the twin has no lead or is led only
+ * One lab stored twice on its own site, where the twin has no lead or is led only
  * by people of the anchor row (#6206). The name must agree and exactly one row may anchor,
  * so two rows of two different PIs never fold here.
  */

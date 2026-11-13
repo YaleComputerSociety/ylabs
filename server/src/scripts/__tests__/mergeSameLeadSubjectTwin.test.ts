@@ -31,7 +31,7 @@ const group = (members: SameLeadMergeMember[], overrides = {}) => ({
 
 const anchor = member({ id: 'a', leadPersonIds: ['pi'], memberPersonIds: ['student'] });
 
-describe('a research home stored twice on its own site (#6206)', () => {
+describe('one lab stored twice on its own site (#6206)', () => {
   it('folds a leadless twin into the row its lead leads', () => {
     const outcome = planSameLeadCorroboratedMerges([
       group([anchor, member({ id: 'b', name: 'The Avery Laboratory' })]),

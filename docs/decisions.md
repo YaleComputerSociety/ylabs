@@ -13,7 +13,7 @@ When they merge, the lab survives, any evidence only the person row carries move
 Stored evidence does not witness "the same research": in a blind three-grader check, a person row whose text was all read from the lab's own site, and which cited nothing else but the person's profile, was graded the same research in one case and broader research in another, and topic overlap did not separate the two.
 So this is a per-row operator judgement after a blind check, not a lane rule.
 
-A research home stored twice on its own site does fold by lane rule: the two rows name the same lab, their own websites are one identity (`www.` folded), and exactly one row anchors, so the other has no lead or is led only by people of the anchor row (`subjectTwinAnchor` in `scripts/mergeSameLeadDuplicateGroupsCore.ts`).
+One lab stored twice on its own site does fold by lane rule: the two rows name the same lab, their own websites are one identity (`www.` folded), and exactly one row anchors, so the other has no lead or is led only by people of the anchor row (`subjectTwinAnchor` in `scripts/mergeSameLeadDuplicateGroupsCore.ts`).
 Two rows led by different people never fold under it, and a pair the URL-identity lanes plan or quarantine is left to them.
 
 ## 2026-11-13: A Lead's Ruled Rank Is A Signal, Not A Serve-Time Gate (#6266)
