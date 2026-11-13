@@ -1224,9 +1224,7 @@ describe('the YSM home department comes only from a catalog-named appointment', 
     expect(observations.filter((o) => o.field === 'primaryDepartment').map((o) => o.value)).toEqual(
       ['Surgery'],
     );
-    expect(observations.find((o) => o.field === 'departments')?.value).toEqual(
-      profile.departments,
-    );
+    expect(observations.find((o) => o.field === 'departments')?.value).toEqual(profile.departments);
   });
 
   it('emits no home department when no appointment is a catalog department', () => {

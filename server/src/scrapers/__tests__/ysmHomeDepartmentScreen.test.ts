@@ -29,6 +29,8 @@ describe('withoutUncataloguedYsmHomeDepartments', () => {
 
   it('screens nothing while the catalog is unavailable', () => {
     const kept = [reading('primaryDepartment', 'Fixture Center')];
-    expect(withoutUncataloguedYsmHomeDepartments(kept, { canonicalDepartment: null })).toEqual(kept);
+    expect(withoutUncataloguedYsmHomeDepartments(kept, { canonicalDepartment: null })).toEqual(
+      kept,
+    );
   });
 });
