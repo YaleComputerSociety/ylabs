@@ -16263,7 +16263,8 @@ async function materializeFromRunUnderRemovalGuard(
   // read the drop-guard fraction before authorizing a pass that deletes evidence.
   const fieldRetractionResult = await reconcileFieldRetractionsFromRun(scrapeRunId, {
     dryRun: options.dryRun,
-    rederiveUser: (identifier) => materializeEntity('user', identifier, { dryRun: false }),
+    materializeUser: (identifier, onlyFields) =>
+      materializeEntity('user', identifier, { dryRun: false, userWriteOnlyFields: onlyFields }),
   });
   if (fieldRetractionResult.userFieldRetraction) {
     const userRetraction = fieldRetractionResult.userFieldRetraction;

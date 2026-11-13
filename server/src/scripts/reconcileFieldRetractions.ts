@@ -30,9 +30,11 @@ import {
   type UserSubjectRederiver,
 } from '../scrapers/fieldRetraction';
 import {
-  canonicalUserMaterializerField,
   expandUserMaterializerScope,
+  userRederiveOnlyFields,
 } from '../scrapers/userMaterializerFieldScope';
+
+export { userRederiveOnlyFields };
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -107,25 +109,6 @@ export function totalPlannedRetractions(
     results.reduce((sum, result) => sum + result.retractions.length, 0) +
     userResults.reduce((sum, result) => sum + result.retractions.length, 0)
   );
-}
-
-/**
- * The `--only-fields` a re-derive after retracting `retractedFields` passes, so retiring an
- * email rewrites only the email pair and retiring an ORCID only the ORCID and its link. Throws
- * on a field with no user materializer scope: an unscoped re-derive would write every other
- * planned path on the row, so a field this cannot scope is refused rather than widened.
- */
-export function userRederiveOnlyFields(retractedFields: readonly string[]): string[] {
-  if (retractedFields.length === 0) throw new Error('A user re-derive needs a retracted field.');
-  return [...new Set(retractedFields)].sort().map((field) => {
-    const scoped = canonicalUserMaterializerField(field);
-    if (!scoped) {
-      throw new Error(
-        `Retracted user field ${JSON.stringify(field)} has no user materializer scope; refusing an unscoped re-derive.`,
-      );
-    }
-    return scoped;
-  });
 }
 
 export function plannedUserRederives(results: readonly UserFieldRetractionResult[]) {
