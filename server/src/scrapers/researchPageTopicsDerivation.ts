@@ -292,9 +292,8 @@ function quotedCandidateFrom(
 export async function derivedResearchAreaCandidateFor(
   observations: readonly ResearchPageTextObservationLike[],
   lookup: ResearchTopicsDerivationLookup = loadResearchTopicsDerivation,
-  row?: TopicEvidenceRow,
 ): Promise<DerivedResearchAreaCandidate | undefined> {
-  return (await researchPageTopicsStateFor(observations, lookup, undefined, row)).candidate;
+  return (await researchPageTopicsStateFor(observations, lookup)).candidate;
 }
 
 /**
