@@ -287,7 +287,7 @@ describe('resolveResearcherIdForPersonName breaks a name tie only on identity ev
     expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: [tiedA, tiedB] });
   });
 
-  it('marks an exact tie as someone else when every possible namesake holds another netid', async () => {
+  it('keeps an exact tie refused when every namesake holds another netid and the key has only a netid', async () => {
     const tiedA = withIdentity('Michael Quillfeather', { netid: 'mq1' });
     const tiedB = withIdentity('Michael Quillfeather', { netid: 'mq2' });
     const initialOnly = withIdentity('M. Quillfeather', { netid: 'mq3' });
@@ -295,7 +295,7 @@ describe('resolveResearcherIdForPersonName breaks a name tie only on identity ev
       netid: 'mq42',
       deps: depsFor([tiedA, tiedB, initialOnly]),
     });
-    expect(result).toEqual({ status: 'ambiguous', everyCandidateNamesSomeoneElse: true });
+    expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: [tiedA, tiedB] });
   });
 
   it('reads a prefix-sharing namesake holding another netid as someone else', async () => {

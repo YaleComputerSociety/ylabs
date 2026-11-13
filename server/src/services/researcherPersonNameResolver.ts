@@ -173,23 +173,34 @@ function candidateConflictsWith(
 
 /**
  * Breaks a name tie only on the person's own identifiers: exactly one candidate sharing an
- * email, a plausible ORCID or a netid, and contradicting none, is this person; a pool every
- * member of which holds another netid or another plausible ORCID names someone else. Anything
- * else leaves the tie standing, so a missing or one-sided witness fails closed (#5875).
+ * email, a plausible ORCID or a netid, and contradicting none, is this person. Anything else
+ * leaves the tie standing, so a missing or one-sided witness fails closed (#5875).
  */
-function identityResolutionOfTie(
+function identityJoinOfTie(
   tied: readonly ResearcherNameCandidate[],
-  everyoneWhoCouldBeThisPerson: readonly ResearcherNameCandidate[],
   witnesses: IdentityWitnesses | undefined,
 ): ResearcherPersonNameResolution | undefined {
-  if (!witnesses || tied.length === 0) return undefined;
+  if (!witnesses) return undefined;
   const agreeing = tied.filter((candidate) => candidateAgreesWith(candidate, witnesses));
   if (agreeing.length === 1 && !candidateConflictsWith(agreeing[0], witnesses)) {
     return { status: 'matched', researcherId: asResearcherId(agreeing[0]._id) };
   }
+  return undefined;
+}
+
+/**
+ * Never reached from an exact tie: a record minted for a netid-only witness stores no netid,
+ * so the next pass would tie it with the same namesakes and never rejoin it (#5875).
+ */
+function identityResolutionOfNamesakes(
+  namesakes: readonly ResearcherNameCandidate[],
+  witnesses: IdentityWitnesses | undefined,
+): ResearcherPersonNameResolution | undefined {
+  const joined = identityJoinOfTie(namesakes, witnesses);
+  if (joined || !witnesses) return joined;
   const namesSomeoneElse = (candidate: ResearcherNameCandidate) =>
     !candidateAgreesWith(candidate, witnesses) && candidateConflictsWith(candidate, witnesses);
-  if (tied.every(namesSomeoneElse) && everyoneWhoCouldBeThisPerson.every(namesSomeoneElse)) {
+  if (namesakes.every(namesSomeoneElse)) {
     return { status: 'ambiguous', everyCandidateNamesSomeoneElse: true };
   }
   return undefined;
@@ -246,26 +257,21 @@ export async function resolveResearcherIdForPersonName(
     return { status: 'matched', researcherId: asResearcherId(exact[0].candidate._id) };
   }
   const witnesses = identityWitnessesOf(netid, opts.identity);
-  const couldBeThisPerson = candidates
-    .filter(({ parsed }) => givenNamesCouldNameOnePerson(first, parsed.first))
-    .map(({ candidate }) => candidate);
   if (exact.length > 1) {
     const tied = exact.map(({ candidate }) => candidate);
-    return (
-      identityResolutionOfTie(tied, couldBeThisPerson, witnesses) ?? {
-        status: 'ambiguous',
-        ambiguousCandidates: tied,
-      }
-    );
+    return identityJoinOfTie(tied, witnesses) ?? { status: 'ambiguous', ambiguousCandidates: tied };
   }
   // No prefix rule: a complete short given name is a prefix of a stranger's longer one (#5324).
 
   if (candidates.length === 0) return { status: 'absent' };
+  const couldBeThisPerson = candidates
+    .filter(({ parsed }) => givenNamesCouldNameOnePerson(first, parsed.first))
+    .map(({ candidate }) => candidate);
   if (couldBeThisPerson.length === 0) {
     return { status: 'ambiguous', everyCandidateNamesSomeoneElse: true };
   }
   return (
-    identityResolutionOfTie(couldBeThisPerson, couldBeThisPerson, witnesses) ?? {
+    identityResolutionOfNamesakes(couldBeThisPerson, witnesses) ?? {
       status: 'ambiguous',
       ambiguousCandidates: couldBeThisPerson,
     }
