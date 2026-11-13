@@ -2124,6 +2124,13 @@ The gate itself reads no verdict age.
 `--full-link-health-reprobe` on the sweep, or running the backfill without the flag, probes every URL, which is the recovery path after a probe-rule change alongside `--checked-before`.
 The saving depends on sweep cadence: a sweep run more than 7 days after the last one re-probes almost everything.
 
+Each link costs one `GET`, its body discarded unread; there is no `HEAD` first, because that doubled the requests for every link answering 4xx or 5xx and some servers refuse `HEAD` but answer `GET` (#6214).
+A 403 or 429 from a host stops probing that host for the rest of the pass, and its unprobed links keep their stored verdicts until the next pass; `--stop-on-status=<list>` replaces that list and `--no-stop-on-refusal` turns it off (#6214).
+A dry run samples 20 due links per host by default, and its `projectedVerdictTransitions` scales the sample per row entry rather than per distinct link, because one link is often cited by several rows (#6214).
+A dry run also reuses a probe result from a local cache, `~/.cache/ylabs/link-health-probes.json`, when that result is under 24 hours old, so repeated previews of one pass do not re-request the same links.
+`--reuse-probes-within-hours=<n>` changes the window and `--no-probe-reuse` turns reuse off; a reused result does not count against the per-host sample, and the report counts them in `probesReused` with the oldest in `oldestReusedProbeAt`.
+An apply never reads the cache, so every stored verdict comes from a probe of that run, but it writes its own results there for the next dry run; a probe that never reached its host is not cached, and entries older than 7 days are dropped.
+
 A refused or unroutable connection retires a live link only once two runs agree (#6116).
 `ECONNREFUSED`, `EHOSTUNREACH` and `ENETUNREACH` still classify as `UNAVAILABLE` after the probe's own second attempt, but over a stored `HEALTHY` or `REDIRECTED` verdict the backfill keeps that verdict, with its original `checkedAt`, and records the start of the run in `pendingConnectionFailureAt` and the probe time in `pendingConnectionFailureProbedAt`.
 A later run that sees the same failure records `UNAVAILABLE` only when both its start and its probe come at least six hours after the first run's (`CONNECTION_FAILURE_CONFIRMATION_GAP_MS`), because a resume minutes later, or a first probe late in a long run, is the same outage; the entry then keeps both run starts, `pendingConnectionFailureAt` and `confirmingConnectionFailureAt`, beside the first probe time.

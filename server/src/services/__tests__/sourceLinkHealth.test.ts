@@ -326,8 +326,8 @@ describe('probeSourceLink', () => {
       healthStatus: 'UNAVAILABLE',
       httpStatusCode: 404,
     });
-    // HEAD escalated to GET, and then stopped. A 404 settles on the first answer.
-    expect(requestMock).toHaveBeenCalledTimes(2);
+    // One GET, and then stopped. A 404 settles on the first answer.
+    expect(requestMock).toHaveBeenCalledTimes(1);
   });
 
   it('gives up after a bounded number of throttled answers and stays inconclusive', async () => {
@@ -419,48 +419,28 @@ describe('probeSourceLink', () => {
     });
   });
 
-  const headOnlyStatus = (status: number) => {
-    requestMock.mockResolvedValueOnce({ status });
-  };
-
-  it('uses the HEAD status directly when HEAD succeeds', async () => {
-    headOnlyStatus(200);
+  it('probes with exactly one GET and never a HEAD', async () => {
+    const destroy = vi.fn();
+    requestMock.mockResolvedValueOnce({ status: 200, data: { destroy } });
     await expect(probeSourceLink('https://example.com/paper')).resolves.toEqual({
       status: 200,
       requestedUrl: 'https://example.com/paper',
     });
     expect(requestMock).toHaveBeenCalledTimes(1);
-    expect(requestMock.mock.calls[0][0]).toMatchObject({ method: 'HEAD' });
+    expect(requestMock.mock.calls[0][0]).toMatchObject({ method: 'GET' });
+    expect(destroy).toHaveBeenCalledTimes(1);
   });
 
-  it.each([400, 403, 405, 501, 500])(
-    'falls back to GET when HEAD returns %i and reports the GET status',
-    async (headStatus) => {
-      const destroy = vi.fn();
-      requestMock
-        .mockResolvedValueOnce({ status: headStatus })
-        .mockResolvedValueOnce({ status: 200, data: { destroy } });
-
-      await expect(probeSourceLink('https://example.com/paper')).resolves.toEqual({
-        status: 200,
-        requestedUrl: 'https://example.com/paper',
-      });
-      expect(requestMock).toHaveBeenCalledTimes(2);
-      expect(requestMock.mock.calls[1][0]).toMatchObject({ method: 'GET' });
-      expect(destroy).toHaveBeenCalledTimes(1);
+  it.each([400, 404, 405, 501])(
+    'reports a %i from its single GET without a second request',
+    async (status) => {
+      requestMock.mockResolvedValueOnce({ status, data: { destroy: vi.fn() } });
+      const probe = await probeSourceLink('https://example.com/paper');
+      expect(probe.status).toBe(status);
+      expect(requestMock).toHaveBeenCalledTimes(1);
+      expect(requestMock.mock.calls[0][0]).toMatchObject({ method: 'GET' });
     },
   );
-
-  it('reports the GET status when the GET fallback also fails', async () => {
-    requestMock
-      .mockResolvedValueOnce({ status: 501 })
-      .mockResolvedValueOnce({ status: 404, data: { destroy: vi.fn() } });
-
-    await expect(probeSourceLink('https://example.com/paper')).resolves.toEqual({
-      status: 404,
-      requestedUrl: 'https://example.com/paper',
-    });
-  });
 
   // The property name is the whole point of this test. `follow-redirects` sets
   // `responseUrl`; the upper-case `responseURL` is the browser XHR spelling and
@@ -533,7 +513,7 @@ describe('probeSourceLink', () => {
   });
 
   it('raises the timeout past the 7s that turned slow legacy hosts into UNKNOWN', async () => {
-    headOnlyStatus(200);
+    requestMock.mockResolvedValueOnce({ status: 200 });
     await probeSourceLink('https://www.astro.yale.edu/someone/');
     expect(requestMock.mock.calls[0][0].timeout).toBeGreaterThan(7000);
   });

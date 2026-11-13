@@ -669,12 +669,12 @@ export async function probeSourceLink(
   if (notContacted(safeUrl.hostname)) return notObserved();
   const agents = ssrfSafeAgents();
   let redirectStatuses: number[] = [];
-  const request = (method: 'HEAD' | 'GET') => {
+  const request = () => {
     const send = () => {
       redirectStatuses = [];
       return axios.request({
         url: requestedUrl,
-        method,
+        method: 'GET',
         maxRedirects: 5,
         beforeRedirect: (redirectOptions, responseDetails) => {
           if (notContacted((redirectOptions as { hostname?: string })?.hostname)) {
@@ -685,7 +685,7 @@ export async function probeSourceLink(
         timeout: PROBE_TIMEOUT_MS,
         httpAgent: agents.httpAgent,
         httpsAgent: agents.httpsAgent,
-        responseType: method === 'GET' ? 'stream' : 'json',
+        responseType: 'stream',
         validateStatus: () => true,
       });
     };
@@ -721,13 +721,14 @@ export async function probeSourceLink(
 
   const attempt = async (): Promise<SourceLinkProbeResult> => {
     try {
-      let response = await request('HEAD');
+      // One GET per link. A HEAD first doubled the requests for every link answering 4xx or
+      // 5xx, and some servers refuse HEAD but answer GET (#6214).
+      const response = await request();
+      const body = response.status === 403 ? await readBodyPrefix(response.data) : undefined;
+      if (response.data && typeof response.data.destroy === 'function') {
+        response.data.destroy();
+      }
       if (response.status >= 400) {
-        response = await request('GET');
-        const body = response.status === 403 ? await readBodyPrefix(response.data) : undefined;
-        if (response.data && typeof response.data.destroy === 'function') {
-          response.data.destroy();
-        }
         const pause = recordHostRefusal({
           host: hostnameForLimiter(resolvedUrl(response)) ?? safeUrl.hostname,
           status: response.status,
@@ -736,8 +737,7 @@ export async function probeSourceLink(
           quickRetryWaitMs: PROBE_STATUS_BACKOFF_MAX_MS,
         });
         if (pause) return notObserved();
-      }
-      if (response.status < 400) {
+      } else {
         recordHostSuccess(hostnameForLimiter(resolvedUrl(response)) ?? safeUrl.hostname);
       }
       return {

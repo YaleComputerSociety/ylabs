@@ -43,7 +43,14 @@ import {
   type StoredSourceLinkHealthEntry,
   needsRecheckSince,
   needsSourceLinkHealthRefresh,
+  isUnreachedProbe,
 } from './backfillSourceLinkHealthCore';
+import {
+  defaultSourceLinkProbeCachePath,
+  readSourceLinkProbeCache,
+  writeSourceLinkProbeCache,
+  type CachedSourceLinkProbe,
+} from './sourceLinkProbeCache';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,12 +68,15 @@ export interface SourceLinkHealthBackfillOptions {
   excludeHosts: string[];
   /** A file naming the only links this run probes, one per line, probed in file order. */
   urlFile?: string;
-  /** Statuses that end probing of a host for the rest of the run, for example 403 and 429. */
+  /** Statuses that end probing of a host for the rest of the run; 403 and 429 by default. */
   stopOnStatuses: number[];
   /** Probe at most this many due links per host; a dry run defaults to a sample. */
   samplePerHost?: number;
   /** A dry run that sweeps every due link instead of sampling. */
   fullDryRun: boolean;
+  /** How old a cached probe a dry run may reuse; a dry run defaults to 24 hours. */
+  reuseProbesWithinHours?: number;
+  noProbeReuse: boolean;
   output?: string;
 }
 
@@ -106,8 +116,9 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     staleOnly: false,
     httpWebsitesOnly: false,
     excludeHosts: [],
-    stopOnStatuses: [],
+    stopOnStatuses: [...DEFAULT_STOP_ON_STATUSES],
     fullDryRun: false,
+    noProbeReuse: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -129,6 +140,13 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
       i += 1;
     } else if (arg === '--full-dry-run') {
       options.fullDryRun = true;
+    } else if (arg === '--no-probe-reuse') {
+      options.noProbeReuse = true;
+    } else if (arg.startsWith('--reuse-probes-within-hours=')) {
+      options.reuseProbesWithinHours = parsePositiveInt(
+        arg.slice('--reuse-probes-within-hours='.length),
+        '--reuse-probes-within-hours',
+      );
     } else if (arg.startsWith('--sample-per-host=')) {
       options.samplePerHost = parsePositiveInt(
         arg.slice('--sample-per-host='.length),
@@ -141,6 +159,8 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
       i += 1;
     } else if (arg.startsWith('--stop-on-status=')) {
       options.stopOnStatuses = parseStatusList(arg.slice('--stop-on-status='.length));
+    } else if (arg === '--no-stop-on-refusal') {
+      options.stopOnStatuses = [];
     } else if (arg.startsWith('--exclude-host=')) {
       options.excludeHosts.push(parseExcludedHost(arg.slice('--exclude-host='.length)));
     } else if (arg === '--exclude-host') {
@@ -169,6 +189,14 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
   }
   if (options.samplePerHost !== undefined && !options.dryRun) {
     throw new Error('--sample-per-host applies to a dry run only.');
+  }
+  if (options.reuseProbesWithinHours !== undefined && !options.dryRun) {
+    throw new Error(
+      '--reuse-probes-within-hours applies to a dry run only; an apply always probes afresh.',
+    );
+  }
+  if (options.reuseProbesWithinHours !== undefined && options.noProbeReuse) {
+    throw new Error('--reuse-probes-within-hours and --no-probe-reuse are alternatives; pass one.');
   }
   if (options.staleOnly && options.reprobeHealthyAfterDays !== undefined) {
     throw new Error(
@@ -255,6 +283,7 @@ export interface SourceLinkHealthRunOptions {
   urlScope?: string[];
   stopOnStatuses?: number[];
   samplePerHost?: number;
+  reuseProbesWithinMs?: number;
 }
 
 /**
@@ -280,8 +309,27 @@ export function sourceLinkHealthRunOptions(
     ...(options.dryRun && !options.fullDryRun
       ? { samplePerHost: options.samplePerHost ?? DEFAULT_DRY_RUN_SAMPLE_PER_HOST }
       : {}),
+    ...(options.dryRun && !options.noProbeReuse
+      ? {
+          reuseProbesWithinMs:
+            (options.reuseProbesWithinHours ?? DEFAULT_DRY_RUN_PROBE_REUSE_HOURS) * 60 * 60_000,
+        }
+      : {}),
   };
 }
+
+/**
+ * How old a probe result a dry run reuses instead of requesting the link again. Previews are
+ * re-run often while a pass is planned, and each one otherwise re-requests the same links (#6214).
+ */
+export const DEFAULT_DRY_RUN_PROBE_REUSE_HOURS = 24;
+
+/**
+ * A host that refuses one probe is not asked again in the same pass, and its unprobed links keep
+ * their stored verdicts; the next pass tries it again (#6214). Probing on after a refusal only
+ * spends the host's patience, which is how one pass lengthened a school site's rate limit (#6166).
+ */
+export const DEFAULT_STOP_ON_STATUSES: readonly number[] = [403, 429];
 
 /**
  * How many due links per host a dry run probes by default. A dry run cannot change stored data,
@@ -349,6 +397,9 @@ export interface SourceLinkHealthBackfillResult {
   dryRunSample?: { perHost: number; dueLinks: number; probedLinks: number; hostsCapped: number };
   /** `verdictTransitions` scaled per host to every due link; a projection, not a measurement. */
   projectedVerdictTransitions?: Record<string, number>;
+  /** Links whose verdict came from a cached probe of an earlier run instead of a request. */
+  probesReused: number;
+  oldestReusedProbeAt?: string;
   /** Probes sent per host. Kept out of stdout because a host can be a personal domain. */
   probesByHost: Record<string, number>;
   /** Hosts whose probing stopped on a `--stop-on-status` status. */
@@ -406,7 +457,9 @@ export function orderPlannedProbes(
 }
 
 /**
- * Scales each sampled host's transitions to every due link on that host. A host probed in full
+ * Scales each sampled host's transitions to every due link on that host. Transitions are counted
+ * per row entry, so the scale is too: a link cited by several rows counts once per row on both
+ * sides (#6214, which fixes #6200 scaling row entries by unique links). A host probed in full
  * scales by one, so an unsampled run's projection equals its measurement.
  */
 export function projectSampledTransitions(
@@ -628,6 +681,8 @@ export async function runSourceLinkHealthBackfill(options: {
   urlScope?: string[];
   stopOnStatuses?: number[];
   samplePerHost?: number;
+  reuseProbesWithinMs?: number;
+  probeCacheFile?: string;
   checkLink?: (url: string, requestGate?: HostSlotLimiter) => Promise<SourceLinkHealth>;
   /**
    * Page size, overridable only so a test can cross a page boundary without seeding
@@ -649,7 +704,9 @@ export async function runSourceLinkHealthBackfill(options: {
   const probesByHost = new Map<string, number>();
   const stoppedHosts = new Set<string>();
   const dueByHost = new Map<string, number>();
-  const observedDueByHost = new Map<string, number>();
+  const dueEntriesByHost = new Map<string, number>();
+  const observedEntriesByHost = new Map<string, number>();
+  const observedDueUrls = new Set<string>();
   const transitionsByHost = new Map<string, Record<string, number>>();
   const probeLimits = {
     probesByHost,
@@ -661,10 +718,25 @@ export async function runSourceLinkHealthBackfill(options: {
     options.checkLink ??
     ((url: string, requestGate?: HostSlotLimiter) =>
       checkSourceLinkHealth(url, requestGate, { excludedHosts: excludeHosts }));
+  if (!options.dryRun && options.reuseProbesWithinMs) {
+    throw new Error(
+      'An apply never reuses cached probes; every stored verdict needs a fresh probe.',
+    );
+  }
+  const probeCache =
+    options.probeCacheFile && options.dryRun && options.reuseProbesWithinMs
+      ? readSourceLinkProbeCache(options.probeCacheFile)
+      : new Map<string, CachedSourceLinkProbe>();
+  const freshProbes = new Map<string, CachedSourceLinkProbe>();
+  let probeCacheWriteFailed = false;
   const probedAtByUrl = new Map<string, Date>();
   const checkLink = async (url: string, requestGate?: HostSlotLimiter) => {
     const health = await probeLink(url, requestGate);
-    probedAtByUrl.set(url, new Date());
+    const probedAt = new Date();
+    probedAtByUrl.set(url, probedAt);
+    if (!health.excludedHost && !isUnreachedProbe(health)) {
+      freshProbes.set(url, { health, probedAt: probedAt.toISOString() });
+    }
     return health;
   };
   const hostConcurrency = options.hostConcurrency ?? DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY;
@@ -699,6 +771,7 @@ export async function runSourceLinkHealthBackfill(options: {
     lostVerdictSamples: [],
     excludedHostLinks: 0,
     keptUnobservedLinks: 0,
+    probesReused: 0,
     probesByHost: {},
     stoppedHosts: [],
     indexSyncFailures: 0,
@@ -710,6 +783,23 @@ export async function runSourceLinkHealthBackfill(options: {
 
   const healthCache = new Map<string, SourceLinkHealth>();
   const runStartedAt = new Date();
+  const reuseCachedProbes = (urls: Iterable<string>): void => {
+    if (probeCache.size === 0 || !options.reuseProbesWithinMs) return;
+    for (const url of urls) {
+      if (healthCache.has(url)) continue;
+      const cached = probeCache.get(url);
+      if (!cached) continue;
+      const probedAt = new Date(cached.probedAt);
+      const age = runStartedAt.getTime() - probedAt.getTime();
+      if (age < 0 || age > options.reuseProbesWithinMs) continue;
+      healthCache.set(url, cached.health);
+      probedAtByUrl.set(url, probedAt);
+      result.probesReused += 1;
+      if (!result.oldestReusedProbeAt || cached.probedAt < result.oldestReusedProbeAt) {
+        result.oldestReusedProbeAt = cached.probedAt;
+      }
+    }
+  };
 
   /**
    * Paged by `_id` rather than streamed from one long-lived cursor.
@@ -865,6 +955,12 @@ export async function runSourceLinkHealthBackfill(options: {
       const host = hostOf(url);
       dueByHost.set(host, (dueByHost.get(host) ?? 0) + 1);
     }
+    for (const url of plans.flatMap((plan) => plan.toProbe).filter(inScope)) {
+      if (healthCache.has(url)) continue;
+      const host = hostOf(url);
+      dueEntriesByHost.set(host, (dueEntriesByHost.get(host) ?? 0) + 1);
+    }
+    reuseCachedProbes(plannedProbes);
     await probeUncachedUrlsByHost(plannedProbes, healthCache, {
       checkLink,
       hostConcurrency,
@@ -886,25 +982,21 @@ export async function runSourceLinkHealthBackfill(options: {
         healthCache,
       );
     }
-    await probeUncachedUrlsByHost(
-      [
-        ...new Set(
-          plans.flatMap((plan) => [...plan.tlsFallbacks, ...plan.httpsSpellings.values()]),
-        ),
-      ].filter((url) => !isOnExcludedHost(url, excludeHosts)),
-      healthCache,
-      {
-        checkLink,
-        hostConcurrency,
-        paceDelayMs,
-        sleep,
-        result,
-        pausesSeen,
-        resolverBreaker,
-        hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
-        ...probeLimits,
-      },
-    );
+    const followUpProbes = [
+      ...new Set(plans.flatMap((plan) => [...plan.tlsFallbacks, ...plan.httpsSpellings.values()])),
+    ].filter((url) => !isOnExcludedHost(url, excludeHosts));
+    reuseCachedProbes(followUpProbes);
+    await probeUncachedUrlsByHost(followUpProbes, healthCache, {
+      checkLink,
+      hostConcurrency,
+      paceDelayMs,
+      sleep,
+      result,
+      pausesSeen,
+      resolverBreaker,
+      hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
+      ...probeLimits,
+    });
 
     // Phase 3, no network: every verdict is cached, so assembling and writing a
     // row cannot pace anything.
@@ -951,7 +1043,8 @@ export async function runSourceLinkHealthBackfill(options: {
           probedEntries += 1;
           const urlHost = hostOf(url);
           if (plannedProbeSet.has(url)) {
-            observedDueByHost.set(urlHost, (observedDueByHost.get(urlHost) ?? 0) + 1);
+            observedEntriesByHost.set(urlHost, (observedEntriesByHost.get(urlHost) ?? 0) + 1);
+            observedDueUrls.add(url);
           }
           const resolved = resolveSourceLinkHealthEntry(
             url,
@@ -1019,6 +1112,18 @@ export async function runSourceLinkHealthBackfill(options: {
         );
       }
     }
+    if (options.probeCacheFile && !probeCacheWriteFailed) {
+      try {
+        writeSourceLinkProbeCache(options.probeCacheFile, freshProbes);
+      } catch (error) {
+        probeCacheWriteFailed = true;
+        console.warn(
+          'source-link-health: the probe cache could not be written, so this run continues without it:',
+          sanitizeLogValue(error),
+        );
+      }
+      freshProbes.clear();
+    }
     if (options.limit && result.scanned >= options.limit) break;
     if (page.length < PAGE_SIZE) break;
   }
@@ -1027,7 +1132,7 @@ export async function runSourceLinkHealthBackfill(options: {
   result.stoppedHosts = [...stoppedHosts].sort();
   if (options.samplePerHost !== undefined) {
     const dueLinks = [...dueByHost.values()].reduce((sum, count) => sum + count, 0);
-    const probedLinks = [...observedDueByHost.values()].reduce((sum, count) => sum + count, 0);
+    const probedLinks = observedDueUrls.size;
     result.dryRunSample = {
       perHost: options.samplePerHost,
       dueLinks,
@@ -1036,8 +1141,8 @@ export async function runSourceLinkHealthBackfill(options: {
     };
     result.projectedVerdictTransitions = projectSampledTransitions(
       transitionsByHost,
-      dueByHost,
-      observedDueByHost,
+      dueEntriesByHost,
+      observedEntriesByHost,
     );
   }
   result.pausedHosts = describeHostPauses(pausesSeen);
@@ -1062,6 +1167,7 @@ async function main(): Promise<void> {
   try {
     const runOptions = {
       ...sourceLinkHealthRunOptions(options),
+      probeCacheFile: defaultSourceLinkProbeCachePath(),
       ...(options.urlFile
         ? {
             urlScope: readSourceLinkUrlFile(fs.readFileSync(path.resolve(options.urlFile), 'utf8')),
