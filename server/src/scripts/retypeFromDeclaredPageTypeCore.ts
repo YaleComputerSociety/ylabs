@@ -145,3 +145,27 @@ export function rowContradictsItsOwnType(row: {
 }): boolean {
   return Boolean(researchEntityTypeNameContradiction(row));
 }
+
+export interface DeclaredPageTypeRetypeArgs {
+  apply: boolean;
+  confirmed: boolean;
+  onlySlugsFile?: string;
+}
+
+export function parseDeclaredPageTypeRetypeArgs(
+  argv: readonly string[],
+): DeclaredPageTypeRetypeArgs {
+  const args: DeclaredPageTypeRetypeArgs = { apply: false, confirmed: false };
+  let dryRun = false;
+  for (const arg of argv) {
+    if (arg === '--apply') args.apply = true;
+    else if (arg === '--dry-run') dryRun = true;
+    else if (arg === '--confirm-declared-page-type-retype') args.confirmed = true;
+    else if (arg.startsWith('--only-slugs='))
+      args.onlySlugsFile = arg.slice('--only-slugs='.length).trim();
+    else throw new Error(`Unknown research-entity:retype-from-declared-page-type argument: ${arg}`);
+  }
+  if (args.apply && dryRun) throw new Error('--apply and --dry-run cannot be combined');
+  if (args.onlySlugsFile === '') throw new Error('--only-slugs needs a file path');
+  return args;
+}
