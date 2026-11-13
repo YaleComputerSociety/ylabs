@@ -34,6 +34,7 @@ import {
   verifiedHttpsSpelling,
   storedSourceLinkHealthByUrl,
   isStoredUnresolvableVerdict,
+  tallySourceLinkVerdictTransition,
   type StoredSourceLinkHealthEntry,
   needsRecheckSince,
   needsSourceLinkHealthRefresh,
@@ -187,6 +188,17 @@ export interface SourceLinkHealthBackfillResult {
    * implies, usually because a host throttled it (#2762).
    */
   preservedDecisiveVerdicts: number;
+  /**
+   * How many URLs kept their whole stored verdict because the probe never reached the
+   * host: a private or split-horizon refusal, a timeout or a reset.
+   */
+  preservedUnreachedVerdicts: number;
+  /** Stored verdict changes as `<before>-><after>`; a renewed `checkedAt` alone is not one. */
+  verdictTransitions: Record<string, number>;
+  /** Certificate-failure flags the pass would remove. */
+  clearedTlsFlags: number;
+  /** Websites of `student_ready` rows that stop being followable (gone, or a certificate failure). */
+  servedWebsitesLost: number;
   indexSyncFailures: number;
   indexSyncDeferred: number;
   /** What the resolver breaker did: control checks run, trips it avoided, trips. */
@@ -411,6 +423,10 @@ export async function runSourceLinkHealthBackfill(options: {
     updated: 0,
     errors: 0,
     preservedDecisiveVerdicts: 0,
+    preservedUnreachedVerdicts: 0,
+    verdictTransitions: {},
+    clearedTlsFlags: 0,
+    servedWebsitesLost: 0,
     indexSyncFailures: 0,
     indexSyncDeferred: 0,
     resolver: resolverBreaker.stats,
@@ -470,6 +486,7 @@ export async function runSourceLinkHealthBackfill(options: {
         fieldProvenance: 1,
         fieldValueRefusals: 1,
         sourceLinkHealth: 1,
+        studentVisibilityTier: 1,
       },
     )
       .sort({ _id: 1 })
@@ -608,6 +625,14 @@ export async function runSourceLinkHealthBackfill(options: {
           probedEntries += 1;
           const resolved = resolveSourceLinkHealthEntry(url, health, storedByUrl.get(url), now);
           if (resolved.preservedDecisiveVerdict) result.preservedDecisiveVerdicts += 1;
+          if (resolved.preservedUnreachedVerdict) result.preservedUnreachedVerdicts += 1;
+          tallySourceLinkVerdictTransition(
+            result,
+            storedByUrl.get(url),
+            resolved.entry,
+            entity.studentVisibilityTier === 'student_ready' &&
+              (url === entity.websiteUrl || url === entity.website),
+          );
           // Tally what is STORED, not what the probe returned, or the report claims
           // to have written verdicts the run deliberately declined to write (#2762).
           result.byStatus[resolved.entry.healthStatus] =
