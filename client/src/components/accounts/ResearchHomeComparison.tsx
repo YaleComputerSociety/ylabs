@@ -47,7 +47,7 @@ import {
   resolveResearchDetailActionLinks,
   type ResearchDetailActionLinkContext,
 } from '../../utils/researchDetailActionLinks';
-import { deriveUndergraduateAccessStatus } from '../../utils/undergraduateAccessStatus';
+import { deriveUndergraduateAccessStatuses } from '../../utils/undergraduateAccessStatus';
 import { formatPastAdvisees } from '../../utils/pastUndergradAdvisees';
 import { undergradInvitationFromEntity } from '../../utils/undergradInvitation';
 import { CloseIcon } from '../shared/icons';
@@ -194,17 +194,22 @@ const involvementLinks = (
 };
 
 const UndergraduateEvidenceCell = ({ entity }: { entity: ResearchEntity }) => {
-  const hosting = deriveUndergraduateAccessStatus(entity);
+  const accessStatuses = deriveUndergraduateAccessStatuses(entity);
   const advisees = formatPastAdvisees(entity);
   const quote = entity.wayInWithheld ? undefined : undergradInvitationFromEntity(entity);
-  if (!hosting && advisees.length === 0 && !quote) return <UnknownCell />;
+  if (accessStatuses.length === 0 && advisees.length === 0 && !quote) return <UnknownCell />;
   return (
     <div className="flex flex-col gap-2">
-      {hosting && (
-        <span className="yr-pill yr-pill-blue yr-pill-compact w-fit px-2 py-0.5">
-          {hosting.label}
+      {accessStatuses.map((status) => (
+        <span
+          key={status.label}
+          className={`yr-pill yr-pill-compact w-fit px-2 py-0.5 ${
+            status.tone === 'invitation' ? 'yr-pill-green' : 'yr-pill-blue'
+          }`}
+        >
+          {status.label}
         </span>
-      )}
+      ))}
       {advisees.map((line) => (
         <span key={line} className="text-sm text-ink">
           {line}
