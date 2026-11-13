@@ -50,6 +50,10 @@ const MENTORED_WORK: Record<string, { one: string; many: string }> = {
     one: 'Earth and Planetary Sciences senior thesis',
     many: 'Earth and Planetary Sciences senior theses',
   },
+  'theater-performance-studies-senior-projects': {
+    one: 'Theater, Dance, and Performance Studies senior project',
+    many: 'Theater, Dance, and Performance Studies senior projects',
+  },
 };
 
 const MENTOR_ROSTER_ROLES: Record<string, string> = {

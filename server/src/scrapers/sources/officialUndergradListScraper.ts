@@ -42,6 +42,7 @@ import {
   csArchiveTermListings,
   csArchiveTermUrls,
   economicsSeniorEssayAdviserListings,
+  theaterSeniorProjectIndexListings,
   googleSheetCsvUrl,
   physicsOpenOpportunityListings,
   psychologyResearchSheetListings,
@@ -81,6 +82,7 @@ export type MentorResolution =
   | {
       status: 'matched';
       slug: string;
+      researcherId?: string;
       researcherName?: string;
       matchedBy?: 'email' | 'profile' | 'name';
     }
@@ -270,6 +272,19 @@ const COGNITIVE_SCIENCE_ADVISER_DEPARTMENTS = [
   'Management',
 ] as const;
 
+const THEATER_ADVISER_DEPARTMENTS = [
+  'Theater, Dance & Performance Studies',
+  'Theater & Performance Studies',
+  'Theater Studies',
+  'Drama',
+  'English',
+  'Music',
+  'African American Studies',
+] as const;
+
+const THEATER_PRODUCTIONS_ARCHIVE =
+  'https://tdps.yale.edu/tdps-production-season/tdps-productions-archive';
+
 const COGNITIVE_SCIENCE_ESSAYS = 'https://cogsci.yale.edu/research/past-senior-essays';
 const EPS_THESES = 'https://earth.yale.edu/recent-alumni-and-senior-theses';
 
@@ -423,6 +438,12 @@ export const UNDERGRAD_LIST_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
       singlePage('https://yibs.yale.edu/people/past_sures_fellows', yibsSuresFellowListings),
     ),
   },
+  {
+    source: 'theater-performance-studies-senior-projects',
+    landingUrl: THEATER_PRODUCTIONS_ARCHIVE,
+    departmentScope: THEATER_ADVISER_DEPARTMENTS,
+    read: recentOnly(singlePage(THEATER_PRODUCTIONS_ARCHIVE, theaterSeniorProjectIndexListings)),
+  },
 ];
 
 const listingKey = (listing: MentorListing): string =>
@@ -540,6 +561,7 @@ export const defaultMentorResolver: MentorResolver = async (listing) => {
   return {
     status: 'matched',
     slug,
+    researcherId: String(owner._id),
     researcherName: [owner.fname, owner.lname].filter(Boolean).join(' '),
     matchedBy,
   };

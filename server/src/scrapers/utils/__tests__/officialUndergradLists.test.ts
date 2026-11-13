@@ -11,6 +11,7 @@ import {
   csArchiveTermListings,
   csArchiveTermUrls,
   economicsSeniorEssayAdviserListings,
+  theaterSeniorProjectIndexListings,
   googleSheetCsvUrl,
   nameBeforeTitle,
   nameFromHeadingAndEmail,
@@ -475,6 +476,60 @@ describe('humanities essay and summer research lists', () => {
     const [listing] = yibsSuresFellowListings(html, 'https://yibs.example.edu/');
     expect(listing).toEqual(expect.objectContaining({ adviserName: 'Blair Invented', year: 2023 }));
     expect(listing.department).toBeUndefined();
+  });
+});
+
+describe('Theater, Dance, and Performance Studies senior projects', () => {
+  const indexUrl = 'https://tdps.example.edu/archive';
+  const card = (lines: string) => `<li class="reference-card"><div class="reference-card__content">
+      <h3 class="reference-card__heading"><a class="reference-card__heading-link" href="/01-a-synthetic-play">01: A Synthetic Play</a></h3>
+      <div class="reference-card__snippet"><div>${lines}</div></div></div></li>`;
+
+  it('keeps only the adviser credit of a card, never the student, director or title', () => {
+    const index = `<h2 class="component-wrapper__heading">2024-25 Curricular Productions</h2><ul>
+      ${card('<p>A senior project in acting for Juniper Talloway</p><p>Directed by Ezra Quenby</p><p>Advised by Rowan Synthetic and Harper Invented</p>')}
+      ${card('<p>A senior project in directing for Ezra Quenby Advised by Sloane Fictional</p>')}
+      ${card('<p>Senior project for Juniper Talloway</p><p>Advisor: Avery Madeup, as a part of THST 344.</p>')}
+      </ul>`;
+
+    const listings = theaterSeniorProjectIndexListings(index, indexUrl);
+
+    expect(listings.map((listing) => [listing.adviserName, listing.year, listing.itemKey])).toEqual(
+      [
+        ['Rowan Synthetic', 2025, 'card:1'],
+        ['Harper Invented', 2025, 'card:1'],
+        ['Sloane Fictional', 2025, 'card:2'],
+        ['Avery Madeup', 2025, 'card:3'],
+      ],
+    );
+    expect(listings.every((listing) => listing.sourceUrl === indexUrl)).toBe(true);
+    expect(studentFree(listings)).not.toMatch(/Juniper|Talloway|Ezra|Quenby|Synthetic Play|THST/i);
+  });
+
+  it('reads an adviser credit printed straight after the student name with no space', () => {
+    const index = `<h2 class="component-wrapper__heading">2024-25 Curricular Productions</h2><ul>
+      ${card('<p>A senior project in directing for Ezra Quenby and in acting for Juniper TallowayAdvised by Rowan Synthetic</p>')}</ul>`;
+
+    const listings = theaterSeniorProjectIndexListings(index, indexUrl);
+
+    expect(listings.map((listing) => listing.adviserName)).toEqual(['Rowan Synthetic']);
+    expect(studentFree(listings)).not.toMatch(/Juniper|Talloway|Ezra|Quenby/i);
+  });
+
+  it('reads no adviser from a production card that credits no senior project', () => {
+    const index = `<h2 class="component-wrapper__heading">2023-24 Curricular Productions</h2><ul>
+      ${card('<p>Directed by Ezra Quenby</p><p>Advised by Rowan Synthetic</p>')}</ul>`;
+
+    expect(theaterSeniorProjectIndexListings(index, indexUrl)).toEqual([]);
+  });
+
+  it('reads nothing from a season whose cards print no adviser, or from cards outside a season', () => {
+    const index = `<h2 class="component-wrapper__heading">2025-26 Curricular Productions</h2><ul>
+      <li class="reference-card"><h3><a class="reference-card__heading-link" href="/01-new-play">01: New</a></h3></li></ul>
+      <h2 class="component-wrapper__heading">Related Links</h2><ul>
+      ${card('<p>A senior project in acting for Juniper Talloway</p><p>Advised by Rowan Synthetic</p>')}</ul>`;
+
+    expect(theaterSeniorProjectIndexListings(index, indexUrl)).toEqual([]);
   });
 });
 
