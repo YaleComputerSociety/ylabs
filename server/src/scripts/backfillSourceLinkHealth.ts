@@ -728,6 +728,7 @@ export async function runSourceLinkHealthBackfill(options: {
       ? readSourceLinkProbeCache(options.probeCacheFile)
       : new Map<string, CachedSourceLinkProbe>();
   const freshProbes = new Map<string, CachedSourceLinkProbe>();
+  let probeCacheWriteFailed = false;
   const probedAtByUrl = new Map<string, Date>();
   const checkLink = async (url: string, requestGate?: HostSlotLimiter) => {
     const health = await probeLink(url, requestGate);
@@ -1111,8 +1112,16 @@ export async function runSourceLinkHealthBackfill(options: {
         );
       }
     }
-    if (options.probeCacheFile) {
-      writeSourceLinkProbeCache(options.probeCacheFile, freshProbes);
+    if (options.probeCacheFile && !probeCacheWriteFailed) {
+      try {
+        writeSourceLinkProbeCache(options.probeCacheFile, freshProbes);
+      } catch (error) {
+        probeCacheWriteFailed = true;
+        console.warn(
+          'source-link-health: the probe cache could not be written, so this run continues without it:',
+          sanitizeLogValue(error),
+        );
+      }
       freshProbes.clear();
     }
     if (options.limit && result.scanned >= options.limit) break;

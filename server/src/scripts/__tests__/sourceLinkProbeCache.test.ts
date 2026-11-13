@@ -71,4 +71,38 @@ describe('source link probe cache', () => {
     expect(cache.get('https://kept.example.edu/')?.health.healthStatus).toBe('UNAVAILABLE');
     expect(fs.readdirSync(path.dirname(file))).toEqual(['probes.json']);
   });
+
+  it('keeps the cache owner-only, tightening a file left readable by others', () => {
+    const file = tempFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '{}', { mode: 0o644 });
+    fs.chmodSync(file, 0o644);
+    writeSourceLinkProbeCache(
+      file,
+      new Map([
+        [
+          'https://a.example.edu/',
+          { health: { healthStatus: 'HEALTHY' } as any, probedAt: new Date().toISOString() },
+        ],
+      ]),
+    );
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+
+    const fresh = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'probe-cache-dir-')),
+      'ylabs',
+      'probes.json',
+    );
+    writeSourceLinkProbeCache(
+      fresh,
+      new Map([
+        [
+          'https://a.example.edu/',
+          { health: { healthStatus: 'HEALTHY' } as any, probedAt: new Date().toISOString() },
+        ],
+      ]),
+    );
+    expect(fs.statSync(path.dirname(fresh)).mode & 0o777).toBe(0o700);
+    expect(fs.statSync(fresh).mode & 0o777).toBe(0o600);
+  });
 });

@@ -61,8 +61,9 @@ export function writeSourceLinkProbeCache(
       kept[url] = entry;
     }
   }
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, JSON.stringify(kept));
+  fs.writeFileSync(temporary, JSON.stringify(kept), { mode: 0o600 });
+  fs.chmodSync(temporary, 0o600);
   fs.renameSync(temporary, file);
 }

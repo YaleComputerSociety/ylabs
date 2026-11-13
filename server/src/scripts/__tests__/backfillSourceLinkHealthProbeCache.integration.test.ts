@@ -152,4 +152,23 @@ describe('link-health dry-run probe cache (#6214)', () => {
     await sampledDryRun(recorder({ healthStatus: 'UNKNOWN' }).checkLink);
     expect(readSourceLinkProbeCache(cacheFile).size).toBe(0);
   }, 120000);
+
+  it('finishes an apply when the cache cannot be written', async () => {
+    const blocker = path.join(cacheDir, 'not-a-directory');
+    fs.writeFileSync(blocker, '');
+    const apply = recorder();
+    const result = await runSourceLinkHealthBackfill({
+      dryRun: false,
+      reprobeHealthyAfterDays: 7,
+      probeCacheFile: path.join(blocker, 'probes.json'),
+      checkLink: apply.checkLink,
+      paceDelayMs: 0,
+    });
+    expect(result.errors).toBe(0);
+    expect(result.updated).toBe(LINK_COUNT);
+    const stored = await ResearchEntity.find({}).lean();
+    expect(
+      stored.every((row: any) => row.sourceLinkHealth?.[0]?.healthStatus === 'UNAVAILABLE'),
+    ).toBe(true);
+  }, 120000);
 });
