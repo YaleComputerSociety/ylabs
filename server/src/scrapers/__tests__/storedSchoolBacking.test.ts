@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  buildOrgUnitResolverIndex,
+  createOrgUnitCanonicalizer,
+  setOrgUnitCanonicalizerForTesting,
+} from '../orgUnitCanonicalization';
+import {
   schoolDerivedByOrgUnitCanonicalization,
   storedSchoolBackingClass,
   storedSchoolIsBacked,
@@ -143,5 +148,53 @@ describe('schoolDerivedByOrgUnitCanonicalization (#6096)', () => {
       departmentAffiliationLabels: [],
     }));
     expect(await schoolDerivedByOrgUnitCanonicalization({ _id: 'row' }, canonicalize)).toBe('');
+  });
+});
+
+describe('schoolDerivedByOrgUnitCanonicalization against the real canonicalization (#6096)', () => {
+  const useCatalog = () => {
+    const index = buildOrgUnitResolverIndex([
+      { slug: 'fixture-science', name: 'Fixture School of Science', kind: 'SCHOOL' },
+      { slug: 'fixture-letters', name: 'Fixture School of Letters', kind: 'SCHOOL' },
+      { slug: 'fixture-chemistry', name: 'Fixture Chemistry', kind: 'DEPARTMENT' },
+      { slug: 'fixture-poetry', name: 'Fixture Poetry', kind: 'DEPARTMENT' },
+    ]);
+    setOrgUnitCanonicalizerForTesting(
+      createOrgUnitCanonicalizer(
+        index,
+        new Map([
+          ['Fixture Chemistry', 'Fixture School of Science'],
+          ['Fixture Poetry', 'Fixture School of Letters'],
+        ]),
+      ),
+    );
+  };
+
+  it('derives the first department parent school for a lab', async () => {
+    useCatalog();
+    try {
+      expect(
+        await schoolDerivedByOrgUnitCanonicalization({
+          entityType: 'LAB',
+          departments: ['Fixture Chemistry', 'Fixture Poetry'],
+        }),
+      ).toBe('Fixture School of Science');
+    } finally {
+      setOrgUnitCanonicalizerForTesting(null);
+    }
+  });
+
+  it('derives no school for a center spanning two schools, as the engine leaves it', async () => {
+    useCatalog();
+    try {
+      expect(
+        await schoolDerivedByOrgUnitCanonicalization({
+          entityType: 'CENTER',
+          departments: ['Fixture Chemistry', 'Fixture Poetry'],
+        }),
+      ).toBe('');
+    } finally {
+      setOrgUnitCanonicalizerForTesting(null);
+    }
   });
 });

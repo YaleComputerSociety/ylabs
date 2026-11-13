@@ -16,6 +16,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  assertSchoolCatalogSeeded,
   summarizeStoredSchoolBacking,
   type StoredSchoolBackingReportRow,
 } from './storedSchoolBackingReportCore';
@@ -60,11 +61,7 @@ async function main(): Promise<void> {
       '_id slug school schools departments entityType websiteUrl sourceUrls fieldProvenance.school manuallyLockedFields studentVisibilityTier studentVisibilityOverrideTier',
     )
     .lean()) as Array<StoredSchoolBackingReportRow & Record<string, unknown>>;
-  if ((await OrgUnit.countDocuments({ kind: 'SCHOOL' })) === 0) {
-    throw new Error(
-      'The org-unit catalog holds no school, so every comparison would be raw-only and inflate never-backed. Seed org_units first.',
-    );
-  }
+  await assertSchoolCatalogSeeded((filter) => OrgUnit.countDocuments(filter));
   const reportRows = rows.map((row) => ({ ...row, served: servesStudentVisibilityTier(row) }));
   const readingsByRow = await loadResolvedSchoolObservationsByRow(reportRows);
   const derivedSchoolByRow = new Map<string, string>();

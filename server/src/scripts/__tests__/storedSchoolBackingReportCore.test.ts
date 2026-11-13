@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SchoolCanonicalizer } from '../../scrapers/storedSchoolBacking';
 import {
+  assertSchoolCatalogSeeded,
   NO_PROVENANCE_SOURCE,
   summarizeStoredSchoolBacking,
 } from '../storedSchoolBackingReportCore';
@@ -58,5 +59,19 @@ describe('summarizeStoredSchoolBacking (#6096)', () => {
     expect(summary.servedNeverBackedSchoolLocked).toBe(1);
     expect(summary.servedNeverBackedWithRivalReadings).toBe(1);
     expect(summary.servedNeverBackedWithNoReadings).toBe(1);
+    expect(summary.servedEngineUnbacked).toBe(3);
+    expect(summary.servedMergedInOnlyByProvenanceSource).toEqual({ [NO_PROVENANCE_SOURCE]: 1 });
+  });
+
+  it('refuses to run against a catalog with no school or division, and asks for both kinds', async () => {
+    const filters: unknown[] = [];
+    await expect(
+      assertSchoolCatalogSeeded(async (filter) => {
+        filters.push(filter);
+        return 0;
+      }),
+    ).rejects.toThrow(/no school or division/);
+    expect(filters).toEqual([{ kind: { $in: ['SCHOOL', 'DIVISION'] } }]);
+    await expect(assertSchoolCatalogSeeded(async () => 1)).resolves.toBeUndefined();
   });
 });

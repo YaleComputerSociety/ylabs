@@ -29,9 +29,27 @@ export interface StoredSchoolBackingSummary {
   servedNeverBackedWithNoReadings: number;
   servedBackedOnlyBySupersededReadings: number;
   servedBackedOnlyBySupersededReadingsByProvenanceSource: Record<string, number>;
+  servedEngineUnbacked: number;
+  servedMergedInOnlyByProvenanceSource: Record<string, number>;
 }
 
 export const NO_PROVENANCE_SOURCE = '(no provenance entry)';
+
+const SCHOOL_CATALOG_KINDS = ['SCHOOL', 'DIVISION'];
+
+/**
+ * Refuses a run against an org-unit catalog with no school-altitude unit, because every
+ * comparison would then be raw-only and inflate never-backed (#6096). The kinds are the ones
+ * org-unit canonicalization resolves a school from.
+ */
+export async function assertSchoolCatalogSeeded(
+  countUnits: (filter: Record<string, unknown>) => Promise<number>,
+): Promise<void> {
+  if ((await countUnits({ kind: { $in: SCHOOL_CATALOG_KINDS } })) > 0) return;
+  throw new Error(
+    'The org-unit catalog holds no school or division, so every comparison would be raw-only and inflate never-backed. Seed org_units first.',
+  );
+}
 
 const emptyClassCounts = (): ClassCounts =>
   Object.fromEntries(STORED_SCHOOL_BACKING_CLASSES.map((name) => [name, 0])) as ClassCounts;
@@ -74,6 +92,8 @@ export function summarizeStoredSchoolBacking(
     servedNeverBackedWithNoReadings: 0,
     servedBackedOnlyBySupersededReadings: 0,
     servedBackedOnlyBySupersededReadingsByProvenanceSource: {},
+    servedEngineUnbacked: 0,
+    servedMergedInOnlyByProvenanceSource: {},
   };
   for (const row of rows) {
     const rowId = serializedDocumentId(row._id);
@@ -105,7 +125,13 @@ export function summarizeStoredSchoolBacking(
       summary.servedBackedOnlyBySupersededReadingsByProvenanceSource[source] =
         (summary.servedBackedOnlyBySupersededReadingsByProvenanceSource[source] ?? 0) + 1;
     }
+    if (backing === 'merged-in-reading-only') {
+      summary.servedEngineUnbacked += 1;
+      summary.servedMergedInOnlyByProvenanceSource[source] =
+        (summary.servedMergedInOnlyByProvenanceSource[source] ?? 0) + 1;
+    }
     if (backing !== 'never-backed') continue;
+    summary.servedEngineUnbacked += 1;
     summary.servedNeverBackedByProvenanceSource[source] =
       (summary.servedNeverBackedByProvenanceSource[source] ?? 0) + 1;
     if (schoolIsLocked(row)) summary.servedNeverBackedSchoolLocked += 1;

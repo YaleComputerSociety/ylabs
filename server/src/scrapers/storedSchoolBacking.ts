@@ -221,9 +221,10 @@ const mergedInReadingsDropped = SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(SCHOOL
  * apart, every merged-in row's id and slug (the engine's `mergedRowEvidenceIdentity`), whose
  * readings the survivor's resolve drops because `school` is survivor-owned.
  *
- * Two engine screens are deliberately not applied, and both could only move a row toward
- * never-backed: the gone-page withdrawal and lane refusals at resolve, and the slug-scoped read
- * of observations under the row's slug that carry another row's `entityId`.
+ * Two engine behaviours are deliberately not mirrored. The gone-page withdrawal and lane
+ * refusals at resolve could only move a row toward never-backed. The slug-scoped read of
+ * observations under the row's slug that carry another row's `entityId` can make a backed row
+ * read as never-backed here, which is why every flagged row goes to a blind check.
  */
 export async function loadResolvedSchoolObservationsByRow(
   rows: readonly SchoolBackingRow[],
