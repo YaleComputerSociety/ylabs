@@ -237,6 +237,7 @@ Each worktree still gets its own `node_modules` directories, so `.vite` and othe
 Never edit a file inside `node_modules` in place, because the same file is shared by every worktree.
 Run `scripts/verify-yarn-store.sh` after every install, which checks that every store file still matches its content hash and exits 1 on a mismatch.
 Re-run `yarn install:all` in a worktree only between tasks, never while its dev server or tests are running.
+Agent isolation worktrees under `.claude/worktrees/` sit below the primary checkout rather than the worktree root, so they do not inherit the setting and still take full copies.
 - Run each worktree's API with `yarn dev:server` and its client dev server on its own port (`yarn dev --port <port>`) so they coexist, and test each at its own `localhost:<port>`.
 `compose.yaml` pins the Compose project name, so `yarn meili:up` from any worktree reuses the one local Meilisearch.
 - Stop only processes you started, by the PID you recorded or by your own reserved port (`lsof -ti tcp:<your port> -sTCP:LISTEN | xargs kill`).
