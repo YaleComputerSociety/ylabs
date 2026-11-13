@@ -1077,9 +1077,29 @@ function sameOfficialPersonPageForEntity(
   );
 }
 
+/**
+ * "Education" is also a page section label, but it ends an appointment phrase such as
+ * "Director of Clinical Education", which the label cut used to truncate (#6198).
+ */
+const EDUCATION_INSIDE_APPOINTMENT =
+  /\b(?:of|in|for|and|&|clinical|medical|graduate|continuing|nursing|health|dental|professional|interprofessional|undergraduate|residency|fellowship)\s+education\b/i;
+
+function cutAtProfileSectionLabel(value: string): string {
+  const label = /\b(?:Bio|Biography|Education|Contact|Courses Taught|Curriculum Vitae)\b/gi;
+  for (const match of value.matchAll(label)) {
+    const index = match.index ?? 0;
+    const isAppointmentEducation =
+      /^education$/i.test(match[0]) &&
+      EDUCATION_INSIDE_APPOINTMENT.test(
+        value.slice(Math.max(0, index - 40), index + match[0].length),
+      );
+    if (!isAppointmentEducation) return value.slice(0, index);
+  }
+  return value;
+}
+
 function cleanOfficialProfileTitle(value: string): string {
-  const cleaned = textValue(value)
-    .replace(/\b(?:Bio|Biography|Education|Contact|Courses Taught|Curriculum Vitae)\b[\s\S]*$/i, '')
+  const cleaned = cutAtProfileSectionLabel(textValue(value))
     .replace(/\s+\|.+$/g, '')
     .trim();
   if (!cleaned || cleaned.length > 220) return '';
@@ -1234,6 +1254,23 @@ function classNamesATitle($: cheerio.CheerioAPI, element: AnyNode): boolean {
     .some((name) => name.includes('title') && !name.endsWith('without-title'));
 }
 
+/**
+ * Content cards on a profile page (news posts, awards, publications, events) carry their own
+ * title-classed headings. When the header appointment fails the title pattern, a card heading
+ * containing an appointment word was read as the person's title (#5594).
+ */
+const PROFILE_CONTENT_CARD_SELECTOR = [
+  '[class*="article-post"]',
+  '[class*="achievement-card"]',
+  '[class*="publication-card"]',
+  '[class*="event-list-item"]',
+  '[class*="pub--"]',
+].join(', ');
+
+function insideProfileContentCard($: cheerio.CheerioAPI, element: AnyNode): boolean {
+  return $(element).closest(PROFILE_CONTENT_CARD_SELECTOR).length > 0;
+}
+
 function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
   const selectors = [
     '[class*="title"]',
@@ -1247,6 +1284,7 @@ function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
     const elements = $(selector).toArray();
     for (const el of elements) {
       if (selector === '[class*="title"]' && !classNamesATitle($, el)) continue;
+      if (selector !== 'meta[name="description"]' && insideProfileContentCard($, el)) continue;
       const value = cleanOfficialProfileTitle(
         blockSeparatedText($(el)) || $(el).attr('content') || '',
       );
