@@ -24,12 +24,11 @@ export type UserDepartmentObservationScreen = <T extends UserDepartmentObservati
  * observation, and `storedDepartmentRestsOnlyOnScreenedReadings` reads the same list, so a
  * stored department only screened readings back is cleared by the screen that refused them.
  */
-export const USER_DEPARTMENT_OBSERVATION_SCREENS: ReadonlyArray<UserDepartmentObservationScreen> =
-  [
-    (observations, { canonicalDepartment }) =>
-      withDirectoryExportDepartmentsDecoded(observations, canonicalDepartment),
-    (observations) => withoutDepartmentHeadingObservations(observations),
-  ];
+export const USER_DEPARTMENT_OBSERVATION_SCREENS: ReadonlyArray<UserDepartmentObservationScreen> = [
+  (observations, { canonicalDepartment }) =>
+    withDirectoryExportDepartmentsDecoded(observations, canonicalDepartment),
+  (observations) => withoutDepartmentHeadingObservations(observations),
+];
 
 export function withUserDepartmentObservationsScreened<T extends UserDepartmentObservation>(
   observations: T[],
