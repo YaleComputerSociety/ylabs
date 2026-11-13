@@ -306,6 +306,28 @@ export function storedSourceLinkHealthByUrl(
 export interface ResolvedSourceLinkHealthEntry {
   entry: StoredSourceLinkHealthEntry;
   preservedDecisiveVerdict: boolean;
+  preservedUnreachedVerdict?: boolean;
+}
+
+/**
+ * A probe that never got an answer from the host: no HTTP status and no TLS
+ * handshake to judge. That covers a host the SSRF guard refused as private (on the
+ * Yale network, split-horizon DNS answers internal addresses for some public hosts),
+ * a timeout and a reset. It observed nothing about the URL, so it must not replace
+ * what an earlier probe did observe, a certificate failure included. A confirmed DNS
+ * or connection negative is not this: `classifyProbeOutcome` records it as
+ * `UNAVAILABLE`, which is how a retired host retires (#2726, #2757).
+ */
+export function isUnreachedProbe(fresh: {
+  healthStatus: SourceLinkHealthStatus;
+  httpStatusCode?: number;
+  tlsVerificationFailed?: boolean;
+}): boolean {
+  return (
+    fresh.healthStatus === 'UNKNOWN' &&
+    typeof fresh.httpStatusCode !== 'number' &&
+    !fresh.tlsVerificationFailed
+  );
 }
 
 /**
@@ -359,6 +381,19 @@ export function resolveSourceLinkHealthEntry(
 
   if (fresh.healthStatus !== 'UNKNOWN')
     return { entry: freshEntry, preservedDecisiveVerdict: false };
+  if (stored && isUnreachedProbe(fresh)) {
+    const { privateAddressHost: _storedPrivate, ...storedVerdict } = stored;
+    return {
+      entry: {
+        ...storedVerdict,
+        url,
+        ...(privateAddressHost ? { privateAddressHost: true as const } : {}),
+        lastAttemptedAt: now,
+      },
+      preservedDecisiveVerdict: isDecisiveStoredVerdict(stored),
+      preservedUnreachedVerdict: true,
+    };
+  }
   if (!isDecisiveStoredVerdict(stored))
     return { entry: freshEntry, preservedDecisiveVerdict: false };
   // A certificate that fails verification contradicts a stored HEALTHY for this very
@@ -461,4 +496,80 @@ export function carryForwardSourceLinkHealthEntry(
     ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
     ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
   };
+}
+
+/**
+ * One stored verdict as the gate reads it: its status and the two routing facts that
+ * change what a student sees. `NONE` is a URL nobody has probed.
+ */
+export function sourceLinkVerdictSignature(entry: StoredSourceLinkHealthEntry | undefined): string {
+  if (!entry) return 'NONE';
+  return `${entry.healthStatus}${entry.tlsVerificationFailed ? '+TLS' : ''}${
+    entry.privateAddressHost ? '+PRIVATE' : ''
+  }`;
+}
+
+const VERDICTS_A_STUDENT_CAN_FOLLOW = new Set(['HEALTHY', 'REDIRECTED']);
+
+export interface SourceLinkVerdictTransitionSample {
+  slug: string;
+  url: string;
+  transition: string;
+  servedWebsite: boolean;
+  httpStatusCode?: number;
+}
+
+export interface SourceLinkVerdictTransitionTally {
+  verdictTransitions: Record<string, number>;
+  clearedTlsFlags: number;
+  servedWebsitesLost: number;
+  /**
+   * Every transition away from a verdict a student could follow, or that clears a
+   * certificate flag, so a gate can re-check each one by hand. A first probe of an
+   * unprobed URL is not listed.
+   */
+  lostVerdictSamples: SourceLinkVerdictTransitionSample[];
+}
+
+const MAX_LOST_VERDICT_SAMPLES = 200;
+
+/**
+ * Counts what one URL's stored verdict becomes. A changed `checkedAt` alone is not a
+ * transition, which is why the row-level `updated` count cannot answer the gate's two
+ * questions: how many certificate warnings a pass would erase, and how many websites
+ * on served rows stop being followable.
+ */
+export function tallySourceLinkVerdictTransition(
+  tally: SourceLinkVerdictTransitionTally,
+  before: StoredSourceLinkHealthEntry | undefined,
+  after: StoredSourceLinkHealthEntry,
+  servedWebsite: boolean,
+  slug = '',
+): void {
+  const from = sourceLinkVerdictSignature(before);
+  const to = sourceLinkVerdictSignature(after);
+  if (from === to) return;
+  const key = `${from}->${to}`;
+  tally.verdictTransitions[key] = (tally.verdictTransitions[key] ?? 0) + 1;
+  if (before?.tlsVerificationFailed && !after.tlsVerificationFailed) tally.clearedTlsFlags += 1;
+  const followableBefore =
+    !!before &&
+    VERDICTS_A_STUDENT_CAN_FOLLOW.has(before.healthStatus) &&
+    !before.tlsVerificationFailed;
+  const followableAfter =
+    VERDICTS_A_STUDENT_CAN_FOLLOW.has(after.healthStatus) && !after.tlsVerificationFailed;
+  if (servedWebsite && followableBefore && !followableAfter) tally.servedWebsitesLost += 1;
+  const clearsTls = !!before?.tlsVerificationFailed && !after.tlsVerificationFailed;
+  if (
+    ((followableBefore && !followableAfter) || clearsTls) &&
+    tally.lostVerdictSamples.length < MAX_LOST_VERDICT_SAMPLES
+  ) {
+    tally.lostVerdictSamples.push({
+      slug,
+      url: after.url,
+      transition: key,
+      servedWebsite,
+      ...(typeof after.httpStatusCode === 'number' ? { httpStatusCode: after.httpStatusCode } : {}),
+    });
+  }
 }

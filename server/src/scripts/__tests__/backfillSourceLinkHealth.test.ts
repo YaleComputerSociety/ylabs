@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   parseSourceLinkHealthBackfillArgs,
   sourceLinkHealthRunOptions,
+  sourceLinkHealthBackfillStdoutSummary,
+  type SourceLinkHealthBackfillResult,
 } from '../backfillSourceLinkHealth';
 
 describe('parseSourceLinkHealthBackfillArgs', () => {
@@ -119,5 +121,56 @@ describe('--reprobe-healthy-after-days', () => {
     expect(() =>
       parseSourceLinkHealthBackfillArgs(['--stale-only', '--reprobe-healthy-after-days=7']),
     ).toThrow(/alternative scopes/);
+  });
+});
+
+describe('sourceLinkHealthBackfillStdoutSummary', () => {
+  it('prints sample lists as counts so no slug reaches stdout', () => {
+    const slug = 'fixture-row-slug';
+    const result = {
+      mode: 'dry-run',
+      scanned: 1,
+      skippedFresh: 0,
+      skippedAlreadyRechecked: 0,
+      carriedFreshHealthy: 0,
+      unchangedRows: 0,
+      checked: 1,
+      updated: 1,
+      errors: 0,
+      preservedDecisiveVerdicts: 0,
+      preservedUnreachedVerdicts: 0,
+      verdictTransitions: { 'HEALTHY->UNAVAILABLE': 1 },
+      clearedTlsFlags: 0,
+      servedWebsitesLost: 1,
+      lostVerdictSamples: [
+        {
+          slug,
+          url: 'https://fixture.example.edu/',
+          transition: 'HEALTHY->UNAVAILABLE',
+          servedWebsite: true,
+        },
+      ],
+      indexSyncFailures: 0,
+      indexSyncDeferred: 0,
+      resolver: {
+        controlChecks: 0,
+        tripsAvoided: 0,
+        trips: 0,
+        knownUnresolvableFailuresIgnored: 0,
+      },
+      byStatus: { UNAVAILABLE: 1 },
+      samples: [{ slug, url: 'https://fixture.example.edu/', healthStatus: 'UNAVAILABLE' }],
+    } as SourceLinkHealthBackfillResult;
+
+    const printed = JSON.stringify(sourceLinkHealthBackfillStdoutSummary(result));
+
+    expect(printed).not.toContain(slug);
+    expect(printed).not.toContain('fixture.example.edu');
+    expect(sourceLinkHealthBackfillStdoutSummary(result)).toMatchObject({
+      sampleCount: 1,
+      lostVerdictSampleCount: 1,
+      servedWebsitesLost: 1,
+      verdictTransitions: { 'HEALTHY->UNAVAILABLE': 1 },
+    });
   });
 });
