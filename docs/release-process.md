@@ -447,7 +447,7 @@ The user materializer refreshes `identifiers.emailSupport` only for a researcher
 3. Dry-run again with the command from step 1; it must plan 0.
 4. Count coverage: `yarn --cwd server researchers:email-support-coverage --environment=development` must read `unmarked: 0`, the precondition for any serve-time use of the marker.
 
-The scraper sweep runs this pass itself as the `researcher-email-support` stage, after `staff-minted-retirement` and directly before `visibility-gate` (#5713), so a sweep marks researchers that newly become unreached without a manual run.
+The scraper sweep runs this pass itself as the `researcher-email-support` stage, directly before `visibility-gate` (#5713; order in `docs/research-data-pipeline.md`), so a sweep marks researchers that newly become unreached without a manual run.
 Run the steps above by hand only for a Development materialize outside a sweep.
 
 ## Verifying a release
