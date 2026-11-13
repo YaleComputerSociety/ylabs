@@ -142,6 +142,7 @@ describe('sourceLinkHealthBackfillStdoutSummary', () => {
       verdictTransitions: { 'HEALTHY->UNAVAILABLE': 1 },
       clearedTlsFlags: 0,
       servedWebsitesLost: 1,
+      excludedHostLinks: 0,
       lostVerdictSamples: [
         {
           slug,

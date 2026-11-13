@@ -35,6 +35,8 @@ import {
   storedSourceLinkHealthByUrl,
   isStoredUnresolvableVerdict,
   tallySourceLinkVerdictTransition,
+  isOnExcludedHost,
+  normalizeExcludedHost,
   type SourceLinkVerdictTransitionSample,
   type StoredSourceLinkHealthEntry,
   needsRecheckSince,
@@ -54,6 +56,7 @@ export interface SourceLinkHealthBackfillOptions {
   httpWebsitesOnly: boolean;
   reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
+  excludeHosts: string[];
   output?: string;
 }
 
@@ -85,6 +88,7 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     confirm: false,
     staleOnly: false,
     httpWebsitesOnly: false,
+    excludeHosts: [],
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -103,6 +107,11 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
       options.checkedBefore = parseCheckedBefore(arg.slice('--checked-before='.length));
     } else if (arg === '--checked-before') {
       options.checkedBefore = parseCheckedBefore(argv[i + 1]);
+      i += 1;
+    } else if (arg.startsWith('--exclude-host=')) {
+      options.excludeHosts.push(parseExcludedHost(arg.slice('--exclude-host='.length)));
+    } else if (arg === '--exclude-host') {
+      options.excludeHosts.push(parseExcludedHost(argv[i + 1]));
       i += 1;
     } else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInt(arg.slice('--limit='.length), '--limit');
@@ -126,6 +135,14 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     );
   }
   return options;
+}
+
+function parseExcludedHost(value: string | undefined): string {
+  const host = normalizeExcludedHost(value ?? '');
+  if (!host || host.startsWith('-') || !/^[a-z0-9.-]+$/.test(host) || !host.includes('.')) {
+    throw new Error('--exclude-host requires a host name such as economics.yale.edu');
+  }
+  return host;
 }
 
 function parseCheckedBefore(value: string | undefined): Date {
@@ -167,6 +184,7 @@ export interface SourceLinkHealthRunOptions {
   httpWebsitesOnly?: boolean;
   reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
+  excludeHosts?: string[];
 }
 
 /**
@@ -185,6 +203,9 @@ export function sourceLinkHealthRunOptions(
       ? { reprobeHealthyAfterDays: options.reprobeHealthyAfterDays }
       : {}),
     ...(options.checkedBefore ? { checkedBefore: options.checkedBefore } : {}),
+    ...(options.excludeHosts.length > 0
+      ? { excludeHosts: [...new Set(options.excludeHosts)] }
+      : {}),
   };
 }
 
@@ -220,6 +241,11 @@ export interface SourceLinkHealthBackfillResult {
   clearedTlsFlags: number;
   /** Websites of `student_ready` rows that stop being followable (gone, or a certificate failure). */
   servedWebsitesLost: number;
+  /**
+   * Candidate links on an `--exclude-host` host: never fetched, stored verdict carried
+   * forward untouched.
+   */
+  excludedHostLinks: number;
   /** Each lost or certificate-cleared verdict, for a gate to re-check by hand. */
   lostVerdictSamples: SourceLinkVerdictTransitionSample[];
   indexSyncFailures: number;
@@ -411,6 +437,7 @@ export async function runSourceLinkHealthBackfill(options: {
   httpWebsitesOnly?: boolean;
   reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
+  excludeHosts?: string[];
   checkLink?: (url: string, requestGate?: HostSlotLimiter) => Promise<SourceLinkHealth>;
   /**
    * Page size, overridable only so a test can cross a page boundary without seeding
@@ -425,6 +452,7 @@ export async function runSourceLinkHealthBackfill(options: {
   hostThrottleFor?: (host: string) => HostThrottle | undefined;
 }): Promise<SourceLinkHealthBackfillResult> {
   const checkLink = options.checkLink ?? checkSourceLinkHealth;
+  const excludeHosts = (options.excludeHosts ?? []).map(normalizeExcludedHost).filter(Boolean);
   const hostConcurrency = options.hostConcurrency ?? DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY;
   const paceDelayMs = options.paceDelayMs ?? DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS;
   const sleep =
@@ -451,6 +479,7 @@ export async function runSourceLinkHealthBackfill(options: {
     clearedTlsFlags: 0,
     servedWebsitesLost: 0,
     lostVerdictSamples: [],
+    excludedHostLinks: 0,
     indexSyncFailures: 0,
     indexSyncDeferred: 0,
     resolver: resolverBreaker.stats,
@@ -526,6 +555,7 @@ export async function runSourceLinkHealthBackfill(options: {
       candidates: string[];
       toProbe: string[];
       carried: Map<string, StoredSourceLinkHealthEntry>;
+      excluded: Set<string>;
       tlsFallbacks: string[];
       httpsSpellings: Map<string, string>;
     }> = [];
@@ -567,11 +597,21 @@ export async function runSourceLinkHealthBackfill(options: {
                 planNow,
               );
         noteStoredSourceLinkVerdicts(resolverBreaker, entity.sourceLinkHealth);
+        const excluded = new Set(candidates.filter((url) => isOnExcludedHost(url, excludeHosts)));
+        if (excluded.size > 0) {
+          const storedByUrl = storedSourceLinkHealthByUrl(entity.sourceLinkHealth);
+          for (const url of excluded) {
+            const stored = storedByUrl.get(url);
+            if (stored) carried.set(url, stored);
+          }
+          result.excludedHostLinks += excluded.size;
+        }
         plans.push({
           entity,
           candidates,
-          toProbe,
+          toProbe: toProbe.filter((url) => !excluded.has(url)),
           carried,
+          excluded,
           tlsFallbacks: [],
           httpsSpellings: new Map(),
         });
@@ -610,7 +650,7 @@ export async function runSourceLinkHealthBackfill(options: {
         ...new Set(
           plans.flatMap((plan) => [...plan.tlsFallbacks, ...plan.httpsSpellings.values()]),
         ),
-      ],
+      ].filter((url) => !isOnExcludedHost(url, excludeHosts)),
       healthCache,
       {
         checkLink,
@@ -625,7 +665,14 @@ export async function runSourceLinkHealthBackfill(options: {
 
     // Phase 3, no network: every verdict is cached, so assembling and writing a
     // row cannot pace anything.
-    for (const { entity, candidates: planned, carried, tlsFallbacks, httpsSpellings } of plans) {
+    for (const {
+      entity,
+      candidates: planned,
+      carried,
+      excluded,
+      tlsFallbacks,
+      httpsSpellings,
+    } of plans) {
       const candidates = [...planned, ...tlsFallbacks];
       try {
         const now = new Date();
@@ -639,7 +686,7 @@ export async function runSourceLinkHealthBackfill(options: {
             probedHealth && httpsSpellingUrl ? { ...probedHealth, httpsSpellingUrl } : probedHealth;
           const carriedEntry = carried.get(url);
           if (!health && carriedEntry) {
-            result.carriedFreshHealthy += 1;
+            if (!excluded.has(url)) result.carriedFreshHealthy += 1;
             result.byStatus[carriedEntry.healthStatus] =
               (result.byStatus[carriedEntry.healthStatus] ?? 0) + 1;
             sourceLinkHealth.push(carryForwardSourceLinkHealthEntry(url, carriedEntry));
