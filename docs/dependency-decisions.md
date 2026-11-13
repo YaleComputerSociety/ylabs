@@ -40,7 +40,10 @@ The pin stays exact, so a formatter release never reformats files inside an unre
 GHSA-ch52-4w7c-c8xp (npm 1240991) is a high advisory against every `http-cache-semantics` release through 4.2.0, the latest, so there is no version to move to.
 It is ignored by id in `.yarnrc.yml`, with the reasoning beside the entry.
 The flaw is a shared cache serving one user's stored response to another on `max-stale`.
-The only consumer is the scraper's `server/src/scrapers/utils/httpValidatorCache.ts`, which builds every policy with `shared: false`, never calls `satisfiesWithoutRevalidation`, always revalidates with a conditional request, and never serves a cached body to a site user, so that path is not reachable.
+The only consumer is the scraper's `server/src/scrapers/utils/httpValidatorCache.ts`, which builds every policy with `shared: false` and never calls `satisfiesWithoutRevalidation` or the package's freshness or `max-stale` logic, so that path is not reachable.
+Since #6212 it replays a stored body without a request when its own `SCRAPER_HTTP_CACHE_REUSE_HOURS` window allows, and that decision reads only its own verification time and the stored `Cache-Control`.
+It refuses a stored `no-store` or `private` body, any request carrying `Authorization` or `Cookie`, and any response that varies on more than `Accept-Encoding`, pinned by the tests "never reuses a body whose stored response is no-store or private", "never stores or reuses a request that carries credentials" and "never reuses a response that varies on anything but its encoding" in `httpValidatorCache.test.ts`.
+The cache is owner-only on local disk, reused only by this machine's own scraper processes, never stored in Mongo and never served to a site user.
 The exit condition is a patched `http-cache-semantics` release; adopt it and remove the entry.
 A new consumer of the package that does serve from cache invalidates this judgement, so re-read it before adding one.
 
