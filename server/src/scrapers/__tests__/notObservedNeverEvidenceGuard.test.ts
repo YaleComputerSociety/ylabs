@@ -13,7 +13,7 @@ const NOT_OBSERVED_CLASSIFIER = /\b(?:isNotObserved|isTransientFetchFailure)\b/;
 
 const REVIEWED_WITH_OWN_CONFIRMATION: Record<string, string> = {
   'scrapers/fieldRetraction.ts':
-    'retracts only on an UNAVAILABLE verdict, which link-health issues for 404/410 or a confirmed host-level failure',
+    'retracts only on a positively dead probe: an UNAVAILABLE verdict (404/410 or a confirmed host-level failure) or a 2xx on another registrable host',
   'scrapers/sources/departmentRosterScraper.ts':
     'a failed profile read is recorded as unread and a failed roster read withholds the department',
   'scrapers/sources/labMicrositeDescriptionLLMExtractor.ts':
