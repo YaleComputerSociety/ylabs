@@ -134,6 +134,7 @@ Each option shows the count ticking it would leave under the current selection, 
 The card and detail badges take the same words, so a filter and the badge it returns read alike: "Taking undergrads now" ("Taking undergrads now, recruiting" for the `actively_hiring` level, keeping the #5484 rule that both levels start with the filter's words), "Has had undergrads" and "Advises undergrad research" (coordinator, 2026-11-12).
 The owner kept #5449, no sidebar scrollbar at 1280x720, and kept the group open by default, so the wide sidebar compacts instead: 28px rows, the helper line and the advises hint as info tips, and tighter gaps, which brought the sidebar from 666px to 566px of a 590px budget on Development data (owner, 2026-11-12).
 The stored signals are unchanged; the server gained only a `mentorsUndergrads` request filter and facet on the index field #5603 already declared filterable, and it still accepts `worksWithUndergrads`, which an old link no longer ticks.
+All three options always show once their counts arrive, and an option whose count is 0 stays in place, unavailable but focusable, with the tip "None match your other filters. Remove a filter to see more." (owner, 2026-11-13, #6203); that tip replaces the missing-evidence note, and the sidebar stays at 566px of its 592px box at 1280x720 because the tip sits behind an info button there.
 
 ## 2026-11-12: A Card-Length Written Body Serves As Its Own Card (#5537)
 

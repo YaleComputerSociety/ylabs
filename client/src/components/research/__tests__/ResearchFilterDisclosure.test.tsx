@@ -137,7 +137,7 @@ describe('ResearchFilterDisclosure', () => {
     expect(props[handler]).toHaveBeenCalledWith(false);
   });
 
-  it('keeps an option that adding would empty in place, disabled, with the missing-evidence note (#5963)', () => {
+  it('keeps an option that adding would empty in place, unavailable, with the remove-a-filter tip (#5963, #6203)', () => {
     renderFilters({
       variant: 'sidebar',
       selectedWelcomesUndergrads: true,
@@ -150,14 +150,15 @@ describe('ResearchFilterDisclosure', () => {
 
     expect(screen.getByRole('checkbox', { name: 'Taking undergrads now (4)' })).toBeChecked();
     const hosted = screen.getByRole('checkbox', { name: 'Has had undergrads before (0)' });
-    expect(hosted).toBeDisabled();
-    expect(hosted).toHaveAccessibleDescription('Missing evidence is not proof there is none.');
-    const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (0)' });
-    expect(advises).toBeDisabled();
-    expect(advises).toHaveAccessibleDescription(
-      'e.g. supervised senior theses Missing evidence is not proof there is none.',
+    expect(hosted).toHaveAttribute('aria-disabled', 'true');
+    expect(hosted).toHaveAccessibleDescription(
+      'None match your other filters. Remove a filter to see more.',
     );
-    expect(screen.getAllByText('Missing evidence is not proof there is none.')).toHaveLength(1);
+    const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (0)' });
+    expect(advises).toHaveAttribute('aria-disabled', 'true');
+    expect(advises).toHaveAccessibleDescription(
+      'e.g. supervised senior theses None match your other filters. Remove a filter to see more.',
+    );
   });
 
   it('keeps a ticked option checkable at zero, so it can always be removed', () => {
@@ -170,7 +171,10 @@ describe('ResearchFilterDisclosure', () => {
     const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (0)' });
     expect(advises).toBeChecked();
     expect(advises).toBeEnabled();
-    expect(screen.queryByText('Missing evidence is not proof there is none.')).toBeNull();
+    expect(advises).not.toHaveAttribute('aria-disabled');
+    expect(
+      screen.queryByText('None match your other filters. Remove a filter to see more.'),
+    ).toBeNull();
   });
 
   it('shows the option without a count when the counts could not load', () => {
@@ -197,7 +201,7 @@ describe('ResearchFilterDisclosure', () => {
     const dialog = screen.getByRole('dialog', { name: 'Research filters' });
     expect(
       within(dialog).getByRole('checkbox', { name: 'Has had undergrads before (0)' }),
-    ).toBeDisabled();
+    ).toHaveAttribute('aria-disabled', 'true');
     await waitFor(() =>
       expect(
         within(dialog).getByRole('checkbox', { name: 'Advises undergrad research (3)' }),
@@ -205,28 +209,66 @@ describe('ResearchFilterDisclosure', () => {
     );
   });
 
-  it('hides a zero option while nothing is ticked, except hosted, and drops the combination line for one option', () => {
+  it('always shows all three Undergrads options, an option at zero unavailable but focusable with its tip (#6203)', () => {
     renderFilters({
-      variant: 'sidebar',
       facetDistribution: {
         welcomesUndergrads: { true: 0 },
         hostsUndergrads: { true: 3 },
         mentorsUndergrads: { true: 0 },
       },
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
 
     const group = screen.getByRole('group', { name: 'Undergrads' });
-    expect(within(group).getAllByRole('checkbox')).toHaveLength(1);
-    expect(screen.getByRole('checkbox', { name: 'Has had undergrads before (3)' })).toBeEnabled();
-    expect(group).not.toHaveAccessibleDescription();
-    expect(screen.queryByText('Shows research matching every ticked option')).toBeNull();
+    expect(
+      within(group)
+        .getAllByRole('checkbox')
+        .map((box) => box.closest('label')?.textContent),
+    ).toEqual([
+      'Taking undergrads now (0)',
+      'Has had undergrads before (3)',
+      'Advises undergrad research (0)',
+    ]);
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    expect(taking).toHaveAttribute('aria-disabled', 'true');
+    expect(taking).not.toBeDisabled();
+    expect(taking).toHaveAccessibleDescription(
+      'None match your other filters. Remove a filter to see more.',
+    );
+    taking.focus();
+    expect(taking).toHaveFocus();
+    const hosted = screen.getByRole('checkbox', { name: 'Has had undergrads before (3)' });
+    expect(hosted).toBeEnabled();
+    expect(hosted).not.toHaveAttribute('aria-disabled');
+    expect(hosted).not.toHaveAccessibleDescription();
+  });
+
+  it('ignores a press on an unavailable option and reports nothing', () => {
+    const { props } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    fireEvent.click(taking);
+    expect(taking).not.toBeChecked();
+    expect(props.onWelcomesUndergradsChange).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: 'Why Taking undergrads now is unavailable' }),
+    ).toBeTruthy();
   });
 
   it('moves desktop focus to the first select when every Undergrads option is disabled', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     renderFilters({
       facetDistribution: {
+        welcomesUndergrads: { true: 0 },
         hostsUndergrads: { true: 0 },
+        mentorsUndergrads: { true: 0 },
         entityType: { LAB: 12, CORE_FACILITY: 4 },
       },
     });
