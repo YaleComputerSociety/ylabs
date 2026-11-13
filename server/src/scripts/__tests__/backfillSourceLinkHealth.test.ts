@@ -6,8 +6,11 @@ import {
   sourceLinkHealthBackfillStdoutSummary,
   type SourceLinkHealthBackfillResult,
   DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
+  DEFAULT_DRY_RUN_PROBE_REUSE_HOURS,
   readSourceLinkUrlFile,
 } from '../backfillSourceLinkHealth';
+
+const DEFAULT_REUSE_MS = DEFAULT_DRY_RUN_PROBE_REUSE_HOURS * 60 * 60_000;
 
 describe('parseSourceLinkHealthBackfillArgs', () => {
   it('defaults to a full dry run that re-probes every row', () => {
@@ -52,6 +55,7 @@ describe('sourceLinkHealthRunOptions', () => {
       staleOnly: false,
       httpWebsitesOnly: true,
       samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
+      reuseProbesWithinMs: DEFAULT_REUSE_MS,
     });
   });
 
@@ -60,6 +64,7 @@ describe('sourceLinkHealthRunOptions', () => {
       dryRun: true,
       staleOnly: false,
       samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
+      reuseProbesWithinMs: DEFAULT_REUSE_MS,
     });
   });
 });
@@ -101,6 +106,7 @@ describe('--checked-before', () => {
       dryRun: true,
       staleOnly: false,
       samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
+      reuseProbesWithinMs: DEFAULT_REUSE_MS,
     });
   });
 });
@@ -114,6 +120,7 @@ describe('--reprobe-healthy-after-days', () => {
       staleOnly: false,
       reprobeHealthyAfterDays: 7,
       samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
+      reuseProbesWithinMs: DEFAULT_REUSE_MS,
     });
   });
 
@@ -153,6 +160,7 @@ describe('sourceLinkHealthBackfillStdoutSummary', () => {
       servedWebsitesLost: 1,
       excludedHostLinks: 0,
       keptUnobservedLinks: 0,
+      probesReused: 0,
       probesByHost: {},
       stoppedHosts: [],
       lostVerdictSamples: [
@@ -227,5 +235,39 @@ describe('#6182 dry-run sampling and url scope flags', () => {
         'https://a.example.edu/x\n\n# note\nhttps://b.example.edu/y\nhttps://a.example.edu/x\n',
       ),
     ).toEqual(['https://a.example.edu/x', 'https://b.example.edu/y']);
+  });
+});
+
+describe('#6214 dry-run probe reuse flags', () => {
+  const apply = ['--apply', '--confirm-source-link-health', '--limit=10'];
+
+  it('reuses probes for a day on a dry run by default', () => {
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs([])).reuseProbesWithinMs,
+    ).toBe(24 * 60 * 60_000);
+  });
+
+  it('takes a window in hours, and --no-probe-reuse turns reuse off', () => {
+    expect(
+      sourceLinkHealthRunOptions(
+        parseSourceLinkHealthBackfillArgs(['--reuse-probes-within-hours=2']),
+      ).reuseProbesWithinMs,
+    ).toBe(2 * 60 * 60_000);
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(['--no-probe-reuse']))
+        .reuseProbesWithinMs,
+    ).toBeUndefined();
+    expect(() =>
+      parseSourceLinkHealthBackfillArgs(['--no-probe-reuse', '--reuse-probes-within-hours=2']),
+    ).toThrow();
+  });
+
+  it('never reuses probes on an apply, and refuses the window flag on one', () => {
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(apply)).reuseProbesWithinMs,
+    ).toBeUndefined();
+    expect(() =>
+      parseSourceLinkHealthBackfillArgs([...apply, '--reuse-probes-within-hours=2']),
+    ).toThrow(/dry run only/);
   });
 });
