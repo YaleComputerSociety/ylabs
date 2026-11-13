@@ -166,6 +166,7 @@ export const scrapeRunInterruptionReasons = [
   'lease_lost',
   'lease_renewal_failed',
   'lease_no_progress',
+  'lease_refused',
 ] as const;
 export type ScrapeRunInterruptionReason = (typeof scrapeRunInterruptionReasons)[number];
 

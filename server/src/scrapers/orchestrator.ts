@@ -433,6 +433,7 @@ const SCRAPE_RUN_INTERRUPTION_FOR_LEASE_STOP: Record<
   lost: 'lease_lost',
   'renewal-failed': 'lease_renewal_failed',
   'no-progress': 'lease_no_progress',
+  refused: 'lease_refused',
 };
 
 /**

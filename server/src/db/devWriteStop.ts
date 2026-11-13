@@ -9,7 +9,7 @@ import { AsyncLocalStorage } from 'async_hooks';
  * cleanups registered here, run by `runDevWriteStopCleanups` inside a scope that only that runner
  * enters, and only against `DEV_WRITE_STOP_CLEANUP_COLLECTIONS`.
  */
-export type DevWriteStopReason = 'lost' | 'renewal-failed' | 'no-progress';
+export type DevWriteStopReason = 'lost' | 'renewal-failed' | 'no-progress' | 'refused';
 
 /** Changing what a stop cleanup writes also requires updating this set and the guard test. */
 export const DEV_WRITE_STOP_CLEANUP_COLLECTIONS: ReadonlySet<string> = new Set([

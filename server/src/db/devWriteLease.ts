@@ -935,6 +935,10 @@ export async function acquireIntendedDevApplyLease(
 let firstWriteApplyLease: Promise<HeldDevWriteLease | undefined> | undefined;
 let firstWriteApplyLeaseRefusal: Error | undefined;
 
+export function devApplyLeaseFirstWriteRefusal(): Error | undefined {
+  return firstWriteApplyLeaseRefusal;
+}
+
 /**
  * Run by the model write guard for a script that recorded its apply intent only after it connected,
  * so the connect path took nothing. Takes the apply lease on the writing model's connection before

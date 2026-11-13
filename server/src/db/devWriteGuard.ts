@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import {
   DEV_WRITE_LEASE_SWITCH_ENV,
   acquireIntendedDevApplyLeaseAtFirstWrite,
+  devApplyLeaseFirstWriteRefusal,
   devHostLeasesArmed,
   devWriteLeaseSwitchedOff,
   hasDevApplyIntent,
@@ -283,6 +284,8 @@ export async function assertDevModelWriteAllowed(
   if (isRequestServingProcess()) return;
   if (devWriteStopped()) {
     if (devWriteStopCleanupMayWrite(model.collection.collectionName)) return;
+    const firstWriteRefusal = devApplyLeaseFirstWriteRefusal();
+    if (firstWriteRefusal) throw firstWriteRefusal;
     throw refusal(
       model,
       write.operation,

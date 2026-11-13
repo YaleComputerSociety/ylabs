@@ -20,6 +20,8 @@ import {
   DevWriteLeaseStoppedError,
   acquireDevWriteLease,
   acquireIntendedDevApplyLease,
+  acquireIntendedDevApplyLeaseAtFirstWrite,
+  DevWriteLeaseHeldError,
   armDevHostLeases,
   ensureDevHostLease,
   recordDevApplyIntent,
@@ -146,10 +148,12 @@ function useRuntime(overrides: { heartbeatTimeoutMs?: number; cleanupAttemptTime
  * Holds what a writing lane run holds in Development: the apply lease, three host leases, the
  * source lock and a running scrape_runs row, with the lane parked mid-run until `release`.
  */
-async function startLaneRunHoldingEverything() {
+async function startLaneRunHoldingEverything({ applyLease = true } = {}) {
   const descriptor = { db, databaseName: db.databaseName, host: 'cluster.example.net' };
-  recordDevApplyIntent('scrape:fixture', []);
-  await acquireIntendedDevApplyLease(descriptor, LEASE_ENV);
+  if (applyLease) {
+    recordDevApplyIntent('scrape:fixture', []);
+    await acquireIntendedDevApplyLease(descriptor, LEASE_ENV);
+  }
   armDevHostLeases(descriptor, 'scrape run', LEASE_ENV);
   for (const host of HOSTS) await ensureDevHostLease(host);
 
@@ -553,5 +557,53 @@ describe('a child process that joined its parent owner', () => {
     expect(logs.find((line) => line.startsWith('Cleanup after the stop'))).toMatch(
       /not cleaned: 2 lease\(s\) joined from the parent owner .*the parent owner releases them/,
     );
+  });
+});
+
+describe('a first write refused because another owner holds the apply lease', () => {
+  it('closes its run and releases its own host leases and source lock, and never touches the other owner lease', async () => {
+    useRuntime({ cleanupAttemptTimeoutMs: 200 });
+    const lane = await startLaneRunHoldingEverything({ applyLease: false });
+    await acquireDevWriteLease(
+      { name: DEV_APPLY_LEASE_NAME, command: 'another apply' },
+      { db, env: LEASE_ENV, now, newOwnerId: () => 'other-owner' },
+    );
+    const otherLeaseBefore = await leases().findOne({ sourceName: DEV_APPLY_LEASE_NAME });
+    const descriptor = { db, databaseName: db.databaseName, host: 'cluster.example.net' };
+    recordDevApplyIntent('scrape:fixture-late-intent', []);
+
+    await expect(acquireIntendedDevApplyLeaseAtFirstWrite(descriptor)).rejects.toBeInstanceOf(
+      DevWriteLeaseHeldError,
+    );
+    expect(devWriteStopped()).toBe(true);
+    lane.release();
+    await lane.settled;
+    await exited;
+
+    expect(exitCodes).toEqual([DEV_WRITE_LEASE_STOP_EXIT_CODE]);
+    expect(lane.afterStop.emit).toBeInstanceOf(DevWriteLeaseHeldError);
+    expect(lane.afterStop.modelWrite).toBeInstanceOf(DevWriteLeaseHeldError);
+    expect(lane.afterStop.fetch).toBeInstanceOf(DevWriteStoppedError);
+    expect(await db.collection('scrape_runs').findOne({ _id: lane.runId })).toMatchObject({
+      status: 'interrupted',
+      interruption: { reason: 'lease_refused', detectedBy: 'dev-write-lease-stop' },
+    });
+    expect(
+      await db
+        .collection(ScrapeJobLock.collection.collectionName)
+        .findOne({ sourceName: FIXTURE_LANE }),
+    ).toMatchObject({ locked: false, releaseReason: 'failure' });
+    const hostRows = await leases()
+      .find({ sourceName: { $regex: `^${DEV_HOST_LEASE_PREFIX}` } })
+      .toArray();
+    expect(hostRows).toHaveLength(HOSTS.length);
+    for (const row of hostRows)
+      expect(row).toMatchObject({ locked: false, releaseReason: 'stopped' });
+    expect(await leases().findOne({ sourceName: DEV_APPLY_LEASE_NAME })).toEqual(otherLeaseBefore);
+    expect(otherLeaseBefore).toMatchObject({ locked: true, ownerId: 'other-owner' });
+    const report = logs.find((line) => line.startsWith('Cleanup after the stop'))!;
+    expect(report).toMatch(/3 cleaned, 0 not cleaned/);
+    expect(report).toMatch(/closed as interrupted \(lease_refused\)/);
+    expect(report).toMatch(/released 3 lease\(s\)/);
   });
 });
