@@ -46,7 +46,7 @@ const CLINICAL_SERVICE_SHAPES = [
   /\bcare\s+for\s+patients\b/i,
   /\binterests?\s+include\s+(?:treating|managing|caring)\b/i,
   /\binterested\s+in\s+the\s+(?:management|treatment|care)\s+of\b/i,
-  /\b(?:treats|treating|treated|manag(?:es|ing|ed))\s+patients\b/i,
+  /\b(?:treats|treating)\s+patients\b/i,
   /\bworks?\s+with\s+patients\s+to\b/i,
   /\b(?:working|worked)\s+with\s+patients\s+to\s+(?!(?:build|develop|design|create|co-create|co-design|test|pilot|evaluate|study|record|measure|identify|map)\b)/i,
   /\beach\s+patient(?:['’]s)?\b/i,
@@ -56,7 +56,7 @@ const CLINICAL_SERVICE_SHAPES = [
 ];
 
 const NOT_AFTER_ANOTHER_CARE_GIVER =
-  '(?<!\\b(?:clinicians|physicians|providers|caregivers|doctors|nurses|surgeons|practitioners|teams|clinics|hospitals)\\s+(?:to\\s+)?(?:(?:\\w+ly|better|more|also|still|best)\\s+){0,2})';
+  '(?<!\\b(?:clinicians|physicians|providers|caregivers|doctors|nurses|surgeons|practitioners|teams|clinics|hospitals)\\s+(?:(?:who|that)\\s+)?(?:to\\s+)?(?:(?:\\w+ly|better|more|also|still|best)\\s+){0,2})';
 
 const PATIENT_SERVICE_PURPOSE = new RegExp(
   `${NOT_AFTER_ANOTHER_CARE_GIVER}\\b(?:help|helps|helping|serve|serves|serving|benefit|benefits)\\s+(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
@@ -64,6 +64,10 @@ const PATIENT_SERVICE_PURPOSE = new RegExp(
 );
 
 const PATIENT_SERVICE_SHAPES = [
+  new RegExp(
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}\\b(?:treated|manag(?:es|ing|ed))\\s+patients\\b`,
+    'i',
+  ),
   new RegExp(
     `${NOT_AFTER_ANOTHER_CARE_GIVER}\\b(?:treat(?:s|ing|ed)?|cares?\\s+for|caring\\s+for|sees|seeing|provid(?:e|es|ed|ing)\\s+care\\s+(?:to|for)|help(?:s|ing)?|serv(?:e|es|ing)|manag(?:e|es|ing|ed)|support(?:s|ing|ed)?|giv(?:e|es|ing|en))\\s+(?:all\\s+)?(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
     'i',

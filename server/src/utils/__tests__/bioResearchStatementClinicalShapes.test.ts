@@ -30,6 +30,8 @@ describe('clinical-service biography shapes the roster-bio rule refuses (#6151)'
     'Her app lets primary care physicians remotely manage their patients with heart failure.',
     'The platform will enable clinicians to better support their patients after discharge.',
     'His tool helps nurses quickly treat their patients with chest pain.',
+    'Her app helps clinicians managing patients with heart failure stay on schedule.',
+    'His scheduling tool supports surgeons who treated patients in rural clinics.',
   ])('keeps a sentence about another care-giver and their patients: %s', (sentence) => {
     expect(isClinicalOnlyBiographySentence(sentence)).toBe(false);
   });
