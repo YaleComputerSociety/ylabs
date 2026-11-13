@@ -35,6 +35,7 @@ const snapshot = (overrides: {
   },
   integrity: {
     publicDescriptionInvariantFails: overrides.invariantFails || { n: 0, of: 50 },
+    personTitleFromSiteChromeReading: { n: 0, of: 40 },
   },
 });
 
@@ -68,6 +69,7 @@ const SNAPSHOT_ONLY_METRICS = [
   'browseCardSixWordsOrFewer',
   'fullDescriptionIsBiography',
   'publicDescriptionInvariantFails',
+  'personTitleFromSiteChromeReading',
   'hasTopic',
   'topicTotal',
   'noResearchWebsiteAndNoTopics',
@@ -218,6 +220,7 @@ describe('corpusQualityMetricRows', () => {
       'Browse card of six words or fewer',
       'Serves a biography as its description',
       'Public description invariant fails',
+      'Person title is a site\u2019s menu or headline text',
     ]);
   });
 

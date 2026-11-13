@@ -14,7 +14,11 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { CorpusQualitySnapshot } from '../models/corpusQualitySnapshot';
-import { readCorpusQualityReport } from '../services/corpusQualityReport';
+import {
+  readCorpusQualityReport,
+  readSiteChromePersonTitles,
+} from '../services/corpusQualityReport';
+import { SITE_CHROME_TITLE_LANE } from '../utils/siteChromeTitleReading';
 import {
   assertOperatorEnvironmentMatchesDatabase,
   parseOperatorDatabaseEnvironment,
@@ -53,7 +57,8 @@ async function main(): Promise<void> {
   assertOperatorEnvironmentMatchesDatabase(environment, databaseName);
 
   console.log(`Measuring ${environment} (${databaseName})`);
-  const report = await readCorpusQualityReport();
+  const siteChromePersonTitles = await readSiteChromePersonTitles();
+  const report = await readCorpusQualityReport(new Date(), siteChromePersonTitles);
 
   console.log(
     `  entities ${report.coverage.entities}, student_ready ${report.coverage.studentReady}`,
@@ -78,6 +83,14 @@ async function main(): Promise<void> {
   console.log(
     `  invariant fails          ${formatRatio(report.integrity.publicDescriptionInvariantFails)}`,
   );
+  console.log(
+    `  person title is site chrome ${formatRatio(report.integrity.personTitleFromSiteChromeReading)}`,
+  );
+  for (const hit of siteChromePersonTitles.hits) {
+    console.log(
+      `    ${SITE_CHROME_TITLE_LANE} title on ${hit.host}: ${hit.words} words on ${hit.subjects} subjects, served by ${hit.researchersServingIt}, observations ${hit.observationIds.join(' ')}`,
+    );
+  }
 
   if (options.dryRun) {
     console.log('\nmode: dry-run, no snapshot written');
