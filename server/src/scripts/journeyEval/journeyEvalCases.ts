@@ -724,6 +724,9 @@ const sectionRowsReachTheirDepartment: JourneyCase = {
       .map(([value]) => value);
     const id = 'section-rows-carry-their-department';
     const title = "Every row served under a section filter also carries the section's departments";
+    const degradedInvariantId = 'section-filtered-browse-is-not-degraded';
+    const degradedInvariantTitle =
+      'A browse filtered to a catalog section does not fall back to a degraded search path';
     if (sections.length === 0) {
       return {
         invariants: [
@@ -733,29 +736,42 @@ const sectionRowsReachTheirDepartment: JourneyCase = {
       };
     }
     let rowsChecked = 0;
+    let degradedBrowses = 0;
     const lacking: Array<{ section: string; departments: string[]; rows: number }> = [];
     for (const section of sections) {
       const departments = canonicalizer.parentDepartmentsFor(section);
-      const rows = servedRows(
-        await context.browse({
-          filters: { departments: [section] },
-          page: 1,
-          pageSize: context.window,
-        }),
-      );
+      const result = await context.browse({
+        filters: { departments: [section] },
+        page: 1,
+        pageSize: context.window,
+      });
+      if (result.degraded !== false) degradedBrowses += 1;
+      const rows = servedRows(result);
       rowsChecked += rows.length;
-      const missing = rows.filter(
-        (row) =>
-          !departments.every((department) => stringList(row.departments).includes(department)),
-      ).length;
+      const parentKeys = departments.map((department) => department.toLocaleLowerCase());
+      const missing = rows.filter((row) => {
+        const rowKeys = stringList(row.departments).map((value) => value.toLocaleLowerCase());
+        return !parentKeys.every((key) => rowKeys.includes(key));
+      }).length;
       if (missing > 0) lacking.push({ section, departments, rows: missing });
     }
+    const primaryInvariant =
+      rowsChecked === 0
+        ? buildInconclusiveInvariant(id, title, 'no rows were served under any section filter', {
+            sectionsChecked: sections.length,
+            rowsChecked,
+          })
+        : buildInvariant(id, title, lacking.length === 0, {
+            sectionsChecked: sections.length,
+            rowsChecked,
+            lacking,
+          });
     return {
       invariants: [
-        buildInvariant(id, title, lacking.length === 0, {
+        primaryInvariant,
+        buildInvariant(degradedInvariantId, degradedInvariantTitle, degradedBrowses === 0, {
           sectionsChecked: sections.length,
-          rowsChecked,
-          lacking,
+          degradedBrowses,
         }),
       ],
       rates: [],
