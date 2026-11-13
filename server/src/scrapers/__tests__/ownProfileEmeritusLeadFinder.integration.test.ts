@@ -26,7 +26,7 @@ describe('defaultOwnProfileEmeritusLeadFinder (#6081)', () => {
     }
   });
 
-  const lead = async (name: string) => {
+  const lead = async (name: string, identifiers: Record<string, string> = {}) => {
     const db = mongoose.connection.db!;
     const personId = new mongoose.Types.ObjectId();
     const rowId = new mongoose.Types.ObjectId();
@@ -34,7 +34,7 @@ describe('defaultOwnProfileEmeritusLeadFinder (#6081)', () => {
       _id: personId,
       displayName: `Synthetic ${name}`,
       profile: { title: 'Professor of Fixture Studies' },
-      identifiers: {},
+      identifiers,
       profileLinks: [{ kind: 'YALE_OFFICIAL', url: profile(name) }],
       archived: false,
     });
@@ -149,6 +149,98 @@ describe('defaultOwnProfileEmeritusLeadFinder (#6081)', () => {
       sourceName: 'official-profile-pi-backfill',
       sourceUrl: profile('drew'),
     });
+
+    await expect(defaultOwnProfileEmeritusLeadFinder()).resolves.toEqual([]);
+  });
+
+  const rosterMember = async (
+    entityKey: string,
+    listedName: { fname: string; lname: string },
+    evidence: Record<string, unknown>,
+  ) => {
+    await titleRead({
+      entityType: 'researchGroupMember',
+      entityKey,
+      field: 'profileTitle',
+      value: 'Professor Emeritus of Fixture Studies',
+      sourceName: 'centers-institutes-index',
+      sourceUrl: `${CENTER_PAGE}/${entityKey}`,
+    });
+    await titleRead({
+      entityType: 'researchGroupMember',
+      entityKey,
+      field: 'inferredUserName',
+      value: listedName,
+      sourceName: 'centers-institutes-index',
+      sourceUrl: CENTER_PAGE,
+    });
+    await titleRead({
+      entityType: 'researchGroupMember',
+      entityKey,
+      field: 'profileIdentityEvidence',
+      value: { pageUrl: `${CENTER_PAGE}/${entityKey}`, linkedProfileUrls: [], ...evidence },
+      sourceName: 'centers-institutes-index',
+      sourceUrl: CENTER_PAGE,
+    });
+  };
+
+  it('records a lead whose roster profile page states their netid and an agreeing name', async () => {
+    const id = await lead('frankie', { netid: 'fx5' });
+    await rosterMember(
+      'center-fixture:frankie',
+      { fname: 'Synthetic', lname: 'Frankie' },
+      {
+        netids: ['fx5'],
+        emails: [],
+      },
+    );
+
+    await expect(defaultOwnProfileEmeritusLeadFinder()).resolves.toEqual([
+      { researcherId: id, slugs: ['frankie-row'] },
+    ]);
+  });
+
+  it('records a lead whose roster profile page states their Yale email and an agreeing name', async () => {
+    const id = await lead('gale', { email: 'synthetic.gale@yale.edu' });
+    await rosterMember(
+      'center-fixture:gale',
+      { fname: 'Synthetic', lname: 'Gale' },
+      {
+        netids: [],
+        emails: ['synthetic.gale@yale.edu'],
+      },
+    );
+
+    await expect(defaultOwnProfileEmeritusLeadFinder()).resolves.toEqual([
+      { researcherId: id, slugs: ['gale-row'] },
+    ]);
+  });
+
+  it('ignores a roster profile page whose listed name disagrees with the netid holder', async () => {
+    await lead('harper', { netid: 'fx6' });
+    await rosterMember(
+      'center-fixture:harper',
+      { fname: 'Unrelated', lname: 'Person' },
+      {
+        netids: ['fx6'],
+        emails: [],
+      },
+    );
+
+    await expect(defaultOwnProfileEmeritusLeadFinder()).resolves.toEqual([]);
+  });
+
+  it('ignores a roster profile page whose netid two live researchers hold', async () => {
+    await lead('indy', { netid: 'fx7' });
+    await lead('indy-twin', { netid: 'fx7' });
+    await rosterMember(
+      'center-fixture:indy',
+      { fname: 'Synthetic', lname: 'Indy' },
+      {
+        netids: ['fx7'],
+        emails: [],
+      },
+    );
 
     await expect(defaultOwnProfileEmeritusLeadFinder()).resolves.toEqual([]);
   });
