@@ -32,11 +32,17 @@ import {
   type ResearcherGatedField,
 } from '../utils/researcherFieldWriters';
 import { isDepartmentHeadingChrome } from './utils/departmentHeadingChrome';
-import { withoutDepartmentHeadingObservations } from './departmentHeadingObservationScreen';
+import {
+  withUserDepartmentObservationsScreened,
+  type UserDepartmentScreenContext,
+} from './userDepartmentObservationScreens';
+import {
+  storedDepartmentHasUnscreenedReading,
+  storedDepartmentRestsOnlyOnScreenedReadings,
+} from './storedDepartmentScreenedBacking';
 import {
   catalogDepartment,
   storedDepartmentAfterExportDecode,
-  withDirectoryExportDepartmentsDecoded,
 } from './directoryExportDepartmentEvidence';
 import { storedDepartmentIsBacked } from './storedDepartmentBacking';
 import type { CanonicalDepartment } from './utils/directoryExportDepartment';
@@ -8972,20 +8978,18 @@ export async function joinUserIdentityToExistingResearcher(
   const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
   const materializationObs = keyNamesAnOfficeMailbox
     ? []
-    : withoutDepartmentHeadingObservations(
-        withDirectoryExportDepartmentsDecoded(
-          withoutCoreFacilityPersonWebsiteObservations(
-            withoutOverSharedPersonWebsiteObservations(
-              withoutOverSharedPersonImageObservations(
-                obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
-                await overSharedPersonImageKeysForMaterialization(),
-              ),
-              await overSharedPersonWebsiteKeysForMaterialization(),
+    : withUserDepartmentObservationsScreened(
+        withoutCoreFacilityPersonWebsiteObservations(
+          withoutOverSharedPersonWebsiteObservations(
+            withoutOverSharedPersonImageObservations(
+              obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+              await overSharedPersonImageKeysForMaterialization(),
             ),
-            await coreFacilityWebsiteKeysForMaterialization(),
+            await overSharedPersonWebsiteKeysForMaterialization(),
           ),
-          await catalogDepartment(),
+          await coreFacilityWebsiteKeysForMaterialization(),
         ),
+        { canonicalDepartment: await catalogDepartment() },
       );
   const derived = deriveUserIdentityFields(materializationObs, now);
   const { resolved, displayName } = derived;
@@ -9316,6 +9320,33 @@ async function storedDepartmentBackedByAnyReading(
     references,
   );
   return joined === 'undetermined' || storedDepartmentIsBacked(stored, joined, canonicalDepartment);
+}
+
+/**
+ * Whether the stored department rests only on screened readings (#6065), over the same
+ * readings #6049 reads for backing, so a key's screened reading never clears a value another
+ * key still states. The resolving key's own unscreened reading settles it without the
+ * cross-key read.
+ */
+async function storedDepartmentRestsOnlyOnScreenedReadingsAcrossKeys(
+  researcher: any,
+  ownKey: UserKeyReference | undefined,
+  ownObservations: readonly any[],
+  context: UserDepartmentScreenContext,
+): Promise<boolean> {
+  const stored = textValue(researcher.profile?.primaryDepartment);
+  if (!stored || !context.canonicalDepartment) return false;
+  if (storedDepartmentHasUnscreenedReading(stored, ownObservations, context)) return false;
+  const { references, readings } = await storedDepartmentReadingsOverEveryKey(researcher, ownKey);
+  if (storedDepartmentHasUnscreenedReading(stored, readings, context)) return false;
+  const joined = await storedDepartmentReadingsOfEngineJoinedKeys(
+    researcher,
+    stored,
+    context.canonicalDepartment,
+    references,
+  );
+  if (joined === 'undetermined') return false;
+  return storedDepartmentRestsOnlyOnScreenedReadings(stored, [...readings, ...joined], context);
 }
 
 async function liveObservationsOfUserKeys(
@@ -10241,6 +10272,22 @@ async function materializeUserIdentityToResearcher(
   ) {
     researcher.profile.imageUrl = undefined;
     researcher.profileFieldWriters?.delete('imageUrl');
+    fieldsWritten += 1;
+  }
+  if (
+    await storedDepartmentRestsOnlyOnScreenedReadingsAcrossKeys(
+      researcher,
+      identifier.entityKey
+        ? { entityKey: identifier.entityKey }
+        : prefetchObjectIdString(identifier.entityId)
+          ? { entityId: prefetchObjectIdString(identifier.entityId) }
+          : undefined,
+      obs,
+      { canonicalDepartment: await catalogDepartment() },
+    )
+  ) {
+    researcher.profile.primaryDepartment = undefined;
+    researcher.profileFieldWriters?.delete?.('primaryDepartment');
     fieldsWritten += 1;
   }
   const storedDepartmentBacked =
