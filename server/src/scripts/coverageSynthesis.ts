@@ -16,6 +16,10 @@ import {
 import { contentHashObservation } from '../scrapers/contentHashGate';
 import { resetDescriptionOwnershipCitersCache } from '../scrapers/descriptionOwnershipResolverScreen';
 import {
+  createDescriptionCardJudge,
+  withServedCardForBody,
+} from '../scrapers/descriptionCardRefreshGuard';
+import {
   defaultMaterializerCardSynthesizer,
   materializationReadScopeFilter,
   materializeEntity,
@@ -101,6 +105,7 @@ import {
   runCardPass,
 } from './cardSynthesisCore';
 import {
+  cachedCardFor,
   mongoCardSynthesisDerivationStore,
   type CardDraftFn,
 } from '../scrapers/cardSynthesisDerivation';
@@ -924,6 +929,8 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     try {
       let changed = false;
       if (writes.writeBody && decision?.result) {
+        const entityName = typeof entity.name === 'string' ? entity.name : '';
+        const evidenceTexts = snippets.map((snippet) => snippet.text);
         const stored = await appendSynthesizedDescription(
           report,
           {
@@ -935,6 +942,10 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
             confidenceOverride: COVERAGE_CONFIDENCE,
           },
           context,
+          appendObservations,
+          withServedCardForBody(createDescriptionCardJudge(), (fullDescription) =>
+            cachedCardFor({ fullDescription, evidenceTexts, entityName }),
+          ),
         );
         if (stored) {
           written += 1;
