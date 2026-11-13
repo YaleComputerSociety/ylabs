@@ -86,7 +86,7 @@ describe("the repair queue's PI identity stage asks the gate's lead test (#5979)
 
     expect(attempt).toMatchObject({ applied: false, status: 'blocked' });
     expect(attempt.remainingBlockers).toEqual(
-      expect.arrayContaining(['missing_lead', 'lead_candidate_cannot_own_research_home']),
+      expect.arrayContaining(['missing_lead', 'lead_candidate_cannot_lead']),
     );
     expect(await rawEdges(rowId)).toEqual([]);
   });

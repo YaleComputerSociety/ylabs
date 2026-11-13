@@ -1284,7 +1284,7 @@ async function attemptResearchRepair(
         ? 'lead_candidate_already_leads'
         : researchEntityLeadStateForMembers(studentVisibilityGateLeadRows([candidate.entry])) !==
             'lead_attached'
-          ? 'lead_candidate_cannot_own_research_home'
+          ? 'lead_candidate_cannot_lead'
           : '';
     if (candidateBlocker) {
       return {
