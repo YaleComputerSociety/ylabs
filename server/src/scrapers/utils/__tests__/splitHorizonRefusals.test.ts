@@ -49,6 +49,34 @@ describe('split-horizon refusals are reported, never released (#6111)', () => {
     expect(privateAddressRefusalCounts().get(campusHost)).toBe(1);
   });
 
+  it('refuses normally whatever the counter makes of an odd or private literal host', async () => {
+    lookupMock.mockResolvedValue([{ address: '10.66.3.117', family: 4 }]);
+    await expect(assertPublicHttpUrl('http://[fd00::1]/')).rejects.toMatchObject({
+      reason: 'private-address',
+    });
+    await expect(assertPublicHttpUrl('http://10.66.3.117/')).rejects.toMatchObject({
+      reason: 'private-address',
+    });
+    await expect(
+      assertPublicHttpUrl(`https://${campusHost.toUpperCase()}./`),
+    ).rejects.toMatchObject({ reason: 'private-address' });
+    const error = await new Promise<NodeJS.ErrnoException | null>((resolve) =>
+      ssrfSafeLookup('', { all: true }, (err) => resolve(err)),
+    );
+    expect(error?.code).toBe('EHOSTUNREACH');
+    expect([...privateAddressRefusalCounts().keys()]).toEqual([`${campusHost}.`]);
+  });
+
+  it('keeps refusing once the per-host count is full, and stops adding hosts', async () => {
+    lookupMock.mockResolvedValue([{ address: '10.66.3.117', family: 4 }]);
+    for (let index = 0; index < 501; index += 1) {
+      await expect(
+        assertPublicHttpUrl(`https://host-${index}.fixture.example.edu/`),
+      ).rejects.toBeInstanceOf(SsrfBlockedError);
+    }
+    expect(privateAddressRefusalCounts().size).toBe(500);
+  });
+
   it('counts nothing for a public answer or a refusal that is not a private address', async () => {
     lookupMock.mockResolvedValue([{ address: '128.36.0.109', family: 4 }]);
     await expect(assertPublicHttpUrl(`https://${campusHost}/`)).resolves.toBeInstanceOf(URL);
