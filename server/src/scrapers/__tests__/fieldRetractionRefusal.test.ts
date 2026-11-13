@@ -257,7 +257,6 @@ describe('the sole-holder liveness probe and a refusal (#5803)', () => {
     expect(screened.withheld).toHaveLength(1);
   });
 });
-});
 
 describe('refusals loaded from witness rows', () => {
   it('files each refusal under the page of the row that carried it and drops malformed entries', () => {
