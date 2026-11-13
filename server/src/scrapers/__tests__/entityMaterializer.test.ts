@@ -1681,6 +1681,18 @@ describe('leadPiSchoolInheritanceGate (#2158 PI->school, #2802 PI->department)',
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'institute' })).toBe('multi-pi-kind');
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'program' })).toBe('multi-pi-kind');
   });
+
+  it('fails closed for a core facility, which legitimately has no school (#2195, #6033)', () => {
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'core_facility' })).toBe(
+      'core-facility',
+    );
+    expect(
+      leadPiSchoolInheritanceGate({ school: '', kind: 'lab', entityType: 'CORE_FACILITY' }),
+    ).toBe('core-facility');
+    expect(
+      leadPiSchoolInheritanceGate({ school: 'School of Medicine', kind: 'core_facility' }),
+    ).toBe('core-facility');
+  });
 });
 
 describe('clearedWebsiteUrlIsWorthWriting (#2708)', () => {

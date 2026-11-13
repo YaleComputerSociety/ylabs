@@ -532,6 +532,60 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     expect(firstSource).toMatchObject({ status: 'succeeded', observationCount: 2 });
   }, 180_000);
 
+  it('runs the lead-department inheritance pass as an applying child of a writing sweep, after person-side materialization and before the gate, and never in a plan sweep (#6033)', async () => {
+    const writing = 'development-full' as const;
+    fs.rmSync(checkpointFor(writing), { force: true });
+    const recorded = makeChildRunner(new Set());
+    const summary = await runScraperSweep(
+      {
+        mode: writing,
+        confirmations: new Set(['--confirm-development-full-sweep']),
+        skipPreflight: true,
+        restart: true,
+      },
+      { childRunner: recorded.runner },
+    );
+    trackRun(writing, summary.outputDirectory);
+
+    const commands = recorded.calls.map((call) => commandFromArgs(call.args) ?? '');
+    const inheritance = commands.indexOf('research-homes:inherit-lead-department');
+    expect(inheritance).toBeGreaterThan(-1);
+    expect(
+      commands.filter((command) => command === 'research-homes:inherit-lead-department'),
+    ).toHaveLength(1);
+    expect(recorded.calls[inheritance].args).toEqual(
+      expect.arrayContaining(['--apply', '--confirm-lead-department']),
+    );
+    const lastSourceRun = Math.max(
+      ...recorded.calls.flatMap((call, index) => (sourceNameFromArgs(call.args) ? [index] : [])),
+    );
+    expect(lastSourceRun).toBeLessThan(inheritance);
+    expect(commands.indexOf('observations:materialize-pi-attributed-users')).toBeLessThan(
+      inheritance,
+    );
+    expect(commands.indexOf('data:materialize-inferred-pi-leads')).toBeLessThan(inheritance);
+    expect(commands.indexOf('student-visibility:gate')).toBeGreaterThan(inheritance);
+    expect(
+      (summary.postRun?.stages || []).find((stage) => stage.name === 'lead-department-inheritance')
+        ?.status,
+    ).toBe('succeeded');
+
+    const planning = 'development-plan' as const;
+    fs.rmSync(checkpointFor(planning), { force: true });
+    const planned = makeChildRunner(new Set());
+    const planSummary = await runScraperSweep(
+      { mode: planning, confirmations: new Set(), restart: true },
+      { childRunner: planned.runner },
+    );
+    trackRun(planning, planSummary.outputDirectory);
+
+    expect(planned.calls.length).toBeGreaterThan(0);
+    expect(planned.calls.map((call) => commandFromArgs(call.args))).not.toContain(
+      'research-homes:inherit-lead-department',
+    );
+    expect(planSummary.postRun).toBeUndefined();
+  }, 180_000);
+
   it('stops a development-full sweep before any source runs when its preflight canary fails', async () => {
     const mode = 'development-full' as const;
     fs.rmSync(checkpointFor(mode), { force: true });

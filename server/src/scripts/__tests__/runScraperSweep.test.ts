@@ -675,6 +675,7 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'profile-honors',
       'staff-minted-retirement',
+      'lead-department-inheritance',
       'researcher-email-support',
       'visibility-gate',
       'search-sync',
@@ -850,6 +851,7 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'profile-honors',
       'staff-minted-retirement',
+      'lead-department-inheritance',
       'researcher-email-support',
       'visibility-gate',
       'search-sync',
@@ -911,6 +913,7 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'profile-honors',
       'staff-minted-retirement',
+      'lead-department-inheritance',
       'researcher-email-support',
       'visibility-gate',
       'search-sync',
@@ -964,6 +967,61 @@ describe('runScraperSweep', () => {
       );
     }
   });
+
+  it('runs the lead-department inheritance pass after person-side materialization and lead linking, before the gate (#6033)', () => {
+    const names: string[] = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      dedupeResearchers: true,
+    }).map((stage) => stage.name);
+    const inheritance = names.indexOf('lead-department-inheritance');
+    expect(inheritance).toBeGreaterThan(-1);
+    for (const earlier of [
+      'researcher-dedupe',
+      'url-identity-dedupe',
+      'website-url-identity-dedupe',
+      'shared-person-name-agreed-dedupe',
+      'pi-attributed-researcher-mint',
+      'inferred-pi-lead-reclaim',
+      'staff-minted-retirement',
+    ]) {
+      if (names.includes(earlier)) expect(names.indexOf(earlier)).toBeLessThan(inheritance);
+    }
+    expect(names.indexOf('pi-attributed-researcher-mint')).toBeGreaterThan(-1);
+    expect(names.indexOf('inferred-pi-lead-reclaim')).toBeGreaterThan(-1);
+    expect(inheritance).toBeLessThan(names.indexOf('visibility-gate'));
+    expect(inheritance).toBeLessThan(names.indexOf('search-sync'));
+  });
+
+  it.each(['development-full', 'development-incremental'] as const)(
+    'runs the lead-department inheritance pass as an applying stage of every %s sweep (#6033)',
+    (mode) => {
+      for (const env of [{}, { SCRAPER_SWEEP_DEDUPE_RESEARCHERS: '0' }]) {
+        const options = resolveDevelopmentPostRunOptions(mode, env, sinceIso);
+        expect(options).toBeDefined();
+        const stage = buildDevelopmentPostRunStages('/tmp/development-sweep', options).find(
+          (candidate) => candidate.name === 'lead-department-inheritance',
+        );
+        expect(stage?.args).toEqual([
+          '--cwd',
+          'server',
+          'research-homes:inherit-lead-department',
+          '--apply',
+          '--confirm-lead-department',
+          '--output',
+          '/tmp/development-sweep/development-lead-department-inheritance.json',
+        ]);
+      }
+    },
+  );
+
+  it.each(['development-plan', 'development-sample', 'fellowship-development-full'] as const)(
+    'never runs the lead-department inheritance pass in a %s sweep (#6033)',
+    (mode) => {
+      expect(resolveDevelopmentPostRunOptions(mode, {}, sinceIso)).toBeUndefined();
+      expect(
+        FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS.map((definition) => definition.name),
+      ).not.toContain('lead-department-inheritance');
+    },
+  );
 
   it('runs the researcher dedupe stage even when the eponymous merge is off', () => {
     const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {

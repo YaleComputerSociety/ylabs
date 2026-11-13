@@ -244,18 +244,19 @@ The two exhaustive Development modes (`development-full`, `development-increment
 17. `inferred-pi-lead-reclaim` (`data:materialize-inferred-pi-leads --all --apply`; ordered before the gate so the gate judges the leads it links in the same sweep; its result reports `materialized-lead` and `still-unresolved`, #3741; a key the original netid, alias-map and key-name walk cannot resolve falls back to the `user` materializer's own identity join, and a bare-alias or Yale-email key is read in `netid:` form, both refusing a researcher whose title cannot own a research row or who is not the person an eponymous lab name names, #4697)
 18. `profile-honors` (`research-entity:profile-honors --apply`; after the lead reclaim so a lead linked this sweep has its profile page read this sweep, writing only rows whose honors changed, #4771)
 19. `staff-minted-retirement` (`research-entity:retire-staff-minted-entities --apply`; archives a row whose person's title owns no research, re-read every sweep because a row minted before its title was on file is never revisited by its mint lane, so the roster lane may keep minting an unknown title; capped by `--max-apply`, ordered before the gate and the rebuild, #4983)
-20. `researcher-email-support` (`researchers:compute-email-support --apply --confirm-compute-email-support`; computes `identifiers.emailSupport` for every live researcher holding a stored email, writing only a marker whose value changed; after every stage that mints a researcher or changes an address, and directly before the gate, so a researcher that newly becomes unreached is marked the same sweep, #5713)
-21. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-22. `search-sync` (`meili:sync-research-entities --apply`)
-23. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
-24. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
-25. `coverage-audit`
-26. `data-quality` (`beta:data-quality --strict`)
-27. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
-28. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-29. `survivor-alias-derivation` (`research-entity:derive-survivor-aliases --apply --confirm-derive-survivor-aliases`; sets each live survivor's `mergedFrom` from the tombstones, see `docs/research-model.md`)
-30. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
-31. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+20. `lead-department-inheritance` (`research-homes:inherit-lead-department --apply --confirm-lead-department`; delivers a lead's department, and its parent school, onto every live row that lead singly leads and that still lacks a school or a department, through the same `inheritSchoolFromLeadPi` the materializer runs; after every stage that materializes a person or links a lead (`pi-attributed-researcher-mint`, `inferred-pi-lead-reclaim`) and before the gate, so a department a person-side lane changed reaches the rows that person leads the same sweep instead of waiting for each row to rematerialize; it skips the multi-PI kinds and core facilities, and a second run plans nothing, #6033)
+21. `researcher-email-support` (`researchers:compute-email-support --apply --confirm-compute-email-support`; computes `identifiers.emailSupport` for every live researcher holding a stored email, writing only a marker whose value changed; after every stage that mints a researcher or changes an address, and directly before the gate, so a researcher that newly becomes unreached is marked the same sweep, #5713)
+22. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
+23. `search-sync` (`meili:sync-research-entities --apply`)
+24. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
+25. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
+26. `coverage-audit`
+27. `data-quality` (`beta:data-quality --strict`)
+28. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
+29. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
+30. `survivor-alias-derivation` (`research-entity:derive-survivor-aliases --apply --confirm-derive-survivor-aliases`; sets each live survivor's `mergedFrom` from the tombstones, see `docs/research-model.md`)
+31. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+32. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 Three of these stages count standing defects and exit 1 whenever a count is above zero, so the sweep judges them from their artifact rather than their exit code (#4852, `server/src/scripts/sweepStageJudgement.ts`).
 `integrity-gate` records each of its `counts`, and `trust-contract` records `publicVisibilityViolations`, the total `violations`, and one `repairLane:<stage>` count per repair stage, absent lanes as 0.
@@ -1596,8 +1597,10 @@ The write goes through `applyResearchEntityOrgUnitCanonicalization` and records 
 Evidence comes first: the step appends a `lead-pi-school-inheritance` observation for each inherited field, writes the value only when a live observation of that exact value exists, and records that observation's `observationId` and `sourceId` in the provenance entry.
 When the observation cannot be recorded (an unseeded environment, or `appendObservations` refusing it) the step writes nothing at all, because a value written anyway is the unbacked attribution #3769 found 142 stored entries of.
 It honors `manuallyLockedFields`, never overwrites an existing school, `schools[]`, or `departments[]`, and skips the multi-PI org kinds (`center`/`institute`/`program`) so one director can never guess a whole cross-school center's school.
+It also skips a core facility (`kind: core_facility` or `entityType: CORE_FACILITY`, reported as `core-facility`), because a core facility legitimately has no school (#2195) and its lead's appointment is not the facility's (#6033).
 It fails closed on every other outcome (locked, both facets already present, ambiguous or missing lead, no department, or a department that does not canonicalize), so a wrong value is never guessed.
 Because this is a materialize-time step rather than a repair script, re-running the engine reapplies it instead of erasing it, and it reaches rows that do not exist yet.
+The materialize-time step only reaches a row that is itself rematerialized, so a lead whose `primaryDepartment` a person-side lane sets later (a directory run, a user-key re-derive, a catalog alias) would leave the rows they lead school-less; the `lead-department-inheritance` sweep stage closes that window by running the same function over every live row still missing a school or a department, after person-side materialization and before the gate (#6033).
 This closes the "grant-derived shells have no school" gap on the same engine pass that closes the description gap, and stays correct on re-runs.
 
 ### The release queue is routed by recoverability, not swept whole
