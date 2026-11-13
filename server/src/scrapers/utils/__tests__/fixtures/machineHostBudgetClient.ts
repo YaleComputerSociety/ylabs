@@ -1,3 +1,4 @@
+import { observeMachineHostGrants } from '../../machineHostBudget';
 import { machineHostBudgetLimiter, machineHostSlotLimiter } from '../../scraperHostSlotLimiter';
 
 const host = String(process.env.FIXTURE_HOST);
@@ -12,6 +13,8 @@ const limiter =
 function emit(line: object): void {
   process.stdout.write(`${JSON.stringify({ pid: process.pid, ...line })}\n`);
 }
+
+observeMachineHostGrants((_host, stampedAt) => emit({ event: 'stamped', stampedAt }));
 
 async function worker(queue: number[]): Promise<void> {
   for (let next = queue.shift(); next !== undefined; next = queue.shift()) {

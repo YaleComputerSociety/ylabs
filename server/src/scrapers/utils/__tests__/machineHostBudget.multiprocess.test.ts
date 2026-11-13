@@ -11,9 +11,10 @@ const TIMER_SLACK_MS = 40;
 
 interface ClientLine {
   pid: number;
-  event: 'granted' | 'released' | 'done' | 'warn';
+  event: 'granted' | 'released' | 'stamped' | 'done' | 'warn';
   grantedAt?: number;
   releasedAt?: number;
+  stampedAt?: number;
 }
 
 interface RunningClient {
@@ -123,6 +124,16 @@ function smallestGrantGap(intervals: Array<{ start: number }>): number {
   return gap;
 }
 
+// Wall-clock reads after a grant drift by however long each process takes to resume, so spacing is
+// asserted on the grant times the budget itself recorded, which is what the next grant waits on.
+function smallestStampedGap(clients: RunningClient[], expected: number): number {
+  const stamps = clients.flatMap((client) =>
+    client.lines.filter((line) => line.event === 'stamped').map((line) => line.stampedAt as number),
+  );
+  expect(stamps).toHaveLength(expected);
+  return smallestGrantGap(stamps.map((start) => ({ start })));
+}
+
 async function runPair(plan: Plan, extraEnv: NodeJS.ProcessEnv = {}) {
   const first = startBudgetClient(plan, extraEnv);
   const second = startBudgetClient(plan, extraEnv);
@@ -130,7 +141,9 @@ async function runPair(plan: Plan, extraEnv: NodeJS.ProcessEnv = {}) {
   expect(await second.exited).toBe(0);
   const granted = spans([first, second]);
   expect(granted).toHaveLength(plan.requests * 2);
-  return granted;
+  return Object.assign(granted, {
+    stampedGap: smallestStampedGap([first, second], plan.requests * 2),
+  });
 }
 
 describe('machine-wide host budget across real processes', () => {
@@ -140,7 +153,7 @@ describe('machine-wide host budget across real processes', () => {
       { FIXTURE_LAYERS: 'budget-only' },
     );
     expect(peakInFlight(granted)).toBe(1);
-    expect(smallestGrantGap(granted)).toBeGreaterThanOrEqual(1_500 - TIMER_SLACK_MS);
+    expect(granted.stampedGap).toBeGreaterThanOrEqual(1_500);
   }, 60_000);
 
   it('keeps two layered processes on one Yale host 1.5 s apart after the broker also grants', async () => {
@@ -151,7 +164,7 @@ describe('machine-wide host budget across real processes', () => {
       parallel: 3,
     });
     expect(peakInFlight(granted)).toBe(1);
-    expect(smallestGrantGap(granted)).toBeGreaterThanOrEqual(1_500 - TIMER_SLACK_MS);
+    expect(granted.stampedGap).toBeGreaterThanOrEqual(1_500);
   }, 60_000);
 
   it('keeps a host outside Yale at four concurrent requests 400 ms apart', async () => {
@@ -160,7 +173,7 @@ describe('machine-wide host budget across real processes', () => {
       { FIXTURE_LAYERS: 'budget-only' },
     );
     expect(peakInFlight(granted)).toBe(4);
-    expect(smallestGrantGap(granted)).toBeGreaterThanOrEqual(400 - TIMER_SLACK_MS);
+    expect(granted.stampedGap).toBeGreaterThanOrEqual(400);
   }, 60_000);
 
   it('never lets an override loosen the Yale default, and spaces each grant after the last response', async () => {

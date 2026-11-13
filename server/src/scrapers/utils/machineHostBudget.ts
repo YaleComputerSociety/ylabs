@@ -177,6 +177,17 @@ interface Mutation<T> {
   write: boolean;
 }
 
+type SpacingOutcome = { remaining: number } | { stampedAt: number };
+
+type MachineHostGrantObserver = (host: string, stampedAt: number) => void;
+
+let grantObserver: MachineHostGrantObserver | undefined;
+
+/** Reports the grant time each spacing stamp records, which is what the next grant is spaced from. */
+export function observeMachineHostGrants(observer: MachineHostGrantObserver | undefined): void {
+  grantObserver = observer;
+}
+
 export interface MachineHostBudgetLimiterOptions {
   env?: NodeJS.ProcessEnv;
   directory?: string;
@@ -269,14 +280,17 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
 
   private async stampSpacing(key: string, budget: HostThrottle): Promise<void> {
     for (;;) {
-      const remaining = await this.transact(key, (state, now) => {
+      const outcome = await this.transact<SpacingOutcome>(key, (state, now) => {
         const gap = spacingAnchor(state, budget) + budget.minIntervalMs - now;
-        if (gap > 0) return { result: gap, write: false };
+        if (gap > 0) return { result: { remaining: gap }, write: false };
         state.lastGrantAt = now;
-        return { result: 0, write: true };
+        return { result: { stampedAt: now }, write: true };
       });
-      if (remaining <= 0) return;
-      await this.sleep(remaining);
+      if ('stampedAt' in outcome) {
+        grantObserver?.(key, outcome.stampedAt);
+        return;
+      }
+      await this.sleep(outcome.remaining);
     }
   }
 
