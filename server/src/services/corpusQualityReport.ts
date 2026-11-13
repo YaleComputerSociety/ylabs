@@ -1,4 +1,13 @@
+import { Observation } from '../models/observation';
+import { Researcher } from '../models/researcher';
 import { ResearchEntity } from '../models/researchEntity';
+import {
+  normalizedTitleReading,
+  SITE_CHROME_TITLE_LANE,
+  siteChromeTitleReadings,
+  type SiteChromeTitleReading,
+} from '../utils/siteChromeTitleReading';
+import { servablePersonTitle } from '../utils/titleHygiene';
 import {
   buildResearchAreasCardSummary,
   describesResearchFocus,
@@ -22,6 +31,7 @@ import { PUBLIC_LEAD_ROLES } from './researchGroupService';
 import {
   buildCorpusQualityReport,
   type CorpusQualityCorpusCounts,
+  type CorpusQualityPersonTitleCounts,
   type CorpusQualityReport,
   type CorpusQualityServedRowFacts,
 } from './corpusQualityReportCore';
@@ -116,6 +126,55 @@ export const readCorpusCoverageCounts = async (): Promise<CorpusQualityCorpusCou
   return { entities, archived, studentReady, byTier };
 };
 
+export interface SiteChromePersonTitleHit extends SiteChromeTitleReading {
+  researchersServingIt: number;
+}
+
+export interface SiteChromePersonTitles {
+  counts: CorpusQualityPersonTitleCounts;
+  hits: SiteChromePersonTitleHit[];
+}
+
+const servedTitleKey = (value: unknown): string =>
+  normalizedTitleReading(servablePersonTitle(normalizedTitleReading(value)) ?? '');
+
+export async function readSiteChromePersonTitles(): Promise<SiteChromePersonTitles> {
+  const [observations, researchers] = await Promise.all([
+    Observation.find(
+      { sourceName: SITE_CHROME_TITLE_LANE, field: 'title', superseded: { $ne: true } },
+      { value: 1, sourceUrl: 1, entityKey: 1, entityId: 1 },
+    ).lean(),
+    Researcher.find(
+      { archived: { $ne: true }, 'profile.title': { $exists: true, $ne: '' } },
+      { 'profile.title': 1 },
+    ).lean(),
+  ]);
+  const readings = siteChromeTitleReadings(
+    (observations as any[]).map((observation) => ({
+      observationId: String(observation._id),
+      subject: String(observation.entityKey ?? observation.entityId ?? ''),
+      value: normalizedTitleReading(observation.value),
+      sourceUrl: typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '',
+    })),
+  );
+  const servedTitleCounts = new Map<string, number>();
+  for (const researcher of researchers as any[]) {
+    const key = servedTitleKey(researcher.profile?.title);
+    if (key) servedTitleCounts.set(key, (servedTitleCounts.get(key) || 0) + 1);
+  }
+  const hits = readings.map((reading) => {
+    const key = servedTitleKey(reading.value);
+    return { ...reading, researchersServingIt: key ? servedTitleCounts.get(key) || 0 : 0 };
+  });
+  return {
+    counts: {
+      withServableTitle: [...servedTitleCounts.values()].reduce((total, n) => total + n, 0),
+      fromSiteChromeReading: hits.reduce((total, hit) => total + hit.researchersServingIt, 0),
+    },
+    hits,
+  };
+}
+
 export async function readCorpusQualityReport(
   generatedAt = new Date(),
 ): Promise<CorpusQualityReport> {
@@ -135,5 +194,6 @@ export async function readCorpusQualityReport(
     }
   }
 
-  return buildCorpusQualityReport({ facts, corpus, generatedAt });
+  const personTitles = (await readSiteChromePersonTitles()).counts;
+  return buildCorpusQualityReport({ facts, corpus, personTitles, generatedAt });
 }

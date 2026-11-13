@@ -30,6 +30,7 @@ export interface CorpusQualitySnapshotRow {
   };
   integrity: {
     publicDescriptionInvariantFails: CorpusQualityRatio;
+    personTitleFromSiteChromeReading: CorpusQualityRatio;
   };
 }
 

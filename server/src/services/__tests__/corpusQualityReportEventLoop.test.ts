@@ -23,6 +23,14 @@ vi.mock('../../models/researchEntity', () => ({
   },
 }));
 
+vi.mock('../../models/observation', () => ({
+  Observation: { find: () => ({ lean: async () => [] }) },
+}));
+
+vi.mock('../../models/researcher', () => ({
+  Researcher: { find: () => ({ lean: async () => [] }) },
+}));
+
 vi.mock('../researchEntityMembershipAccessor', () => ({
   getResearchEntityRosterByEntityId: async () => new Map(),
 }));

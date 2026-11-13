@@ -81,6 +81,7 @@ const corpusQualitySnapshotSchema = new mongoose.Schema(
     },
     integrity: {
       publicDescriptionInvariantFails: { type: ratioSchema, required: true },
+      personTitleFromSiteChromeReading: { type: ratioSchema },
     },
   },
   { timestamps: true },

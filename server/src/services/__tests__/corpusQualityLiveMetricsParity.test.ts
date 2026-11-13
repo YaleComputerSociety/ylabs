@@ -35,6 +35,7 @@ describe('corpus quality freshness contract', () => {
       'browseCardSixWordsOrFewer',
       'fullDescriptionIsBiography',
       'publicDescriptionInvariantFails',
+      'personTitleFromSiteChromeReading',
       'hasTopic',
       'topicTotal',
       'noResearchWebsiteAndNoTopics',

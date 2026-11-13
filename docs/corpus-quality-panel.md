@@ -14,7 +14,7 @@ Most of the panel is a single MongoDB aggregation on the request, so it says wha
 |---|---|---|
 | Coverage, by tier, by school | Live aggregation | Now |
 | Has a research website, Generic "Faculty Research" title | Live aggregation | Now |
-| Has topics, No website and no topics, Opens by stating the research, Card summary only echoes the topics, Browse card cut mid-sentence, Browse card of six words or fewer, Serves a biography as its description, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
+| Has topics, No website and no topics, Opens by stating the research, Card summary only echoes the topics, Browse card cut mid-sentence, Browse card of six words or fewer, Serves a biography as its description, Public description invariant fails, Person title is a site's menu or headline text | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
 
 The snapshot rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and, measured on 2026-09-14, about **13 seconds** over the served corpus against about **150 ms** for the aggregation.
 Read that 13 seconds as a pre-#4093 upper bound rather than a current figure.
@@ -108,6 +108,16 @@ yarn --cwd server corpus:snapshot --environment development --dry-run
 
 It reads every collection and writes only `corpus_quality_snapshots`, after asserting the database `MONGODBURL` points at matches the `--environment` claimed.
 `--dry-run` prints the measurement and writes nothing.
+
+## Person titles read from site chrome (#6199)
+
+One integrity row is about people rather than served rows: `personTitleFromSiteChromeReading` counts researchers whose served `profile.title` equals a site's own repeated text, out of researchers with a servable title.
+A live `official-profile-pi-backfill` `title` reading is site chrome when the identical value was read on 3 or more subjects of one host and runs 12 or more words, because a navigation menu or news teaser reads the same on every profile page it frames.
+`siteChromeTitleReadings` in `server/src/utils/siteChromeTitleReading.ts` holds that rule.
+It is calibrated on Development on 2026-11-13: no real appointment read on 3 or more subjects of a host exceeds 10 words, while on only 2 subjects two real long titles reach 12 words, so the subject floor is 3.
+The snapshot command also prints each site-chrome reading with its lane, host, word count, subject count, how many researchers serve it and its observation ids, so a non-zero count is attributed rather than left as a rate.
+On that date it read 3: a news headline read on 3 subjects is the served title of 3 researchers (the #5594 class), while a Nursing menu on 4 subjects and a Physics menu on 16 are served by no one.
+A snapshot taken before this row existed reads `0 / 0` for it, as other later-added rows do.
 
 ## Judge the representation, never the stored document
 
