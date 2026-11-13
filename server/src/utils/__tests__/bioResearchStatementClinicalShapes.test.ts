@@ -26,6 +26,8 @@ describe('clinical-service biography shapes the roster-bio rule refuses (#6151)'
     'Her particular interests include the history of medicine and public health in colonial ports.',
     'His special interests include historical accounts of hospital care in early modern cities.',
     'Her special interests include the medical humanities and narratives of chronic illness.',
+    'Her work showed that survival among treated patients improved after a new dosing protocol.',
+    'He found that mortality fell sharply in managed patients with early sepsis.',
   ])('keeps a research sentence that also names patients or care: %s', (sentence) => {
     expect(isClinicalOnlyBiographySentence(sentence)).toBe(false);
   });

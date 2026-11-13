@@ -64,7 +64,7 @@ const PATIENT_SERVICE_PURPOSE = new RegExp(
 
 const PATIENT_SERVICE_SHAPES = [
   new RegExp(
-    `${NOT_AFTER_ANOTHER_CARE_GIVER}\\b(?:treated|manag(?:es|ing|ed))\\s+patients\\b`,
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}\\b(?:manag(?:es|ing)|(?:has|have|had|having)\\s+(?:\\w+ly\\s+)?(?:treated|managed))\\s+patients\\b`,
     'i',
   ),
   new RegExp(
