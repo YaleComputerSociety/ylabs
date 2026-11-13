@@ -1015,6 +1015,93 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(await Researcher.countDocuments({ displayName: 'Ada Lovelace' })).toBe(0);
     });
 
+    describe("a tie the name cannot break is broken by the key's own identity evidence (#5875)", () => {
+      const KEY = 'dept:physics:ada-lovelace';
+      const seedKeyField = (field: string, value: string) =>
+        Observation.create({
+          ...directoryObservationBase(KEY),
+          sourceName: 'dept-faculty-roster',
+          field,
+          value,
+        });
+      const seedTiedKey = async () => {
+        await seedNamingResearchEntity();
+        await seedRosterIdentity(KEY, 'Ada', 'Lovelace');
+        await seedPiAttribution(KEY);
+      };
+
+      it("joins the one tied researcher holding the key's own email", async () => {
+        await seedTiedKey();
+        const holder = await Researcher.create({
+          displayName: 'A. Lovelace',
+          identifiers: { email: 'ada.lovelace@example.edu' },
+        });
+        await Researcher.create({
+          displayName: 'A. B. Lovelace',
+          identifiers: { email: 'other.lovelace@example.edu' },
+        });
+        await seedKeyField('email', 'ada.lovelace@example.edu');
+
+        const result = await materializeEntity('user', { entityKey: KEY }, {});
+
+        expect(result.skipped).toBeUndefined();
+        expect(result.created).toBe(false);
+        expect(result.entityId).toBe(String(holder._id));
+        expect(await Researcher.countDocuments({})).toBe(2);
+      });
+
+      it("joins the one tied researcher holding the key's own plausible ORCID", async () => {
+        await seedTiedKey();
+        const holder = await Researcher.create({
+          displayName: 'A. Lovelace',
+          identifiers: { orcid: SYNTHETIC_ORCID_1 },
+        });
+        await Researcher.create({ displayName: 'A. B. Lovelace' });
+        await seedKeyField('orcid', SYNTHETIC_ORCID_1);
+
+        const result = await materializeEntity('user', { entityKey: KEY }, {});
+
+        expect(result.skipped).toBeUndefined();
+        expect(result.created).toBe(false);
+        expect(result.entityId).toBe(String(holder._id));
+        expect(await Researcher.countDocuments({})).toBe(2);
+      });
+
+      it('stays refused when the only witness is the year-run ORCID', async () => {
+        await seedTiedKey();
+        await Researcher.create({
+          displayName: 'A. Lovelace',
+          identifiers: { orcid: '2025-2024-2023-2022' },
+        });
+        await Researcher.create({ displayName: 'A. B. Lovelace' });
+        await seedKeyField('orcid', '2025-2024-2023-2022');
+
+        const result = await materializeEntity('user', { entityKey: KEY }, {});
+
+        expect(result.skipped).toBe('directory-identity-without-research-signal');
+        expect(await Researcher.countDocuments({})).toBe(2);
+      });
+
+      it('mints once when the only namesake holds another netid, and a second pass is a no-op', async () => {
+        await seedTiedKey();
+        await Researcher.create({
+          displayName: 'Jonas Ad Lovelace',
+          identifiers: { netid: 'jl7' },
+        });
+        await seedKeyField('netid', 'al42');
+
+        const first = await materializeEntity('user', { entityKey: KEY }, {});
+        const second = await materializeEntity('user', { entityKey: KEY }, {});
+
+        expect(first.skipped).toBeUndefined();
+        expect(first.created).toBe(true);
+        expect(second.skipped).toBeUndefined();
+        expect(second.created).toBe(false);
+        expect(second.entityId).toBe(first.entityId);
+        expect(await Researcher.countDocuments({ displayName: 'Ada Lovelace' })).toBe(1);
+      });
+    });
+
     it('refuses a netid-shaped key, which the lead materializer cannot resolve back', async () => {
       await seedNamingResearchEntity();
       await seedRosterIdentity('netid:al99', 'Ada', 'Lovelace');
