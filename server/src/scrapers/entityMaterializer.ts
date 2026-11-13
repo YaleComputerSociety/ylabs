@@ -28,6 +28,7 @@ import {
   isFillOnlyFieldValue,
   researcherFieldWriter,
   OWN_KEY_FALLBACK_TITLE_FIELD,
+  storedValueBackingDecidesPresence,
   storedValueCountsAsPresent,
   type ResearcherGatedField,
 } from '../utils/researcherFieldWriters';
@@ -10375,6 +10376,7 @@ async function materializeUserIdentityToResearcher(
     fieldsWritten += 1;
   }
   const storedDepartmentBacked =
+    !storedValueBackingDecidesPresence('primaryDepartment') ||
     !writerKey ||
     !primaryDepartment ||
     !isFillOnlyFieldValue('primaryDepartment', resolved.primaryDepartment?.contributingSources) ||
