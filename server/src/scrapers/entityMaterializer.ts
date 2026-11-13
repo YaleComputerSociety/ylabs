@@ -9365,7 +9365,8 @@ async function storedDepartmentBackedByAnyReading(
  * Whether the stored department rests only on screened readings (#6065), over the same
  * readings #6049 reads for backing, so a key's screened reading never clears a value another
  * key still states. The resolving key's own unscreened reading settles it without the
- * cross-key read.
+ * cross-key read, and the engine-joined read runs only once an identity key's screened reading
+ * backs the value, so a value no identity key backs never pays for the engine join.
  */
 async function storedDepartmentRestsOnlyOnScreenedReadingsAcrossKeys(
   researcher: any,
@@ -9378,6 +9379,7 @@ async function storedDepartmentRestsOnlyOnScreenedReadingsAcrossKeys(
   if (storedDepartmentHasUnscreenedReading(stored, ownObservations, context)) return false;
   const { readings } = await reads.overEveryKey();
   if (storedDepartmentHasUnscreenedReading(stored, readings, context)) return false;
+  if (!storedDepartmentRestsOnlyOnScreenedReadings(stored, readings, context)) return false;
   const joined = await reads.engineJoined(stored, context.canonicalDepartment);
   if (joined === 'undetermined') return false;
   return storedDepartmentRestsOnlyOnScreenedReadings(stored, [...readings, ...joined], context);

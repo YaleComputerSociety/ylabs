@@ -107,7 +107,11 @@ describe('storedDepartmentHasUnscreenedReading', () => {
       ),
     ).toBe(true);
     expect(
-      storedDepartmentHasUnscreenedReading('Fixture Studies', [reading('Fixture Center')], catalog),
+      storedDepartmentHasUnscreenedReading(
+        'FASFIX Fixture Center',
+        [reading('FASFIX Fixture Center', 'yale-directory-csv')],
+        catalog,
+      ),
     ).toBe(false);
   });
 });

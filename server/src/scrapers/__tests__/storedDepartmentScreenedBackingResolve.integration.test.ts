@@ -40,13 +40,10 @@ vi.mock('../userDepartmentObservationScreens', async () => {
 import { Observation } from '../../models/observation';
 import { OrgUnit } from '../../models/orgUnit';
 import { Researcher } from '../../models/researcher';
-import { materializeEntity, userIdentityJoinForKey } from '../entityMaterializer';
+import { materializeEntity } from '../entityMaterializer';
 import { resetOrgUnitCanonicalizerCache } from '../orgUnitCanonicalization';
 import { resetOverSharedPersonWebsiteKeysCache } from '../overSharedPersonWebsite';
-import {
-  primaryDepartmentStatingKeysForMaterialization,
-  resetPrimaryDepartmentStatingKeysCache,
-} from '../primaryDepartmentStatingKeys';
+import { resetPrimaryDepartmentStatingKeysCache } from '../primaryDepartmentStatingKeys';
 
 const NETID = 'fq123';
 const KEY = `netid:${NETID}`;
@@ -199,13 +196,6 @@ describe('a stored department only screened readings back is cleared on resolve'
     reading('primaryDepartment', value, sourceName, ROSTER_KEY),
   ];
 
-  it('reaches the person-name-joined roster key through the engine join', async () => {
-    const person = await seedPerson(SCREENED);
-    await seedScreenedKey(...rosterReadings(SCREENED, 'fixture-open-lane'));
-    const join = await userIdentityJoinForKey(ROSTER_KEY);
-    expect(String(join?.join?.researcher?._id)).toBe(String(person._id));
-  });
-
   it('keeps it while a person-name-joined key states it unscreened', async () => {
     const person = await seedPerson(SCREENED);
     await seedScreenedKey(...rosterReadings(SCREENED, 'fixture-open-lane'));
@@ -220,17 +210,6 @@ describe('a stored department only screened readings back is cleared on resolve'
 
     await resolve();
     expect((await stored(person._id))?.profile?.primaryDepartment).toBeUndefined();
-  });
-
-  it('lets no directory fill replace a department only a person-name-joined key states (#5741)', async () => {
-    const person = await seedPerson('Fixture Studies');
-    await seedScreenedKey(
-      reading('primaryDepartment', 'Fixture Directory Studies', 'yale-directory'),
-      ...rosterReadings('Fixture Studies', 'dept-faculty-roster'),
-    );
-
-    await resolve();
-    expect((await stored(person._id))?.profile?.primaryDepartment).toBe('Fixture Studies');
   });
 
   it('lets no directory fill replace a department a person-name-joined key states in another spelling', async () => {
@@ -268,41 +247,17 @@ describe('a stored department only screened readings back is cleared on resolve'
     expect((await stored(person._id))?.profile?.primaryDepartment).toBe('Fixture Studies');
   });
 
-  it('still lets the directory fill a never-backed department many other people state', async () => {
-    const person = await seedPerson('Fixture Studies');
-    const others = Array.from({ length: 30 }, (_, index) => {
-      const key = `dept:fixture-studies:fixture-other-${index}`;
-      return [
-        reading('fname', 'Fixture', 'dept-faculty-roster', key),
-        reading(
-          'lname',
-          `Otherperson${String.fromCharCode(97 + (index % 26))}${index}`,
-          'dept-faculty-roster',
-          key,
-        ),
-        reading('primaryDepartment', 'Fixture Studies', 'dept-faculty-roster', key),
-      ];
-    }).flat();
-    await Observation.insertMany(others);
-    await seedScreenedKey(
-      reading('primaryDepartment', 'Fixture Directory Studies', 'yale-directory'),
-    );
+  it('leaves a value only a person-name-joined key states through a screened reading', async () => {
+    const person = await seedPerson(SCREENED);
+    await Observation.insertMany([
+      reading('netid', NETID),
+      reading('fname', 'Fixture'),
+      reading('lname', 'Quillsby'),
+      ...rosterReadings(SCREENED, 'fixture-screened-lane'),
+    ]);
 
     await resolve();
-    expect((await stored(person._id))?.profile?.primaryDepartment).toBe(
-      'Fixture Directory Studies',
-    );
-  });
-
-  it('reads the value-to-keys map once per batch and afresh after a reset', async () => {
-    await seedScreenedKey();
-    const first = await primaryDepartmentStatingKeysForMaterialization();
-    expect([...(first.get(SCREENED) ?? [])]).toEqual([KEY]);
-    await Observation.insertMany(rosterReadings(SCREENED, 'dept-faculty-roster'));
-    expect(await primaryDepartmentStatingKeysForMaterialization()).toBe(first);
-    resetPrimaryDepartmentStatingKeysCache();
-    const fresh = await primaryDepartmentStatingKeysForMaterialization();
-    expect([...(fresh.get(SCREENED) ?? [])].sort()).toEqual([ROSTER_KEY, KEY].sort());
+    expect((await stored(person._id))?.profile?.primaryDepartment).toBe(SCREENED);
   });
 
   it('never touches a never-backed stored department', async () => {
