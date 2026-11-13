@@ -7,6 +7,11 @@ import axios, {
 } from 'axios';
 import { OUTBOUND_CONNECT_TIMEOUT_MS } from '../../utils/connectDeadlineAgents';
 import { DevWriteStoppedError, devWriteStopped } from '../../db/devWriteStop';
+import {
+  requestOutcomeOf,
+  scraperRequestLogFromEnv,
+  type ScraperRequestLog,
+} from './scraperRequestLog';
 
 /**
  * The three bounds every scraper HTTP request carries. Changing one also requires updating
@@ -42,6 +47,7 @@ export function scraperFetchOverallDeadlineMs(readTimeoutMs: number): number {
 
 export interface ScraperFetchDeadlineOptions {
   overallDeadlineMs?: (readTimeoutMs: number) => number;
+  requestLog?: ScraperRequestLog;
 }
 
 const deadlineExceeded = (
@@ -82,12 +88,25 @@ export function withScraperFetchDeadline(
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(), overallMs);
     config.signal = combinedSignal(callerSignal, deadline.signal);
+    const dispatchedAt = new Date();
+    const logOutcome = (outcome: unknown) =>
+      options.requestLog?.record(
+        axios.getUri(config),
+        dispatchedAt,
+        Date.now() - dispatchedAt.getTime(),
+        requestOutcomeOf(outcome),
+      );
     try {
-      return await adapter(config);
+      const response = await adapter(config);
+      logOutcome(response);
+      return response;
     } catch (error) {
       if (deadline.signal.aborted && !callerSignal?.aborted) {
-        throw deadlineExceeded(config, overallMs, error);
+        const exceeded = deadlineExceeded(config, overallMs, error);
+        logOutcome(exceeded);
+        throw exceeded;
       }
+      logOutcome(error);
       throw error;
     } finally {
       clearTimeout(timer);
@@ -114,7 +133,10 @@ export function installScraperFetchDeadlines(
   const existing = installedInstances.get(instance);
   if (existing) return existing;
   const original = instance.defaults.adapter;
-  instance.defaults.adapter = withScraperFetchDeadline(axios.getAdapter(original), options);
+  instance.defaults.adapter = withScraperFetchDeadline(axios.getAdapter(original), {
+    ...options,
+    requestLog: options.requestLog ?? scraperRequestLogFromEnv(),
+  });
   const handle: ScraperFetchDeadlineHandle = {
     detach: () => {
       instance.defaults.adapter = original;
