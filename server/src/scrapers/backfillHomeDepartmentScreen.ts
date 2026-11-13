@@ -6,11 +6,11 @@ import type {
 export const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
 
 /**
- * Resolve-time half of #6074: an `official-profile-pi-backfill` home department the catalog
- * does not name states nothing. The lane used to emit the first element classed
- * "department", which on several schools' profiles is a faculty-type heading or a center, and
- * those readings stay stored until the next walk. No field is written, and nothing is screened
- * without a catalog.
+ * Resolve-time half of #6074: a stored `official-profile-pi-backfill` home department the
+ * catalog does not name states nothing. The lane's emit is gated since #6099, but readings it
+ * stored before then still carry faculty-type headings and center names. No field is written,
+ * and with no catalog nothing is screened, so a catalog outage can never drive the shared
+ * #6065 clear.
  */
 export function withoutUncataloguedBackfillHomeDepartments<T extends UserDepartmentObservation>(
   observations: T[],
