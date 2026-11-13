@@ -43,6 +43,8 @@ import { getCached, setCached } from '../snapshotCache';
 import { Researcher } from '../../models/researcher';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import { directoryUnitDepartment } from '../utils/directoryUnitDepartment';
+import { catalogDepartment } from '../directoryExportDepartmentEvidence';
+import type { CanonicalDepartment } from '../utils/directoryExportDepartment';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 import { plausiblePersonOrcid } from '../../utils/orcid';
 
@@ -405,9 +407,41 @@ export function classifyUserType(title: string | undefined | null): 'professor' 
  *
  * No I/O. Unit-testable.
  */
+const TRAILING_UNIT_ACRONYM = /\s+\([A-Z&]{2,}\)$/;
+
+/**
+ * The home department the directory states, read against the catalog (#6129). A unit the
+ * catalog names stands as the directory spells it; an acronym-suffixed spelling ("Biostatistics
+ * (BIS)") or a section the catalog knows only by its coded HR form ("MEDINT Cardiology") is read
+ * as its catalog name; anything else (a center, a council, a bare section name two departments
+ * share) states no department. With no catalog the unit stands as before.
+ */
+export function directoryHomeDepartment(
+  person: Pick<YaliesPerson, 'unit' | 'unit_class'>,
+  canonicalDepartment: CanonicalDepartment | null,
+): string | undefined {
+  const named = directoryUnitDepartment(person.unit, person.unit_class);
+  if (!canonicalDepartment) return named;
+  if (named && canonicalDepartment(named)) return named;
+  const unit = typeof person.unit === 'string' ? person.unit.replace(/\s+/g, ' ').trim() : '';
+  const unitClass =
+    typeof person.unit_class === 'string' ? person.unit_class.trim().toUpperCase() : '';
+  const spellings = [
+    named?.replace(TRAILING_UNIT_ACRONYM, ''),
+    unit.replace(TRAILING_UNIT_ACRONYM, ''),
+    unitClass && unit ? `${unitClass} ${unit}` : undefined,
+  ];
+  for (const spelling of spellings) {
+    const department = spelling ? canonicalDepartment(spelling) : undefined;
+    if (department) return department;
+  }
+  return undefined;
+}
+
 export function personToObservations(
   person: YaliesPerson,
   sourceUrl: string = SOURCE_URL,
+  canonicalDepartment: CanonicalDepartment | null = null,
 ): ObservationInput[] {
   if (!person || !person.netid) return [];
   if (!isFacultyPerson(person)) return [];
@@ -430,7 +464,7 @@ export function personToObservations(
   const imageUrl = (person.image && String(person.image).trim()) || '';
   const orcid = plausiblePersonOrcid(person.orcid);
 
-  const primaryDept = directoryUnitDepartment(person.unit, person.unit_class) ?? '';
+  const primaryDept = directoryHomeDepartment(person, canonicalDepartment) ?? '';
 
   // Profile URLs: Yalies returns a single `url` field on faculty records.
   const profileUrls: Record<string, string> = {};
@@ -529,6 +563,8 @@ export class YaleDirectoryScraper implements IScraper {
     private readonly corpusNetidLoader: () => Promise<
       ReadonlySet<string>
     > = loadCorpusResearcherNetids,
+    private readonly catalogDepartmentLoader: () => Promise<CanonicalDepartment | null> = () =>
+      mongooseConnectionWasOpened() ? catalogDepartment() : Promise.resolve(null),
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -551,6 +587,7 @@ export class YaleDirectoryScraper implements IScraper {
     const limit = limitOption;
 
     const corpusNetids = await this.corpusNetidLoader();
+    const canonicalDepartment = await this.catalogDepartmentLoader();
     let totalObs = 0;
     let processed = 0;
     let skippedNonFaculty = 0;
@@ -592,7 +629,7 @@ export class YaleDirectoryScraper implements IScraper {
           stop = true;
           break;
         }
-        const obs = personToObservations(person);
+        const obs = personToObservations(person, SOURCE_URL, canonicalDepartment);
         if (obs.length === 0) {
           const backing = corpusPersonEmailObservations(person, corpusNetids);
           if (backing.length > 0) {

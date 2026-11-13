@@ -1,4 +1,5 @@
 import { withoutDepartmentHeadingObservations } from './departmentHeadingObservationScreen';
+import { withDirectoryDepartmentsCatalogGated } from './directoryDepartmentCatalogGate';
 import { withDirectoryExportDepartmentsDecoded } from './directoryExportDepartmentEvidence';
 import type { CanonicalDepartment } from './utils/directoryExportDepartment';
 
@@ -27,6 +28,7 @@ export type UserDepartmentObservationScreen = <T extends UserDepartmentObservati
 export const USER_DEPARTMENT_OBSERVATION_SCREENS: ReadonlyArray<UserDepartmentObservationScreen> = [
   (observations, { canonicalDepartment }) =>
     withDirectoryExportDepartmentsDecoded(observations, canonicalDepartment),
+  withDirectoryDepartmentsCatalogGated,
   (observations) => withoutDepartmentHeadingObservations(observations),
 ];
 
