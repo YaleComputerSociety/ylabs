@@ -21,7 +21,7 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_DIRECTORY = 20;
 
-export type YaleResearchDirectoryParser = 'centers-institutes' | 'core-facilities';
+export type YaleResearchDirectoryParser = 'centers-institutes' | 'core-facilities' | 'resources';
 export type YaleResearchSourceCategory = 'centers-institutes' | 'core-facility';
 export type YaleResearchKind =
   'center' | 'institute' | 'lab' | 'program' | 'initiative' | 'group' | 'core_facility';
@@ -67,6 +67,11 @@ export const DEFAULT_YALE_RESEARCH_DIRECTORY_CONFIGS: YaleResearchDirectoryConfi
     url: 'https://research.yale.edu/cores?f%5B0%5D=result_type%3A1',
     paginated: true,
     parser: 'core-facilities',
+  },
+  {
+    key: 'resources',
+    url: 'https://research.yale.edu/resources',
+    parser: 'resources',
   },
 ];
 
@@ -263,6 +268,23 @@ export function parseResearchYaleCoreFacilities(
   });
 
   return uniqueEntities(entities.filter(isMintableResearchYaleEntity));
+}
+
+const RESEARCH_UNIT_NAME_RE = /\b(?:center|centre|institute)\b/i;
+
+/**
+ * The resources listing is mostly policies, funding programs and administrative tools,
+ * with a few research centers among them (#5827). Only a record named as a center or
+ * institute is a research entity, and its chips name the resource type rather than a
+ * topic, so none of them is kept as a research area.
+ */
+export function parseResearchYaleResources(
+  html: string,
+  pageUrl: string,
+): YaleResearchOfficialEntity[] {
+  return parseResearchYaleCenters(html, pageUrl)
+    .filter((entity) => RESEARCH_UNIT_NAME_RE.test(entity.name))
+    .map(({ researchAreas: _resourceTypes, ...entity }) => entity);
 }
 
 export function entityToObservations(
@@ -491,6 +513,7 @@ function parseDirectory(
   pageUrl: string,
 ): YaleResearchOfficialEntity[] {
   if (config.parser === 'core-facilities') return parseResearchYaleCoreFacilities(html, pageUrl);
+  if (config.parser === 'resources') return parseResearchYaleResources(html, pageUrl);
   return parseResearchYaleCenters(html, pageUrl);
 }
 

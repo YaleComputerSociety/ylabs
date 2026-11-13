@@ -10,6 +10,7 @@ import {
   isMintableResearchYaleEntity,
   parseResearchYaleCenters,
   parseResearchYaleCoreFacilities,
+  parseResearchYaleResources,
   canonicalResearchYaleUrl,
   officialRecordSchool,
   recordOwnWebsiteUrl,
@@ -481,6 +482,82 @@ describe('yaleResearchOfficialScraper', () => {
         url: 'https://research.yale.edu/cores?f%5B0%5D=result_type%3A1',
         paginated: true,
       }),
+      expect.objectContaining({
+        key: 'resources',
+        url: 'https://research.yale.edu/resources',
+        parser: 'resources',
+      }),
     ]);
+  });
+
+  describe('resources listing', () => {
+    const resourceItem = (href: string, name: string, types: string[], summary: string) => `
+      <li class="item">
+        <div class="grid-x grid-margin-x">
+          <div class="cell initial-12 medium-4">
+            <h3><a href="${href}" class="external">${name}</a></h3>
+            <ul class="item__types">${types.map((type) => `<li class="item__type">${type}</li>`).join('')}</ul>
+          </div>
+          <div class="cell initial-12 medium-4"><p class="item__summary">${summary}</p></div>
+        </div>
+      </li>`;
+    const RESOURCES_HTML = `<main><ol class="listing-items">
+      ${resourceItem('https://fixture.example.edu/fund', 'Fixture Innovation Fund', ['Funding, awards, grants'], 'Grants that support commercialization of faculty research.')}
+      ${resourceItem('https://fixture.example.edu/policy', 'Fixture Research Data Policy', ['Policies &amp; regulations'], 'The policy that governs how research data is retained.')}
+      ${resourceItem('https://fixture.example.edu/center', 'Fixture Center for Device Innovation', ['Faculty resources', 'Device design'], 'A center that partners faculty with clinicians to build devices.')}
+      ${resourceItem('https://fixture.example.edu/institute', 'Fixture Institute for Translation', ['Research administration &amp; collaboration'], 'An institute that moves laboratory findings toward patients.')}
+    </ol></main>`;
+
+    it('keeps only the records named as a center or institute', () => {
+      const entities = parseResearchYaleResources(
+        RESOURCES_HTML,
+        'https://research.yale.edu/resources',
+      );
+
+      expect(entities.map((entity) => entity.name)).toEqual([
+        'Fixture Center for Device Innovation',
+        'Fixture Institute for Translation',
+      ]);
+      expect(entities.map((entity) => entity.entityType)).toEqual(['CENTER', 'INSTITUTE']);
+      expect(entities[0]).toMatchObject({
+        url: 'https://fixture.example.edu/center',
+        slug: 'research-yale-fixture-center-for-device-innovation',
+      });
+    });
+
+    it('keeps no resource-type chip as a research area', () => {
+      const entities = parseResearchYaleResources(
+        RESOURCES_HTML,
+        'https://research.yale.edu/resources',
+      );
+
+      for (const entity of entities) expect(entity.researchAreas).toBeUndefined();
+    });
+
+    it('routes the resources config to the resources parser', async () => {
+      const fetchHtml = vi.fn(async (url: string) =>
+        url === 'https://research.yale.edu/resources' ? RESOURCES_HTML : '<main></main>',
+      );
+      const scraper = new YaleResearchOfficialScraper(undefined, fetchHtml);
+      const { ctx, emitted } = makeContext({ only: ['resources'] });
+
+      const result = await scraper.run(ctx);
+
+      expect(result.entitiesObserved).toBe(2);
+      const minted = new Set(
+        emitted.filter((observation) => observation.field === 'slug').map((o) => o.value),
+      );
+      expect(minted).toEqual(
+        new Set([
+          'research-yale-fixture-center-for-device-innovation',
+          'research-yale-fixture-institute-for-translation',
+        ]),
+      );
+      expect(fetchHtml).not.toHaveBeenCalledWith(
+        'https://research.yale.edu/resources?page=1',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
   });
 });
