@@ -73,15 +73,15 @@ const PATIENT_SERVICE_SHAPES = [
     'i',
   ),
   new RegExp(
-    `${AFTER_THE_BIOS_OWN_PERSON}(?:manag(?:es|ing)|(?:has|have|had|having)\\s+(?:\\w+ly\\s+)?(?:treated|managed))\\s+patients\\b`,
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}${AFTER_THE_BIOS_OWN_PERSON}(?:manag(?:es|ing)|(?:has|have|had|having)\\s+(?:\\w+ly\\s+)?(?:treated|managed))\\s+patients\\b`,
     'i',
   ),
   new RegExp(
-    `${AFTER_THE_BIOS_OWN_PERSON}(?:manag(?:e|es|ing|ed)|support(?:s|ing|ed)?|giv(?:e|es|ing|en)|treated)\\s+(?:all\\s+)?(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}${AFTER_THE_BIOS_OWN_PERSON}(?:manag(?:e|es|ing|ed)|support(?:s|ing|ed)?|giv(?:e|es|ing|en)|treated)\\s+(?:all\\s+)?(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
     'i',
   ),
   new RegExp(
-    `${AFTER_THE_BIOS_OWN_PERSON}(?:working|worked)\\s+with\\s+patients\\s+to\\s+(?!(?:better\\s+)?(?:understand|learn)\\b|(?:build|develop|design|create|co-create|co-design|co-produce|test|pilot|evaluate|study|record|measure|identify|map|document|adapt|reshape)\\b)`,
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}${AFTER_THE_BIOS_OWN_PERSON}(?:working|worked)\\s+with\\s+patients\\s+to\\s+(?!(?:better\\s+)?(?:understand|learn)\\b|(?:build|develop|design|create|co-create|co-design|co-produce|test|pilot|evaluate|study|record|measure|identify|map|document|adapt|reshape)\\b)`,
     'i',
   ),
   /\b(?:combat\w*|treat(?:s|ing)?|alleviat\w*|reliev\w*)\s+(?:the\s+)?symptoms\b/i,

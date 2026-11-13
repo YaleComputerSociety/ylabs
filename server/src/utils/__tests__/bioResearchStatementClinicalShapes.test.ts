@@ -49,6 +49,9 @@ describe('clinical-service biography shapes the roster-bio rule refuses (#6151)'
     'Their work focuses on a clinic that manages patients with sickle cell disease.',
     'Her work focuses on spouses supporting their patients after a stroke.',
     'His tool lets physicians usually quickly treat their patients with chest pain.',
+    'The platform allows clinicians to support their patients after discharge.',
+    'Her app enables physicians to manage their patients with heart failure at home.',
+    'Her app helps clinicians to manage their patients with diabetes.',
   ])('keeps a sentence about another care-giver and their patients: %s', (sentence) => {
     expect(isClinicalOnlyBiographySentence(sentence)).toBe(false);
   });
