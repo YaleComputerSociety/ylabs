@@ -3,6 +3,8 @@ import {
   UNDERGRAD_LIST_SOURCE_CONFIGS,
   UNDERGRAD_LIST_EVIDENCE_FIELD,
   OfficialUndergradListScraper,
+  csArchiveTermAcademicYearEnd,
+  fullYearOfTwoDigitYear,
   type MentorResolver,
 } from '../sources/officialUndergradListScraper';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -231,6 +233,77 @@ describe('OfficialUndergradListScraper', () => {
       listings: [expect.objectContaining({ adviserName: 'Avery Synthetic', year: 2026 })],
     });
     expect(failed.complete).toBe(false);
+  });
+
+  it('reads a two-digit year as 19yy once 20yy would end after the next academic year (#5905)', () => {
+    expect(fullYearOfTwoDigitYear(96, NOW)).toBe(1996);
+    expect(fullYearOfTwoDigitYear(99, NOW)).toBe(1999);
+    expect(fullYearOfTwoDigitYear(28, NOW)).toBe(1928);
+    expect(fullYearOfTwoDigitYear(27, NOW)).toBe(2027);
+    expect(fullYearOfTwoDigitYear(26, NOW)).toBe(2026);
+    expect(fullYearOfTwoDigitYear(0, NOW)).toBe(2000);
+    expect(csArchiveTermAcademicYearEnd('https://example.edu/cs290/98-99b/index.html', NOW)).toBe(
+      1999,
+    );
+    expect(csArchiveTermAcademicYearEnd('https://example.edu/cs290/99-00a/index.html', NOW)).toBe(
+      2000,
+    );
+    expect(csArchiveTermAcademicYearEnd('https://example.edu/cs290/26-27a/index.html', NOW)).toBe(
+      2027,
+    );
+  });
+
+  it('never fetches a late-1990s CS archive semester as a recent one (#5905)', async () => {
+    const archive = UNDERGRAD_LIST_SOURCE_CONFIGS.find(
+      (config) => config.source === 'cs-senior-projects',
+    )!;
+    const terms = ['96-97a', '98-99b', '99-00a', '19-20a', '25-26b', '26-27a'];
+    const index = terms.map((term) => `<a href="${term}/index.html">${term}</a>`).join('');
+    const term =
+      '<h2>Projects: Spring 2026</h2><ul><li>Student, <i>Title</i>, Adviser: Avery Synthetic.</li></ul>';
+    const fetched: string[] = [];
+
+    const read = await archive.read(async (url) => {
+      if (url.endsWith('/cpsc4900/')) return index;
+      fetched.push(url);
+      return term;
+    }, NOW);
+
+    expect(fetched.map((url) => /\/(\d\d-\d\d[ab])\//.exec(url)?.[1])).toEqual([
+      '25-26b',
+      '26-27a',
+    ]);
+    expect(read.complete).toBe(true);
+    expect(read.listings.map((listing) => listing.year)).toEqual([2026, 2026]);
+  });
+
+  it('drops a listing from any source dated after the next academic year ends (#5905)', async () => {
+    const { emitted, result } = await run({
+      reads: {
+        'cs-directed-research': {
+          complete: true,
+          listings: [
+            listing('cs-directed-research', 'Avery Synthetic', 2096),
+            listing('cs-directed-research', 'Avery Synthetic', 2027),
+          ],
+        },
+        'tobin-research-assistantships': {
+          complete: true,
+          listings: [listing('tobin-research-assistantships', 'Avery Synthetic', 2028)],
+        },
+      },
+      resolve: resolveBy({ 'Avery Synthetic': 'synthetic-lab' }),
+    });
+
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        entityKey: 'synthetic-lab',
+        value: [
+          expect.objectContaining({ source: 'cs-directed-research', count: 1, latestYear: 2027 }),
+        ],
+      }),
+    ]);
+    expect((result.metrics as any).perSource['tobin-research-assistantships'].listings).toBe(0);
   });
 
   it('reads every semester of the Tobin board, and is incomplete when the board is unreadable', async () => {
