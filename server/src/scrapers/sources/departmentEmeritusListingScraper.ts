@@ -309,7 +309,61 @@ async function researcherForRosterMember(
   return holders.length === 1 && agreeing.length === 1 ? agreeing[0] : null;
 }
 
-const OWN_PAGE_TITLE_SELECT = 'value sourceName observedAt';
+const OWN_PAGE_TITLE_SELECT = 'value sourceName observedAt entityType entityKey entityId sourceUrl';
+const OWN_PROFILE_URL_FIELDS = ['profileUrl', 'profileUrls'];
+
+const bareUrl = (value: unknown): string =>
+  typeof value === 'string'
+    ? value
+        .trim()
+        .replace(/\/+$/, '')
+        .replace(/^http:\/\//, 'https://')
+    : '';
+
+const statedProfileUrls = (value: unknown): unknown[] => {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') return Object.values(value as Record<string, unknown>);
+  return [value];
+};
+
+/**
+ * A read of a page is a read of the person only when the observation's own entity is the person:
+ * their netid-keyed user row, or a row whose own profile URL observation names that same page. A
+ * shared page in the person's profile links, such as a lab's people page, carries other people's
+ * card titles, so a page URL never binds a read by itself.
+ */
+async function readsOfThePerson(researcher: any, reads: any[]): Promise<OwnPageTitleRead[]> {
+  const netid = researcherNetid(researcher).toLowerCase();
+  const ownKeys = new Set(netid ? [netid, `netid:${netid}`] : []);
+  const isOwnUserRow = (read: any) =>
+    read.entityType === 'user' &&
+    (String(read.entityId ?? '') === String(researcher._id) ||
+      ownKeys.has(String(read.entityKey ?? '').toLowerCase()));
+  const unresolved = reads.filter((read) => !isOwnUserRow(read));
+  const statedUrls = new Map<string, Set<string>>();
+  if (unresolved.length > 0) {
+    const rows: any[] = await Observation.find({
+      superseded: { $ne: true },
+      field: { $in: OWN_PROFILE_URL_FIELDS },
+      $or: unresolved.map((read) => ({ sourceName: read.sourceName, entityKey: read.entityKey })),
+    })
+      .select('sourceName entityKey value')
+      .lean();
+    for (const row of rows) {
+      const key = `${row.sourceName}\u0000${row.entityKey}`;
+      const urls = statedUrls.get(key) ?? new Set<string>();
+      for (const url of statedProfileUrls(row.value)) if (bareUrl(url)) urls.add(bareUrl(url));
+      statedUrls.set(key, urls);
+    }
+  }
+  return reads.filter(
+    (read) =>
+      isOwnUserRow(read) ||
+      Boolean(
+        statedUrls.get(`${read.sourceName}\u0000${read.entityKey}`)?.has(bareUrl(read.sourceUrl)),
+      ),
+  );
+}
 
 /**
  * Leads whose own profile page, as the profile lanes already stored it, holds only emeritus
@@ -361,8 +415,18 @@ export const defaultOwnProfileEmeritusLeadFinder: OwnProfileEmeritusLeadFinder =
       ],
     })
       .select(OWN_PAGE_TITLE_SELECT)
-      .lean()) as unknown as OwnPageTitleRead[];
-    if (!ownPageTitlesSayEmeritus(reads)) continue;
+      .lean()) as any[];
+    const memberKeys = new Set(
+      memberReads.map((read) => `${read.sourceName}\u0000${read.entityKey}`),
+    );
+    const byPage = reads.filter(
+      (read) => !memberKeys.has(`${read.sourceName}\u0000${read.entityKey}`),
+    );
+    const byEvidence = reads.filter((read) =>
+      memberKeys.has(`${read.sourceName}\u0000${read.entityKey}`),
+    );
+    if (!ownPageTitlesSayEmeritus([...(await readsOfThePerson(researcher, byPage)), ...byEvidence]))
+      continue;
     const owner = researcherToUserMatch(researcher, researcherNetid(researcher));
     const slugs = (await existingLeadRowsForOwner(owner)).map((row) => row.slug).sort();
     if (slugs.length) leads.push({ researcherId: id, slugs });

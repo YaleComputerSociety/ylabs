@@ -61,8 +61,19 @@ describe('defaultOwnProfileEmeritusLeadFinder (#6081)', () => {
       ...fields,
     });
 
+  const memberStatesProfile = (entityKey: string, url: string) =>
+    titleRead({
+      entityType: 'researchGroupMember',
+      entityKey,
+      field: 'profileUrl',
+      value: url,
+      sourceName: 'centers-institutes-index',
+      sourceUrl: CENTER_PAGE,
+    });
+
   it('records a lead whose own profile page the center lane read as emeritus only', async () => {
     const id = await lead('avery');
+    await memberStatesProfile('center-fixture:avery', profile('avery'));
     await titleRead({
       entityType: 'researchGroupMember',
       entityKey: 'center-fixture:avery',
@@ -79,6 +90,7 @@ describe('defaultOwnProfileEmeritusLeadFinder (#6081)', () => {
 
   it('weighs only reads of the person own page, not a fresher current title on another page', async () => {
     const id = await lead('erin');
+    await memberStatesProfile('center-fixture:erin', profile('erin'));
     await titleRead({
       entityType: 'researchGroupMember',
       entityKey: 'center-fixture:erin',
@@ -102,6 +114,60 @@ describe('defaultOwnProfileEmeritusLeadFinder (#6081)', () => {
     ]);
   });
 
+  it('counts a roster read whose row states the page in its keyed profile URLs', async () => {
+    const id = await lead('indigo');
+    await titleRead({
+      entityType: 'user',
+      entityKey: 'dept:fixture:indigo',
+      field: 'title',
+      value: 'Professor Emeritus of Fixture Studies',
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: profile('indigo'),
+    });
+    await titleRead({
+      entityType: 'user',
+      entityKey: 'dept:fixture:indigo',
+      field: 'profileUrls',
+      value: { departmental: profile('indigo') },
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: CENTER_PAGE,
+    });
+
+    await expect(defaultOwnProfileEmeritusLeadFinder()).resolves.toEqual([
+      { researcherId: id, slugs: ['indigo-row'] },
+    ]);
+  });
+
+  it('never counts a colleague card title on a shared page in the person profile links', async () => {
+    const db = mongoose.connection.db!;
+    const shared = 'https://lab.example.edu/people';
+    await lead('harper');
+    await db
+      .collection('researchers')
+      .updateOne(
+        { displayName: 'Synthetic harper' },
+        { $push: { profileLinks: { kind: 'LAB_SITE', url: shared } } as never },
+      );
+    await titleRead({
+      entityType: 'researchGroupMember',
+      entityKey: 'lab-fixture:colleague',
+      field: 'title',
+      value: 'Professor Emeritus of Fixture Studies',
+      sourceName: 'official-research-home-roster',
+      sourceUrl: shared,
+    });
+    await titleRead({
+      entityType: 'researchGroupMember',
+      entityKey: 'lab-fixture:colleague',
+      field: 'profileUrl',
+      value: 'https://fixtures.example.edu/profile/colleague',
+      sourceName: 'official-research-home-roster',
+      sourceUrl: shared,
+    });
+
+    await expect(defaultOwnProfileEmeritusLeadFinder()).resolves.toEqual([]);
+  });
+
   it('ignores an emeritus title read from a center page rather than the person own page', async () => {
     await lead('blair');
     await titleRead({
@@ -117,7 +183,7 @@ describe('defaultOwnProfileEmeritusLeadFinder (#6081)', () => {
   });
 
   it('never records a lead from a captured navigation menu in the profile lane', async () => {
-    await lead('casey');
+    await lead('casey', { netid: 'fx3' });
     await titleRead({
       entityType: 'user',
       entityKey: 'netid:fx3',
@@ -131,7 +197,8 @@ describe('defaultOwnProfileEmeritusLeadFinder (#6081)', () => {
   });
 
   it('lets a fresher current appointment on the own page win over an older emeritus read', async () => {
-    await lead('drew');
+    await lead('drew', { netid: 'fx4' });
+    await memberStatesProfile('center-fixture:drew', profile('drew'));
     await titleRead({
       entityType: 'researchGroupMember',
       entityKey: 'center-fixture:drew',
