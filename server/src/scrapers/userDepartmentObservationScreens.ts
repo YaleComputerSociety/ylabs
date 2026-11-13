@@ -1,4 +1,5 @@
 import { withoutDepartmentHeadingObservations } from './departmentHeadingObservationScreen';
+import { withDirectoryDepartmentsCatalogGated } from './directoryDepartmentCatalogGate';
 import { withDirectoryExportDepartmentsDecoded } from './directoryExportDepartmentEvidence';
 import { withoutWithheldRosterHomeDepartments } from './rosterHomeDepartmentScreen';
 import type { CanonicalDepartment } from './utils/directoryExportDepartment';
@@ -30,6 +31,7 @@ export const USER_DEPARTMENT_OBSERVATION_SCREENS: ReadonlyArray<UserDepartmentOb
   (observations) => withoutWithheldRosterHomeDepartments(observations),
   (observations, { canonicalDepartment }) =>
     withDirectoryExportDepartmentsDecoded(observations, canonicalDepartment),
+  withDirectoryDepartmentsCatalogGated,
   (observations) => withoutDepartmentHeadingObservations(observations),
   withoutUncataloguedYsmHomeDepartments,
 ];
