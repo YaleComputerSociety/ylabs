@@ -339,6 +339,23 @@ describe('lab-science adviser rule', () => {
     );
   });
 
+  it('counts a primary section through the lab-science department it sits under (#6202)', () => {
+    const rule = 'lab-science-adviser-department' as const;
+    expect(
+      adviserPairCountsTowardHosting(rule, ['Linguistics'], 'Synthetic Mood Section', [
+        'Psychiatry',
+      ]),
+    ).toBe(true);
+    expect(adviserPairCountsTowardHosting(rule, ['Psychology'], 'Synthetic Mood Section')).toBe(
+      false,
+    );
+    expect(
+      adviserPairCountsTowardHosting(rule, ['Psychology'], 'Synthetic Verse Section', [
+        'Linguistics',
+      ]),
+    ).toBe(false);
+  });
+
   it('agrees on a department across spellings and refuses a different one', () => {
     expect(
       departmentsAgree(['Earth and Planetary Sciences'], ['EPS - Earth & Planetary Sciences']),

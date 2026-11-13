@@ -4,6 +4,7 @@ import {
   researchEntityListServedSource,
 } from '../../services/researchEntityDto';
 import { unattributedResearchAreaDrops } from '../../utils/servedResearchAreaGuards';
+import { getOrgUnitCanonicalizer } from '../../scrapers/orgUnitCanonicalization';
 import { maxReachableResearchSearchPage } from '../../services/researchSearchPagination';
 import { researchEntitySortTitle } from '../../utils/servedResearchEntityTitle';
 import {
@@ -701,6 +702,61 @@ const facetCountAgreement: JourneyCase = {
           degradedFilteredBrowses === 0,
           { checked: observations.length, degradedFilteredBrowses },
         ),
+      ],
+      rates: [],
+    };
+  },
+};
+
+// A researcher's primaryDepartment may be a catalog SECTION (#6202), so a row whose lead
+// stores one must still be found by a filter on the department the section sits under.
+const sectionRowsReachTheirDepartment: JourneyCase = {
+  id: 'section-rows-reach-their-department',
+  title: 'A row filed under a catalog section is also filed under the department above it',
+  run: async (context) => {
+    const canonicalizer = await getOrgUnitCanonicalizer();
+    const facet =
+      (await context.browse({ page: 1, pageSize: 1 })).facetDistribution?.departments ?? {};
+    const sections = Object.entries(facet)
+      .filter(([value]) => canonicalizer.parentDepartmentsFor(value).length > 0)
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, context.facetValuesChecked)
+      .map(([value]) => value);
+    const id = 'section-rows-carry-their-department';
+    const title = "Every row served under a section filter also carries the section's departments";
+    if (sections.length === 0) {
+      return {
+        invariants: [
+          buildInconclusiveInvariant(id, title, 'no catalog section in the department facet', {}),
+        ],
+        rates: [],
+      };
+    }
+    let rowsChecked = 0;
+    const lacking: Array<{ section: string; departments: string[]; rows: number }> = [];
+    for (const section of sections) {
+      const departments = canonicalizer.parentDepartmentsFor(section);
+      const rows = servedRows(
+        await context.browse({
+          filters: { departments: [section] },
+          page: 1,
+          pageSize: context.window,
+        }),
+      );
+      rowsChecked += rows.length;
+      const missing = rows.filter(
+        (row) =>
+          !departments.every((department) => stringList(row.departments).includes(department)),
+      ).length;
+      if (missing > 0) lacking.push({ section, departments, rows: missing });
+    }
+    return {
+      invariants: [
+        buildInvariant(id, title, lacking.length === 0, {
+          sectionsChecked: sections.length,
+          rowsChecked,
+          lacking,
+        }),
       ],
       rates: [],
     };
@@ -1782,6 +1838,7 @@ export const journeyCases: readonly JourneyCase[] = [
   advisesFilterServesAMentorsEntry,
   undergradOptionCountAgreement,
   facetCountAgreement,
+  sectionRowsReachTheirDepartment,
   textQueryFacetCountAgreement,
   paginationServesDistinctRows,
   textQueryTotalIsStable,

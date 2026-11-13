@@ -89,6 +89,11 @@ import {
   type AdviserListPair,
 } from '../utils/undergradAdviserLists';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import {
+  catalogDepartmentWithAncestors,
+  getOrgUnitCanonicalizer,
+} from '../orgUnitCanonicalization';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -1135,6 +1140,14 @@ function mergeAdvisorRowInto(evidence: RowEvidence, row: AdvisorAggregateRow): v
   for (const url of row.sourceUrls) evidence.sourceUrls.add(url);
 }
 
+export async function primaryDepartmentCatalogAncestors(
+  primaryDepartment: unknown,
+): Promise<string[]> {
+  const primary = typeof primaryDepartment === 'string' ? primaryDepartment.trim() : '';
+  if (!primary || !mongooseConnectionWasOpened()) return [];
+  return catalogDepartmentWithAncestors(await getOrgUnitCanonicalizer(), primary).slice(1);
+}
+
 export class UndergradFellowshipRecipientScraper implements IScraper {
   readonly name = 'undergrad-fellowships-recipients';
   readonly displayName = 'Yale undergrad fellowship recipient lists';
@@ -1452,7 +1465,12 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         return { refusal: 'department-mismatch' };
       }
       if (
-        !adviserPairCountsTowardHosting(config.hostingRule, departments, match.primaryDepartment)
+        !adviserPairCountsTowardHosting(
+          config.hostingRule,
+          departments,
+          match.primaryDepartment,
+          await primaryDepartmentCatalogAncestors(match.primaryDepartment),
+        )
       ) {
         return { refusal: 'not-lab-science' };
       }
