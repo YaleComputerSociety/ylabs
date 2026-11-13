@@ -13,7 +13,7 @@ Before finishing, run the **narrowest relevant** verification command. Prefer fo
 |---------|-----|
 | `yarn format:check` | Prettier check. **CI's first gate**, and the most common CI failure |
 | `yarn format` | Fix formatting in place |
-| `yarn lint` | ESLint. **A CI gate as of #3070**: an error fails the required check, a warning does not |
+| `yarn lint` | ESLint. **A CI gate as of #3070**: an error fails the required check, a warning does not. The script sets its own 6144 MB heap (#6115), so a local run and CI use the same limit |
 | `yarn lint:fix` | Fix the auto-fixable lint findings in place |
 | `yarn --cwd server test` | Server-side Vitest suite |
 | `yarn --cwd server test:guards` | The registration and inventory guards alone, in seconds. `guardSuiteInventory.test.ts` keeps the list to existing files that start no in-memory MongoDB |
