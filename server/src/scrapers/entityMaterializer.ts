@@ -9766,6 +9766,34 @@ async function releaseFieldWritersThatNoLongerReach(
   }
 }
 
+/**
+ * A displayName writer recorded before a directory name became fill-only carries no flag, and
+ * its record does not say which sources composed the name. Read them back so the first pass
+ * after the change settles the same in either resolve order. Only a holder whose every live
+ * name observation is a directory one is marked; anything else keeps its recorded standing.
+ */
+async function recordLegacyDirectoryNameHolderAsFillOnly(
+  researcher: any,
+  materializingKey: string,
+): Promise<void> {
+  const holder = researcher.profileFieldWriters?.get?.('displayName');
+  if (!holder?.userKey || holder.userKey === materializingKey) return;
+  if (writerHeldOnFillOnlyEvidence('displayName', holder)) return;
+  const nameSources = (await Observation.distinct('sourceName', {
+    entityType: 'user',
+    entityKey: holder.userKey,
+    superseded: false,
+    field: { $in: ['displayName', 'fname', 'lname'] },
+  })) as string[];
+  if (!isFillOnlyFieldValue('displayName', nameSources)) return;
+  researcher.profileFieldWriters.set('displayName', {
+    userKey: holder.userKey,
+    joinRank: holder.joinRank,
+    confidence: holder.confidence,
+    fillOnly: true,
+  });
+}
+
 function researcherJoinIdentitySnapshot(researcher: any): string {
   return JSON.stringify([
     researcher.displayName,
@@ -10018,6 +10046,7 @@ async function materializeUserIdentityToResearcher(
     researcher.profileFieldWriters?.get?.(OWN_KEY_FALLBACK_TITLE_FIELD),
   );
   if (writerKey) await releaseFieldWritersThatNoLongerReach(researcher, writerKey);
+  if (writerKey) await recordLegacyDirectoryNameHolderAsFillOnly(researcher, writerKey);
   const resolvedConfidence = (...fields: string[]): unknown =>
     fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
   const storedFieldValue = (field: ResearcherGatedField): unknown =>
@@ -10040,7 +10069,7 @@ async function materializeUserIdentityToResearcher(
     value: string | undefined,
     confidence: unknown,
     valueOutranksStored = false,
-    storedValuePresent: boolean = Boolean(textValue(storedFieldValue(field))),
+    storedValuePresent: boolean = !created && Boolean(textValue(storedFieldValue(field))),
   ): boolean => {
     const decision = decideResearcherFieldWrite(
       researcher.profileFieldWriters,

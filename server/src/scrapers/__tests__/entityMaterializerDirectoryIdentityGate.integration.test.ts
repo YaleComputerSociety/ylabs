@@ -803,6 +803,34 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(await Researcher.countDocuments({ displayName: 'Ada Lovelace' })).toBe(1);
     });
 
+    it('records the minting key as the name writer, so its own corrected name lands next pass', async () => {
+      const key = 'dept:physics:ada-lovelace';
+      await seedNamingResearchEntity();
+      await seedRosterIdentity(key, 'Ada', 'Lovelace');
+      await seedPiAttribution(key);
+
+      const minted = await materializeEntity('user', { entityKey: key }, {});
+      expect(minted.created).toBe(true);
+      const writer = (await Researcher.findById(minted.entityId).lean<any>())?.profileFieldWriters
+        ?.displayName;
+      expect(writer).toMatchObject({ userKey: key, fillOnly: true });
+
+      await Observation.updateMany(
+        { entityKey: key, field: 'fname' },
+        { $set: { superseded: true } },
+      );
+      await Observation.create({
+        ...directoryObservationBase(key),
+        sourceName: 'dept-faculty-roster',
+        field: 'fname',
+        value: 'Ada A.',
+      });
+      const corrected = await materializeEntity('user', { entityKey: key }, {});
+
+      expect(String(corrected.entityId)).toBe(String(minted.entityId));
+      expect((await enrichedResearcher(minted.entityId))?.displayName).toBe('Ada A. Lovelace');
+    });
+
     it('still refuses a bare directory identity with no attribution, per #2129', async () => {
       await seedNamingResearchEntity();
       await seedRosterIdentity('dept:physics:grace-hopper', 'Grace', 'Hopper');

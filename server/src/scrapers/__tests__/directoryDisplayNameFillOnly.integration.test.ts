@@ -175,6 +175,51 @@ describe('a directory name never replaces a page name (#6035)', () => {
     expect((await resolve(ROSTER_KEY)).fieldsWritten).toBe(0);
   });
 
+  it('gives a legacy directory-held name up to a netid-joined page name in one pass, in either order', async () => {
+    const settled = [];
+    for (const order of [
+      [DIRECTORY_KEY, ROSTER_KEY],
+      [ROSTER_KEY, DIRECTORY_KEY],
+    ]) {
+      const db = mongoose.connection.db!;
+      for (const name of ['observations', 'researchers']) await db.collection(name).deleteMany({});
+      await seedDirectoryKey();
+      await Observation.insertMany(
+        [
+          ['netid', NETID],
+          ['fname', 'Fixture Q.'],
+          ['lname', 'Quillsby-Marlow'],
+        ].map(([field, value]) =>
+          observation(
+            ROSTER_KEY,
+            'dept-faculty-roster',
+            'https://fixture-studies.example.edu/faculty/',
+            field,
+            value,
+          ),
+        ),
+      );
+      const person = await seedPerson(DIRECTORY_NAME);
+      await Researcher.updateOne(
+        { _id: person._id },
+        {
+          $set: {
+            profileFieldWriters: {
+              displayName: { userKey: DIRECTORY_KEY, joinRank: 4, confidence: 1 },
+            },
+          },
+        },
+      );
+
+      for (const key of order) await resolve(key);
+      settled.push(await nameOf(person._id));
+      const second = [];
+      for (const key of order) second.push((await resolve(key)).fieldsWritten);
+      expect(second).toEqual([0, 0]);
+    }
+    expect(settled).toEqual([FULL_NAME, FULL_NAME]);
+  });
+
   const seedKey = (entityKey: string, sourceName: string, fields: Record<string, string>) =>
     Observation.insertMany(
       Object.entries(fields).map(([field, value]) =>
