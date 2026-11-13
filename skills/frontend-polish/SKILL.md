@@ -208,6 +208,30 @@ The route fade's `translateY(6px)` did exactly that to a deep-linked program mod
 `client/src/__tests__/entryChunkGuard.test.ts` runs a real Vite build and fails when one of those returns to the emitted entry chunk, because a reviewer cannot see a chunk boundary in a diff.
 Take a number from the build (`yarn --cwd client build` prints per-chunk raw and gzip sizes) rather than from the module count.
 
+### Programs board load budget (#5160)
+
+The `/programs` board meets four lines, measured at p90 over 5 runs per condition, where p90 over 5 runs is the slowest run:
+
+- The first program card waits on at most 1 API round trip.
+- Once the search response lands, the first card paints within 400ms at 375px wide with 4x CPU slowdown.
+- With 2.5s added to every API call, the first card paints within 4.5s, which is one delay plus 2.0s.
+- The search response is at most 100KB compressed, measured as the brotli body served to current browsers.
+  A gzip-only client is outside this line.
+
+On 2026-11-13, on beta at 5a3f8163b, the board measured 1 round trip, 282ms, at most 4.38s, and 69KB brotli (105KB for a gzip-only client), so the card projection #5160 proposed was not built.
+
+Measure the board the same way so the numbers stay comparable:
+
+- Use the production client build (`vite build` and `vite preview`), headless Chromium through the repo's Playwright, and a fresh browser per run.
+- Time to the first card runs from navigation start until the first `section[aria-labelledby] .grid > *` element has a non-zero box.
+  The page's LCP element is its intro paragraph, so read the first card, not LCP.
+- `/programs` is sign-in only, so a guest never sees a card.
+  Mount the real programs router against Development with a synthetic student principal and no session.
+  Stub `/api/check` to return a synthetic student session and `/api/users/*` to return an empty watch list, as the student-journey smoke does.
+  Do not use `dev-login`, because it writes an account and a login event.
+- Apply the 2.5s condition as a Playwright route that delays every API response.
+  Playwright's own interception adds a local cost that grows with body size, so treat a smaller-body gain under that condition as an upper bound.
+
 ## Accessibility harness
 
 - The accessibility bar is enforced in the test suite, not just by review: `expectNoAxeViolations` from `client/src/testUtils/axe.ts` (backed by `axe-core`) asserts zero serious or critical WCAG 2.1 AA violations.
