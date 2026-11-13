@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  namesAProgram,
   orgUnitLabelWords,
   ownOrgUnitLabelsFromObservations,
   restatesAnOwnOrgUnitLabel,
@@ -43,6 +44,30 @@ describe('restatesAnOwnOrgUnitLabel', () => {
   });
 });
 
+describe('program labels (#5957 ruling)', () => {
+  it('keeps a topic that equals a program-named own label, while a department topic still drops', () => {
+    const labels = ['Scleroderma Program', 'Program in Addiction Medicine', 'Rheumatology'];
+    expect(restatesAnOwnOrgUnitLabel('Scleroderma', labels)).toBe(false);
+    expect(restatesAnOwnOrgUnitLabel('Scleroderma Program', labels)).toBe(false);
+    expect(restatesAnOwnOrgUnitLabel('addiction medicine', labels)).toBe(false);
+    expect(restatesAnOwnOrgUnitLabel('Rheumatology', labels)).toBe(true);
+    expect(namesAProgram('Heart Failure Programs')).toBe(true);
+    expect(namesAProgram('Programming Languages')).toBe(false);
+  });
+});
+
+describe('program-shaped topics under a department label (#5957 ruling)', () => {
+  it('still drops a program-named topic that restates a real department label', () => {
+    expect(restatesAnOwnOrgUnitLabel('Rheumatology Program', ['Department of Rheumatology'])).toBe(
+      true,
+    );
+    expect(
+      restatesAnOwnOrgUnitLabel('Program in Rheumatology', ['Department of Rheumatology']),
+    ).toBe(true);
+    expect(restatesAnOwnOrgUnitLabel('Rheumatology', ['Section of Rheumatology'])).toBe(true);
+  });
+});
+
 describe('orgUnitLabelWords', () => {
   it('reads only the unit name', () => {
     expect(orgUnitLabelWords('Yale University Department of the History of Art')).toEqual([
@@ -50,7 +75,7 @@ describe('orgUnitLabelWords', () => {
       'of',
       'art',
     ]);
-    expect(orgUnitLabelWords('Program in Ethnicity, Race & Migration')).toEqual([
+    expect(orgUnitLabelWords('Section of Ethnicity, Race & Migration')).toEqual([
       'ethnicity',
       'race',
       'and',
