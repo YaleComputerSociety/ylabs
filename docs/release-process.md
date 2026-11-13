@@ -309,7 +309,10 @@ Neither target takes the Development write lease, because the lease skips a data
    Dry run: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json>`
    It must name a `db` ending in `/Beta`, read `textHashes: index-of-another-environment`, `entriesWithNoResolvedScore: 0`, and `entries`, `scores`, `unresolvedSlugs` and `mergeCollisions.count` equal to step 1.
    A higher `unresolvedSlugs` than Development's means the target lacks live rows Development has, so stop and read the mirror report rather than seeding.
-   A lower `unresolvedSlugs` than Development's is expected only when the target resolves through `mergedFrom` a slug Development cannot, because the copy rebuilds `mergedFrom` from the merge tombstones while Development's own copy of that field can lag a later tombstone change; any other lower count means the target is routing a slug to a row Development does not, so stop and compare the two runs' `resolvedThroughMerge` and `resolvedThroughRedirect` before seeding.
+   A lower `unresolvedSlugs` than Development's has two benign causes, and neither can be told from the count alone.
+   One is Development changing after the copy, for example a survivor archived or a merge chain broken since, so the target's `mergedFrom`, rebuilt from Development's tombstones at copy time, still reaches a row Development's own tombstone walk no longer does; here the target is the stale side, and re-promoting is the fix rather than seeding.
+   The other is a stale Development `mergedFrom` naming a slug that has no row, which gives that slug a second claimant on Development so it refuses the tie, while the target, rebuilt without that entry, resolves it through the one remaining `previousSlugs` claimant.
+   Any other lower count means the target is routing a slug to a row Development does not, so in every case stop and compare the two runs' `resolvedThroughMerge` and `resolvedThroughRedirect` before seeding.
    Apply: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json> --apply --confirm-search-rerank-cache-seed --index-version=<marker>`
    `upserted` must equal `entries`.
 3. **Production, after `yarn promote:production` reports the copy applied and its remote phase (re-gate, reindex, smoke) succeeded.**
