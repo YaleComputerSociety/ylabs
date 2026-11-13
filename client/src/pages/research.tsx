@@ -2246,7 +2246,7 @@ const Research = () => {
               </p>
             </form>
 
-            {!hasSubmittedSearch && (
+            {!hasSubmittedSearch && !isWideFilterLayout && (
               <ReachOutGuideLink label={GETTING_STARTED_LANDING_LINK_LABEL} />
             )}
 
@@ -2345,6 +2345,9 @@ const Research = () => {
                     >
                       {researchProfileCountLabel(defaultSearchTotal)}
                     </p>
+                    {isWideFilterLayout && (
+                      <ReachOutGuideLink label={GETTING_STARTED_LANDING_LINK_LABEL} />
+                    )}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-3">
                     <ResearchSortDropdown

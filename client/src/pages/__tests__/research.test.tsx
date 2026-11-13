@@ -544,6 +544,36 @@ describe('Research page', () => {
     expect(screen.queryByRole('link', { name: 'New to research? How to get started' })).toBeNull();
   });
 
+  it('moves the getting-started line out of the wide sidebar so the sidebar still fits (#6095)', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      (queryString: string) =>
+        ({
+          matches: queryString === '(min-width: 1280px)',
+          media: queryString,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
+    mockSearchResponses((url) =>
+      url === '/research/search'
+        ? researchSearchResponse([researchEntity])
+        : unexpectedSearchEndpoint(url),
+    );
+
+    try {
+      renderResearch();
+      const guideLinks = await screen.findAllByRole('link', {
+        name: 'New to research? How to get started',
+      });
+      expect(guideLinks).toHaveLength(1);
+      expect(guideLinks[0].closest('header')).toBeNull();
+      expect(guideLinks[0].closest('section[aria-label="Research to explore"]')).not.toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('restores a shared query from the research URL', async () => {
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);

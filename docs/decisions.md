@@ -11,7 +11,9 @@ Decision (5-agent consensus 5/5, 2026-11-13, posted on #6095; the owner may veto
 `/getting-started` was linked only from inside a research detail page, so a student who had not yet opened a profile, or who started on `/programs`, could not find the page that answers a newcomer's first questions.
 In the 2026-11-13 simulated-student round the persona who reached it from a profile called it the best moment of the visit, and another first-year never found it before choosing a program.
 It is now offered in two places before a profile, and only there.
-One question-phrased line, "New to research? How to get started", sits under the search box on the un-searched `/research` landing at every width, outside the context paragraph that phones and wide screens hide, and outside the session slot, so it never changes that slot's reserved height (#4222, #5166).
+One question-phrased line, "New to research? How to get started", is on the un-searched `/research` landing at every width, for guests and signed-in students alike.
+Below 1280px it sits under the search box, outside the context paragraph that phones hide and outside the session slot, so it never changes that slot's reserved height (#4222, #5166).
+At 1280px and wider it sits under the profile count at the top of the results instead, because a 44px line in the sticky sidebar pushed it to 618px of content in 590px at 1280x720, past the no-scrollbar fit the owner chose in #5963.
 A program whose answer to "Do you need a mentor first?" is yes carries "Need a mentor? How to reach out to a professor" under that answer, in the dialog rather than on the card, so no link nests inside another.
 There is no nav item, because a nav label adds a choice to every page and sits behind the phone menu, and no dashboard entry.
 Neither link carries program data, so this is not the removed #1509 module.
