@@ -39,7 +39,11 @@ import {
   type TitledPersonKeysLoader,
 } from '../utils/laneTitledPersonKeys';
 import axios from 'axios';
-import { catalogDepartment } from '../directoryExportDepartmentEvidence';
+import {
+  catalogDepartment,
+  catalogSchoolForDepartment,
+} from '../directoryExportDepartmentEvidence';
+import { SCHOOL_OF_MEDICINE_NAME } from '../orgUnitCanonicalization';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 import type { CanonicalDepartment } from '../utils/directoryExportDepartment';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
@@ -145,6 +149,10 @@ export interface YsmFacultyProfile {
    * department (#6070).
    */
   appointmentDepartments: string[];
+  /** The units of the appointments the page marks `Primary`; a secondary is never one (#6160). */
+  primaryAppointmentUnits?: string[];
+  /** The one catalog school those primary units belong to, when they name exactly one (#6160). */
+  primaryAppointmentSchool?: string;
   researchAreas: string[];
   description?: string;
   bio?: string;
@@ -287,6 +295,36 @@ function appointmentDepartmentsFromAboutSection(about: Record<string, unknown>):
   return uniqueStrings([...primary, ...secondary]).slice(0, MAX_DEPARTMENTS);
 }
 
+function primaryAppointmentUnitsFromAboutSection(about: Record<string, unknown>): string[] {
+  const appointments = Array.isArray(about.appointments)
+    ? (about.appointments as Record<string, unknown>[])
+    : [];
+  return uniqueStrings(
+    appointments
+      .filter((a) => textValue(a.type) === 'Primary')
+      .map((a) => textValue(a.organizationName)),
+  );
+}
+
+export type SchoolForDepartment = (department: string) => string | undefined;
+
+export function ysmPrimaryAppointmentSchool(
+  profile: Pick<YsmFacultyProfile, 'primaryAppointmentUnits'>,
+  schoolForDepartment: SchoolForDepartment | null,
+): string | undefined {
+  const units = profile.primaryAppointmentUnits ?? [];
+  if (!schoolForDepartment || units.length === 0) return undefined;
+  const schools = units.map((unit) => schoolForDepartment(unit));
+  if (schools.some((school) => !school)) return undefined;
+  const distinct = uniqueStrings(schools);
+  return distinct.length === 1 ? distinct[0] : undefined;
+}
+
+function ysmResearchEntitySchool(profile: Pick<YsmFacultyProfile, 'primaryAppointmentSchool'>) {
+  const stated = profile.primaryAppointmentSchool;
+  return stated && stated !== SCHOOL_OF_MEDICINE_NAME ? stated : SCHOOL_NAME;
+}
+
 function departmentsFromAboutSection(about: Record<string, unknown>): string[] {
   const organizations = Array.isArray(about.organizations)
     ? (about.organizations as Record<string, unknown>[])
@@ -409,6 +447,7 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
     orcid: extractOrcid(research),
     departments: departmentsFromAboutSection(about),
     appointmentDepartments: appointmentDepartmentsFromAboutSection(about),
+    primaryAppointmentUnits: primaryAppointmentUnitsFromAboutSection(about),
     researchAreas,
     description: clippedText(htmlToText(research.researchDescription)),
     bio: clippedText(htmlToText(about.bio)),
@@ -633,7 +672,7 @@ export function facultyToResearchEntityObservations(
     { ...base, field: 'name', value: entityName },
     { ...base, field: 'kind', value: hasLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: hasLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
-    { ...base, field: 'school', value: SCHOOL_NAME },
+    { ...base, field: 'school', value: ysmResearchEntitySchool(profile) },
     { ...base, field: 'sourceUrls', value: sourceUrls },
     {
       ...base,
@@ -723,6 +762,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     private readonly titledPersonKeysLoader: TitledPersonKeysLoader = loadLaneTitledPersonKeys,
     private readonly catalogDepartmentLoader: () => Promise<CanonicalDepartment | null> = () =>
       mongooseConnectionWasOpened() ? catalogDepartment() : Promise.resolve(null),
+    private readonly catalogSchoolLoader: () => Promise<SchoolForDepartment | null> = () =>
+      mongooseConnectionWasOpened() ? catalogSchoolForDepartment() : Promise.resolve(null),
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -760,6 +801,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     // profile, and this run only fetches the limited slice (#2368/#2369).
     const directorySurnames = personSurnamesFromDisplayNames(roster.map((entry) => entry.name));
     const canonicalDepartment = await this.catalogDepartmentLoader();
+    const schoolForDepartment = await this.catalogSchoolLoader();
     const rekeyReads = new RekeyedPersonReads(SOURCE_KEY);
     rekeyReads.recordLaneNames(directoryNameCensus(roster));
     const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
@@ -871,7 +913,10 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         }
 
         const entityObs = facultyToResearchEntityObservations(
-          profile,
+          {
+            ...profile,
+            primaryAppointmentSchool: ysmPrimaryAppointmentSchool(profile, schoolForDepartment),
+          },
           entityKey,
           directorySurnames,
           labUrlUnusabilityFor(labUrlEvidenceBySlug, `ysm-faculty-${profile.slug}`),
