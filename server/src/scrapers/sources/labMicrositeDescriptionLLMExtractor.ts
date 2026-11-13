@@ -1088,7 +1088,7 @@ interface RowLead {
   kind?: unknown;
 }
 
-const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
+export const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
   try {
     const page = new URL(pageUrl);
     const own = new URL(String(websiteUrl || ''));

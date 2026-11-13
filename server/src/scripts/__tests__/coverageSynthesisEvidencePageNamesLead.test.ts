@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildWriterEvidenceSnippets } from '../coverageSynthesisCore';
-import { parseWriterEvidenceFile, snippetsFromRowEvidence } from '../coverageSynthesisEvidence';
+import {
+  parseWriterEvidenceFile,
+  snippetsFromRowEvidence,
+  websiteUrlIsStatedByYaleSource,
+} from '../coverageSynthesisEvidence';
 
 const RESEARCH =
   'The research examines how estuarine sediment moves during storm surges, combining field cores from tidal marshes with numerical models of channel erosion and deposition.';
@@ -126,5 +130,70 @@ describe('writer evidence comes only from a page that names the row lead (#4873,
     expect(snippetsFromRowEvidence(withoutLead, now).map((snippet) => snippet.text)).toEqual([
       RESEARCH,
     ]);
+  });
+});
+
+describe("a non-Yale page under the row's own website, which a Yale source states", () => {
+  const OWN_SITE = 'https://sites.example-host.com/view/estuary-sediment';
+  const OWN_PAGE = 'https://sites.example-host.com/view/estuary-sediment/research';
+
+  it('keeps the page for the writer read when a Yale-hosted source states the website', () => {
+    expect(
+      texts([researchPage(OWN_PAGE)], {
+        ...PERSON_ROW,
+        websiteUrl: OWN_SITE,
+        websiteUrlStatedByYaleSource: true,
+      }),
+    ).toEqual([RESEARCH]);
+  });
+
+  it('refuses the same page when only the external page states the website (#5777)', () => {
+    expect(texts([researchPage(OWN_PAGE)], { ...PERSON_ROW, websiteUrl: OWN_SITE })).toEqual([]);
+  });
+
+  it('refuses a page on the same host outside the stated website', () => {
+    expect(
+      texts([researchPage('https://sites.example-host.com/view/another-person/research')], {
+        ...PERSON_ROW,
+        websiteUrl: OWN_SITE,
+        websiteUrlStatedByYaleSource: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it('counts only a Yale-hosted observation stating the same website', () => {
+    const yaleProfile = 'https://medicine.yale.edu/profile/quillon-varnadore/';
+    expect(
+      websiteUrlIsStatedByYaleSource(OWN_SITE, [{ value: `${OWN_SITE}/`, sourceUrl: yaleProfile }]),
+    ).toBe(true);
+    expect(
+      websiteUrlIsStatedByYaleSource(OWN_SITE, [{ value: OWN_SITE, sourceUrl: OWN_PAGE }]),
+    ).toBe(false);
+    expect(
+      websiteUrlIsStatedByYaleSource(OWN_SITE, [
+        { value: 'https://sites.example-host.com/view/another-person', sourceUrl: yaleProfile },
+      ]),
+    ).toBe(false);
+  });
+
+  it('carries the statement through a captured evidence file', () => {
+    const row = {
+      slug: 'estuary-fixture',
+      entity: {
+        slug: 'estuary-fixture',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: OWN_SITE,
+      },
+      observations: [researchPage(OWN_PAGE)],
+      mergedInObservations: [],
+      leadNames: LEAD_NAMES,
+    };
+    const file = (rows: unknown[]) =>
+      parseWriterEvidenceFile({ version: 1, capturedAt: '2026-11-11T00:00:00.000Z', rows });
+    const now = new Date('2026-11-11T00:00:00.000Z');
+    const [stated] = file([{ ...row, websiteUrlStatedByYaleSource: true }]).rows;
+    const [unstated] = file([row]).rows;
+    expect(snippetsFromRowEvidence(stated, now).map((snippet) => snippet.text)).toEqual([RESEARCH]);
+    expect(snippetsFromRowEvidence(unstated, now)).toEqual([]);
   });
 });

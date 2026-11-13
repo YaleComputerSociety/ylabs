@@ -4,6 +4,8 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
 import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
+import { isUnderOwnWebsite } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
+import { isYaleHostedPage } from '../scrapers/utils/nonYaleMicrositeOwnership';
 import type { CoverageObservationLike, CoverageSnippet } from '../scrapers/coverageSynthesis';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import { containsAsciiControl } from '../utils/asciiControl';
@@ -52,6 +54,7 @@ export interface WriterRowEvidence {
   observations: WriterObservation[];
   mergedInObservations: WriterObservation[];
   leadNames?: string[];
+  websiteUrlStatedByYaleSource?: boolean;
 }
 
 export const WRITER_EVIDENCE_FILE_VERSION = 1;
@@ -92,6 +95,40 @@ export async function loadWriterObservations(
     observations.map(({ _id, ...rest }: WriterObservation & { _id?: unknown }) => rest),
     verifiedRunIds,
   );
+}
+
+const sameWebsite = (a: unknown, b: unknown): boolean =>
+  typeof a === 'string' &&
+  typeof b === 'string' &&
+  isUnderOwnWebsite(a, b) &&
+  isUnderOwnWebsite(b, a);
+
+export function websiteUrlIsStatedByYaleSource(
+  websiteUrl: unknown,
+  websiteObservations: readonly { value?: unknown; sourceUrl?: unknown }[],
+): boolean {
+  return websiteObservations.some(
+    (obs) =>
+      typeof obs.sourceUrl === 'string' &&
+      isYaleHostedPage(obs.sourceUrl) &&
+      sameWebsite(obs.value, websiteUrl),
+  );
+}
+
+export async function loadWebsiteUrlStatedByYaleSource(
+  anchors: Record<string, unknown>[],
+  websiteUrl: unknown,
+): Promise<boolean> {
+  if (anchors.length === 0 || typeof websiteUrl !== 'string' || !websiteUrl) return false;
+  const websiteObservations = (await Observation.find({
+    entityType: 'researchEntity',
+    ...materializationReadScopeFilter(),
+    field: 'websiteUrl',
+    $or: anchors,
+  })
+    .select('value sourceUrl')
+    .lean()) as Array<{ value?: unknown; sourceUrl?: unknown }>;
+  return websiteUrlIsStatedByYaleSource(websiteUrl, websiteObservations);
 }
 
 export async function loadWriterEntitiesBySlug(
@@ -141,6 +178,10 @@ export async function loadWriterRowEvidence(
       observations: await loadWriterObservations(anchors, verifiedRunIds),
       mergedInObservations: await loadWriterObservations(mergedInAnchors, verifiedRunIds),
       leadNames: await writerLeadNames(entity._id),
+      websiteUrlStatedByYaleSource: await loadWebsiteUrlStatedByYaleSource(
+        anchors,
+        entity.websiteUrl,
+      ),
     });
   }
   return rows;
@@ -154,6 +195,7 @@ export function snippetsFromRowEvidence(row: WriterRowEvidence, now: Date): Cove
     kind: row.entity.kind,
     identity: row.entity,
     leadNames: row.leadNames,
+    websiteUrlStatedByYaleSource: row.websiteUrlStatedByYaleSource === true,
     now,
   };
   const own = buildWriterEvidenceSnippets(row.observations, row.entity.recentGrants, options);
@@ -200,6 +242,7 @@ export function parseWriterEvidenceFile(value: unknown): WriterEvidenceFile {
       ...(Array.isArray(row.leadNames)
         ? { leadNames: row.leadNames.filter((name): name is string => typeof name === 'string') }
         : {}),
+      ...(row.websiteUrlStatedByYaleSource === true ? { websiteUrlStatedByYaleSource: true } : {}),
     })),
   };
 }

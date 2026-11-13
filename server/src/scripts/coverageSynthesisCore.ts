@@ -1,7 +1,10 @@
 import { isPersonResearchRow } from '../utils/researchStatementPassage';
 import { storedPageTextByUrl } from '../scrapers/utils/nonYaleMicrositeDescriptionScreen';
 import { normalizeEvidenceUrl } from '../scrapers/utils/sharedEvidenceUrls';
-import { descriptionPageNamesRowLead } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
+import {
+  descriptionPageNamesRowLead,
+  isUnderOwnWebsite,
+} from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
 import { withoutNamesakePersonPageDescriptions } from '../scrapers/utils/namesakePersonPageDescriptions';
 import type { ResearchEntityIdentity } from '../scrapers/utils/personProfileEntityMatch';
 import { SOURCE_CONTENT_HASH_FIELD } from '../scrapers/contentHashGate';
@@ -560,6 +563,11 @@ export interface WriterEvidenceOptions {
   /** The row's own name, slug and committed citations, for the namesake screen (#5764). */
   identity?: { slug?: unknown; name?: unknown; sourceUrls?: unknown };
   leadNames?: readonly (string | undefined | null)[];
+  /**
+   * The row's `websiteUrl` is stated by a live observation from a Yale-hosted source, such
+   * as the lead's official profile or a department roster, rather than by the page itself.
+   */
+  websiteUrlStatedByYaleSource?: boolean;
 }
 
 const namesakeScreenIdentity = (
@@ -576,6 +584,12 @@ const namesakeScreenIdentity = (
  * Whether a page the writer would read names the row's lead, by the lane's own rule
  * (`descriptionPageNamesRowLead`, #4873), so a person-named row is never written from a
  * department homepage or another unit's page that does not name its lead.
+ *
+ * A page under the row's own website is admitted for this read without naming the lead
+ * when a Yale-hosted source states that website: a personal site rarely restates its
+ * owner's surname, and the Yale source is the identity evidence the page cannot give.
+ * The lane gate keeps #5818's stricter rule, because a website the external page itself
+ * supplied (#5777) has no such statement.
  */
 export function writerEvidencePageNamesRowLead(
   observations: readonly CoverageObservationLike[],
@@ -589,6 +603,9 @@ export function writerEvidencePageNamesRowLead(
   const pageTextByUrl = storedPageTextByUrl(observations);
   const kind = isPersonRow ? 'individual' : options.kind;
   return (pageUrl, text) => {
+    if (options.websiteUrlStatedByYaleSource && isUnderOwnWebsite(pageUrl, options.websiteUrl)) {
+      return true;
+    }
     const pageText = [
       pageTextByUrl.get(normalizeEvidenceUrl(pageUrl)),
       options.storedPageText?.(pageUrl),

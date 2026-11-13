@@ -64,6 +64,7 @@ import {
   loadWriterEntitiesBySlug,
   WRITER_ENTITY_READ_PROJECTION,
   writerEntityRowOf,
+  loadWebsiteUrlStatedByYaleSource,
   loadWriterObservations,
   loadWriterRowEvidence,
   writerLeadNames,
@@ -688,6 +689,10 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
         kind: entity.kind,
         identity: entity,
         leadNames,
+        websiteUrlStatedByYaleSource: await loadWebsiteUrlStatedByYaleSource(
+          anchors,
+          entity.websiteUrl,
+        ),
       },
     );
     report.snippets = snippets.length;
