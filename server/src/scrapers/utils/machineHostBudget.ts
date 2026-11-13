@@ -410,7 +410,7 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
       const computed = now + Math.max(retryAfterMs, Math.round(exponential + jitter));
       const statedMs = verdict.statedUntil?.getTime();
       const stated = isFiniteNumber(statedMs) && statedMs > now ? statedMs : undefined;
-      const until = Math.max(prior?.pausedUntil ?? 0, stated ?? computed);
+      const until = Math.max(prior?.pausedUntil ?? 0, stated ?? computed, now + retryAfterMs);
       const statedUntil = Math.max(stated ?? 0, prior?.statedUntil ?? 0) || undefined;
       state.backoff = {
         level,

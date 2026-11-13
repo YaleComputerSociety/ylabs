@@ -146,6 +146,13 @@ describe('recording host backoff', () => {
     expect(pauseMs(limiter)).toBe(120_000);
   });
 
+  it('keeps a Retry-After longer than a nearer stated date', async () => {
+    const limiter = budget();
+    const stated = new Date(clock + 60_000);
+    await limiter.recordBackoff(HOST, { status: 403, statedUntil: stated, retryAfterMs: 600_000 });
+    expect(pauseMs(limiter)).toBe(600_000);
+  });
+
   it('honours a stated date beyond the cap', async () => {
     const limiter = budget();
     const stated = new Date(clock + 3 * 86_400_000);
