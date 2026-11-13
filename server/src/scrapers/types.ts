@@ -9,6 +9,7 @@ import type {
 import type { WorkPlannerMetrics } from './workPlanner';
 import type { HttpValidatorCacheStats } from './utils/httpValidatorCache';
 import type { SweepPageReuseStats } from './utils/sweepPageReuse';
+import type { KnownDeadUrlStats } from './utils/knownDeadUrls';
 import type { ThrottleRetryStats } from './utils/throttleRetryStats';
 import type { DatabaseWriteRetryStats } from './utils/databaseWriteRetry';
 import type { RekeyedPersonKeyRunSummary } from './rekeyedPersonKeyRetirement';
@@ -140,6 +141,7 @@ export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMod
   attempts: ScraperFetchAttemptMetrics<TFetchMode>[];
   httpCache?: HttpValidatorCacheStats;
   sweepPageReuse?: SweepPageReuseStats;
+  knownDeadUrlSkip?: KnownDeadUrlStats;
   throttleRetry?: ThrottleRetryStats;
   databaseWriteRetry?: DatabaseWriteRetryStats;
   summary: {

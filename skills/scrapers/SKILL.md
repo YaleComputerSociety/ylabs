@@ -602,6 +602,11 @@ So every scraper request carries three bounds, named in `utils/scraperFetchDeadl
 `installScraperFetchDeadlines()` wraps the default axios instance's adapter, so every lane's direct `axios` call and the `fetchPageWithPolicy`, `postFormWithPolicy` and `fetchPublicHttpUrl` helpers are bounded with no per-lane edit.
 The orchestrator's `run`, `cli.ts` and `scrapeCanary` install it.
 It wraps the adapter rather than adding an interceptor so the clock starts at dispatch, after the host-slot limiter's wait, and a request queued behind other lanes on the same host is not charged for the queue.
+
+Inside a scrape run, `fetchPageWithPolicy` sends no request for a URL whose newest stored link-health verdict, checked within `SOURCE_LINK_HEALTH_FRESHNESS_DAYS`, is a 404 or 410 (#6210, `scrapers/utils/knownDeadUrls.ts`).
+It throws `KnownDeadUrlError`, an `HttpStatusError` carrying that status, so a lane handles the skip exactly as it handles the answer it would have got, and the run's `fetchMetrics.knownDeadUrlSkip` counts the skips.
+The reason is load, not correctness: a dead citation answers the same 404 every pass, and a burst of 404s is what an auto-ban rule on a Drupal department site counts.
+Only the link-health probe re-checks a dead URL, and it does not route through `fetchPageWithPolicy`; 401, 403, 429, 5xx, timeouts and unresolvable hosts never reach the skip, because link-health records none of them as gone.
 A per-request `adapter` (a sweep page reuse hit, a benchmark replay) never reaches the network and is left alone.
 An expired deadline rejects with an `AxiosError` coded `ETIMEDOUT` whose message names the overall deadline, so the lane's own page-error path records it as one failed fetch and the run continues.
 A caller's own `signal` still cancels as a cancellation.
