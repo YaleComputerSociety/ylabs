@@ -208,6 +208,14 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
     string,
     { answered: number; refused: number; skipped: number; failed: number }
   >;
+  /**
+   * research-page-text: hosts refused on at least 3 runs spanning 14 days or more with no answer
+   * between, and how many rows each run keeps unconfirmed; a flag, never a retirement (#6195).
+   */
+  sustainedRefusalHosts?: Record<
+    string,
+    { firstRefusedAt: string; confirmingRefusalAt: string; runs: number; rowsUnconfirmed: number }
+  >;
   removedByRequest?: number;
   rekeyedPersonKeys?: RekeyedPersonKeyRunSummary;
   descriptionSlotAttestation?: {

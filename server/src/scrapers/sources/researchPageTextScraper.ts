@@ -15,6 +15,11 @@ import {
 } from '../contentHashGate';
 import { HttpStatusError, fetchPageWithPolicy, isReusedResponse } from '../utils/httpFetch';
 import {
+  sustainedHostRefusals,
+  type HostReadOutcome,
+  type RunHostReadOutcomes,
+} from '../utils/sustainedHostRefusal';
+import {
   DEFAULT_SOURCE_CONCURRENCY,
   mapWithConcurrency,
   resolveSourceConcurrency,
@@ -145,8 +150,14 @@ export interface ResearchPageTextScraperDeps {
   storedReadingLoader?: StoredReadingLoaderFn;
   releaseFinishedHost?: ReleaseFinishedHost;
   previousThrottledRowsLoader?: PreviousThrottledRowsLoaderFn;
+  recentHostReadOutcomesLoader?: RecentHostReadOutcomesLoaderFn;
   sleep?: (ms: number) => Promise<void>;
 }
+
+/** Earlier successful runs' host read outcomes, newest first, for the sustained-refusal flag. */
+export type RecentHostReadOutcomesLoaderFn = () => Promise<RunHostReadOutcomes[]>;
+
+const RECENT_RUNS_FOR_SUSTAINED_REFUSAL = 20;
 
 export interface StoredReading {
   hosts: ReadonlySet<string>;
@@ -221,6 +232,28 @@ async function loadStoredReading(entity: ContentHashEntityRef): Promise<StoredRe
   };
 }
 
+async function loadRecentHostReadOutcomes(): Promise<RunHostReadOutcomes[]> {
+  if (!mongooseConnectionWasOpened()) return [];
+  const runs = (await ScrapeRun.find(
+    {
+      sourceName: RESEARCH_PAGE_TEXT_SOURCE,
+      status: 'success',
+      'metrics.hostReadOutcomes': { $exists: true },
+    },
+    { startedAt: 1, 'metrics.hostReadOutcomes': 1 },
+  )
+    .sort({ startedAt: -1 })
+    .limit(RECENT_RUNS_FOR_SUSTAINED_REFUSAL)
+    .lean()) as Array<{ startedAt?: unknown; metrics?: { hostReadOutcomes?: unknown } }>;
+  return runs.flatMap((run) => {
+    const startedAt = new Date(run.startedAt as string | number | Date);
+    const outcomes = run.metrics?.hostReadOutcomes;
+    return Number.isFinite(startedAt.getTime()) && outcomes && typeof outcomes === 'object'
+      ? [{ startedAt, hostReadOutcomes: outcomes as Record<string, HostReadOutcome> }]
+      : [];
+  });
+}
+
 async function loadPreviousThrottledRows(): Promise<Record<string, readonly string[]>> {
   if (!mongooseConnectionWasOpened()) return {};
   const previous = await ScrapeRun.findOne(
@@ -243,13 +276,6 @@ const THROTTLE_STATUSES: ReadonlySet<number> = new Set([403, 429, 503]);
 const isThrottle = (error: unknown): boolean =>
   hostPauseInErrorChain(error) !== undefined ||
   THROTTLE_STATUSES.has((error as { status?: unknown } | null)?.status as number);
-
-export interface HostReadOutcome {
-  answered: number;
-  refused: number;
-  skipped: number;
-  failed: number;
-}
 
 export type HostReadOutcomes = Map<string, HostReadOutcome>;
 
@@ -483,6 +509,7 @@ export class ResearchPageTextScraper implements IScraper {
   private readonly citerCountsLoader: () => Promise<ReadonlyMap<string, number>>;
   private readonly storedReadingLoader: StoredReadingLoaderFn;
   private readonly previousThrottledRowsLoader: PreviousThrottledRowsLoaderFn;
+  private readonly recentHostReadOutcomesLoader: RecentHostReadOutcomesLoaderFn;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly releaseFinishedHost?: ReleaseFinishedHost;
 
@@ -494,6 +521,8 @@ export class ResearchPageTextScraper implements IScraper {
     this.storedReadingLoader = deps.storedReadingLoader || loadStoredReading;
     this.previousThrottledRowsLoader =
       deps.previousThrottledRowsLoader || loadPreviousThrottledRows;
+    this.recentHostReadOutcomesLoader =
+      deps.recentHostReadOutcomesLoader || loadRecentHostReadOutcomes;
     this.sleep = deps.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.releaseFinishedHost = deps.releaseFinishedHost;
   }
@@ -657,6 +686,7 @@ export class ResearchPageTextScraper implements IScraper {
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
+    const runStartedAt = new Date();
     const only = uniqueStrings(ctx.options.only ?? []);
     const offset = Math.max(0, Number(ctx.options.offset) || 0);
     const limit =
@@ -757,6 +787,29 @@ export class ResearchPageTextScraper implements IScraper {
     const pausesMet = describeHostPauses(
       [...deferredByHost].map(([host, { resumesAt }]) => ({ host, until: resumesAt })),
     );
+    const hostReadOutcomes = Object.fromEntries(
+      [...counts.hostReadOutcomes].sort(([hostA], [hostB]) => hostA.localeCompare(hostB)),
+    );
+    const sustainedRefusalHosts = Object.fromEntries(
+      sustainedHostRefusals([
+        { startedAt: runStartedAt, hostReadOutcomes },
+        ...(await this.recentHostReadOutcomesLoader()),
+      ]).map(({ host, firstRefusedAt, confirmingRefusalAt, runs }) => [
+        host,
+        {
+          firstRefusedAt: firstRefusedAt.toISOString(),
+          confirmingRefusalAt: confirmingRefusalAt.toISOString(),
+          runs,
+          rowsUnconfirmed: throttledRowsByHost[host]?.length ?? 0,
+        },
+      ]),
+    );
+    const sustainedNote = Object.entries(sustainedRefusalHosts)
+      .map(
+        ([host, { firstRefusedAt, runs, rowsUnconfirmed }]) =>
+          `${host} since ${firstRefusedAt} across ${runs} runs, ${rowsUnconfirmed} rows kept unconfirmed`,
+      )
+      .join(', ');
 
     return {
       observationCount,
@@ -769,13 +822,13 @@ export class ResearchPageTextScraper implements IScraper {
         `${counts.contentUnchanged} content unchanged, ${counts.charsStored} characters stored.` +
         (throttledNote ? ` Throttled rows, by host: ${throttledNote}.` : '') +
         (deferredNote ? ` Deferred, by host: ${deferredNote}.` : '') +
-        (pausesMet ? ` Paused hosts: ${pausesMet}.` : ''),
+        (pausesMet ? ` Paused hosts: ${pausesMet}.` : '') +
+        (sustainedNote ? ` Refusing for a sustained period: ${sustainedNote}.` : ''),
       metrics: {
         throttledRowsByHost,
         deferredRowsByHost,
-        hostReadOutcomes: Object.fromEntries(
-          [...counts.hostReadOutcomes].sort(([hostA], [hostB]) => hostA.localeCompare(hostB)),
-        ),
+        hostReadOutcomes,
+        ...(Object.keys(sustainedRefusalHosts).length > 0 ? { sustainedRefusalHosts } : {}),
       },
     };
   }
