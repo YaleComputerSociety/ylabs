@@ -473,7 +473,8 @@ async function fetchPageLive(
 
 const isRedirectStatus = (status: number): boolean => status >= 300 && status < 400;
 
-function isRefusedBeforeSending(error: unknown): boolean {
+/** Adding an error class here also makes it not-observed for every lane (`notObserved.ts`). */
+export function isRefusedBeforeSending(error: unknown): boolean {
   return (
     error instanceof SsrfBlockedError ||
     error instanceof HostPausedError ||
