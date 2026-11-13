@@ -64,6 +64,19 @@ export function parseLeadDepartmentBackfillArgs(argv: string[]): LeadDepartmentB
   return options;
 }
 
+// Selects inherited rows by provenance only: whether the value still agrees with the
+// lead's current department is `inheritSchoolFromLeadPi`'s decision, not this query's (#6053).
+export const LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER = {
+  archived: { $ne: true },
+  $or: [
+    { departments: { $size: 0 } },
+    { departments: { $exists: false } },
+    { school: { $in: ['', null] } },
+    { 'fieldProvenance.school.sourceName': LEAD_PI_SCHOOL_INHERITANCE_SOURCE },
+    { 'fieldProvenance.departments.sourceName': LEAD_PI_SCHOOL_INHERITANCE_SOURCE },
+  ],
+};
+
 interface CandidateRow {
   _id: unknown;
   slug?: string;
@@ -91,14 +104,7 @@ export async function runLeadDepartmentBackfill(options: {
 }> {
   resetOrgUnitCanonicalizerCache();
 
-  const query = ResearchEntity.find({
-    archived: { $ne: true },
-    $or: [
-      { departments: { $size: 0 } },
-      { departments: { $exists: false } },
-      { school: { $in: ['', null] } },
-    ],
-  })
+  const query = ResearchEntity.find(LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER)
     .select('_id slug manuallyLockedFields')
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);

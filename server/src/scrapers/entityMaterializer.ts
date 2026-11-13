@@ -5311,6 +5311,7 @@ export type LeadPiSchoolInheritanceSkip =
   | 'no-single-lead'
   | 'no-department'
   | 'no-school-derivable'
+  | 'inherited-matches-lead'
   | 'out-of-scope';
 
 export interface LeadPiSchoolInheritanceResult {
@@ -5320,6 +5321,7 @@ export interface LeadPiSchoolInheritanceResult {
   skipped?: LeadPiSchoolInheritanceSkip;
   /** Fields this pass asserted as observations, so the value survives a re-projection. */
   observed?: string[];
+  refreshed?: Array<'school' | 'departments'>;
   observationSkipped?: 'source-not-registered' | 'observation-refused';
   indexSyncFailed?: true;
 }
@@ -5394,6 +5396,15 @@ async function leadDepartmentWithParentSchool(
   return school ? { department, school } : undefined;
 }
 
+export function leadPiInheritedFields(fieldProvenance: unknown): Set<'school' | 'departments'> {
+  const entries = (fieldProvenance ?? {}) as Record<string, { sourceName?: unknown } | undefined>;
+  const inherited = new Set<'school' | 'departments'>();
+  for (const field of ['school', 'departments'] as const) {
+    if (entries[field]?.sourceName === LEAD_PI_SCHOOL_INHERITANCE_SOURCE) inherited.add(field);
+  }
+  return inherited;
+}
+
 export async function inheritSchoolFromLeadPi(
   researchEntityId: string,
   options: {
@@ -5414,13 +5425,16 @@ export async function inheritSchoolFromLeadPi(
     routedInheritanceRow?.hit
       ? routedInheritanceRow.value
       : await ResearchEntity.findById(researchEntityId)
-          .select('school departments schools kind entityType')
+          .select(
+            'school departments schools kind entityType fieldProvenance.school fieldProvenance.departments',
+          )
           .lean()
   ) as {
     school?: unknown;
     departments?: unknown;
     schools?: unknown;
     kind?: unknown;
+    fieldProvenance?: unknown;
   } | null;
   if (!entity) return { inherited: false };
   const gate = leadPiSchoolInheritanceGate({
@@ -5430,7 +5444,9 @@ export async function inheritSchoolFromLeadPi(
     kind: entity.kind,
     departments: entity.departments,
   });
-  if (gate !== 'school-and-department' && gate !== 'department-only') {
+  const inheritedFields = leadPiInheritedFields(entity.fieldProvenance);
+  const refreshable = gate === 'has-school-and-department' && inheritedFields.size > 0;
+  if (gate !== 'school-and-department' && gate !== 'department-only' && !refreshable) {
     return { inherited: false, skipped: gate };
   }
 
@@ -5452,18 +5468,43 @@ export async function inheritSchoolFromLeadPi(
   const existingDepartments = Array.isArray(entity.departments)
     ? (entity.departments as unknown[]).map((value) => textValue(value)).filter(Boolean)
     : [];
+  const refreshesSchool =
+    gate !== 'school-and-department' &&
+    inheritedFields.has('school') &&
+    Boolean(leadOrgUnit) &&
+    textValue(entity.school) !== leadOrgUnit?.school;
+  const fillsDepartments = existingDepartments.length === 0;
+  const refreshesDepartments =
+    !fillsDepartments &&
+    inheritedFields.has('departments') &&
+    !existingDepartments.includes(canonicalDepartment);
+  const writesSchool = gate === 'school-and-department' || refreshesSchool;
+  const writesDepartments = fillsDepartments || refreshesDepartments;
+  if (!writesSchool && !writesDepartments) {
+    return { inherited: false, skipped: 'inherited-matches-lead' };
+  }
   const set: Record<string, unknown> = {
-    ...(gate === 'school-and-department' && leadOrgUnit ? { school: leadOrgUnit.school } : {}),
-    ...(existingDepartments.length === 0 ? { departments: [canonicalDepartment] } : {}),
+    ...(writesSchool && leadOrgUnit ? { school: leadOrgUnit.school } : {}),
+    ...(writesDepartments ? { departments: [canonicalDepartment] } : {}),
   };
   await applyResearchEntityOrgUnitCanonicalization(set, entity);
-  if (gate === 'department-only') {
+  if (!writesSchool) {
     // Canonicalization derives a parent school from the department it just set, so
     // it would rewrite the school this row already holds to the lead's own school -
     // a School of the Environment row becoming School of Medicine because its PI is
     // appointed in Genetics. The row's own school is the better evidence.
     delete set.school;
     delete set.schools;
+  }
+  const refreshed = [
+    ...(refreshesSchool ? (['school'] as const) : []),
+    ...(refreshesDepartments ? (['departments'] as const) : []),
+  ];
+  if (refreshed.length > 0) {
+    // A refresh replaces only the inherited fields, so a department another source
+    // stated and the labels canonicalization would rebuild stay as stored.
+    delete set.orgAffiliationLabels;
+    if (!writesDepartments) delete set.departments;
   }
   const derivedSchool = textValue(set.school);
   if (gate === 'school-and-department' && !derivedSchool) {
@@ -5473,24 +5514,28 @@ export async function inheritSchoolFromLeadPi(
     ? (set.departments as string[])
     : existingDepartments;
   if (departments.length === 0) return { inherited: false, skipped: 'no-department' };
+  const refreshReport = refreshed.length > 0 ? { refreshed: [...refreshed] } : {};
 
   if (options.dryRun) {
-    return { inherited: true, ...(derivedSchool ? { school: derivedSchool } : {}), departments };
+    return {
+      inherited: true,
+      ...(derivedSchool ? { school: derivedSchool } : {}),
+      departments,
+      ...refreshReport,
+    };
   }
 
-  const inheritedFields = [
+  const writtenFields = [
     ...(derivedSchool ? ['school'] : []),
-    ...(existingDepartments.length === 0 ? ['departments'] : []),
+    ...(writesDepartments ? ['departments'] : []),
   ];
-  const assertion = await assertLeadPiInheritanceObservations(researchEntityId, {
+  const assertedValues = {
     ...(derivedSchool ? { school: derivedSchool } : {}),
-    ...(existingDepartments.length === 0 ? { departments } : {}),
-  });
-  const evidence = await leadPiInheritanceEvidence(researchEntityId, {
-    ...(derivedSchool ? { school: derivedSchool } : {}),
-    ...(existingDepartments.length === 0 ? { departments } : {}),
-  });
-  if (inheritedFields.some((field) => !evidence.has(field))) {
+    ...(writesDepartments ? { departments } : {}),
+  };
+  const assertion = await assertLeadPiInheritanceObservations(researchEntityId, assertedValues);
+  const evidence = await leadPiInheritanceEvidence(researchEntityId, assertedValues);
+  if (writtenFields.some((field) => !evidence.has(field))) {
     return {
       inherited: false,
       observationSkipped: assertion.observationSkipped ?? 'observation-refused',
@@ -5516,6 +5561,7 @@ export async function inheritSchoolFromLeadPi(
     inherited: true,
     ...(derivedSchool ? { school: derivedSchool } : {}),
     departments,
+    ...refreshReport,
     ...assertion,
     ...(indexSynced ? {} : { indexSyncFailed: true as const }),
   };
