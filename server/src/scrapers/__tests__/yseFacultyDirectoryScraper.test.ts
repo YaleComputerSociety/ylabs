@@ -220,20 +220,32 @@ describe('extractProfile', () => {
       </main>`);
     const PROFILE_URL = 'https://environment.yale.edu/directory/faculty/avery-quill';
 
-    it.each(['Quill Lab Website', 'Quill lab website', 'Quill Lab', 'Link to personal website'])(
-      'adopts "%s" as the person own research site',
-      (label) => {
-        expect(extractLabUrl(profileLinking(label), PROFILE_URL, 'Avery Quill')).toBe(
-          'https://ownsite.example.org/',
-        );
-      },
-    );
+    it.each([
+      'Quill Lab Website',
+      'Quill lab website',
+      'Quill Lab',
+      "Quill's Lab",
+      'The Quill Laboratory',
+    ])('adopts "%s" as the person own research site', (label) => {
+      expect(extractLabUrl(profileLinking(label), PROFILE_URL, 'Avery Quill')).toBe(
+        'https://ownsite.example.org/',
+      );
+    });
 
     it.each([
       'Marsh Lab Website',
       'Coastal City Lab',
       'Center for Fixture Chemistry website',
       'Fixture Leadership (center homepage)',
+      'Link to personal website',
+      'Link to Fixture Consulting website',
+      'Quill Group',
+      'Quill Group LLC',
+      'Quill Labs',
+      'Quill Labs Inc.',
+      'Quill Lab LLC',
+      'Quill Consulting',
+      'Quill Lab Consulting website',
     ])('does not adopt "%s", which names another entity', (label) => {
       expect(extractLabUrl(profileLinking(label), PROFILE_URL, 'Avery Quill')).toBeUndefined();
     });

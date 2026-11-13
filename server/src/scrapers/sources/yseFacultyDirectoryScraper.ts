@@ -238,26 +238,28 @@ function extractDescription($: cheerio.CheerioAPI): string | undefined {
 const GENERIC_RESEARCH_SITE_LABEL =
   /^(?:lab(?:oratory)?(?: website| site)?|website|personal(?: website| site| page)?|home ?page|research ?group(?: website| site)?|group(?: website| site)?)$/i;
 
-const LINK_TO_PREFIX = /^link to\s+(?:my\s+|the\s+|our\s+)?/i;
 const SITE_NOUN_SUFFIX = /\s+(?:website|web\s*site|site|home\s*page|page)$/i;
+const OWN_LAB_LABEL_SHAPE =
+  /^(?:the\s+)?(?:[a-z][a-z'’-]*\s+)?[a-z][a-z'’-]*(?:['’]s)?\s+(?:lab|laboratory)$/i;
 
 function labelNamesOwnResearchSite(label: string, personName: string): boolean {
-  const unprefixed = label.replace(LINK_TO_PREFIX, '');
-  if (GENERIC_RESEARCH_SITE_LABEL.test(unprefixed)) return true;
+  if (GENERIC_RESEARCH_SITE_LABEL.test(label)) return true;
   if (!personName) return false;
+  const labName = label.replace(SITE_NOUN_SUFFIX, '');
+  if (!OWN_LAB_LABEL_SHAPE.test(labName)) return false;
   const ownSurnames = personSurnamesFromDisplayNames([personName]);
-  return eponymousLabNameSurnameCandidates(unprefixed.replace(SITE_NOUN_SUFFIX, '')).some(
-    (surname) => ownSurnames.has(surname),
-  );
+  return eponymousLabNameSurnameCandidates(labName).some((surname) => ownSurnames.has(surname));
 }
 
 /**
  * The "Links" section can list the faculty's own lab/personal research site, one
  * or more affiliated centers, an ORCID link, and a CV PDF. A generically labeled
- * self-site link ("Website" / "Lab Website" / "Link to personal website") or a lab
- * named for this person ("Seto Lab Website") is treated as this person's research
- * home; any other named-entity link (an affiliated center, institute or someone
- * else's lab) belongs to a different research entity and is never adopted (#5827).
+ * self-site link ("Website" / "Lab Website") or a lab named for this person
+ * ("<surname> Lab Website", #5827) is treated as this person's research home. Any
+ * other named-entity link (an affiliated center, institute or someone else's lab)
+ * belongs to a different research entity and is never adopted, and a longer
+ * free-text label is not widened, because a personal or outside company site must
+ * not seed a LAB row (#6097).
  */
 export function extractLabUrl(
   $: cheerio.CheerioAPI,
