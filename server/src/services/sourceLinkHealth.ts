@@ -1,7 +1,12 @@
 import axios from 'axios';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../utils/ssrfGuard';
 import { DEFAULT_RETRYABLE_STATUSES } from '../scrapers/utils/httpFetch';
-import { type HostSlotLimiter, withHostSlot } from '../scrapers/utils/hostConcurrencyLimiter';
+import {
+  ChainedHostSlotLimiter,
+  type HostSlotLimiter,
+  withHostSlot,
+} from '../scrapers/utils/hostConcurrencyLimiter';
+import { machineHostSlotsForDirectRequest } from '../scrapers/utils/scraperHostSlotLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { classifyOffCampusAddressing } from '../utils/publicDnsResolution';
 import {
@@ -625,7 +630,12 @@ export async function probeSourceLink(
         validateStatus: () => true,
       });
     };
-    return requestGate ? withHostSlot(requestedUrl, send, requestGate) : send();
+    const machine = machineHostSlotsForDirectRequest();
+    const gates = [requestGate, machine].filter((gate): gate is HostSlotLimiter => !!gate);
+    // Redirect hops still follow inside axios, so only the first host is charged (#6168).
+    return gates.length > 0
+      ? withHostSlot(requestedUrl, send, new ChainedHostSlotLimiter(gates))
+      : send();
   };
 
   // `responseUrl`, lower-case `u`, is what `follow-redirects` sets on the Node

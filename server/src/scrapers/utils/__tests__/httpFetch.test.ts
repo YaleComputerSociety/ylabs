@@ -417,7 +417,7 @@ describe('postFormWithPolicy', () => {
     expect(assertUrl).toHaveBeenCalledWith('https://portal.example.edu/search');
     expect(request).toHaveBeenCalledWith('https://portal.example.edu/search', {
       timeoutMs: 10_000,
-      maxRedirects: 5,
+      maxRedirects: 0,
       method: 'POST',
       body: '__VIEWSTATE=state&button=View+all',
       headers: {

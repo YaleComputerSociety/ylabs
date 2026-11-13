@@ -7,6 +7,11 @@ import {
   type HttpRequestFn,
 } from '../scrapers/utils/httpFetch';
 import { HOST_THROTTLE_OVERRIDES } from '../scrapers/utils/hostConcurrencyLimiter';
+import {
+  isMachineHostSlotSharingEnabled,
+  machineHostBudgetFor,
+  MACHINE_HOST_SLOTS_ENV,
+} from '../scrapers/utils/machineHostBudget';
 import { readCodeSha } from '../scrapers/scrapeRunCodeIdentity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isDirectScriptInvocation } from './directScriptInvocation';
@@ -73,7 +78,8 @@ async function probeUrl(url: string, limiter?: HostRateLimiter): Promise<HostPro
   const observingRequest: HttpRequestFn = async (target, config) => {
     try {
       const result = await defaultAxiosRequest(target, config);
-      statuses.push(result.status);
+      const isRedirectHop = result.status >= 300 && result.status < 400 && !!result.location;
+      if (!isRedirectHop) statuses.push(result.status);
       return result;
     } catch (error) {
       statuses.push(null);
@@ -94,6 +100,13 @@ async function probeUrl(url: string, limiter?: HostRateLimiter): Promise<HostPro
 }
 
 function raisedLoadLimiter(host: string, inFlight: number): HostRateLimiter {
+  const machineLimit = machineHostBudgetFor(host).concurrency;
+  if (isMachineHostSlotSharingEnabled() && inFlight > machineLimit) {
+    // The machine-wide budget would cap the probe below the load it reports having tested.
+    throw new Error(
+      `--in-flight=${inFlight} exceeds the machine-wide budget of ${machineLimit} for ${host}; run the probe inside a host turn with ${MACHINE_HOST_SLOTS_ENV}=off to measure above it`,
+    );
+  }
   return new HostRateLimiter({
     maxConcurrency: inFlight,
     minIntervalMs: HOST_THROTTLE_OVERRIDES[host]?.minIntervalMs ?? 400,
