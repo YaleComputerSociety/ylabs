@@ -1,3 +1,11 @@
+import {
+  HOST_PAUSE_POLICY_FETCH,
+  HostPausedError,
+  activeHostPause,
+  recordHostRefusal,
+  refuseRedirectIntoPausedHost,
+} from './hostPause';
+import { recordHostSuccess } from './hostPauseState';
 import axios, { AxiosError } from 'axios';
 import { isSweepPageReuseHit } from './sweepPageReuseHit';
 
@@ -33,6 +41,15 @@ export const REFUSAL_THROTTLED_HOST_RETRY_BUDGET: HostRetryBudget = {
   maxTotalBackoffMs: 90_000,
 };
 
+// This host's own flood control paused this machine for seven days after one morning of lane
+// and link-health traffic (#6166). Every refused request counts against it, so it gets one request
+// at a time, spaced well apart, and fewer retries than the default rather than more.
+export const BAN_PRONE_HOST_RETRY_BUDGET: HostRetryBudget = {
+  maxRetries: 1,
+  maxBackoffMs: 15_000,
+  maxTotalBackoffMs: 15_000,
+};
+
 export const HOST_THROTTLE_OVERRIDES: Readonly<Record<string, HostPoliteness>> = {
   'medicine.yale.edu': {
     concurrency: 3,
@@ -43,6 +60,11 @@ export const HOST_THROTTLE_OVERRIDES: Readonly<Record<string, HostPoliteness>> =
     concurrency: 2,
     minIntervalMs: 400,
     retryBudget: REFUSAL_THROTTLED_HOST_RETRY_BUDGET,
+  },
+  'economics.yale.edu': {
+    concurrency: 1,
+    minIntervalMs: 1_500,
+    retryBudget: BAN_PRONE_HOST_RETRY_BUDGET,
   },
 };
 
@@ -288,6 +310,28 @@ export interface ScraperHostConcurrencyInterceptorOptions {
   acquireTimeoutMs?: number;
 }
 
+function recordHostOutcomeFromResponse(response: unknown): void {
+  const typed = response as
+    | {
+        status?: unknown;
+        data?: unknown;
+        headers?: unknown;
+        config?: { url?: string; baseURL?: string; [HOST_PAUSE_POLICY_FETCH]?: unknown };
+        request?: { res?: { responseUrl?: unknown } };
+      }
+    | undefined;
+  if (typeof typed?.status !== 'number' || typed.config?.[HOST_PAUSE_POLICY_FETCH]) return;
+  const host =
+    hostnameForLimiter(typed.request?.res?.responseUrl) ??
+    hostnameForLimiter(typed.config?.url, typed.config?.baseURL);
+  if (!host) return;
+  if (typed.status >= 200 && typed.status < 300) {
+    recordHostSuccess(host);
+    return;
+  }
+  recordHostRefusal({ host, status: typed.status, headers: typed.headers, body: typed.data });
+}
+
 const RELEASE_KEY = '__scraperHostRelease';
 let installed = false;
 
@@ -304,6 +348,12 @@ export function installScraperHostConcurrencyInterceptor(
   const acquireTimeoutMs = options.acquireTimeoutMs ?? HOST_SLOT_WAIT_TIMEOUT_MS;
   axios.interceptors.request.use(async (config) => {
     const host = hostnameForLimiter(config.url, config.baseURL);
+    const knownPause = activeHostPause(host);
+    if (knownPause && !isSweepPageReuseHit(config)) throw new HostPausedError(knownPause);
+    const redirectable = config as {
+      beforeRedirect?: Parameters<typeof refuseRedirectIntoPausedHost>[0];
+    };
+    redirectable.beforeRedirect = refuseRedirectIntoPausedHost(redirectable.beforeRedirect);
     if (host && !isSweepPageReuseHit(config)) {
       try {
         (config as unknown as Record<string, unknown>)[RELEASE_KEY] = await acquireHostSlotWithin(
@@ -329,10 +379,12 @@ export function installScraperHostConcurrencyInterceptor(
   axios.interceptors.response.use(
     (response) => {
       release(response.config);
+      recordHostOutcomeFromResponse(response);
       return response;
     },
     (error) => {
       release(error?.config);
+      recordHostOutcomeFromResponse(error?.response);
       return Promise.reject(error);
     },
   );

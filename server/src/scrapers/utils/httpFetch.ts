@@ -27,6 +27,16 @@ import {
 } from '../snapshotBenchmarkMode';
 import { isTlsVerificationError } from '../../utils/tlsVerificationErrors';
 import { recordThrottleRetryOutcome } from './throttleRetryStats';
+import {
+  HOST_PAUSE_POLICY_FETCH,
+  HostPausedError,
+  activeHostPause,
+  hostPauseInErrorChain,
+  recordHostRefusal,
+  recordTierOneExhausted,
+  refuseRedirectIntoPausedHost,
+} from './hostPause';
+import { recordHostSuccess } from './hostPauseState';
 import { withScrapeRunProgress } from '../scrapeRunProgress';
 
 export const SCRAPER_USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -132,6 +142,7 @@ export interface ResolvedRetryPolicy {
   maxRetries: number;
   maxTransportRetries: number;
   maxTotalBackoffMs: number;
+  maxBackoffMs: number;
   retryable: ReadonlySet<number>;
   sleep: (ms: number) => Promise<void>;
   backoffMs: (attempt: number) => number;
@@ -153,6 +164,7 @@ export function resolveRetryPolicy(
     maxTransportRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES,
     maxTotalBackoffMs:
       options.maxTotalBackoffMs ?? hostBudget?.maxTotalBackoffMs ?? Number.POSITIVE_INFINITY,
+    maxBackoffMs: maxBackoff,
     retryable: options.retryableStatuses ?? DEFAULT_RETRYABLE_STATUSES,
     sleep: options.sleep ?? realSleep,
     backoffMs,
@@ -209,6 +221,8 @@ function setCookieHeaders(header: unknown): string[] | undefined {
   return typeof header === 'string' && header ? [header] : undefined;
 }
 
+const POLICY_FETCH_MARK: object = { [HOST_PAUSE_POLICY_FETCH]: true };
+
 export const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
   const agents = ssrfSafeAgents();
   const res =
@@ -220,6 +234,8 @@ export const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
           timeout: config.timeoutMs,
           headers: config.headers,
           maxRedirects: config.maxRedirects,
+          beforeRedirect: refuseRedirectIntoPausedHost(),
+          ...POLICY_FETCH_MARK,
           httpAgent: agents.httpAgent,
           httpsAgent: agents.httpsAgent,
           responseType: 'text',
@@ -230,6 +246,8 @@ export const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
           timeout: config.timeoutMs,
           headers: config.headers,
           maxRedirects: config.maxRedirects,
+          beforeRedirect: refuseRedirectIntoPausedHost(),
+          ...POLICY_FETCH_MARK,
           httpAgent: agents.httpAgent,
           httpsAgent: agents.httpsAgent,
           responseType: 'text',
@@ -364,12 +382,19 @@ async function fetchPageLive(
   const followHops = (): Promise<HttpRequestResult> =>
     followRedirectsWithinBudget(safeUrl, config, { limiter, request, assertUrl });
 
+  const knownPause = activeHostPause(host);
+  if (knownPause) throw new HostPausedError(knownPause);
   const backoff = new RetryBackoffBudget(policy);
   for (let attempt = 0; ; attempt += 1) {
     let result: HttpRequestResult;
     try {
       result = await followHops();
     } catch (error) {
+      const pausedHop = hostPauseInErrorChain(error);
+      if (pausedHop) {
+        backoff.settle('exhausted');
+        throw pausedHop;
+      }
       if (isRefusedBeforeSending(error)) {
         backoff.settle('exhausted');
         throw error;
@@ -380,14 +405,27 @@ async function fetchPageLive(
       }
       continue;
     }
+    const answeringHost = hostOf(result.finalUrl || safeUrl);
     if (result.status >= 200 && result.status < 300) {
       backoff.settle('recovered');
+      recordHostSuccess(answeringHost);
       return {
         url: result.finalUrl || safeUrl,
         html: result.data ?? '',
         status: result.status,
         ...(result.setCookies?.length ? { setCookies: result.setCookies } : {}),
       };
+    }
+    const pause = recordHostRefusal({
+      host: answeringHost,
+      status: result.status,
+      body: result.data,
+      retryAfterMs: result.retryAfterMs,
+      quickRetryWaitMs: policy.maxBackoffMs,
+    });
+    if (pause) {
+      backoff.settle('exhausted');
+      throw new HostPausedError(pause);
     }
     if (
       policy.retryable.has(result.status) &&
@@ -396,6 +434,9 @@ async function fetchPageLive(
       continue;
     }
     backoff.settle('exhausted');
+    if (policy.retryable.has(result.status)) {
+      recordTierOneExhausted(answeringHost, result.status, result.retryAfterMs);
+    }
     throw new HttpStatusError(result.status, result.finalUrl || safeUrl);
   }
 }
@@ -405,6 +446,7 @@ const isRedirectStatus = (status: number): boolean => status >= 300 && status < 
 function isRefusedBeforeSending(error: unknown): boolean {
   return (
     error instanceof SsrfBlockedError ||
+    error instanceof HostPausedError ||
     error instanceof HostBudgetUnavailableError ||
     error instanceof HostSlotWaitTimeoutError
   );
@@ -478,6 +520,8 @@ async function followRedirectsWithinBudget(
   for (let redirects = 0; ; redirects += 1) {
     const target = current;
     const sent = hopConfig;
+    const pausedHop = activeHostPause(hostOf(target));
+    if (pausedHop) throw new HostPausedError(pausedHop);
     const result = await deps.limiter.run(hostOf(target), () => deps.request(target, sent));
     if (config.maxRedirects === 0 || !isRedirectStatus(result.status) || !result.location) {
       return { ...result, finalUrl: result.finalUrl || current };

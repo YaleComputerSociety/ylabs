@@ -1,4 +1,5 @@
 import { DEFAULT_RETRYABLE_STATUSES, HttpStatusError } from './httpFetch';
+import { hostPauseInErrorChain } from './hostPause';
 
 const TRANSIENT_TRANSPORT_CODES: ReadonlySet<string> = new Set([
   'ECONNABORTED',
@@ -13,6 +14,8 @@ const TRANSIENT_ERROR_NAMES: ReadonlySet<string> = new Set([
   'DevWriteLeaseHeldError',
   'DevWriteLeaseStoppedError',
   'DevWriteLeaseTimeoutError',
+  'HostPausedError',
+  'HostPausedBudgetError',
 ]);
 
 const responseStatus = (error: unknown): number | undefined => {
@@ -32,6 +35,7 @@ const responseStatus = (error: unknown): number | undefined => {
 export function isTransientFetchFailure(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   if (TRANSIENT_ERROR_NAMES.has((error as Error).name)) return true;
+  if (hostPauseInErrorChain(error)) return true;
   const status = responseStatus(error);
   if (status !== undefined) return DEFAULT_RETRYABLE_STATUSES.has(status);
   const code = (error as { code?: unknown }).code;

@@ -23,17 +23,17 @@ const row: CandidateDescriptionLab = {
 
 const body = `<html><body><h1>Research</h1><p>We study how kelp forests recover after marine heatwaves along the coast, and the group shares its survey data openly with the community.</p></body></html>`;
 
-const storedReading = (urls: string[], superseded = false) => ({
+const storedReading = (urls: string[], superseded = false, ageDays = 1) => ({
   entityType: 'researchEntity',
   entityId: ENTITY_ID,
   field: RESEARCH_PAGE_TEXT_FIELD,
   sourceName: RESEARCH_PAGE_TEXT_SOURCE,
   superseded,
-  observedAt: new Date('2026-11-11T12:00:00Z'),
+  observedAt: new Date(Date.now() - ageDays * 24 * 60 * 60_000),
   value: urls.map((url) => ({ url, text: 'Stored research text.' })),
 });
 
-async function runWithPartnerThrottled() {
+async function runWithPartnerThrottled(failure: unknown = new HttpStatusError(429)) {
   const emitted: ObservationInput[] = [];
   const ctx: ScraperContext = {
     scrapeRunId: 'test-run',
@@ -48,7 +48,7 @@ async function runWithPartnerThrottled() {
   };
   const lane = new ResearchPageTextScraper({
     fetchPage: async (url: string) => {
-      if (url === PARTNER) throw new HttpStatusError(429);
+      if (url === PARTNER) throw failure;
       return url === HOME ? { url, html: body } : null;
     },
     rowFinder: async () => [row],
@@ -91,5 +91,13 @@ describe('research-page-text reads the stored reading it keeps', () => {
     expect(emitted.some((observation) => observation.field === RESEARCH_PAGE_TEXT_FIELD)).toBe(
       true,
     );
+  });
+
+  it('keeps a stable reading older than 30 days through a 403 burst', async () => {
+    await observations().insertOne(
+      storedReading([HOME, 'https://partner-site.example.org/kelp/'], false, 45),
+    );
+
+    expect(await runWithPartnerThrottled(new HttpStatusError(403))).toEqual([]);
   });
 });

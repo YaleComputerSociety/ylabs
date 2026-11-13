@@ -3,7 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
+import { resetHostPauseStateForTests } from '../scrapers/utils/hostPauseState';
 import { applyMongoMemoryLaunchBudget } from './mongoMemoryLaunchBudget';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -163,3 +164,5 @@ applyMongoMemoryLaunchBudget();
  */
 mongoose.set('autoIndex', false);
 mongoose.set('autoCreate', false);
+
+afterEach(() => resetHostPauseStateForTests());

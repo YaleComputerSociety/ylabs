@@ -4,9 +4,16 @@ import { DEFAULT_RETRYABLE_STATUSES } from '../scrapers/utils/httpFetch';
 import {
   ChainedHostSlotLimiter,
   type HostSlotLimiter,
+  hostnameForLimiter,
   withHostSlot,
 } from '../scrapers/utils/hostConcurrencyLimiter';
 import { machineHostSlotsForDirectRequest } from '../scrapers/utils/scraperHostSlotLimiter';
+import {
+  activeHostPause,
+  recordHostRefusal,
+  recordTierOneExhausted,
+} from '../scrapers/utils/hostPause';
+import { recordHostSuccess } from '../scrapers/utils/hostPauseState';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { classifyOffCampusAddressing } from '../utils/publicDnsResolution';
 import {
@@ -589,12 +596,43 @@ export interface SourceLinkProbeOptions {
   excludedHosts?: readonly string[];
 }
 
+const BAN_NOTICE_PREFIX_BYTES = 4_096;
+const BAN_NOTICE_READ_TIMEOUT_MS = 2_000;
+
+/** Reads the start of a refusal body, enough to find a stated pause date, without draining the page. */
+async function readBodyPrefix(data: unknown): Promise<string | undefined> {
+  if (typeof data === 'string') return data.slice(0, BAN_NOTICE_PREFIX_BYTES);
+  const stream = data as NodeJS.ReadableStream | undefined;
+  if (!stream || typeof stream.on !== 'function') return undefined;
+  return new Promise<string | undefined>((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const finish = () => {
+      clearTimeout(timer);
+      stream.removeListener('data', onData);
+      resolve(Buffer.concat(chunks).toString('utf8').slice(0, BAN_NOTICE_PREFIX_BYTES));
+    };
+    const onData = (chunk: Buffer | string) => {
+      const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+      chunks.push(buffer);
+      size += buffer.length;
+      if (size >= BAN_NOTICE_PREFIX_BYTES) finish();
+    };
+    const timer = setTimeout(finish, BAN_NOTICE_READ_TIMEOUT_MS);
+    stream.on('data', onData);
+    stream.once('end', finish);
+    stream.once('error', finish);
+  });
+}
+
 export async function probeSourceLink(
   url: string,
   requestGate?: HostSlotLimiter,
   probeOptions: SourceLinkProbeOptions = {},
 ): Promise<SourceLinkProbeResult> {
   const excludedHosts = probeOptions.excludedHosts ?? [];
+  const notContacted = (hostname: string | undefined): boolean =>
+    isExcludedHostname(hostname, excludedHosts) || activeHostPause(hostname) !== undefined;
   let safeUrl: URL;
   try {
     safeUrl = await assertPublicHttpUrl(url);
@@ -603,9 +641,12 @@ export async function probeSourceLink(
   }
 
   const requestedUrl = safeUrl.toString();
-  if (isExcludedHostname(safeUrl.hostname, excludedHosts)) {
-    return { errorCode: EXCLUDED_HOST_ERROR_CODE, requestedUrl, excludedHost: true };
-  }
+  const notObserved = (): SourceLinkProbeResult => ({
+    errorCode: EXCLUDED_HOST_ERROR_CODE,
+    requestedUrl,
+    excludedHost: true,
+  });
+  if (notContacted(safeUrl.hostname)) return notObserved();
   const agents = ssrfSafeAgents();
   let redirectStatuses: number[] = [];
   const request = (method: 'HEAD' | 'GET') => {
@@ -616,9 +657,7 @@ export async function probeSourceLink(
         method,
         maxRedirects: 5,
         beforeRedirect: (redirectOptions, responseDetails) => {
-          if (
-            isExcludedHostname((redirectOptions as { hostname?: string })?.hostname, excludedHosts)
-          ) {
+          if (notContacted((redirectOptions as { hostname?: string })?.hostname)) {
             throw excludedHostRedirectError();
           }
           redirectStatuses.push(Number(responseDetails?.statusCode));
@@ -665,9 +704,21 @@ export async function probeSourceLink(
       let response = await request('HEAD');
       if (response.status >= 400) {
         response = await request('GET');
+        const body = response.status === 403 ? await readBodyPrefix(response.data) : undefined;
         if (response.data && typeof response.data.destroy === 'function') {
           response.data.destroy();
         }
+        const pause = recordHostRefusal({
+          host: hostnameForLimiter(resolvedUrl(response)) ?? safeUrl.hostname,
+          status: response.status,
+          headers: response.headers,
+          body,
+          quickRetryWaitMs: PROBE_STATUS_BACKOFF_MAX_MS,
+        });
+        if (pause) return notObserved();
+      }
+      if (response.status < 400) {
+        recordHostSuccess(hostnameForLimiter(resolvedUrl(response)) ?? safeUrl.hostname);
       }
       return {
         status: response.status,
@@ -705,8 +756,16 @@ export async function probeSourceLink(
   // never retried, so a 404 still settles on the first answer.
   for (let attemptIndex = 0; attemptIndex < PROBE_MAX_STATUS_RETRIES; attemptIndex += 1) {
     if (result.status === undefined || !DEFAULT_RETRYABLE_STATUSES.has(result.status)) break;
+    if (activeHostPause(safeUrl.hostname)) return notObserved();
     await delay(probeStatusBackoffMs(attemptIndex, result.retryAfterMs));
     result = await attempt();
+  }
+  if (result.status !== undefined && DEFAULT_RETRYABLE_STATUSES.has(result.status)) {
+    recordTierOneExhausted(
+      hostnameForLimiter(result.finalUrl) ?? safeUrl.hostname,
+      result.status,
+      result.retryAfterMs,
+    );
   }
   return result;
 }
