@@ -17,7 +17,9 @@
  * Above that rank sits a field-specific source rule: a value backed only by a fill-only source
  * for that field may fill an empty field but never outranks or ties a value any other source
  * backs, whatever the join. The Yale directory's department is its HR unit, which a person's own
- * official page contradicted in 6 of 10 hand-checked disagreements (#5741).
+ * official page contradicted in 6 of 10 hand-checked disagreements (#5741). Its name is first and
+ * last name only, which a blind grader judged worse than the stored profile or roster name in 15
+ * of 20 planned changes, so a directory name is fill-only too (#6035).
  */
 export const RESEARCHER_WRITER_FIELDS = [
   'displayName',
@@ -32,10 +34,13 @@ export const OWN_KEY_FALLBACK_TITLE_FIELD = 'title';
 
 export type ResearcherGatedField = ResearcherWriterField | typeof OWN_KEY_FALLBACK_TITLE_FIELD;
 
+const DIRECTORY_SOURCES: ReadonlySet<string> = new Set(['yale-directory', 'yale-directory-csv']);
+
 const FILL_ONLY_SOURCES_BY_FIELD: Readonly<
   Partial<Record<ResearcherGatedField, ReadonlySet<string>>>
 > = {
-  primaryDepartment: new Set(['yale-directory', 'yale-directory-csv']),
+  displayName: DIRECTORY_SOURCES,
+  primaryDepartment: DIRECTORY_SOURCES,
 };
 
 export function isFillOnlyFieldValue(

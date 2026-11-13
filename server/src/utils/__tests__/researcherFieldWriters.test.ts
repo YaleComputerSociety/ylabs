@@ -113,4 +113,33 @@ describe('researcher field writer precedence (#5706)', () => {
     expect(isFillOnlyFieldValue('primaryDepartment', [])).toBe(false);
     expect(isFillOnlyFieldValue('title', ['yale-directory'])).toBe(false);
   });
+
+  it('treats a name only the directory backs as fill-only, and one a page backs as not (#6035)', () => {
+    expect(isFillOnlyFieldValue('displayName', ['yale-directory'])).toBe(true);
+    expect(isFillOnlyFieldValue('displayName', ['yale-directory', 'yale-directory-csv'])).toBe(
+      true,
+    );
+    expect(isFillOnlyFieldValue('displayName', ['yale-directory', 'dept-faculty-roster'])).toBe(
+      false,
+    );
+    expect(isFillOnlyFieldValue('displayName', ['official-profile-pi-backfill'])).toBe(false);
+  });
+
+  it('fills an empty name from the directory but never replaces a stored one (#6035)', () => {
+    const directory = researcherFieldWriter(
+      'fx1',
+      'account-netid',
+      1,
+      isFillOnlyFieldValue('displayName', ['yale-directory']),
+    );
+    expect(decideResearcherFieldWrite(undefined, 'displayName', directory, true, false)).toEqual({
+      write: true,
+      writer: directory,
+      writerChanged: true,
+    });
+    expect(decideResearcherFieldWrite(undefined, 'displayName', directory, true, true)).toEqual({
+      write: false,
+      releaseWriter: false,
+    });
+  });
 });

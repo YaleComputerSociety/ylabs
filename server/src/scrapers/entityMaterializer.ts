@@ -8665,6 +8665,7 @@ export interface UserIdentityJoinResult {
   resolved: ReturnType<typeof resolveAllFields>;
   netid: string | undefined;
   displayName: string;
+  displayNameSources: readonly string[];
   title: string | undefined;
   primaryDepartment: string | undefined;
   imageUrl: string | undefined;
@@ -8903,10 +8904,15 @@ function deriveUserIdentityFields(materializationObs: any[], now: Date) {
   };
   // Normalized before the name resolver reads it, not just before it is stored: an
   // invisible format character inside a surname makes the person match nobody (#2874).
+  const displayNameFields = servedUserName('displayName')
+    ? ['displayName']
+    : ['fname', 'lname'].filter((field) => servedUserName(field));
   const displayName = stripInvisibleFormatCharacters(
-    servedUserName('displayName') ||
-      [servedUserName('fname'), servedUserName('lname')].filter(Boolean).join(' ').trim(),
+    displayNameFields.map(servedUserName).join(' ').trim(),
   );
+  const displayNameSources = [
+    ...new Set(displayNameFields.flatMap((field) => resolved[field]?.contributingSources ?? [])),
+  ];
   const title = stripTitleFieldLabel(textValue(resolvedValue('title'))) || undefined;
   const primaryDepartment = textValue(resolvedValue('primaryDepartment')) || undefined;
   const imageUrl = textValue(resolvedValue('imageUrl')) || undefined;
@@ -8924,6 +8930,7 @@ function deriveUserIdentityFields(materializationObs: any[], now: Date) {
   return {
     resolved,
     displayName,
+    displayNameSources,
     title,
     primaryDepartment,
     imageUrl,
@@ -9090,6 +9097,7 @@ export async function joinUserIdentityToExistingResearcher(
     resolved: served.resolved,
     netid,
     displayName,
+    displayNameSources: derived.displayNameSources,
     account,
     researcher,
     identityJoin,
@@ -9837,6 +9845,7 @@ async function materializeUserIdentityToResearcher(
   const {
     resolved,
     displayName,
+    displayNameSources,
     title,
     primaryDepartment,
     imageUrl,
@@ -10025,7 +10034,10 @@ async function materializeUserIdentityToResearcher(
         writerKey,
         identityJoin,
         confidence,
-        isFillOnlyFieldValue(field, resolved[field]?.contributingSources),
+        isFillOnlyFieldValue(
+          field,
+          field === 'displayName' ? displayNameSources : resolved[field]?.contributingSources,
+        ),
       ),
       Boolean(value),
       storedValuePresent,
