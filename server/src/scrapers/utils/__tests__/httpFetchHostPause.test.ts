@@ -7,6 +7,7 @@ import {
   hostPausedUntil,
   recordHostBackoff,
   resetHostPauseStateForTests,
+  setHostPauseStateForTests,
 } from '../hostPauseState';
 
 const base = {
@@ -89,6 +90,35 @@ describe('fetchPageWithPolicy and a host that refuses', () => {
 
     expect(request).toHaveBeenCalledTimes(1);
     expect(hostPausedUntil('dept.example.edu')).toEqual(FUTURE);
+  });
+
+  it('marks the refusal that started a pause as sent, and a later refusal of a paused host as not sent (#6195)', async () => {
+    const request = vi.fn(async () => stated);
+
+    await expect(
+      fetchPageWithPolicy('https://dept.example.edu/people/a', { ...base, request }),
+    ).rejects.toMatchObject({ name: 'HostPausedError', requestSent: true });
+    await expect(
+      fetchPageWithPolicy('https://dept.example.edu/people/b', { ...base, request }),
+    ).rejects.toMatchObject({ name: 'HostPausedError', requestSent: false });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a page replayed from the local cache clear a host backoff (#6195)', async () => {
+    let now = new Date('2026-11-13T12:00:00Z');
+    setHostPauseStateForTests({ now: () => now });
+    recordHostBackoff('dept.example.edu', { status: 429 });
+    now = new Date('2026-11-13T13:00:00Z');
+
+    const replayed = vi.fn(async () => ({ ...ok, reused: true as const }));
+    await expect(
+      fetchPageWithPolicy('https://dept.example.edu/a', { ...base, request: replayed }),
+    ).resolves.toMatchObject({ status: 200, reused: true });
+    expect(hostBackoffState('dept.example.edu')).toBeDefined();
+
+    const answered = vi.fn(async () => ok);
+    await fetchPageWithPolicy('https://dept.example.edu/a', { ...base, request: answered });
+    expect(hostBackoffState('dept.example.edu')).toBeUndefined();
   });
 
   it('records the pause under the host that answered after a redirect', async () => {

@@ -13,7 +13,7 @@ import {
   loadStoredContentHash,
   type ContentHashEntityRef,
 } from '../contentHashGate';
-import { HttpStatusError, fetchPageWithPolicy } from '../utils/httpFetch';
+import { HttpStatusError, fetchPageWithPolicy, isReusedResponse } from '../utils/httpFetch';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
   mapWithConcurrency,
@@ -244,12 +244,53 @@ const isThrottle = (error: unknown): boolean =>
   hostPauseInErrorChain(error) !== undefined ||
   THROTTLE_STATUSES.has((error as { status?: unknown } | null)?.status as number);
 
+export interface HostReadOutcome {
+  answered: number;
+  refused: number;
+  skipped: number;
+  failed: number;
+}
+
+export type HostReadOutcomes = Map<string, HostReadOutcome>;
+
+function recordHostReadOutcome(
+  outcomes: HostReadOutcomes | undefined,
+  host: string,
+  outcome: keyof HostReadOutcome,
+): void {
+  if (!outcomes || !host) return;
+  const tally = outcomes.get(host) ?? { answered: 0, refused: 0, skipped: 0, failed: 0 };
+  tally[outcome] += 1;
+  outcomes.set(host, tally);
+}
+
+/**
+ * How a fetch attempt left the host it was sent to (#6195), one tally per request under the
+ * requested host, or the paused host a pause names: it answered (any status that is not a
+ * refusal, a 404 included), refused (a throttle status, or a refusal that started a pause),
+ * was skipped (paused before any request was sent), or failed in transport. Only an answer
+ * shows the host is reading us again; a skip, and a page replayed from the local cache with no
+ * request, are not evidence either way, so a replay is not tallied.
+ */
+function hostReadOutcomeOfError(error: unknown): keyof HostReadOutcome {
+  const pause = hostPauseInErrorChain(error);
+  if (pause) return pause.requestSent ? 'refused' : 'skipped';
+  if (THROTTLE_STATUSES.has((error as { status?: unknown } | null)?.status as number)) {
+    return 'refused';
+  }
+  return error instanceof HttpStatusError ? 'answered' : 'failed';
+}
+
 async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null> {
   const page = await fetchPageWithPolicy(url, {
     headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     timeoutMs: 10_000,
   });
-  return { url: page.url, html: page.html };
+  return {
+    url: page.url,
+    html: page.html,
+    ...(isReusedResponse(page) ? { reused: true as const } : {}),
+  };
 }
 
 function defaultFetchPage(url: string): Promise<FetchedDescriptionPage | null> {
@@ -415,6 +456,7 @@ interface LaneCounts {
   noReadablePage: number;
   keptAfterTransientFailure: number;
   throttledRowsByHost: Map<string, Set<string>>;
+  hostReadOutcomes: HostReadOutcomes;
   contentUnchanged: number;
   charsStored: number;
 }
@@ -461,10 +503,12 @@ export class ResearchPageTextScraper implements IScraper {
     row: CandidateDescriptionLab,
     ctx: ScraperContext,
     transientFailures: TransientPageFailure[],
+    hostOutcomes?: HostReadOutcomes,
   ) {
     try {
       const page = await this.fetchPage(url);
       if (!page?.html) return null;
+      if (!isReusedResponse(page)) recordHostReadOutcome(hostOutcomes, pageHost(url), 'answered');
       if (capturedPageLeftTheRequestedPersonProfile(url, page, row)) {
         ctx.log(
           `[${row.slug || 'candidate'}] research page refused: profile landed off the subject`,
@@ -473,6 +517,11 @@ export class ResearchPageTextScraper implements IScraper {
       }
       return personProfileSourceMatchesEntity(page.url, row) ? page : null;
     } catch (error) {
+      recordHostReadOutcome(
+        hostOutcomes,
+        hostPauseInErrorChain(error)?.pause.host ?? pageHost(url),
+        hostReadOutcomeOfError(error),
+      );
       if (isTransientFetchFailure(error)) {
         const throttled = isThrottle(error);
         const pause = hostPauseInErrorChain(error)?.pause;
@@ -498,6 +547,7 @@ export class ResearchPageTextScraper implements IScraper {
     ctx: ScraperContext,
     citerCounts: ReadonlyMap<string, number> = new Map(),
     transientFailures: TransientPageFailure[] = [],
+    hostOutcomes?: HostReadOutcomes,
   ): Promise<FetchedDescriptionPage[]> {
     const cited = citedResearchPageUrls(row, citerCounts);
     const labSiteUrl = cited.find((url) => !isPersonProfileUrl(url));
@@ -505,7 +555,7 @@ export class ResearchPageTextScraper implements IScraper {
     const read = async (url: string): Promise<FetchedDescriptionPage | null> => {
       if (pages.length >= MAX_PAGES_PER_ROW) return null;
       if (pages.some((page) => page.url === url)) return null;
-      const page = await this.tryFetch(url, row, ctx, transientFailures);
+      const page = await this.tryFetch(url, row, ctx, transientFailures, hostOutcomes);
       if (!page || pages.some((fetched) => fetched.url === page.url)) return null;
       pages.push(page);
       return page;
@@ -537,7 +587,13 @@ export class ResearchPageTextScraper implements IScraper {
     citerCounts: ReadonlyMap<string, number>,
   ): Promise<RowOutcome> {
     const transientFailures: TransientPageFailure[] = [];
-    const fetched = await this.readCitedResearchPages(row, ctx, citerCounts, transientFailures);
+    const fetched = await this.readCitedResearchPages(
+      row,
+      ctx,
+      citerCounts,
+      transientFailures,
+      counts.hostReadOutcomes,
+    );
     const entityRef: ContentHashEntityRef = {
       entityType: 'researchEntity',
       entityId: serializedDocumentId(row._id) || undefined,
@@ -618,6 +674,7 @@ export class ResearchPageTextScraper implements IScraper {
       noReadablePage: 0,
       keptAfterTransientFailure: 0,
       throttledRowsByHost: new Map(),
+      hostReadOutcomes: new Map(),
       contentUnchanged: 0,
       charsStored: 0,
     };
@@ -713,7 +770,13 @@ export class ResearchPageTextScraper implements IScraper {
         (throttledNote ? ` Throttled rows, by host: ${throttledNote}.` : '') +
         (deferredNote ? ` Deferred, by host: ${deferredNote}.` : '') +
         (pausesMet ? ` Paused hosts: ${pausesMet}.` : ''),
-      metrics: { throttledRowsByHost, deferredRowsByHost },
+      metrics: {
+        throttledRowsByHost,
+        deferredRowsByHost,
+        hostReadOutcomes: Object.fromEntries(
+          [...counts.hostReadOutcomes].sort(([hostA], [hostB]) => hostA.localeCompare(hostB)),
+        ),
+      },
     };
   }
 }
