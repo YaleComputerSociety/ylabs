@@ -23,6 +23,7 @@ import {
   type ResearchPageTextEntry,
 } from './utils/researchPageText';
 import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
+import { ownOrgUnitLabelsFromObservations } from './utils/ownOrgUnitLabelTopics';
 
 export const RESEARCH_PAGE_TOPICS_MODEL = 'gpt-5-mini';
 export const RESEARCH_PAGE_TOPICS_DERIVED_CONFIDENCE = 0.85;
@@ -165,9 +166,10 @@ export async function researchPageTopicsStateFor(
   const currentTextHash = researchPageTextHash(pages);
   if (pages.length === 0) return { currentTextHash };
   const inputHash = researchTopicsDerivationInputHash(pages);
+  const ownOrgUnitLabels = ownOrgUnitLabelsFromObservations(observations);
   const derivation = await lookup(inputHash);
   if (derivation && derivation.inputHash === inputHash) {
-    const candidate = quotedCandidateFrom(derivation, pages, current, {
+    const candidate = quotedCandidateFrom(derivation, pages, current, ownOrgUnitLabels, {
       derivationInputHash: inputHash,
       derivationTextHash: currentTextHash,
     });
@@ -179,7 +181,7 @@ export async function researchPageTopicsStateFor(
   if (!storedReading || storedReading.inputHash !== stored.derivationInputHash) {
     return { currentTextHash };
   }
-  const candidate = quotedCandidateFrom(storedReading, pages, current, stored);
+  const candidate = quotedCandidateFrom(storedReading, pages, current, ownOrgUnitLabels, stored);
   return candidate
     ? { currentTextHash, candidate, revalidatesStoredList: true }
     : { currentTextHash };
@@ -204,11 +206,13 @@ function quotedCandidateFrom(
   derivation: StoredResearchTopicsDerivation,
   pages: readonly ResearchPageTextEntry[],
   current: ResearchPageTextObservationLike,
+  ownOrgUnitLabels: readonly string[],
   hashes: DerivationHashes,
 ): DerivedResearchAreaCandidate | undefined {
   const result = derivePageQuotedResearchTopics(
     { topics: derivation.extractedTopics ?? [], field: derivation.extractedField ?? null },
     pages,
+    ownOrgUnitLabels,
   );
   if (result.topics.length === 0) return undefined;
   return {
