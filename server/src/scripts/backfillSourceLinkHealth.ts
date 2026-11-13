@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
+import { isOnExcludedHost, normalizeExcludedHost } from '../utils/excludedHosts';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -35,8 +36,6 @@ import {
   storedSourceLinkHealthByUrl,
   isStoredUnresolvableVerdict,
   tallySourceLinkVerdictTransition,
-  isOnExcludedHost,
-  normalizeExcludedHost,
   type SourceLinkVerdictTransitionSample,
   type StoredSourceLinkHealthEntry,
   needsRecheckSince,
@@ -451,8 +450,11 @@ export async function runSourceLinkHealthBackfill(options: {
   resolverControlProbe?: ResolverControlProbe;
   hostThrottleFor?: (host: string) => HostThrottle | undefined;
 }): Promise<SourceLinkHealthBackfillResult> {
-  const checkLink = options.checkLink ?? checkSourceLinkHealth;
   const excludeHosts = (options.excludeHosts ?? []).map(normalizeExcludedHost).filter(Boolean);
+  const checkLink =
+    options.checkLink ??
+    ((url: string, requestGate?: HostSlotLimiter) =>
+      checkSourceLinkHealth(url, requestGate, { excludedHosts: excludeHosts }));
   const hostConcurrency = options.hostConcurrency ?? DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY;
   const paceDelayMs = options.paceDelayMs ?? DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS;
   const sleep =
@@ -685,6 +687,12 @@ export async function runSourceLinkHealthBackfill(options: {
           const health =
             probedHealth && httpsSpellingUrl ? { ...probedHealth, httpsSpellingUrl } : probedHealth;
           const carriedEntry = carried.get(url);
+          if (health?.excludedHost) {
+            result.excludedHostLinks += 1;
+            const stored = storedByUrl.get(url);
+            if (stored) sourceLinkHealth.push(carryForwardSourceLinkHealthEntry(url, stored));
+            continue;
+          }
           if (!health && carriedEntry) {
             if (!excluded.has(url)) result.carriedFreshHealthy += 1;
             result.byStatus[carriedEntry.healthStatus] =

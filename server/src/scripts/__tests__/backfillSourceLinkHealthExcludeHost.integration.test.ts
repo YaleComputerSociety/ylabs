@@ -101,6 +101,29 @@ describe('source-link-health --exclude-host', () => {
     });
   }, 120000);
 
+  it('carries a stored verdict untouched when a link on another host redirects into the excluded one', async () => {
+    const seen: string[] = [];
+    const result = await runSourceLinkHealthBackfill({
+      dryRun: false,
+      reprobeHealthyAfterDays: 7,
+      excludeHosts: ['banned.example.edu'],
+      checkLink: async (url: string) => {
+        seen.push(url);
+        return url === OPEN_SITE
+          ? { healthStatus: 'UNKNOWN' as const, excludedHost: true as const }
+          : { healthStatus: 'HEALTHY' as const, httpStatusCode: 200 };
+      },
+      paceDelayMs: 0,
+    });
+
+    expect(seen).toEqual([OPEN_SITE]);
+    expect(result.excludedHostLinks).toBe(3);
+    const open = (await storedHealthOf('fixture-excluded-host')).find((e) => e.url === OPEN_SITE);
+    expect(open).toMatchObject({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
+    expect((open?.checkedAt as Date).getTime()).toBe(STORED_CHECKED_AT.getTime());
+    expect(open).not.toHaveProperty('lastAttemptedAt');
+  }, 120000);
+
   it('fetches every host when nothing is excluded', async () => {
     const { seen, checkLink } = failingCheckLink();
     const result = await runSourceLinkHealthBackfill({

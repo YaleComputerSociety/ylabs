@@ -573,27 +573,3 @@ export function tallySourceLinkVerdictTransition(
     });
   }
 }
-
-/**
- * A host this run must not fetch at all, for example one whose flood control has
- * banned this machine, where each retry can extend the ban. `www.` and subdomains of
- * an excluded host are excluded with it.
- */
-export function normalizeExcludedHost(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/^www\./, '')
-    .replace(/\.$/, '');
-}
-
-export function isOnExcludedHost(url: string, excludedHosts: readonly string[]): boolean {
-  if (excludedHosts.length === 0) return false;
-  let host: string;
-  try {
-    host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
-  } catch {
-    return false;
-  }
-  return excludedHosts.some((excluded) => host === excluded || host.endsWith(`.${excluded}`));
-}

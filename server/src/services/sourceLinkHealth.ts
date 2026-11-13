@@ -13,6 +13,12 @@ import {
   type SourceLinkHealthStatus,
 } from '../models/storedVocabularies';
 import { TLS_VERIFICATION_ERROR_CODES } from '../utils/tlsVerificationErrors';
+import {
+  EXCLUDED_HOST_ERROR_CODE,
+  excludedHostRedirectError,
+  isExcludedHostname,
+  isExcludedHostRedirectError,
+} from '../utils/excludedHosts';
 import { normalizeWebsiteUrlIdentityKey } from '../utils/websiteUrlIdentityKey';
 
 export { sourceLinkHealthStatuses, type SourceLinkHealthStatus };
@@ -58,6 +64,11 @@ export interface SourceLinkHealth {
    */
   landedOnRequestedResource?: true;
   /**
+   * The probe stopped before contacting an excluded host (a redirect led into one), so
+   * it observed nothing and its caller must carry the stored verdict forward.
+   */
+  excludedHost?: true;
+  /**
    * The live page the host's own redirects landed on, when it names a different page
    * identity than the requested URL (another host, another path, not just a scheme,
    * `www.`, letter case, slash or default-document spelling). Set only on a `HEALTHY` verdict. It is
@@ -78,6 +89,7 @@ export interface SourceLinkProbeResult {
   retryAfterMs?: number;
   privateAddressHost?: boolean;
   publicAddressHost?: boolean;
+  excludedHost?: true;
 }
 
 /**
@@ -340,6 +352,7 @@ export function redirectLandingOf(
 }
 
 export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
+  if (probe.excludedHost) return { healthStatus: 'UNKNOWN', excludedHost: true };
   const verdict = classifyProbeOutcome(probe);
   const healthy = verdict.healthStatus === 'HEALTHY';
   const httpsLandingUrl = healthy ? httpsLandingOf(probe.requestedUrl, probe.finalUrl) : undefined;
@@ -566,10 +579,17 @@ async function probeResultForBlockedUrl(
     : { errorCode, privateAddressHost: true };
 }
 
+export interface SourceLinkProbeOptions {
+  /** Hosts never to contact, including as a redirect target (HOLD-style host bans). */
+  excludedHosts?: readonly string[];
+}
+
 export async function probeSourceLink(
   url: string,
   requestGate?: HostSlotLimiter,
+  probeOptions: SourceLinkProbeOptions = {},
 ): Promise<SourceLinkProbeResult> {
+  const excludedHosts = probeOptions.excludedHosts ?? [];
   let safeUrl: URL;
   try {
     safeUrl = await assertPublicHttpUrl(url);
@@ -578,6 +598,9 @@ export async function probeSourceLink(
   }
 
   const requestedUrl = safeUrl.toString();
+  if (isExcludedHostname(safeUrl.hostname, excludedHosts)) {
+    return { errorCode: EXCLUDED_HOST_ERROR_CODE, requestedUrl, excludedHost: true };
+  }
   const agents = ssrfSafeAgents();
   let redirectStatuses: number[] = [];
   const request = (method: 'HEAD' | 'GET') => {
@@ -587,7 +610,12 @@ export async function probeSourceLink(
         url: requestedUrl,
         method,
         maxRedirects: 5,
-        beforeRedirect: (_options, responseDetails) => {
+        beforeRedirect: (redirectOptions, responseDetails) => {
+          if (
+            isExcludedHostname((redirectOptions as { hostname?: string })?.hostname, excludedHosts)
+          ) {
+            throw excludedHostRedirectError();
+          }
           redirectStatuses.push(Number(responseDetails?.statusCode));
         },
         timeout: PROBE_TIMEOUT_MS,
@@ -642,6 +670,9 @@ export async function probeSourceLink(
       };
     } catch (error) {
       const code = (error as { code?: unknown })?.code;
+      if (isExcludedHostRedirectError(error)) {
+        return { errorCode: EXCLUDED_HOST_ERROR_CODE, requestedUrl, excludedHost: true };
+      }
       void sanitizeLogValue(error);
       return {
         errorCode: typeof code === 'string' ? code : 'ERR_REQUEST_FAILED',
@@ -673,8 +704,9 @@ export async function probeSourceLink(
 export async function checkSourceLinkHealth(
   url: string,
   requestGate?: HostSlotLimiter,
+  probeOptions?: SourceLinkProbeOptions,
 ): Promise<SourceLinkHealth> {
-  return classifySourceLinkHealth(await probeSourceLink(url, requestGate));
+  return classifySourceLinkHealth(await probeSourceLink(url, requestGate, probeOptions));
 }
 
 /**

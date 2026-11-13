@@ -186,6 +186,55 @@ describe('probeSourceLink', () => {
     expect(requestMock).not.toHaveBeenCalled();
   });
 
+  const redirectingInto = (hostname: string) =>
+    requestMock.mockImplementation(
+      async (config: {
+        beforeRedirect?: (
+          options: { hostname: string; protocol: string },
+          details: { statusCode: number },
+        ) => void;
+      }) => {
+        try {
+          config.beforeRedirect?.({ hostname, protocol: 'https:' }, { statusCode: 301 });
+        } catch (hookError) {
+          throw Object.assign(new Error('Redirected request failed'), {
+            code: 'ERR_FR_REDIRECTION_FAILURE',
+            cause: Object.assign(new Error('Redirected request failed'), {
+              code: 'ERR_FR_REDIRECTION_FAILURE',
+              cause: hookError,
+            }),
+          });
+        }
+        return { status: 200, headers: {}, data: undefined };
+      },
+    );
+
+  it('never follows a redirect into an excluded host and reports the probe as not observed', async () => {
+    redirectingInto('economics.example.edu');
+    const probe = await probeSourceLink('https://alias.example.edu/econ', undefined, {
+      excludedHosts: ['economics.example.edu'],
+    });
+    expect(probe).toMatchObject({ errorCode: 'ERR_EXCLUDED_HOST', excludedHost: true });
+    expect(classifySourceLinkHealth(probe)).toEqual({
+      healthStatus: 'UNKNOWN',
+      excludedHost: true,
+    });
+  });
+
+  it('follows the same redirect when the host is not excluded', async () => {
+    redirectingInto('economics.example.edu');
+    const probe = await probeSourceLink('https://alias.example.edu/econ');
+    expect(probe.status).toBe(200);
+  });
+
+  it('never requests a URL that starts on an excluded host', async () => {
+    const probe = await probeSourceLink('https://www.economics.example.edu./x', undefined, {
+      excludedHosts: ['economics.example.edu'],
+    });
+    expect(probe.excludedHost).toBe(true);
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
   it('never asks public DNS about a refusal that is not a private address', async () => {
     blockedWith('resolver-failure');
     await probeSourceLink('https://slow-dns.example.edu/profile');
