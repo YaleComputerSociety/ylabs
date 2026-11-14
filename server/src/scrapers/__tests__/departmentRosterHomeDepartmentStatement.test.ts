@@ -10,7 +10,11 @@ import {
   type DeptConfig,
   type FacultyEntry,
 } from '../sources/departmentRosterScraper';
-import type { OrgUnitCanonicalizer } from '../orgUnitCanonicalization';
+import {
+  buildOrgUnitResolverIndex,
+  createOrgUnitCanonicalizer,
+  type OrgUnitCanonicalizer,
+} from '../orgUnitCanonicalization';
 import {
   rosterHomeDepartmentStatement,
   type RosterTitleUnit,
@@ -61,7 +65,7 @@ describe('a department roster files its own department as primary only without c
         kind: 'section',
         value: 'Digestive Diseases',
       }),
-    ).toEqual({ kind: 'assert', value: 'Digestive Diseases', section: true });
+    ).toEqual({ kind: 'assert', value: 'Digestive Diseases' });
   });
 
   it('withholds the parent when the catalog places the unit outside the roster department', () => {
@@ -222,6 +226,29 @@ describe('the roster lane emits the home department through that statement (#627
       'Internal Medicine',
       'Internal Medicine',
     ]);
+    expect(loader).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps asserting a non-unit note read against a catalog with no department rows', async () => {
+    const schoolsOnly = createOrgUnitCanonicalizer(
+      buildOrgUnitResolverIndex([
+        { slug: 'fixture-school', name: 'Fixture School of Medicine', kind: 'SCHOOL' },
+      ]),
+    );
+    const { emitted, loader } = await run(
+      [
+        config('fixture-medicine', 'Internal Medicine', [
+          {
+            name: 'Avery Fixture',
+            email: 'avery.fixture@yale.edu',
+            title: 'Professor of Medicine (On Leave Fall 2026)',
+          },
+        ]),
+      ],
+      schoolsOnly,
+    );
+
+    expect(primaryDepartments(emitted)).toEqual(['Internal Medicine']);
     expect(loader).toHaveBeenCalledTimes(1);
   });
 });

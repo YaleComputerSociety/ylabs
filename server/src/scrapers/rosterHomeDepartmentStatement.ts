@@ -12,7 +12,7 @@ export type RosterTitleUnit =
   { kind: 'section'; value: string } | { kind: 'other-unit' } | { kind: 'not-a-unit' };
 
 export type RosterHomeDepartmentStatement =
-  | { kind: 'assert'; value: string; section?: true }
+  | { kind: 'assert'; value: string }
   | { kind: 'withhold'; reason: RosterHomeDepartmentWithholding };
 
 const APPOINTMENT_MARKERS: ReadonlyArray<[RegExp, RosterHomeDepartmentWithholding]> = [
@@ -114,7 +114,7 @@ export function rosterHomeDepartmentStatement(input: {
   }
   const parenthetical = rosterTitleSectionParenthetical(title, input.deptName);
   const unit = parenthetical && input.classifyUnit ? input.classifyUnit(parenthetical) : undefined;
-  if (unit?.kind === 'section') return { kind: 'assert', value: unit.value, section: true };
+  if (unit?.kind === 'section') return { kind: 'assert', value: unit.value };
   if (unit?.kind === 'other-unit')
     return { kind: 'withhold', reason: 'unit-outside-this-department' };
   return { kind: 'assert', value: input.deptName };
