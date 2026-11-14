@@ -11,6 +11,7 @@ export type DeadLabHomeVerdict =
   | 'live-not-in-index'
   | 'address-refused'
   | 'not-confirmed-gone'
+  | 'awaiting-confirmation'
   | 'clear';
 
 export const SSRF_REFUSED_PROBE = 'ssrf-refused' as const;
@@ -38,20 +39,27 @@ export function labSegment(url: unknown): string {
  * are School of Public Health labs on the `medicine.yale.edu` host (#2626). So a
  * missing segment never condemns a row on its own; only a 404 or 410 does. A
  * timeout, a throttle or a host pause observed nothing about the page (#6258).
+ *
+ * One 404 is not enough either: clearing a home is a removal, so the probe must agree
+ * with a stored gone verdict for the same URL (#4729, #6264). A host-level failure never
+ * clears here, because every URL this script reads sits on one school host, so a failed
+ * lookup or connection describes that host rather than one lab.
  */
 export function classifyLabHome(
   entity: DeadLabHomeCandidate,
   indexSegments: ReadonlySet<string>,
   httpStatus: LabHomeProbeStatus,
+  storedVerdictAgrees = false,
 ): DeadLabHomeVerdict {
   const segment = labSegment(entity.websiteUrl);
   if (!segment) return 'not-a-ysm-lab-url';
   if (indexSegments.has(segment)) return 'in-index';
   if (httpStatus === 200) return 'live-not-in-index';
   if (httpStatus === SSRF_REFUSED_PROBE) return 'address-refused';
-  return typeof httpStatus === 'number' && GONE_HTTP_STATUS_CODES.has(httpStatus)
-    ? 'clear'
-    : 'not-confirmed-gone';
+  if (typeof httpStatus !== 'number' || !GONE_HTTP_STATUS_CODES.has(httpStatus)) {
+    return 'not-confirmed-gone';
+  }
+  return storedVerdictAgrees ? 'clear' : 'awaiting-confirmation';
 }
 
 /**

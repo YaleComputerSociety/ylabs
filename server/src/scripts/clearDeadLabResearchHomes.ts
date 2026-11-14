@@ -23,6 +23,8 @@ import {
 } from './clearDeadLabResearchHomesCore';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import { isSsrfGuardRefusal } from '../utils/ssrfGuard';
+import { findSourceLinkHealth } from '../services/sourceLinkHealth';
+import { RemovalsByHost, removalConfirmation } from '../services/sourceLinkRemovalConfirmation';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 dotenv.config({ quiet: true });
@@ -99,7 +101,7 @@ async function main() {
     archived: { $ne: true },
     websiteUrl: { $regex: YSM_LAB_HOME },
   })
-    .select('_id slug name entityType studentVisibilityTier websiteUrl sourceUrls')
+    .select('_id slug name entityType studentVisibilityTier websiteUrl sourceUrls sourceLinkHealth')
     .lean();
 
   const rows: Array<{
@@ -108,6 +110,7 @@ async function main() {
     entityType?: string;
     studentVisibilityTier?: string;
     segment: string;
+    websiteUrl: string;
     httpStatus?: LabHomeProbeStatus;
     verdict: DeadLabHomeVerdict;
   }> = [];
@@ -116,6 +119,13 @@ async function main() {
     const segment = labSegment(entity.websiteUrl);
     const needsProbe = !indexSegments.has(segment);
     const status = needsProbe ? await httpStatus(String(entity.websiteUrl)) : undefined;
+    const storedVerdictAgrees =
+      typeof status === 'number' &&
+      removalConfirmation(
+        findSourceLinkHealth(entity.sourceLinkHealth, String(entity.websiteUrl)),
+        { healthStatus: 'UNAVAILABLE', httpStatusCode: status },
+        new Date(),
+      ).confirmed;
     const entityId = serializedDocumentId(entity._id);
     if (!entityId) continue;
     rows.push({
@@ -124,12 +134,15 @@ async function main() {
       entityType: entity.entityType,
       studentVisibilityTier: entity.studentVisibilityTier,
       segment,
+      websiteUrl: String(entity.websiteUrl),
       httpStatus: status,
-      verdict: classifyLabHome(entity, indexSegments, status),
+      verdict: classifyLabHome(entity, indexSegments, status, storedVerdictAgrees),
     });
   }
 
   const toClear = rows.filter((row) => row.verdict === 'clear');
+  const clearedByHost = new RemovalsByHost();
+  for (const row of toClear) clearedByHost.record(row.websiteUrl, 'gone-status');
 
   if (args.apply) {
     if (!args.confirm) {
@@ -174,6 +187,8 @@ async function main() {
     liveNotInIndex: tally('live-not-in-index'),
     addressRefused: tally('address-refused'),
     notConfirmedGone: tally('not-confirmed-gone'),
+    awaitingConfirmation: tally('awaiting-confirmation'),
+    clearedByHost: clearedByHost.toReport(),
     plannedClears: toClear.length,
     plannedClearsServed: toClear.filter((row) => row.studentVisibilityTier === 'student_ready')
       .length,
