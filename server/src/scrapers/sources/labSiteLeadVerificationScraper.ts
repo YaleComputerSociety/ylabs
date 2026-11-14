@@ -217,6 +217,15 @@ interface LabSiteReading {
   partialRead?: true;
 }
 
+function unreadLanding(httpStatusCode: number | undefined): LabSiteReading {
+  return {
+    html: '',
+    visitedUrls: [],
+    httpStatusCode,
+    ...(isGoneHttpStatus(httpStatusCode) ? {} : { partialRead: true as const }),
+  };
+}
+
 /**
  * Reads the research home plus a bounded set of its own people pages. A YSM lab
  * landing page usually does NOT name its PI - the members page does - so reading
@@ -233,9 +242,9 @@ export async function readLabSite(
   } catch (error) {
     if (isNotObserved(error)) return { html: '', visitedUrls: [], notObserved: true };
     const status = (error as { response?: { status?: number } })?.response?.status;
-    return status ? { html: '', visitedUrls: [], httpStatusCode: status } : null;
+    return status ? unreadLanding(status) : null;
   }
-  if (!landing.html) return { html: '', visitedUrls: [], httpStatusCode: landing.httpStatusCode };
+  if (!landing.html) return unreadLanding(landing.httpStatusCode);
   const pages = [landing];
   let partialRead = false;
   for (const subpageUrl of peopleSubpageUrls(landing.html, landing.finalUrl, MAX_PEOPLE_SUBPAGES)) {
@@ -359,7 +368,7 @@ export class LabSiteLeadVerificationScraper implements IScraper {
             )
           : unreachableLabSiteVerification(candidate.website, observedAt, reading?.httpStatusCode);
       if (
-        reading?.partialRead &&
+        (!reading || reading.partialRead) &&
         partialReadWouldDowngrade(verification.state, candidate.storedState)
       ) {
         heldPartialRead += 1;

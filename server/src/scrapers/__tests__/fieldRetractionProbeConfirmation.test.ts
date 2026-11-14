@@ -59,6 +59,25 @@ describe('the retraction probe confirms a lane absence only with a second observ
     });
   });
 
+  it('retracts when the page now answers by landing on its own host root', async () => {
+    probeMock.mockResolvedValue({
+      status: 200,
+      requestedUrl: URL,
+      finalUrl: 'https://lapsed.example.edu/',
+    });
+    expect(await probeRetractionValueLiveness(URL, { now: NOW })).toEqual({
+      positivelyDead: true,
+      basis: 'address-no-longer-serves',
+    });
+  });
+
+  it('withholds the retraction while the page itself still answers', async () => {
+    probeMock.mockResolvedValue({ status: 200, requestedUrl: URL, finalUrl: URL });
+    expect(await probeRetractionValueLiveness(URL, { now: NOW })).toEqual({
+      positivelyDead: false,
+    });
+  });
+
   it('no longer retracts on a single DNS negative with no stored host-level verdict', async () => {
     probeMock.mockResolvedValue({ errorCode: 'ENOTFOUND', requestedUrl: URL });
     expect(await probeRetractionValueLiveness(URL, { now: NOW })).toEqual({

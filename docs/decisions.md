@@ -46,7 +46,7 @@ The last two need a stored gone verdict plus an agreeing probe, so a single `404
 The YSE faculty-directory lab-website removal already met the contract: its `assertsNoValueFor` is a lane read, and field retraction needs two such reads plus the probe above before anything clears.
 The single probe there only withdraws the row's lab identity, which stays fail-closed because link health drops the dead verdict once the row stops citing the URL, and waiting would re-mint the lab (#3452).
 The YSM faculty-directory removal is a read of an empty lab slot, so it was never a probe-only removal.
-`lab-site-lead-verification` treats a read whose members page answered a status other than `404` or `410` as partial, and a partial read may raise a stored lead verdict but never lower it (`partialReadWouldDowngrade`), the rule `lab-site-undergrad-invitation` already applies.
+`lab-site-lead-verification` treats a read whose landing page or members page answered a status other than `404` or `410`, or whose landing host failed at the host level, as partial, and a partial read may raise a stored lead verdict but never lower it (`partialReadWouldDowngrade`), the rule `lab-site-undergrad-invitation` already applies.
 `lanePageHealth`'s per-page withdrawal is unchanged and still needs a status on both observations.
 Measured on Development on 2026-11-14 before the change, no served value differed on any of these paths, so the change is preventive.
 It governs the first `lab-site-lead-verification` run after hold 3g (the 37 rows on #6258), the first per-lane field-retraction lift under hold 5, and the next run of each script.

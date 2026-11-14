@@ -1639,10 +1639,10 @@ export function citedAddressNoLongerServesTheResource(probe: SourceLinkProbeResu
 /**
  * The lane's own reads already found the value absent, so a probe here is the second of
  * the two observations a removal needs (#4729). `UNKNOWN` covers a throttle, a timeout and
- * a TLS failure, all of which mean a server may well be serving the page (#2751). A `404`
- * or `410` confirms on its own; a host-level failure confirms only against a stored
- * host-level verdict of the same class at least six hours older, because one bad minute
- * on a host must not retire a value (#6264).
+ * a TLS failure, all of which mean a server may well be serving the page (#2751). A `404`,
+ * a `410`, or an answer that lands away from the requested page confirms on its own; a
+ * host-level failure confirms only against a stored host-level verdict of the same class
+ * at least six hours older, because one bad minute on a host must not retire a value (#6264).
  */
 export async function probeRetractionValueLiveness(
   value: string,
@@ -1655,9 +1655,12 @@ export async function probeRetractionValueLiveness(
   const health = classifySourceLinkHealth(probe);
   if (health.healthStatus !== 'UNAVAILABLE') return { positivelyDead: false };
   if (typeof health.httpStatusCode === 'number') {
-    return RESOURCE_GONE_HTTP_STATUS_CODES.has(health.httpStatusCode)
-      ? { positivelyDead: true, basis: 'gone-status' }
-      : { positivelyDead: false };
+    return {
+      positivelyDead: true,
+      basis: RESOURCE_GONE_HTTP_STATUS_CODES.has(health.httpStatusCode)
+        ? 'gone-status'
+        : 'address-no-longer-serves',
+    };
   }
   const confirmation = removalConfirmation(
     findSourceLinkHealth(context.storedHealth, value),

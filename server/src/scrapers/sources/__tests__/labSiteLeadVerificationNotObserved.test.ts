@@ -43,10 +43,10 @@ async function runWithSubpageError(error: unknown, storedState?: string) {
   return { emitted, result };
 }
 
-async function runWithFetchError(error: unknown) {
+async function runWithFetchError(error: unknown, storedState?: string) {
   const emitted: ObservationInput[] = [];
   const scraper = new LabSiteLeadVerificationScraper(
-    async () => [CANDIDATE],
+    async () => [{ ...CANDIDATE, ...(storedState ? { storedState } : {}) }],
     (website, useCache) =>
       readLabSite(website, useCache, async () => {
         throw error;
@@ -151,6 +151,34 @@ describe('a partial read never lowers a stored lead verdict (#6264)', () => {
 
     expect(emitted).toHaveLength(1);
     expect(result.notes).toContain('heldPartialRead=0');
+  });
+
+  it.each([
+    ['a throttled landing page', throttled],
+    [
+      'a landing host with no DNS record',
+      Object.assign(new Error('getaddrinfo ENOTFOUND lab.example.edu'), { code: 'ENOTFOUND' }),
+    ],
+    [
+      'a landing host that refused the connection',
+      Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+    ],
+  ])('holds a stored verified verdict when %s left nothing read', async (_label, error) => {
+    const { emitted, result } = await runWithFetchError(error, 'verified');
+
+    expect(emitted).toEqual([]);
+    expect(result.notes).toContain('heldPartialRead=1');
+  });
+
+  it('lets a landing page that answered 410 lower the stored verdict', async () => {
+    const gone = Object.assign(new Error('Request failed with status code 410'), {
+      response: { status: 410 },
+    });
+
+    const { emitted } = await runWithFetchError(gone, 'verified');
+
+    expect(emitted).toHaveLength(1);
+    expect((emitted[0].value as { state: string }).state).toBe('unreachable');
   });
 
   it.each([
