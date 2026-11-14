@@ -708,7 +708,7 @@ describe('withholdSoleHolderRetractionsThatStillAnswer (#3135)', () => {
 });
 
 describe('citedAddressNoLongerServesTheResource (#3135)', () => {
-  it('permits retraction when a lapsed domain redirect-loops, which a 200 check would protect', () => {
+  it('permits retraction on a redirect loop, because the host answered every hop (#3135)', () => {
     expect(citedAddressNoLongerServesTheResource({ errorCode: 'ERR_FR_TOO_MANY_REDIRECTS' })).toBe(
       true,
     );

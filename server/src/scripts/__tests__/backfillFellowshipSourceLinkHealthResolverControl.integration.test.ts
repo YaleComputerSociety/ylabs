@@ -105,4 +105,67 @@ describe('program source-link-health resolver breaker (#4882)', () => {
       knownUnresolvableFailuresIgnored: HOSTS,
     });
   }, 120000);
+  it('keeps a stored dead verdict when the new probe learned nothing (#6258)', async () => {
+    await seedPrograms('unresolvable');
+    const startedAt = new Date();
+    const result = await runFellowshipSourceLinkHealthBackfill({
+      dryRun: false,
+      checkLink: async () => ({ healthStatus: 'UNKNOWN' as const, excludedHost: true as const }),
+      paceDelayMs: 0,
+      sleep: async () => undefined,
+      resolverControlProbe: async () => ({ healthy: true, detail: 'control answered HTTP 200' }),
+    });
+    expect(result.preservedDecisive).toBe(HOSTS);
+    expect(result.updated).toBe(0);
+    expect(await countCheckedSince(startedAt)).toBe(0);
+    expect(
+      await Fellowship.countDocuments({ 'sourceLinkHealth.healthStatus': 'UNAVAILABLE' }),
+    ).toBe(HOSTS);
+  }, 120000);
+  it('does not let a failed certificate preserve a stored healthy verdict (#4080)', async () => {
+    await Fellowship.create(
+      Array.from({ length: 2 }, (_, i) => ({
+        title: `Example Program tls ${i}`,
+        sourceUrl: urlOf(i),
+        sourceLinkHealth: {
+          url: urlOf(i),
+          healthStatus: 'HEALTHY' as const,
+          checkedAt: new Date(Date.now() - DAY_MS),
+        },
+      })),
+    );
+
+    const result = await runFellowshipSourceLinkHealthBackfill({
+      dryRun: false,
+      checkLink: async () => ({
+        healthStatus: 'UNKNOWN' as const,
+        tlsVerificationFailed: true,
+      }),
+      paceDelayMs: 0,
+      sleep: async () => undefined,
+      resolverControlProbe: async () => ({ healthy: true, detail: 'control answered HTTP 200' }),
+    });
+
+    expect(result.preservedDecisive).toBe(0);
+    expect(result.updated).toBe(2);
+    expect(await Fellowship.countDocuments({ 'sourceLinkHealth.healthStatus': 'HEALTHY' })).toBe(0);
+  }, 120000);
+
+  it('keeps a stored dead verdict even when the certificate failed, since it is not contradicted', async () => {
+    await seedPrograms('unresolvable');
+
+    const result = await runFellowshipSourceLinkHealthBackfill({
+      dryRun: false,
+      checkLink: async () => ({
+        healthStatus: 'UNKNOWN' as const,
+        tlsVerificationFailed: true,
+      }),
+      paceDelayMs: 0,
+      sleep: async () => undefined,
+      resolverControlProbe: async () => ({ healthy: true, detail: 'control answered HTTP 200' }),
+    });
+
+    expect(result.preservedDecisive).toBe(HOSTS);
+    expect(result.updated).toBe(0);
+  }, 120000);
 });

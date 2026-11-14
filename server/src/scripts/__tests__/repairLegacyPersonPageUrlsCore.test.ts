@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isAdoptableProbe,
+  originalProbeKeepReason,
   pageTitleNamesPerson,
   personNameTokens,
   planLegacyPersonPageCandidates,
@@ -233,4 +234,21 @@ describe('isAdoptableProbe', () => {
       ),
     ).toBe(false);
   });
+});
+
+describe('originalProbeKeepReason (#6258)', () => {
+  it.each([404, 410])('lets a %s original be replaced', (status) => {
+    expect(originalProbeKeepReason(status)).toBeUndefined();
+  });
+
+  it.each([200, 301])('keeps an original that still answers %s', (status) => {
+    expect(originalProbeKeepReason(status)).toBe('original still resolves');
+  });
+
+  it.each([0, 403, 429, 500, 503])(
+    'keeps an original whose probe observed nothing about the page (%s)',
+    (status) => {
+      expect(originalProbeKeepReason(status)).toBe('original not confirmed gone');
+    },
+  );
 });

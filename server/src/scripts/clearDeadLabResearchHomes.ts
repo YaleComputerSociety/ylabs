@@ -173,6 +173,7 @@ async function main() {
     inIndex: tally('in-index'),
     liveNotInIndex: tally('live-not-in-index'),
     addressRefused: tally('address-refused'),
+    notConfirmedGone: tally('not-confirmed-gone'),
     plannedClears: toClear.length,
     plannedClearsServed: toClear.filter((row) => row.studentVisibilityTier === 'student_ready')
       .length,

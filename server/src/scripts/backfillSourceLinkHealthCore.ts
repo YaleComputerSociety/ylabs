@@ -412,6 +412,14 @@ function resolveConnectionFailure(
   };
 }
 
+export function storedVerdictSurvivesUnknownProbe(
+  fresh: { tlsVerificationFailed?: boolean },
+  stored: { healthStatus?: unknown } | undefined,
+): boolean {
+  if (!isDecisiveStoredVerdict(stored)) return false;
+  return !(fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY');
+}
+
 /**
  * A probe that never got an answer from the host: no HTTP status and no TLS
  * handshake to judge. That covers a host the SSRF guard refused as private (on the
@@ -501,12 +509,7 @@ export function resolveSourceLinkHealthEntry(
       preservedUnreachedVerdict: true,
     };
   }
-  if (!isDecisiveStoredVerdict(stored))
-    return { entry: freshEntry, preservedDecisiveVerdict: false };
-  // A certificate that fails verification contradicts a stored HEALTHY for this very
-  // URL, so that verdict is not preserved: it was written by a probe that never
-  // negotiated this spelling's TLS (#4080). A stored UNAVAILABLE still stands.
-  if (fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY')
+  if (!storedVerdictSurvivesUnknownProbe(fresh, stored))
     return { entry: freshEntry, preservedDecisiveVerdict: false };
 
   const kept = stored as StoredSourceLinkHealthEntry;

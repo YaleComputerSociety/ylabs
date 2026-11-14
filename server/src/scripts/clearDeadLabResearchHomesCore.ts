@@ -1,10 +1,17 @@
+import { GONE_HTTP_STATUS_CODES } from './deadWebsiteValueRefusalCore';
+
 export interface DeadLabHomeCandidate {
   websiteUrl?: unknown;
   sourceUrls?: unknown;
 }
 
 export type DeadLabHomeVerdict =
-  'not-a-ysm-lab-url' | 'in-index' | 'live-not-in-index' | 'address-refused' | 'clear';
+  | 'not-a-ysm-lab-url'
+  | 'in-index'
+  | 'live-not-in-index'
+  | 'address-refused'
+  | 'not-confirmed-gone'
+  | 'clear';
 
 export const SSRF_REFUSED_PROBE = 'ssrf-refused' as const;
 
@@ -29,8 +36,8 @@ export function labSegment(url: unknown): string {
  * Index membership is valid POSITIVE evidence and invalid negative evidence: two
  * sampled rows are live, correctly titled, and absent from the index because they
  * are School of Public Health labs on the `medicine.yale.edu` host (#2626). So a
- * missing segment never condemns a row on its own; only a failed liveness probe
- * does.
+ * missing segment never condemns a row on its own; only a 404 or 410 does. A
+ * timeout, a throttle or a host pause observed nothing about the page (#6258).
  */
 export function classifyLabHome(
   entity: DeadLabHomeCandidate,
@@ -42,7 +49,9 @@ export function classifyLabHome(
   if (indexSegments.has(segment)) return 'in-index';
   if (httpStatus === 200) return 'live-not-in-index';
   if (httpStatus === SSRF_REFUSED_PROBE) return 'address-refused';
-  return 'clear';
+  return typeof httpStatus === 'number' && GONE_HTTP_STATUS_CODES.has(httpStatus)
+    ? 'clear'
+    : 'not-confirmed-gone';
 }
 
 /**

@@ -295,7 +295,8 @@ Being unmirrored used to be the reason the refresh destroyed them, because the r
 
 `lab-site-lead-verification` emits one `leadVerification` value per row, holding a verdict for each lead, so a field-level gold label cannot say which lead it was right about.
 The scorecard therefore reports `leadVerification` on that lane's results: the count of rows per state, the count of leads per verdict, and `perLead`, one entry per judged lead with its row, person id, role, verdict, and match reason (#4941).
-A row the lane could not read judged nobody, so it adds to the `unreachable` row count and to no lead.
+A row the lane could not read judged nobody and adds to no lead.
+A page that answered with a status, or a host-level failure such as a name that does not resolve, counts in the `unreachable` row count, while a row whose fetch observed nothing is deferred and counted as `deferredNotObserved` instead (#6258).
 
 Precision is scored only against an owner's judgement of who leads each row, read from a filled owner ballot.
 Agent judgements are never read as labels, and neither are the lane's own verdicts, because a sample only an agent checked is not a measured precision.

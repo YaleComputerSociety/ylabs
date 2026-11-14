@@ -1,22 +1,5 @@
 import { DEFAULT_RETRYABLE_STATUSES, HttpStatusError } from './httpFetch';
-import { hostPauseInErrorChain } from './hostPause';
-
-const TRANSIENT_TRANSPORT_CODES: ReadonlySet<string> = new Set([
-  'ECONNABORTED',
-  'ETIMEDOUT',
-  'ECONNRESET',
-  'EPIPE',
-  'EAI_AGAIN',
-  'ERR_REQUEST_FAILED',
-]);
-
-const TRANSIENT_ERROR_NAMES: ReadonlySet<string> = new Set([
-  'DevWriteLeaseHeldError',
-  'DevWriteLeaseStoppedError',
-  'DevWriteLeaseTimeoutError',
-  'HostPausedError',
-  'HostPausedBudgetError',
-]);
+import { isNotObserved } from './notObserved';
 
 const responseStatus = (error: unknown): number | undefined => {
   if (error instanceof HttpStatusError) return error.status;
@@ -25,19 +8,16 @@ const responseStatus = (error: unknown): number | undefined => {
 };
 
 /**
- * Whether a fetch failed for a reason that says nothing about the page: a throttle or server
- * error that outlasted its retries, a timeout or dropped connection, or a Development host lease
- * another run holds. A 403 counts as passing because rate-based WAFs (medicine.yale.edu among them)
- * answer throttling with it. A page that answered 404 or 410, refused the connection, was
- * unreachable or refused TLS is gone rather than failing, because a later run would meet the same
- * refusal.
+ * Whether a fetch failed for a reason that says nothing about the page being gone: anything
+ * `isNotObserved` covers (a request our own code refused, a timeout, a dropped connection, a
+ * lease another run holds), or a throttle or server error that outlasted its retries. A 403
+ * counts as passing because rate-based WAFs answer throttling with it. A page that answered 404
+ * or 410, refused the connection, was unreachable or refused TLS is gone rather than failing,
+ * because a later run would meet the same refusal.
  */
 export function isTransientFetchFailure(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
-  if (TRANSIENT_ERROR_NAMES.has((error as Error).name)) return true;
-  if (hostPauseInErrorChain(error)) return true;
+  if (isNotObserved(error)) return true;
   const status = responseStatus(error);
-  if (status !== undefined) return DEFAULT_RETRYABLE_STATUSES.has(status);
-  const code = (error as { code?: unknown }).code;
-  return typeof code === 'string' && TRANSIENT_TRANSPORT_CODES.has(code);
+  return status !== undefined && DEFAULT_RETRYABLE_STATUSES.has(status);
 }

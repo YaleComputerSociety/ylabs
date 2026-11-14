@@ -9,6 +9,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   isAdoptableProbe,
+  originalProbeKeepReason,
   planLegacyPersonPageCandidates,
   type LegacyPersonPageCandidate,
 } from './repairLegacyPersonPageUrlsCore';
@@ -111,14 +112,15 @@ export async function loadPlannedRepairs(): Promise<PlannedRepair[]> {
       const original = await probe(candidate.deadUrl);
       await sleep(FETCH_DELAY_MS);
       originalStatus = original.status;
-      if (original.status >= 200 && original.status < 400) {
+      const keepReason = originalProbeKeepReason(original.status);
+      if (keepReason) {
         planned.push({
           ...candidate,
           originalStatus,
           probeStatus: 0,
           probeTitle: '',
           adopted: false,
-          skippedReason: 'original still resolves',
+          skippedReason: keepReason,
         });
         continue;
       }
@@ -215,7 +217,12 @@ async function main() {
     candidates: planned.length,
     adopted: adopted.length,
     refusedByTitleGate: refused.filter((entry) => !entry.skippedReason).length,
-    skippedOriginalStillResolves: refused.filter((entry) => entry.skippedReason).length,
+    skippedOriginalStillResolves: refused.filter(
+      (entry) => entry.skippedReason === 'original still resolves',
+    ).length,
+    skippedOriginalNotConfirmedGone: refused.filter(
+      (entry) => entry.skippedReason === 'original not confirmed gone',
+    ).length,
     plannedFromUnverifiedOriginal: planned.filter((e) => e.originalHealth === 'unverified').length,
     adoptedServedRows: new Set(
       adopted.filter((e) => e.studentVisibilityTier === 'student_ready').map((e) => e.entitySlug),
