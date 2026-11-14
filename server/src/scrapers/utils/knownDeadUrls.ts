@@ -30,6 +30,9 @@ export interface KnownDeadUrlStats {
    * The URLs this run itself found gone, as short hashes of `knownDeadUrlKey`, so consecutive
    * runs of a lane can be compared to count re-requests of a URL that was gone last time
    * (#6231) without storing the URLs. Capped at MAX_LEARNED_KEY_HASHES per run.
+   * The hashes are pseudonymous, not anonymous: anyone holding the URL list can re-identify
+   * them, and some are person profile pages, so they never go into an issue, a pull request
+   * or any other public text.
    */
   learnedKeyHashes: string[];
   learnedByStatus: Record<string, number>;

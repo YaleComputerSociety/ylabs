@@ -11,6 +11,7 @@ import {
   isKnownDeadUrl,
   knownDeadUrlKey,
   knownDeadUrlKeyHash,
+  rememberGoneUrl,
   withKnownDeadUrlFetchMetrics,
   withKnownDeadUrlScope,
   type StoredLinkVerdict,
@@ -199,6 +200,27 @@ describe('a run records the URLs it found gone (#6231)', () => {
       noStoredVerdicts,
     );
     expect(stats.learned).toBe(0);
+  });
+
+  it('records a 410 under its own status', async () => {
+    const { stats } = await withKnownDeadUrlScope(
+      () => fetchPageWithPolicy(LIVE, { ...base, request: answering(410) }).catch(() => undefined),
+      noStoredVerdicts,
+    );
+    expect(stats.learnedByStatus).toEqual({ '410': 1 });
+    expect(stats.learnedKeyHashes).toHaveLength(1);
+  });
+
+  it('caps the stored hashes at 5,000 a run but still counts every URL learned', async () => {
+    const { stats } = await withKnownDeadUrlScope(async () => {
+      for (let i = 0; i < 5001; i += 1) {
+        rememberGoneUrl(`https://fixture-dept.yale.edu/people/fixture-gone-${i}`, 404);
+      }
+    }, noStoredVerdicts);
+    expect(stats.learnedKeyHashes).toHaveLength(5000);
+    expect(stats.learnedKeyHashesTruncated).toBe(true);
+    expect(stats.learned).toBe(5001);
+    expect(stats.learnedByStatus).toEqual({ '404': 5001 });
   });
 
   it('keeps the stats on the run when it learned a URL but skipped none', () => {
