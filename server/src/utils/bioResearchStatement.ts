@@ -93,6 +93,19 @@ const CLINICAL_VOCABULARY =
 const STATES_INQUIRY =
   /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|quality\s+of\s+care|health\s+services|disparit(?:y|ies)|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?|biolog\w*|genes?|genetic\w*|genomic\w*|why|whether|engineer\w*|benchmark\w*|machine\s+learning|build(?:s|ing)?\s+(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|software|robots?|systems?|platforms?)|software|robot\w*|sensors?|wearables?|survey\w*|assess\w*|pilot(?:s|ing|ed)?|prob(?:e|es|ing)|imaging|estimat\w*|registr(?:y|ies)|track(?:s|ing)|characteri[sz]\w*|quantif\w*|randomi[sz]\w*|predict\w*|catalog\w*|correlat\w*|compar(?:e|es|ing|ison|isons)|algorithms?|sequenc(?:e|es|ing)|(?:co-)?design(?:s|ing|ed)?|map(?:s|ping)?\s+(?:the|how|which|where)|improv(?:e|es|ing)\s+(?:the\s+)?(?:[\w-]+\s+){0,2}care|immunolog\w*|pharmacolog\w*|pathogenesis|microbiome|circuits?|prevention|screening|polic(?:y|ies)|decision[-\s]making|safety|implementation|develop\w*\s+(?:and\s+test\s+)?(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|therap\w*|methods?|strateg(?:y|ies)|approach(?:es)?|models?|algorithms?|interventions?|measures?|assays?|drugs?|vaccines?|gene)|test(?:s|ing)?\b)\b/i;
 
+const HUMANITIES_OR_SOCIAL_SCHOLAR_ROLE =
+  /\b(?:historians?|philosophers?|anthropologists?|sociologists?|ethnographers?|theologians?|classicists?|philologists?|archaeologists?|literary\s+critics?|critics?\s+of|political\s+theorists?|legal\s+historians?|humanists?)\b/i;
+
+const CLINICAL_WORD_AS_OBJECT_OF_SCHOLARSHIP =
+  /\b(?:(?<!\b(?:a|with|any|prior|past|family|medical)\s+)(?:history|histories)\s+of|(?:historiography|politics|ethics|philosophy|sociology|anthropology|theology|literature|rhetoric|iconography|representations?|cultural\s+history|political\s+economy)\s+of|social\s+determinants|as\s+a\s+lens\s+(?:on|onto|into)|(?:in|under)\s+(?:[\w'’-]+\s+){0,3}(?:testimon(?:y|ies)|literature|fiction|novels?|poetry|film|cinema|philosophy|theology|scripture|law(?!\s+enforcement)|antiquity|monaster(?:y|ies)|archives?)|[a-z]+-century|early\s+modern|medieval|ancient|late\s+antiquity|renaissance|victorian)\b/i;
+
+const PERFORMER_ROLE =
+  /\b(?:pianists?|violinists?|violists?|cellists?|bassists?|guitarists?|percussionists?|organists?|harpists?|flutists?|clarinetists?|oboists?|bassoonists?|trumpeters?|hornists?|saxophonists?|vocalists?|singers?|sopranos?|mezzo-sopranos?|tenors?|baritones?|conductors?|instrumentalists?|recitals?|repertoire|ensembles?|librettists?|actors?|actresses?)\b/i;
+
+const isFramedAsScholarship = (sentence: string): boolean =>
+  HUMANITIES_OR_SOCIAL_SCHOLAR_ROLE.test(sentence) ||
+  CLINICAL_WORD_AS_OBJECT_OF_SCHOLARSHIP.test(sentence);
+
 const CREATIVE_PRACTICE =
   /\b(?:music\w*|compos(?:e|es|er|ers|ing|ition|itions)|choreograph\w*|danc(?:e|es|er|ers|ing)|(?<!to-)plays?|playwright\w*|theat(?:er|re)\w*|performance\s+art|performers?|artists?|artwork|paint\w*|sculpt\w*|poe(?:t|ts|try|ms?)|fiction|novels?|writ(?:e|es|ing)\s+(?:plays|poems|fiction|novels|music)|film\w*|photograph\w*|portrait\w*|documentar\w*|opera|songs?|lullab\w*|murals?|memoirs?|essays?|textiles?|installations?|comed(?:y|ies|ian|ians)|stand-up)\b/i;
 
@@ -366,7 +379,8 @@ function isClinicalConditionListSentence(sentence: string): boolean {
 }
 
 export function isClinicalOnlyBiographySentence(sentence: string): boolean {
-  if (CREATIVE_PRACTICE.test(sentence)) return false;
+  if (CREATIVE_PRACTICE.test(sentence) || PERFORMER_ROLE.test(sentence)) return false;
+  if (isFramedAsScholarship(sentence)) return false;
   if (isClinicalConditionListSentence(sentence)) return true;
   return (
     [...CLINICAL_SERVICE_SHAPES, ...PATIENT_SERVICE_SHAPES, PATIENT_SERVICE_PURPOSE].some((shape) =>
