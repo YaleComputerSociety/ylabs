@@ -90,6 +90,10 @@ const sourceSchema = new mongoose.Schema(
         enum: ['HIGH', 'MEDIUM', 'LOW'],
         required: false,
       },
+      producesModelText: {
+        type: Boolean,
+        required: false,
+      },
       notes: {
         type: String,
         default: '',
