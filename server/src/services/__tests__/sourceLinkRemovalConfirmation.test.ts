@@ -17,6 +17,7 @@ const goneStored = (status = 404): StoredRemovalVerdict => ({
 });
 const nameAbsentStored = (hoursAgo = 7): StoredRemovalVerdict => ({
   healthStatus: 'UNAVAILABLE',
+  nameNotFound: true,
   checkedAt: hoursBefore(hoursAgo),
 });
 const connectionStored = (hoursAgo = 7): StoredRemovalVerdict => ({
@@ -29,7 +30,7 @@ const freshGone = (status = 404): SourceLinkHealth => ({
   healthStatus: 'UNAVAILABLE',
   httpStatusCode: status,
 });
-const freshNameAbsent: SourceLinkHealth = { healthStatus: 'UNAVAILABLE' };
+const freshNameAbsent: SourceLinkHealth = { healthStatus: 'UNAVAILABLE', nameNotFound: true };
 const freshRefused: SourceLinkHealth = {
   healthStatus: 'UNAVAILABLE',
   connectionLevelFailure: true,
@@ -124,10 +125,29 @@ describe('removalConfirmation (#6264)', () => {
     });
 
     it('holds a stored verdict with no readable check time', () => {
-      expect(removalConfirmation({ healthStatus: 'UNAVAILABLE' }, freshNameAbsent, NOW)).toEqual({
-        confirmed: false,
-        reason: 'too-soon',
-      });
+      expect(
+        removalConfirmation(
+          { healthStatus: 'UNAVAILABLE', nameNotFound: true },
+          freshNameAbsent,
+          NOW,
+        ),
+      ).toEqual({ confirmed: false, reason: 'too-soon' });
+    });
+
+    it('holds a stored verdict written before its failure class was recorded', () => {
+      expect(
+        removalConfirmation(
+          { healthStatus: 'UNAVAILABLE', checkedAt: hoursBefore(48) },
+          freshNameAbsent,
+          NOW,
+        ),
+      ).toEqual({ confirmed: false, reason: 'class-unknown' });
+    });
+
+    it('holds a fresh host-level failure that carries no class', () => {
+      expect(removalConfirmation(nameAbsentStored(), { healthStatus: 'UNAVAILABLE' }, NOW)).toEqual(
+        { confirmed: false, reason: 'class-unknown' },
+      );
     });
 
     it.each([

@@ -66,12 +66,17 @@ const probeWithFakeTimers = async () => {
 
 const expectRetiredAtOnce = async () => {
   const fresh = classifySourceLinkHealth(await probeWithFakeTimers());
-  expect(fresh).toEqual({ healthStatus: 'UNAVAILABLE' });
+  expect(fresh).toEqual({ healthStatus: 'UNAVAILABLE', nameNotFound: true });
   for (const stored of storedVerdicts) {
     const resolved = resolveSourceLinkHealthEntry(URL_A, fresh, stored, PROBE, RUN);
     expect(resolved.heldConnectionFailure).toBeUndefined();
     expect(resolved.preservedUnreachedVerdict).toBeUndefined();
-    expect(resolved.entry).toEqual({ url: URL_A, healthStatus: 'UNAVAILABLE', checkedAt: PROBE });
+    expect(resolved.entry).toEqual({
+      url: URL_A,
+      healthStatus: 'UNAVAILABLE',
+      nameNotFound: true,
+      checkedAt: PROBE,
+    });
   }
 };
 

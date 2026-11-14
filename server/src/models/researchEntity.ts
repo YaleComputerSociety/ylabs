@@ -198,6 +198,15 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       type: Boolean,
       required: false,
     },
+    /**
+     * The `UNAVAILABLE` came from a DNS record confirmed absent. Recorded positively, so
+     * a verdict written before either class field existed reads as unknown and a removal
+     * waits for the next sweep to record its class (#6264).
+     */
+    nameNotFound: {
+      type: Boolean,
+      required: false,
+    },
   },
   { _id: false },
 );

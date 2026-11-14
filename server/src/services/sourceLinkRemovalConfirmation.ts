@@ -7,7 +7,12 @@ import {
 export type RemovalBasis = 'gone-status' | 'name-absent' | 'connection-refused';
 
 export type RemovalHoldReason =
-  'no-stored-verdict' | 'stored-not-gone' | 'probe-disagrees' | 'too-soon' | 'private-address';
+  | 'no-stored-verdict'
+  | 'stored-not-gone'
+  | 'probe-disagrees'
+  | 'too-soon'
+  | 'private-address'
+  | 'class-unknown';
 
 export type RemovalConfirmation =
   { confirmed: true; basis: RemovalBasis } | { confirmed: false; reason: RemovalHoldReason };
@@ -18,6 +23,7 @@ export interface StoredRemovalVerdict {
   privateAddressHost?: unknown;
   confirmingConnectionFailureAt?: unknown;
   connectionLevelFailure?: unknown;
+  nameNotFound?: unknown;
   checkedAt?: unknown;
 }
 
@@ -33,19 +39,24 @@ const isGoneStatus = (status: unknown): boolean =>
   typeof status === 'number' && RESOURCE_GONE_HTTP_STATUS_CODES.has(status);
 
 /**
- * A stored status-less `UNAVAILABLE` is one of two host facts. A refused connection is
- * stored with `connectionLevelFailure`, or, on a verdict written before that field, with
- * the `confirmingConnectionFailureAt` marker #6116 leaves; a confirmed DNS negative
- * carries neither (#2726).
+ * A stored status-less `UNAVAILABLE` is one of two host facts, and each is recorded
+ * positively: `connectionLevelFailure` (or, on an older verdict, the
+ * `confirmingConnectionFailureAt` marker #6116 leaves) for a refused connection, and
+ * `nameNotFound` for a DNS record confirmed absent. A verdict written before either field
+ * existed carries neither, and #6116 records a refused connection with no marker when the
+ * verdict it replaced was not live, so its class cannot be inferred from the absence of a
+ * marker; it waits for the next sweep to record one.
  */
-function storedHostLevelClass(stored: StoredRemovalVerdict): HostLevelClass {
-  return stored.connectionLevelFailure === true || stored.confirmingConnectionFailureAt
-    ? 'connection-refused'
-    : 'name-absent';
+function storedHostLevelClass(stored: StoredRemovalVerdict): HostLevelClass | undefined {
+  if (stored.connectionLevelFailure === true || stored.confirmingConnectionFailureAt) {
+    return 'connection-refused';
+  }
+  return stored.nameNotFound === true ? 'name-absent' : undefined;
 }
 
-function freshHostLevelClass(fresh: SourceLinkHealth): HostLevelClass {
-  return fresh.connectionLevelFailure ? 'connection-refused' : 'name-absent';
+function freshHostLevelClass(fresh: SourceLinkHealth): HostLevelClass | undefined {
+  if (fresh.connectionLevelFailure) return 'connection-refused';
+  return fresh.nameNotFound ? 'name-absent' : undefined;
 }
 
 /**
@@ -79,7 +90,9 @@ export function removalConfirmation(
   }
 
   const storedClass = storedHostLevelClass(stored);
-  if (storedClass !== freshHostLevelClass(fresh)) {
+  const freshClass = freshHostLevelClass(fresh);
+  if (!storedClass || !freshClass) return { confirmed: false, reason: 'class-unknown' };
+  if (storedClass !== freshClass) {
     return { confirmed: false, reason: 'probe-disagrees' };
   }
   const storedAt = instantOf(stored.checkedAt);

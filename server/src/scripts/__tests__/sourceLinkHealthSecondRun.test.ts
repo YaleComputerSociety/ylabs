@@ -157,6 +157,7 @@ describe('a connection failure waits for a second run before retiring a live lin
     expect(resolved.entry).toEqual({
       url: URL_A,
       healthStatus: 'UNAVAILABLE',
+      nameNotFound: true,
       checkedAt: FIRST_RUN_PROBE,
     });
   });

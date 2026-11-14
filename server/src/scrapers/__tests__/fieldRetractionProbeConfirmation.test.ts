@@ -17,7 +17,7 @@ const NOW = new Date('2026-11-14T12:00:00Z');
 const hoursBefore = (hours: number) => new Date(NOW.getTime() - hours * 60 * 60 * 1000);
 
 const storedNameAbsent = (hoursAgo: number) => [
-  { url: URL, healthStatus: 'UNAVAILABLE', checkedAt: hoursBefore(hoursAgo) },
+  { url: URL, healthStatus: 'UNAVAILABLE', nameNotFound: true, checkedAt: hoursBefore(hoursAgo) },
 ];
 
 const storedRefusedConfirmedByMarker = (hoursAgo: number) => [

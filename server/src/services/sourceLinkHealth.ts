@@ -103,6 +103,8 @@ export interface SourceLinkHealth {
    * (#6116), and stores it so a later removal can tell the two classes apart (#6264).
    */
   connectionLevelFailure?: true;
+  /** The `UNAVAILABLE` came from a DNS record confirmed absent (#2726, #6264). */
+  nameNotFound?: true;
 }
 
 export interface SourceLinkProbeResult {
@@ -406,9 +408,14 @@ export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLi
     typeof verdict.httpStatusCode !== 'number' &&
     !!probe.errorCode &&
     CONNECTION_LEVEL_ERROR_CODES.has(probe.errorCode);
+  const nameNotFound =
+    verdict.healthStatus === 'UNAVAILABLE' &&
+    typeof verdict.httpStatusCode !== 'number' &&
+    probe.errorCode === 'ENOTFOUND';
   const classified = {
     ...verdict,
     ...(connectionLevelFailure ? { connectionLevelFailure: true as const } : {}),
+    ...(nameNotFound ? { nameNotFound: true as const } : {}),
     ...(httpsLandingUrl ? { httpsLandingUrl } : {}),
     ...(redirectLandingUrl ? { redirectLandingUrl } : {}),
     ...(landed ? { landedOnRequestedResource: true as const } : {}),
@@ -499,6 +506,7 @@ export function findSourceLinkHealth(
     ...(match.privateAddressHost === true ? { privateAddressHost: true } : {}),
     ...(match.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
     ...(match.connectionLevelFailure === true ? { connectionLevelFailure: true as const } : {}),
+    ...(match.nameNotFound === true ? { nameNotFound: true as const } : {}),
     ...(match.confirmingConnectionFailureAt
       ? { confirmingConnectionFailureAt: match.confirmingConnectionFailureAt as Date | string }
       : {}),
