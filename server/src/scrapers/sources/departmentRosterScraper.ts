@@ -5008,7 +5008,8 @@ export class DepartmentRosterScraper implements IScraper {
     return {
       departmentNames,
       classifyUnit: (parenthetical) => {
-        const units = canonicalizer.canonicalizeDepartments(parenthetical).values;
+        const { values, unmatched } = canonicalizer.canonicalizeDepartments(parenthetical);
+        const units = values.filter((value) => !unmatched.includes(value));
         const section = units.find((value) =>
           canonicalizer.parentDepartmentsFor(value).includes(parent),
         );
