@@ -73,15 +73,6 @@ function refusedByUs(link: object): boolean {
   );
 }
 
-/**
- * Whether a failed fetch observed nothing about the page, so no lane may turn it into a verdict,
- * an absence, a retraction or a lowered confidence (#6258). True for a request our own code
- * refused before sending (a host pause, the SSRF guard, the request budget, an excluded host, a
- * write lease) and for a failure that carries neither an HTTP status nor a host-level code: a
- * timeout, a reset, a temporary DNS failure, an abort, or a plain error. An HTTP status, 404 and
- * 410 included, a host-level code (link-health's `DEAD_LINK_ERROR_CODES`) or a TLS verification
- * code is an observation, still subject to each lane's own confirmation rule.
- */
 export function isNotObserved(error: unknown): boolean {
   const chain = errorChain(error);
   if (chain.length === 0) return true;
