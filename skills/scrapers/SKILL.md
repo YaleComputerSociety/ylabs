@@ -1506,6 +1506,13 @@ The cost of getting this wrong is not a thin value but a lost one (#2838).
 `withholdsHomeDepartment` is the narrowest flag: it withholds only the person's `primaryDepartment`, so membership, the `departments` label, the roster-health snapshot, withdrawn keys and roster-bio minting read the lane exactly as an unflagged one (#6071).
 A guard test holds every config `CONFIGS_EXPECTED_ABSENT_FROM_CATALOG` lists to a flag that withholds the home department, unless its `deptName` is itself a catalog department, and `scrapers/rosterHomeDepartmentScreen.ts` keeps the resolver from reading the readings those lanes stored before the flag, screening both the current withheld names and any `dept-faculty-roster` `primaryDepartment` the catalog does not name, so earlier `deptName` spellings (such as the long West Campus institute list) are caught too without a literal name having to keep up; with no catalog only the withheld names are screened.
 
+A department roster that does assert a home department now reads the person's title on that page first (`scrapers/rosterHomeDepartmentStatement.ts`, #6274), because a joint appointee is listed on every roster they belong to and each used to file its own department as their primary.
+It withholds `primaryDepartment` only on positive evidence that the home appointment is elsewhere: another catalogued department named before this one, or a `secondary`, `joint`, `adjunct`, `courtesy` or `visiting` marker.
+Membership (`departments`) is still asserted for everyone the page lists.
+A parenthetical attached to the department ("of Medicine (Digestive Diseases)") is checked against the catalog, which is loaded only when such a title appears: a section under this department is asserted instead of the parent, another catalogued unit withholds the parent, and anything else ("On Leave Fall 2026", "retired") says nothing about the appointment.
+A page that states nothing (no title, or a title naming no department) still asserts the roster's department, so a person listed on one roster keeps it; the lane cannot see whether another roster lists the person, and a roster reading ranks below a first-hand profile.
+Readings stored before this change stay live until a re-read supersedes them, and resolving rival section and department readings is the resolver's job (#6217), not the lane's.
+
 `crossListedProgramme` exists because adding five programme lanes without it overwrote the home department of 110 researchers, replacing Psychology, Linguistics, Philosophy and Computer Science with the programme name.
 That is #1427 in a milder form: the programme label itself is true and is what a student filters on, but the appointment claim behind `primaryDepartment` is not.
 
