@@ -241,3 +241,74 @@ export function assertReconcileStaleScrapeRunsApplyAllowed(input: {
   });
   return { environment: guard.environment, dbLabel: guard.dbLabel };
 }
+
+/** A run whose record may under-count its writes: it never reached its own finalise. */
+export const RECOUNTABLE_SCRAPE_RUN_STATUSES = ['interrupted', 'failure'] as const;
+
+export interface RecountableScrapeRun {
+  id: string;
+  sourceName: string;
+  status: string;
+  startedAt: Date;
+  observationCount: number;
+}
+
+export interface WrittenCountRecount {
+  id: string;
+  sourceName: string;
+  status: string;
+  startedAt: string;
+  recordedObservationCount: number;
+  storedObservationCount: number;
+  undercount: number;
+}
+
+export interface WrittenCountRecountPlan {
+  runs: number;
+  undercounted: number;
+  matching: number;
+  recordedTotal: number;
+  storedTotal: number;
+  recounts: WrittenCountRecount[];
+}
+
+export function planWrittenCountRecount(
+  runs: RecountableScrapeRun[],
+  storedCountByRunId: ReadonlyMap<string, number>,
+): WrittenCountRecountPlan {
+  const recounts = runs.map((run) => {
+    const stored = storedCountByRunId.get(run.id) ?? 0;
+    return {
+      id: run.id,
+      sourceName: run.sourceName,
+      status: run.status,
+      startedAt: run.startedAt.toISOString(),
+      recordedObservationCount: run.observationCount,
+      storedObservationCount: stored,
+      undercount: stored - run.observationCount,
+    };
+  });
+  return {
+    runs: recounts.length,
+    undercounted: recounts.filter((recount) => recount.undercount > 0).length,
+    matching: recounts.filter((recount) => recount.undercount === 0).length,
+    recordedTotal: recounts.reduce((sum, recount) => sum + recount.recordedObservationCount, 0),
+    storedTotal: recounts.reduce((sum, recount) => sum + recount.storedObservationCount, 0),
+    recounts: recounts.sort((a, b) => b.undercount - a.undercount),
+  };
+}
+
+export function writtenCountRecountUpdate(
+  recount: WrittenCountRecount,
+  now: Date,
+): { filter: Record<string, unknown>; update: Record<string, unknown> } {
+  return {
+    filter: { _id: recount.id, status: { $in: [...RECOUNTABLE_SCRAPE_RUN_STATUSES] } },
+    update: {
+      $set: {
+        reconciledObservationCount: recount.storedObservationCount,
+        reconciledAt: now,
+      },
+    },
+  };
+}

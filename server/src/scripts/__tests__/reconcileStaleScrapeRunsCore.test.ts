@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  planWrittenCountRecount,
+  writtenCountRecountUpdate,
   assertReconcileStaleScrapeRunsApplyAllowed,
   planStaleScrapeRunReconciliation,
   resolveStaleScrapeRunThresholds,
@@ -359,5 +361,64 @@ describe('a stalled run (#5086)', () => {
     const update = staleScrapeRunUpdate(outcome.reap[0]!, { now: NOW, detectedBy: 'sweep' });
     expect(update.filter).toEqual({ _id: 'stalled-run', status: 'running', heartbeatAt: lastBeat });
     expect(update.update).toMatchObject({ $set: { status: 'interrupted' } });
+  });
+});
+
+describe('planWrittenCountRecount (#6269)', () => {
+  const recountable = (id: string, observationCount: number) => ({
+    id,
+    sourceName: 'fixture-source',
+    status: 'interrupted',
+    startedAt: new Date('2026-11-12T22:00:00Z'),
+    observationCount,
+  });
+
+  it('reports each run by how far its record under-counts the observations it wrote', () => {
+    const plan = planWrittenCountRecount(
+      [recountable('a', 0), recountable('b', 10), recountable('c', 5)],
+      new Map([
+        ['a', 900],
+        ['b', 10],
+        ['c', 12],
+      ]),
+    );
+    expect(plan).toMatchObject({
+      runs: 3,
+      undercounted: 2,
+      matching: 1,
+      recordedTotal: 15,
+      storedTotal: 922,
+    });
+    expect(plan.recounts.map((recount) => [recount.id, recount.undercount])).toEqual([
+      ['a', 900],
+      ['c', 7],
+      ['b', 0],
+    ]);
+  });
+
+  it('counts a run with no stored observations as zero, not as missing', () => {
+    expect(planWrittenCountRecount([recountable('a', 0)], new Map()).recounts[0]).toMatchObject({
+      storedObservationCount: 0,
+      undercount: 0,
+    });
+  });
+
+  it('parses --recount-written as its own dry-run-first mode', () => {
+    expect(parseReconcileStaleScrapeRunsArgs(['--recount-written'])).toMatchObject({
+      recountWritten: true,
+      apply: false,
+    });
+    expect(() => parseReconcileStaleScrapeRunsArgs(['--recount-written', '--apply'])).toThrow(
+      '--confirm-reconcile-stale-scrape-runs',
+    );
+  });
+
+  it('writes the true count beside the recorded one and never touches a running row', () => {
+    const now = new Date('2026-11-14T03:00:00Z');
+    const [recount] = planWrittenCountRecount([recountable('a', 0)], new Map([['a', 7]])).recounts;
+    expect(writtenCountRecountUpdate(recount, now)).toEqual({
+      filter: { _id: 'a', status: { $in: ['interrupted', 'failure'] } },
+      update: { $set: { reconciledObservationCount: 7, reconciledAt: now } },
+    });
   });
 });
