@@ -76,7 +76,16 @@ export const applyEnvironmentFence = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   return env;
 };
 
-const INERT_FENCED_VALUE = 'ylabs-hermetic-fence';
+// The inert value must never be a writable path: a fenced key read as a file path, such as
+// SCRAPER_REQUEST_LOG, resolved the bare name against the child's cwd and created
+// `server/ylabs-hermetic-fence`, which a gate documentation step then committed (#6278). An
+// absolute path under a directory that does not exist fails to open instead.
+export const INERT_FENCED_VALUE = '/nonexistent-ylabs-hermetic-fence/ylabs-hermetic-fence';
+
+// Keys whose empty value is the explicit "off", so a fenced child never even tries to open them.
+const OFF_IN_FENCED_CHILD: Record<string, string> = {
+  SCRAPER_REQUEST_LOG: '',
+};
 
 /**
  * The environment a suite must hand `spawn` when it drives a real CLI. Module
@@ -94,7 +103,7 @@ const INERT_FENCED_VALUE = 'ylabs-hermetic-fence';
 export const hermeticChildEnvironment = (overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => {
   const child = applyEnvironmentFence({ ...process.env });
   for (const key of fencedEnvironmentKeys()) child[key] = INERT_FENCED_VALUE;
-  return { ...child, ...UNREACHABLE_BACKEND_VALUES, ...overrides };
+  return { ...child, ...UNREACHABLE_BACKEND_VALUES, ...OFF_IN_FENCED_CHILD, ...overrides };
 };
 
 const searchFence = vi.hoisted(() => {
