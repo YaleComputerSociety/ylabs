@@ -38,6 +38,11 @@ export interface FetchedResearchPage {
 }
 
 const PRIVATE_USE_HEADING_SENTINEL = '\uE000';
+const HEADING_LEVEL_MARK_BASE = 0xe010;
+const HEADING_MARKS = /[\uE000\uE011-\uE016]/g;
+
+const headingLevelMark = (tagName: string): string =>
+  String.fromCharCode(HEADING_LEVEL_MARK_BASE + Number(tagName.slice(1)));
 
 const RESEARCH_HEADING =
   /\b(?:research|interests?|projects?|focus|about|overview|mission|stud(?:y|ies)|areas?|themes?|questions?|approach)\b/i;
@@ -51,6 +56,11 @@ type SectionKind = 'research' | 'neutral' | 'publications-or-contact';
 
 interface PageSection {
   kind: SectionKind;
+  /**
+   * The section sits under an open research heading, so its lines are research for the cap's
+   * budget even when its own heading names no research (#6109). Ordering still follows `kind`.
+   */
+  insideResearch: boolean;
   lines: string[];
 }
 
@@ -379,7 +389,9 @@ function pageLinesWithHeadingMarks(html: string, pageUrl: string): string[] {
   removeRelatedEntityTeaserCards($, pageUrl);
   $('h1, h2, h3, h4, h5, h6').each((_index, element) => {
     if (isInsideMenuContainer($, element)) return;
-    $(element).prepend(PRIVATE_USE_HEADING_SENTINEL);
+    $(element).prepend(
+      `${PRIVATE_USE_HEADING_SENTINEL}${headingLevelMark((element as { tagName: string }).tagName)}`,
+    );
   });
   return extractElementTextWithLineBreaks($('body')[0] ?? $.root()[0])
     .split('\n')
@@ -387,18 +399,31 @@ function pageLinesWithHeadingMarks(html: string, pageUrl: string): string[] {
     .filter(Boolean);
 }
 
+function headingLevelOf(line: string): number {
+  const mark = line.charCodeAt(PRIVATE_USE_HEADING_SENTINEL.length) - HEADING_LEVEL_MARK_BASE;
+  return mark >= 1 && mark <= 6 ? mark : 6;
+}
+
+/**
+ * The page's sections in order. A heading nested below an open research heading keeps its own
+ * `kind` but is marked `insideResearch`, unless it names publications or contact details.
+ */
 function pageSections(lines: readonly string[]): PageSection[] {
-  const sections: PageSection[] = [{ kind: 'neutral', lines: [] }];
+  const sections: PageSection[] = [{ kind: 'neutral', insideResearch: false, lines: [] }];
+  const open: Array<{ level: number; research: boolean }> = [];
   for (const line of lines) {
     if (line.startsWith(PRIVATE_USE_HEADING_SENTINEL)) {
-      const heading = line.replaceAll(PRIVATE_USE_HEADING_SENTINEL, '').trim();
+      const level = headingLevelOf(line);
+      const heading = line.replace(HEADING_MARKS, '').trim();
       const kind = sectionKindOfHeading(heading);
-      sections.push({ kind, lines: heading ? [heading] : [] });
+      while (open.length > 0 && open[open.length - 1].level >= level) open.pop();
+      const insideResearch =
+        kind !== 'publications-or-contact' && open.some((ancestor) => ancestor.research);
+      open.push({ level, research: kind === 'research' || insideResearch });
+      sections.push({ kind, insideResearch, lines: heading ? [heading] : [] });
       continue;
     }
-    sections[sections.length - 1].lines.push(
-      line.replaceAll(PRIVATE_USE_HEADING_SENTINEL, '').trim(),
-    );
+    sections[sections.length - 1].lines.push(line.replace(HEADING_MARKS, '').trim());
   }
   return sections;
 }
@@ -419,33 +444,37 @@ export function researchStatementTextOfPage(html: string, pageUrl: string): stri
 
 /**
  * `researchStatementTextOfPage` split at the point where the page's research sections end, so
- * the cap can spend a row's budget on research lines before neutral ones (#6283).
+ * the cap can spend a row's budget on research lines before neutral ones (#6109). `researchLines`
+ * also holds the lines of sections nested below a research heading, which keep their place in
+ * the text but share the research budget.
  */
 export function researchStatementPartsOfPage(
   html: string,
   pageUrl: string,
-): { research: string; neutral: string } {
-  if (!html) return { research: '', neutral: '' };
+): { research: string; neutral: string; researchLines: string[] } {
+  if (!html) return { research: '', neutral: '', researchLines: [] };
   const sections = pageSections(pageLinesWithHeadingMarks(html, pageUrl)).filter(
     (section) => section.kind !== 'publications-or-contact',
   );
   const ownerTokens = pageOwnerTokens(pageUrl);
   const seen = new Set<string>();
+  const researchLines: string[] = [];
   const statementsOf = (kind: PageSection['kind']): string[] => {
     const kept: string[] = [];
-    for (const line of sections
-      .filter((section) => section.kind === kind)
-      .flatMap((section) => section.lines)) {
-      const statement = statementTextOfLine(line, ownerTokens);
-      if (!statement || seen.has(statement)) continue;
-      seen.add(statement);
-      kept.push(statement);
+    for (const section of sections.filter((candidate) => candidate.kind === kind)) {
+      for (const line of section.lines) {
+        const statement = statementTextOfLine(line, ownerTokens);
+        if (!statement || seen.has(statement)) continue;
+        seen.add(statement);
+        kept.push(statement);
+        if (kind === 'research' || section.insideResearch) researchLines.push(statement);
+      }
     }
     return kept;
   };
   const research = statementsOf('research').join('\n');
   const neutral = statementsOf('neutral').join('\n');
-  return { research, neutral };
+  return { research, neutral, researchLines };
 }
 
 const SENTENCE_END = /[.!?]["')\]’”]?(?=\s|$)/g;
@@ -468,12 +497,9 @@ export function truncateAtSentenceBoundary(text: string, maxChars: number): stri
   return (lastSpace > 0 ? text.slice(0, lastSpace) : text.slice(0, maxChars)).trim();
 }
 
-/**
- * A page's text before the cap, with the length of its leading research part: the page's
- * research-section lines come first in its text, so that part is a prefix.
- */
+/** A page's text before the cap, with the lines that share the research budget. */
 export interface ResearchPageTextCapEntry extends ResearchPageTextEntry {
-  researchChars?: number;
+  researchLines?: ReadonlySet<string>;
 }
 
 /**
@@ -495,42 +521,85 @@ function fairShares(lengths: readonly number[], budget: number): number[] {
   return shares;
 }
 
+const LINE_BREAK_CHARS = 1;
+
+const lengthOfLines = (lines: readonly string[]): number =>
+  lines.reduce((sum, line, index) => sum + line.length + (index > 0 ? LINE_BREAK_CHARS : 0), 0);
+
 /**
- * Caps a row's pages to `maxChars` in total, spending the budget on research-section lines
- * across every page before any neutral line (#6283). Each page's research prefix is shared
- * fairly first; only what is left is shared over the pages' neutral remainders, so another
- * page's people list or chrome can no longer outlast a research sentence. A row under the cap
- * is unchanged, and page order is preserved in the result.
+ * The lines of `lines` that fit `budget`, by index, in order; the first one that does not fit is
+ * cut at a sentence boundary and nothing after it is kept.
+ */
+function linesWithin(lines: readonly string[], budget: number): Map<number, string> {
+  const kept = new Map<number, string>();
+  let remaining = budget;
+  for (const [index, line] of lines.entries()) {
+    const separator = kept.size > 0 ? LINE_BREAK_CHARS : 0;
+    if (line.length + separator <= remaining) {
+      kept.set(index, line);
+      remaining -= line.length + separator;
+      continue;
+    }
+    const partial = truncateAtSentenceBoundary(line, remaining - separator);
+    if (partial) kept.set(index, partial);
+    break;
+  }
+  return kept;
+}
+
+/**
+ * Caps a row's pages to `maxChars` in total, spending the budget on research lines across every
+ * page before any neutral line (#6109). Each page's research lines are shared fairly first; only
+ * what is left is shared over the pages' neutral lines, so another page's people list or chrome
+ * can no longer outlast a research sentence. Kept lines stay in their page order, and a row under
+ * the cap is unchanged.
  */
 export function capResearchPageText(
   entries: readonly ResearchPageTextCapEntry[],
   maxChars: number = MAX_RESEARCH_PAGE_TEXT_CHARS,
 ): ResearchPageTextEntry[] {
-  const research = entries.map((entry) =>
-    Math.min(entry.text.length, Math.max(0, entry.researchChars ?? 0)),
+  const total = entries.reduce((sum, entry) => sum + entry.text.length, 0);
+  if (total <= maxChars) {
+    return entries
+      .map((entry) => ({ url: entry.url, text: entry.text }))
+      .filter((entry) => entry.text.length >= MIN_RESEARCH_PAGE_TEXT_CHARS);
+  }
+  const pages = entries.map((entry) => {
+    const lines = entry.text.split('\n');
+    const isResearch = lines.map((line) => entry.researchLines?.has(line) ?? false);
+    return {
+      entry,
+      lines,
+      isResearch,
+      research: lines.filter((_line, index) => isResearch[index]),
+      neutral: lines.filter((_line, index) => !isResearch[index]),
+    };
+  });
+  const researchShares = fairShares(
+    pages.map((page) => lengthOfLines(page.research)),
+    maxChars,
   );
-  const researchShares = fairShares(research, maxChars);
   const left = maxChars - researchShares.reduce((sum, share) => sum + share, 0);
   const neutralShares = fairShares(
-    entries.map((entry, index) => entry.text.length - research[index]),
-    left,
+    pages.map((page) => lengthOfLines(page.neutral)),
+    Math.max(0, left - pages.length * LINE_BREAK_CHARS),
   );
-  return entries
-    .map((entry, index) => ({
-      url: entry.url,
-      text: truncateAtSentenceBoundary(entry.text, researchShares[index] + neutralShares[index]),
-    }))
+  return pages
+    .map((page, pageIndex) => {
+      const research = linesWithin(page.research, researchShares[pageIndex]);
+      const neutral = linesWithin(page.neutral, neutralShares[pageIndex]);
+      const kept: string[] = [];
+      let researchIndex = 0;
+      let neutralIndex = 0;
+      page.lines.forEach((_line, index) => {
+        const line = page.isResearch[index]
+          ? research.get(researchIndex++)
+          : neutral.get(neutralIndex++);
+        if (line) kept.push(line);
+      });
+      return { url: page.entry.url, text: kept.join('\n').trim() };
+    })
     .filter((entry) => entry.text.length >= MIN_RESEARCH_PAGE_TEXT_CHARS);
-}
-
-/**
- * How much of a page's text is its research part. The research part is stripped on its own to
- * find it; when a strip reads differently with the neutral lines after it, the part is not a
- * prefix and the page is treated as all neutral, which is the cap's earlier behaviour.
- */
-function researchPrefixLength(text: string, researchText: string): number {
-  if (!researchText || !text.startsWith(researchText)) return 0;
-  return researchText.length;
 }
 
 /**
@@ -564,7 +633,7 @@ function uncappedResearchPageText(
     entries.push({
       url: page.url,
       text,
-      researchChars: researchPrefixLength(text, prose(parts.research)),
+      researchLines: new Set(parts.researchLines.map(prose).filter(Boolean)),
     });
   }
   return entries;

@@ -278,8 +278,12 @@ describe('capResearchPageText spends the budget on research lines first (#6283)'
     const otherPage = peopleList(220);
     const capped = capResearchPageText(
       [
-        { url: HOME, text: `${research}\n${neutral}`, researchChars: research.length },
-        { url: RESEARCH, text: otherPage, researchChars: 0 },
+        {
+          url: HOME,
+          text: `${research}\n${neutral}`,
+          researchLines: new Set(research.split('\n')),
+        },
+        { url: RESEARCH, text: otherPage, researchLines: new Set<string>() },
       ],
       research.length + 500,
     );
@@ -304,8 +308,8 @@ describe('capResearchPageText spends the budget on research lines first (#6283)'
 
   it('leaves a row under the cap unchanged', () => {
     const entries = [
-      { url: HOME, text: `${research}\n${neutral}`, researchChars: research.length },
-      { url: RESEARCH, text: peopleList(5), researchChars: 0 },
+      { url: HOME, text: `${research}\n${neutral}`, researchLines: new Set(research.split('\n')) },
+      { url: RESEARCH, text: peopleList(5), researchLines: new Set<string>() },
     ];
     expect(capResearchPageText(entries, 100000)).toEqual(
       entries.map(({ url, text }) => ({ url, text })),
@@ -315,8 +319,12 @@ describe('capResearchPageText spends the budget on research lines first (#6283)'
   it('shares the research budget fairly when research alone exceeds the cap', () => {
     const capped = capResearchPageText(
       [
-        { url: HOME, text: `${research}\n${neutral}`, researchChars: research.length },
-        { url: RESEARCH, text: research, researchChars: research.length },
+        {
+          url: HOME,
+          text: `${research}\n${neutral}`,
+          researchLines: new Set(research.split('\n')),
+        },
+        { url: RESEARCH, text: research, researchLines: new Set(research.split('\n')) },
       ],
       research.length,
     );
@@ -328,7 +336,7 @@ describe('capResearchPageText spends the budget on research lines first (#6283)'
 
   it('stores no cap bookkeeping in the value', () => {
     const [entry] = capResearchPageText(
-      [{ url: HOME, text: research, researchChars: research.length }],
+      [{ url: HOME, text: research, researchLines: new Set(research.split('\n')) }],
       100000,
     );
     expect(Object.keys(entry).sort()).toEqual(['text', 'url']);
@@ -416,5 +424,37 @@ describe('researchPageTextCapComparison (#6109)', () => {
         },
       ] as any),
     ).toEqual({ changed: false, linesKeptOnlyByResearchFirst: 0, linesKeptOnlyByEvenShare: 0 });
+  });
+});
+
+describe('the research budget follows sections nested below a research heading (#6109)', () => {
+  const sentences = (subject: string, n: number) =>
+    Array.from(
+      { length: n },
+      (_v, i) => `<p>The group studies ${subject} in cohort ${i + 1}.</p>`,
+    ).join('');
+  const people = (n: number) =>
+    `<h2>People</h2><ul>${Array.from({ length: n }, (_v, i) => `<li>Member Fixture Number ${i + 1}, Graduate Student</li>`).join('')}</ul>`;
+  const nestedResearchPage = `<html><body><main><h2>Research</h2><p>Our laboratory works on blood cell development.</p><h3>Stem cell self-renewal</h3>${sentences('stem cell self-renewal', 120)}<p>The nested section ends by naming leukemia relapse.</p>${people(40)}</main></body></html>`;
+  const profilePage = `<html><body><main><h2>Research interests</h2>${sentences('immune signalling', 140)}${people(200)}</main></body></html>`;
+
+  it('keeps a research sentence under a nested sub-heading when the row is at the cap', () => {
+    const value = researchPageTextValue([
+      { url: HOME, html: nestedResearchPage },
+      { url: RESEARCH, html: profilePage },
+    ] as any);
+    expect(value.reduce((sum, entry) => sum + entry.text.length, 0)).toBeLessThanOrEqual(
+      MAX_RESEARCH_PAGE_TEXT_CHARS,
+    );
+    expect(value.find((entry) => entry.url === HOME)?.text).toContain(
+      'The nested section ends by naming leukemia relapse.',
+    );
+  });
+
+  it('leaves the stored text of a page under the cap in its existing order', () => {
+    const page = `<html><body><main><h2>Research</h2><p>Our laboratory works on blood cell development.</p><h3>Stem cell self-renewal</h3><p>The group studies stem cell self-renewal in cohort one.</p></main></body></html>`;
+    expect(researchPageTextValue([{ url: HOME, html: page }] as any)[0].text).toBe(
+      researchStatementTextOfPage(page, HOME),
+    );
   });
 });
