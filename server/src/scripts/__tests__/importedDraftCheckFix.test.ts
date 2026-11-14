@@ -92,6 +92,7 @@ describe('a stored refused import is accepted by a later check fix with no call 
       snippets,
       entityName: 'Reef Lab',
       entityType: 'LAB',
+      servingRow: null,
       store,
       drafting: writerModelThroughCache({ callLLM: model, store }),
     });

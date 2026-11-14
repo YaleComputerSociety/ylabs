@@ -35,9 +35,30 @@ const evidenceFor = (observations: ReturnType<typeof laneObservation>[]) =>
     { now: NOW },
   ).map((snippet) => snippet.text);
 
-describe('ingest-verified extraction is writer evidence (#4867, owner decision)', () => {
-  it('admits a fullDescription the lane verified against its fetched page', () => {
-    expect(evidenceFor([laneObservation(VERIFIED_RUN)])).toEqual([PAGE_TEXT]);
+describe('the lab-site description lane is not writer evidence (#5961)', () => {
+  it('refuses a fullDescription even when the lane verified it against its fetched page', () => {
+    expect(evidenceFor([laneObservation(VERIFIED_RUN)])).toEqual([]);
+  });
+
+  it('still reads the same text from the stored page itself', () => {
+    const pageText = {
+      field: 'researchPageText',
+      value: [{ url: 'https://marsh.example.edu/', text: PAGE_TEXT }],
+      sourceName: 'research-page-text',
+      sourceUrl: 'https://marsh.example.edu/',
+      confidence: 0.7,
+      scrapeRunId: VERIFIED_RUN,
+    };
+    expect(
+      buildWriterEvidenceSnippets(
+        markIngestVerifiedObservations(
+          [laneObservation(VERIFIED_RUN), pageText],
+          ingestVerifiedRunIds(runs),
+        ),
+        [],
+        { now: NOW },
+      ).map((snippet) => ({ text: snippet.text, sourceName: snippet.sourceName })),
+    ).toEqual([{ text: PAGE_TEXT, sourceName: 'research-page-text' }]);
   });
 
   it('refuses a backfill-shaped value, whose run id no recorded lane run carries', () => {

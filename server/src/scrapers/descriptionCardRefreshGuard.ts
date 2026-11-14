@@ -107,3 +107,25 @@ export async function isCardLosingDescriptionRefresh(input: {
   });
   return incomingHasCard === false;
 }
+
+/**
+ * A judge that reads each pair with the card materialization would serve beside its body.
+ * A writer posts the body alone and its card comes from the card cache at materialize, so
+ * judging the bare body reads a refresh as losing a card it will in fact keep (#5961).
+ */
+export function withServedCardForBody(
+  judge: DescriptionCardJudge,
+  servedCardFor: (fullDescription: string) => Promise<string>,
+): DescriptionCardJudge {
+  return async (subject, pair, context) => {
+    if (
+      pair.shortDescription ||
+      typeof pair.fullDescription !== 'string' ||
+      !pair.fullDescription
+    ) {
+      return judge(subject, pair, context);
+    }
+    const card = await servedCardFor(pair.fullDescription);
+    return judge(subject, card ? { ...pair, shortDescription: card } : pair, context);
+  };
+}

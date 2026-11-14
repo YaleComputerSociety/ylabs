@@ -33,7 +33,11 @@ import {
 } from './utils/researchPageText';
 import { isResearchPageHeadingLine } from './utils/writerEvidenceText';
 import { isClinicalPracticeAsResearch } from './utils/clinicalPracticeAsResearch';
-import { isNarrowedLabSiteDescription, researchPassageOf } from '../utils/researchStatementPassage';
+import {
+  servingBarAcceptsFullDescription,
+  type ServingRowContext,
+} from './utils/fullDescriptionServingBar';
+import { LAB_SITE_DESCRIPTION_SOURCE } from '../utils/researchStatementPassage';
 import { withoutResearchPageChromeMenusAndListings } from './utils/researchPageChrome';
 import {
   coversResearchPage,
@@ -106,6 +110,10 @@ export type StoredPageTextLookup = (sourceUrl: string | undefined) => string | u
 /**
  * Whether one observation is evidence the writer may read.
  *
+ * The lab-site description lane is never writer evidence (#5961): its bodies were copied
+ * or condensed from a page whose own text the writer reads directly, and they carried
+ * another unit's prose onto rows (#4869). The lane stays a lead-ownership and website signal.
+ *
  * A written body is grounded only in text that is on a fetched page (#4867). A value a
  * language-model lane wrote is not page text, and reading it as evidence re-asserted an
  * earlier lane's invention as grounded, so such a value is evidence only when it is found
@@ -117,11 +125,24 @@ export type StoredPageTextLookup = (sourceUrl: string | undefined) => string | u
  * is only widgets is never evidence, whichever lane stored it; a MeSH topic run is
  * (`withoutProfileTemplateWidgets`).
  */
+const DEPARTMENT_ROSTER_SOURCE = 'dept-faculty-roster';
+
+// Changing the roster's `rosterTopicDescription` template (departmentRosterScraper.ts)
+// requires updating this shape: the sentence is assembled from a department's topic tags,
+// not stated on any page, so it is never page-stated writer evidence (#5978).
+export const isRosterTopicTemplateDescription = (obs: CoverageObservationLike): boolean =>
+  obs.sourceName === DEPARTMENT_ROSTER_SOURCE &&
+  obs.field === 'fullDescription' &&
+  typeof obs.value === 'string' &&
+  /^Studies\s/.test(obs.value.trim());
+
 export function isWriterEvidenceObservation(
   obs: CoverageObservationLike,
   storedPageText: StoredPageTextLookup = () => undefined,
 ): boolean {
   if (obs.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME) return false;
+  if (obs.sourceName === LAB_SITE_DESCRIPTION_SOURCE) return false;
+  if (isRosterTopicTemplateDescription(obs)) return false;
   if (typeof obs.value === 'string' && !withoutProfileTemplateWidgets(obs.value)) return false;
   if (isModelTextSource(obs.sourceName)) {
     if (obs.ingestVerifiedAgainstPage === true) return true;
@@ -200,10 +221,17 @@ export function researchPageTextSnippetTexts(text: string): string[] {
   return chunks.map((lines) => lines.join('\n'));
 }
 
-function researchPageTextSnippets(obs: CoverageObservationLike): CoverageSnippet[] {
+export type EvidencePageAdmission = (pageUrl: string, text: string) => boolean;
+
+const ADMITS_EVERY_PAGE: EvidencePageAdmission = () => true;
+
+function researchPageTextSnippets(
+  obs: CoverageObservationLike,
+  admitsPage: EvidencePageAdmission,
+): CoverageSnippet[] {
   if (obs.sourceName !== RESEARCH_PAGE_TEXT_SOURCE) return [];
   return researchPageTextEntries(obs.value).flatMap((page) =>
-    isRejectedDescriptionSourceUrl(page.url)
+    isRejectedDescriptionSourceUrl(page.url) || !admitsPage(page.url, page.text)
       ? []
       : researchPageTextSnippetTexts(withoutResearchPageChromeMenusAndListings(page.text)).map(
           (text) => ({
@@ -218,8 +246,9 @@ function researchPageTextSnippets(obs: CoverageObservationLike): CoverageSnippet
 export function gatherCoverageSnippets(
   observations: CoverageObservationLike[],
   storedPageText?: StoredPageTextLookup,
-  options: { narrowLabSiteDescriptions?: boolean } = {},
+  options: { admitsPage?: EvidencePageAdmission } = {},
 ): CoverageSnippet[] {
+  const admitsPage = options.admitsPage ?? ADMITS_EVERY_PAGE;
   const seen = new Set<string>();
   const snippets: CoverageSnippet[] = [];
   const keep = (snippet: CoverageSnippet): boolean => {
@@ -232,17 +261,14 @@ export function gatherCoverageSnippets(
   };
   for (const obs of observations) {
     if (obs.field === RESEARCH_PAGE_TEXT_FIELD) {
-      if (researchPageTextSnippets(obs).some(keep)) break;
+      if (researchPageTextSnippets(obs, admitsPage).some(keep)) break;
       continue;
     }
     if (!COVERAGE_SNIPPET_FIELDS.has(obs.field)) continue;
     if (!isWriterEvidenceObservation(obs, storedPageText)) continue;
     if (isRejectedDescriptionSourceUrl(obs.sourceUrl)) continue;
-    const statement =
-      options.narrowLabSiteDescriptions && isNarrowedLabSiteDescription(obs)
-        ? researchPassageOf(textValue(obs.value), WRITER_RESEARCH_READING)
-        : textValue(obs.value);
-    const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(statement));
+    if (obs.sourceUrl && !admitsPage(obs.sourceUrl, textValue(obs.value))) continue;
+    const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(textValue(obs.value)));
     if (!raw) continue;
     const clean = raw.slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
     if (keep({ text: clean, sourceUrl: obs.sourceUrl, sourceName: obs.sourceName })) break;
@@ -257,6 +283,7 @@ export interface SynthesizeCoverageInput {
   researchAreas?: unknown;
   callLLM: CoverageSynthesisLLMFn;
   coverageWriterChecks?: boolean;
+  servingRow?: ServingRowContext | null;
 }
 
 export interface CoverageSynthesisResult {
@@ -295,7 +322,8 @@ export type CoverageSynthesisRefusal =
   | 'first-person'
   | 'fused-page-heading'
   | 'greeting-text'
-  | 'clinical-practice-as-research';
+  | 'clinical-practice-as-research'
+  | 'refused-by-serving-bar';
 
 /**
  * The verbs a synthesized body uses of its subject. Shared with the two internal
@@ -482,6 +510,7 @@ export function judgeWrittenDescription(input: {
   citedSnippetCount: number;
   citedSnippetIndexes?: readonly number[];
   coverageWriterChecks?: boolean;
+  servingRow?: ServingRowContext | null;
 }): WrittenDescriptionJudgement {
   const refuse = (refusal: CoverageSynthesisRefusal): WrittenDescriptionJudgement => ({
     description: null,
@@ -553,6 +582,20 @@ export function judgeWrittenDescription(input: {
     })
   ) {
     return refuse('clinical-practice-as-research');
+  }
+  // Last, so it counts only drafts every writer arm accepted. The materializer adopts a
+  // written body only through this same predicate, so a draft it refuses would be
+  // accepted here and then never served (#5982).
+  if (
+    input.servingRow &&
+    !servingBarAcceptsFullDescription(
+      input.servingRow.entity,
+      {},
+      description,
+      input.servingRow.leadPersonName,
+    )
+  ) {
+    return refuse('refused-by-serving-bar');
   }
   return { description, refusal: null };
 }
@@ -671,6 +714,7 @@ export async function coverageSynthesisDecision(
     citedSnippetCount: usedSnippetIndexes.length,
     citedSnippetIndexes: usedSnippetIndexes,
     coverageWriterChecks: input.coverageWriterChecks,
+    servingRow: input.servingRow,
   });
   if (judged.refusal || !judged.description) {
     return {

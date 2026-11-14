@@ -7,18 +7,22 @@
  */
 import { startLongRunProgress } from '../utils/longRunProgress';
 import {
+  LAB_SITE_DESCRIPTION_SOURCE,
   isPersonResearchRow,
   narrowedLabSiteDescriptionValue,
   withLabSiteDescriptionsNarrowedToResearch,
 } from '../utils/researchStatementPassage';
+import { isLabSiteBodyGroundedOnItsPage, labSiteBodyPageUrls } from './utils/labSiteBodyGrounding';
 import {
   everyCitedPersonPageUrl,
   identityWithPersonPageUrls,
   withoutNamesakePersonPageDescriptions,
 } from './utils/namesakePersonPageDescriptions';
 import {
+  storedPageTextByUrl,
   withoutRefusedNonYaleMicrositeDescriptions,
   withoutRefusedNonYaleMicrositePageFields,
+  type StoredPageTextByUrl,
 } from './utils/nonYaleMicrositeDescriptionScreen';
 import { leadGrantAwardRecordKeys } from './utils/grantRecordPage';
 import { cachedCardFor } from './cardSynthesisDerivation';
@@ -478,9 +482,12 @@ import {
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
-import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
 import { withoutAdviseeProgramsMovedToMentors } from '../services/hostedUndergraduates';
-import { servedResearchEntityCopy } from '../services/servedResearchEntityCard';
+import {
+  servingBarAcceptsDescriptionPair,
+  servingBarAcceptsFullDescription,
+  servingBarAcceptsWrittenBodyCard,
+} from './utils/fullDescriptionServingBar';
 import { agenciesBackedByRunningAwards } from '../services/servedCurrentFunding';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import {
@@ -720,6 +727,11 @@ interface MaterializeOptions {
    * row that still exists must never reach a write.
    */
   treatArchivedResearchEntitiesAsAbsent?: ReadonlySet<string>;
+  /**
+   * Plan as if these observations were already retired, so a dry run answers whether
+   * retiring one would still leave the row a value that serves. `dryRun` is required.
+   */
+  treatObservationIdsAsRetired?: ReadonlySet<string>;
   chunkPrefetch?: MaterializationReadSource;
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: CardSynthesizer;
@@ -10928,6 +10940,8 @@ export interface ProjectFromLogInput {
   /** Every person page the row's own live observations cite (#5764). */
   observedPersonPageUrls?: readonly string[];
   resolverObs: ResolverObservation[];
+  /** Stored page text by cited page, so a lab-site body is served only from its page (#5961). */
+  labSitePageTextByUrl?: StoredPageTextByUrl;
   derivedResearchAreas?: DerivedResearchAreaCandidate;
   storedDerivedResearchAreasStale?: boolean;
   fullDescriptionShellGated: boolean;
@@ -11108,6 +11122,98 @@ function adoptServableFullDescription(input: {
 
   set[field] = replacement.materialized;
   confidenceByField[field] = replacement.candidate.confidence;
+  if (replacement.provenance) set[`fieldProvenance.${field}`] = replacement.provenance;
+  return 1;
+}
+
+/**
+ * A lab-site body that is not on a stored copy of the page it cites yields to the row's
+ * written body, then to the next ranked body that is not such a copy and that serves
+ * (#4869, #5961). When nothing else serves, the stored body stays: an ungrounded body alone
+ * neither empties the field nor hides the row. A derivation on every resolve, so it writes
+ * no lock and a later re-capture of the page restores the body.
+ */
+function replaceUngroundedLabSiteBody(input: {
+  now: Date;
+  entityType: ObservedEntityType;
+  set: Record<string, unknown>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  derivedKind: string | undefined;
+  resolverObs: ResolverObservation[];
+  manuallyLockedFields: string[];
+  manualValues: Record<string, unknown>;
+  materializationObs: MaterializerObservationLike[];
+  leadPersonName: string;
+  labSitePageTextByUrl: StoredPageTextByUrl;
+}): number {
+  const field = 'fullDescription';
+  if (input.manuallyLockedFields.includes(field)) return 0;
+  const { set, entityDoc } = input;
+  const servedValue = Object.hasOwn(set, field) ? set[field] : entityDoc?.[field];
+  const servedProvenance = (set[`fieldProvenance.${field}`] ??
+    entityDoc?.fieldProvenance?.[field]) as
+    { sourceName?: unknown; sourceUrl?: unknown } | undefined;
+  if (!textValue(servedValue) || servedProvenance?.sourceName !== LAB_SITE_DESCRIPTION_SOURCE) {
+    return 0;
+  }
+  const groundedOnItsPage = (body: unknown, citedUrl?: unknown): boolean =>
+    isLabSiteBodyGroundedOnItsPage({
+      body,
+      pageUrls:
+        typeof citedUrl === 'string' && citedUrl
+          ? [citedUrl]
+          : labSiteBodyPageUrls(body, input.materializationObs),
+      pageTextByUrl: input.labSitePageTextByUrl,
+    });
+  if (groundedOnItsPage(servedValue, servedProvenance.sourceUrl)) return 0;
+
+  const kind = set.kind ?? input.derivedKind ?? entityDoc?.kind;
+  const identity = {
+    name: set.name ?? entityDoc?.name,
+    displayName: set.displayName ?? entityDoc?.displayName,
+  };
+  const replacements = resolveFieldRanked(field, input.resolverObs, {
+    now: input.now,
+    manuallyLockedFields: input.manuallyLockedFields,
+    manualValues: input.manualValues,
+    descriptionEntityKind: descriptionEntityKindForResearchEntity(entityDoc),
+  })
+    .map((candidate) => ({
+      candidate,
+      provenance: fieldProvenanceForResolvedObservation(field, candidate, input.materializationObs),
+      materialized: sanitizeProjectedField(
+        input.entityType,
+        field,
+        textValue(candidate.value),
+        entityDoc?.[field],
+        { slug: entityDoc?.slug, name: identity.name, displayName: identity.displayName },
+      ),
+    }))
+    .filter(({ candidate, provenance, materialized }) => {
+      const text = textValue(materialized);
+      if (!text || text === textValue(servedValue)) return false;
+      if (
+        candidate.contributingSources.includes(LAB_SITE_DESCRIPTION_SOURCE) &&
+        !groundedOnItsPage(candidate.value, provenance?.sourceUrl)
+      ) {
+        return false;
+      }
+      return servingBarAcceptsFullDescription(
+        entityDoc,
+        { ...set, kind },
+        text,
+        input.leadPersonName,
+      );
+    });
+  const replacement =
+    replacements.find(({ candidate }) =>
+      candidate.contributingSources.includes(WRITTEN_DESCRIPTION_SOURCE_NAME),
+    ) ?? replacements[0];
+  if (!replacement) return 0;
+
+  set[field] = replacement.materialized;
+  input.confidenceByField[field] = replacement.candidate.confidence;
   if (replacement.provenance) set[`fieldProvenance.${field}`] = replacement.provenance;
   return 1;
 }
@@ -12424,97 +12530,11 @@ export function descriptionSanitizerRejectedCandidateOverStoredProse(
   );
 }
 
-function servingRepresentationForCandidate(
-  entityDoc: Record<string, unknown> | null | undefined,
-  projected: Record<string, unknown>,
-  candidateText: string,
-  leadPersonName: string,
-) {
-  const projectedFields = Object.fromEntries(
-    Object.entries(projected).filter(([field]) => !field.includes('.')),
-  );
-  // Topic canonicalization and derivation run after the description is chosen, so the
-  // stored topics are what the gate will judge the body against (#4280).
-  const researchAreas = entityDoc?.researchAreas ?? projectedFields.researchAreas;
-  // Judged as the row will store it: the stored-text normalization runs at the end of
-  // the pass and repairs harvest defects such as glued sentences (#4280).
-  const storedText = String(withHarvestTextDefectsCorrected('fullDescription', candidateText));
-  const entity = {
-    ...(entityDoc || {}),
-    ...projectedFields,
-    researchAreas,
-    fullDescription: storedText,
-  };
-  const leadMemberNames = leadPersonName ? [leadPersonName] : [];
-  return {
-    leadMemberNames,
-    representation: buildResearchEntityPublicDescriptionRepresentation({ entity, leadMemberNames }),
-  };
-}
-
-/**
- * The serving check's own verdict on a candidate body, asked of the row as this pass
- * would leave it. The adoption bar used to be `fullDescriptionQuality` alone, which is
- * weaker than the serve chain's sanitizers, so a body could win the field and then be
- * refused at serve time while a body that serves sat lower in the ranked list (#3437).
- * Calling the serving function itself, rather than restating it, is what keeps the two
- * bars one predicate.
- */
-export function servingBarAcceptsFullDescription(
-  entityDoc: Record<string, unknown> | null | undefined,
-  projected: Record<string, unknown>,
-  candidateText: string,
-  leadPersonName: string,
-): boolean {
-  const { representation, leadMemberNames } = servingRepresentationForCandidate(
-    entityDoc,
-    projected,
-    candidateText,
-    leadPersonName,
-  );
-  return (
-    representation.strictQuality.full.isUseful &&
-    textValue(servedResearchEntityCopy(representation.entity, leadMemberNames).fullDescription)
-      .length > 0
-  );
-}
-
-export function servingBarAcceptsDescriptionPair(
-  entityDoc: Record<string, unknown> | null | undefined,
-  projected: Record<string, unknown>,
-  candidateText: string,
-  leadPersonName: string,
-): boolean {
-  const { representation } = servingRepresentationForCandidate(
-    entityDoc,
-    projected,
-    candidateText,
-    leadPersonName,
-  );
-  return representation.invariant.pass && representation.strictQuality.full.isUseful;
-}
-
-/**
- * The serving check's verdict on a card beside a written body, asked of the row as this
- * pass would leave it: the public description invariant passes and the card the gate
- * judges is complete, which is exactly what `missing_card_description` and
- * `public_description_invariant_failed` read.
- */
-export function servingBarAcceptsWrittenBodyCard(
-  entityDoc: Record<string, unknown> | null | undefined,
-  projected: Record<string, unknown>,
-  body: string,
-  card: string,
-  leadPersonName: string,
-): boolean {
-  const { representation } = servingRepresentationForCandidate(
-    entityDoc,
-    { ...projected, shortDescription: card },
-    body,
-    leadPersonName,
-  );
-  return representation.invariant.pass && representation.quality.cardState === 'complete';
-}
+export {
+  servingBarAcceptsDescriptionPair,
+  servingBarAcceptsFullDescription,
+  servingBarAcceptsWrittenBodyCard,
+};
 
 export async function projectFromLog(
   entityType: ObservedEntityType,
@@ -12674,6 +12694,20 @@ export async function projectFromLog(
       manualValues,
       materializationObs,
       leadPersonName: input.nameIdentityAuthority.leadPersonName,
+    });
+    fieldsWritten += replaceUngroundedLabSiteBody({
+      now: input.now,
+      entityType,
+      set,
+      confidenceByField,
+      entityDoc,
+      derivedKind,
+      resolverObs,
+      manuallyLockedFields,
+      manualValues,
+      materializationObs,
+      leadPersonName: input.nameIdentityAuthority.leadPersonName,
+      labSitePageTextByUrl: input.labSitePageTextByUrl ?? new Map(),
     });
     fieldsWritten += adoptServableShortDescription({
       now: input.now,
@@ -14323,6 +14357,9 @@ async function materializeEntityUnderRemovalGuard(
   if (options.treatArchivedResearchEntitiesAsAbsent && !options.dryRun) {
     throw new Error('materializeEntity treatArchivedResearchEntitiesAsAbsent requires dryRun');
   }
+  if (options.treatObservationIdsAsRetired && !options.dryRun) {
+    throw new Error('materializeEntity treatObservationIdsAsRetired requires dryRun');
+  }
   if (options.reviseRevisitableFieldLocks && !options.dryRun) {
     throw new Error('materializeEntity reviseRevisitableFieldLocks requires dryRun');
   }
@@ -14376,7 +14413,10 @@ async function materializeEntityUnderRemovalGuard(
     );
   }
 
-  let obs = withheldFiltered;
+  const treatedAsRetired = options.treatObservationIdsAsRetired;
+  let obs = treatedAsRetired
+    ? withheldFiltered.filter((observation: any) => !treatedAsRetired.has(String(observation._id)))
+    : withheldFiltered;
   if (obs.length === 0 && isResearchEntityObservationType(entityType)) {
     obs = await observationsMergedIntoLiveSurvivor(entityType, identifier, options.chunkPrefetch);
   }
@@ -15266,6 +15306,7 @@ async function materializeEntityUnderRemovalGuard(
     // set the resolver itself read: a walk over the unscreened set can adopt a value this
     // row refuses, which the #3438 clear then blanks over an admissible rival (#3884).
     resolverObs: refusalScreen.kept,
+    labSitePageTextByUrl: storedPageTextByUrl(obs),
     derivedResearchAreas,
     storedDerivedResearchAreasStale,
     fullDescriptionShellGated,

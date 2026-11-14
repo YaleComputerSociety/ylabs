@@ -43,7 +43,7 @@ const value = [{ url: URL, text: pageText }];
  * writer's evidence and every row's description re-synthesizes (#5537).
  */
 const WRITER_INPUT_HASH_BEFORE_THE_TOPIC_HELPER =
-  'a02f1eea6c7253de11de1f68374eebd931d18d71c4341777b6e913c60df8689e';
+  'a1c0d71faa3b5b25f92488c177bc752989715595f04c4d2e565f7d9ef5d20ced';
 
 describe('researchPageTextEntriesForTopics (#5882)', () => {
   it('applies the writer pipeline: chrome, school menu blocks and publication listings', () => {

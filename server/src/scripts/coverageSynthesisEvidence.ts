@@ -4,10 +4,17 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
 import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
+import { isUnderOwnWebsite } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
+import { isYaleHostedPage } from '../scrapers/utils/nonYaleMicrositeOwnership';
 import type { CoverageObservationLike, CoverageSnippet } from '../scrapers/coverageSynthesis';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import { containsAsciiControl } from '../utils/asciiControl';
-import { loadResearchEntityLeadPersonName } from '../utils/researchHomeNameIdentityRoster';
+import {
+  loadResearchEntityLeadPersonDisplayNames,
+  loadResearchEntityLeadPersonName,
+} from '../utils/researchHomeNameIdentityRoster';
+import { withPublicDescriptionGateFields } from '../services/researchEntityPublicDescription';
+import type { ServingRowContext } from '../scrapers/utils/fullDescriptionServingBar';
 import {
   INGEST_VERIFIED_EXTRACTION_SOURCE,
   PAGE_GROUNDING_VERIFIED_SINCE,
@@ -20,6 +27,24 @@ import {
 
 export const WRITER_ENTITY_PROJECTION =
   'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl sourceUrls fieldValueRefusals';
+/**
+ * The writer's row read: its evidence fields, plus the serving bar's gate fields kept
+ * apart under `servingEntity`, so the serving bar judges a draft in the row the
+ * materializer judges it in while the evidence the writer reads stays exactly
+ * `WRITER_ENTITY_PROJECTION`.
+ */
+export const WRITER_ENTITY_READ_PROJECTION =
+  withPublicDescriptionGateFields(WRITER_ENTITY_PROJECTION);
+const WRITER_ENTITY_FIELDS = ['_id', ...WRITER_ENTITY_PROJECTION.split(/\s+/)];
+
+export function writerEntityRowOf(doc: Record<string, unknown>): WriterEntityRow {
+  const row: WriterEntityRow = {};
+  for (const field of WRITER_ENTITY_FIELDS) {
+    if (Object.hasOwn(doc, field)) row[field] = doc[field];
+  }
+  row.servingEntity = doc;
+  return row;
+}
 export const WRITER_OBSERVATION_PROJECTION =
   'field value sourceUrl sourceName confidence observedAt scrapeRunId superseded';
 
@@ -32,6 +57,7 @@ export interface WriterRowEvidence {
   observations: WriterObservation[];
   mergedInObservations: WriterObservation[];
   leadNames?: string[];
+  websiteUrlStatedByYaleSource?: boolean;
 }
 
 export const WRITER_EVIDENCE_FILE_VERSION = 1;
@@ -74,17 +100,73 @@ export async function loadWriterObservations(
   );
 }
 
+const sameWebsite = (a: unknown, b: unknown): boolean =>
+  typeof a === 'string' &&
+  typeof b === 'string' &&
+  isUnderOwnWebsite(a, b) &&
+  isUnderOwnWebsite(b, a);
+
+export function websiteUrlIsStatedByYaleSource(
+  websiteUrl: unknown,
+  websiteObservations: readonly { value?: unknown; sourceUrl?: unknown }[],
+): boolean {
+  return websiteObservations.some(
+    (obs) =>
+      typeof obs.sourceUrl === 'string' &&
+      isYaleHostedPage(obs.sourceUrl) &&
+      sameWebsite(obs.value, websiteUrl),
+  );
+}
+
+export async function loadWebsiteUrlStatedByYaleSource(
+  anchors: Record<string, unknown>[],
+  websiteUrl: unknown,
+): Promise<boolean> {
+  if (anchors.length === 0 || typeof websiteUrl !== 'string' || !websiteUrl) return false;
+  const websiteObservations = (await Observation.find({
+    entityType: 'researchEntity',
+    ...materializationReadScopeFilter(),
+    field: 'websiteUrl',
+    $or: anchors,
+  })
+    .select('value sourceUrl')
+    .lean()) as Array<{ value?: unknown; sourceUrl?: unknown }>;
+  return websiteUrlIsStatedByYaleSource(websiteUrl, websiteObservations);
+}
+
 export async function loadWriterEntitiesBySlug(
   slugs: readonly string[],
 ): Promise<WriterEntityRow[]> {
-  return (await ResearchEntity.find({ slug: { $in: [...slugs] }, archived: { $ne: true } })
-    .select(WRITER_ENTITY_PROJECTION)
-    .lean()) as WriterEntityRow[];
+  const docs = (await ResearchEntity.find({ slug: { $in: [...slugs] }, archived: { $ne: true } })
+    .select(WRITER_ENTITY_READ_PROJECTION)
+    .lean()) as Record<string, unknown>[];
+  return docs.map(writerEntityRowOf);
 }
 
+export function writerServingRow(row: {
+  entity: WriterEntityRow;
+  leadNames?: readonly string[];
+}): ServingRowContext {
+  const servingEntity = row.entity.servingEntity;
+  return {
+    entity:
+      servingEntity && typeof servingEntity === 'object'
+        ? (servingEntity as Record<string, unknown>)
+        : row.entity,
+    leadPersonName: row.leadNames?.[0] ?? '',
+  };
+}
+
+/**
+ * Every live lead of the row, the materializer's lead first: the page filter admits a page
+ * that names any lead, as topic derivation does (#6127), and the serving bar reads the first.
+ */
 export async function writerLeadNames(entityId: unknown): Promise<string[]> {
   const leadName = await loadResearchEntityLeadPersonName(entityId);
-  return leadName ? [leadName] : [];
+  const id = entityId === undefined || entityId === null ? '' : String(entityId);
+  const allLeads = id ? ((await loadResearchEntityLeadPersonDisplayNames([id])).get(id) ?? []) : [];
+  const others = allLeads.filter((name) => name !== leadName);
+  return leadName ? [leadName, ...others] : others;
 }
 
 export async function loadWriterRowEvidence(
@@ -106,6 +188,10 @@ export async function loadWriterRowEvidence(
       observations: await loadWriterObservations(anchors, verifiedRunIds),
       mergedInObservations: await loadWriterObservations(mergedInAnchors, verifiedRunIds),
       leadNames: await writerLeadNames(entity._id),
+      websiteUrlStatedByYaleSource: await loadWebsiteUrlStatedByYaleSource(
+        anchors,
+        entity.websiteUrl,
+      ),
     });
   }
   return rows;
@@ -119,6 +205,7 @@ export function snippetsFromRowEvidence(row: WriterRowEvidence, now: Date): Cove
     kind: row.entity.kind,
     identity: row.entity,
     leadNames: row.leadNames,
+    websiteUrlStatedByYaleSource: row.websiteUrlStatedByYaleSource === true,
     now,
   };
   const own = buildWriterEvidenceSnippets(row.observations, row.entity.recentGrants, options);
@@ -165,6 +252,7 @@ export function parseWriterEvidenceFile(value: unknown): WriterEvidenceFile {
       ...(Array.isArray(row.leadNames)
         ? { leadNames: row.leadNames.filter((name): name is string => typeof name === 'string') }
         : {}),
+      ...(row.websiteUrlStatedByYaleSource === true ? { websiteUrlStatedByYaleSource: true } : {}),
     })),
   };
 }

@@ -1,5 +1,7 @@
 import { isPersonResearchRow } from '../utils/researchStatementPassage';
-import { withoutRefusedNonYaleMicrositeDescriptions } from '../scrapers/utils/nonYaleMicrositeDescriptionScreen';
+import { storedPageTextByUrl } from '../scrapers/utils/nonYaleMicrositeDescriptionScreen';
+import { normalizeEvidenceUrl } from '../scrapers/utils/sharedEvidenceUrls';
+import { descriptionPageIsRowLeadsOwn } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
 import { withoutNamesakePersonPageDescriptions } from '../scrapers/utils/namesakePersonPageDescriptions';
 import type { ResearchEntityIdentity } from '../scrapers/utils/personProfileEntityMatch';
 import { SOURCE_CONTENT_HASH_FIELD } from '../scrapers/contentHashGate';
@@ -13,6 +15,7 @@ import {
   gatherCoverageSnippets,
   isCoverageSynthesisLlmFailure,
   type CoverageObservationLike,
+  type EvidencePageAdmission,
   type CoverageSnippet,
   type CoverageSynthesisDecision,
   type StoredPageTextLookup,
@@ -39,6 +42,7 @@ export interface CoverageSynthesisArgs {
   skipIndexSync: boolean;
   ignoreEvidenceHash: boolean;
   reinstateRetiredBodies: boolean;
+  retireUnsupportedRefusedBodies: boolean;
   evaluate: boolean;
   validateOnly: boolean;
   printWriterPrompt: boolean;
@@ -113,6 +117,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     skipIndexSync: false,
     ignoreEvidenceHash: false,
     reinstateRetiredBodies: false,
+    retireUnsupportedRefusedBodies: false,
     evaluate: false,
     validateOnly: false,
     printWriterPrompt: false,
@@ -151,7 +156,9 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     else if (token === '--skip-index-sync') args.skipIndexSync = true;
     else if (token === '--ignore-evidence-hash') args.ignoreEvidenceHash = true;
     else if (token === '--reinstate-retired-bodies') args.reinstateRetiredBodies = true;
-    else if (token === '--evaluate') args.evaluate = true;
+    else if (token === '--retire-unsupported-refused-bodies') {
+      args.retireUnsupportedRefusedBodies = true;
+    } else if (token === '--evaluate') args.evaluate = true;
     else if (token === '--validate-only') args.validateOnly = true;
     else if (token === '--print-writer-prompt') args.printWriterPrompt = true;
     else if (token === '--synthesize-cards') args.synthesizeCards = true;
@@ -367,6 +374,11 @@ export function assertWriterCacheModeAllowed(
  * named `--slugs` set, which bounds the spend to rows an operator chose to re-judge.
  */
 export function assertIgnoreEvidenceHashScoped(args: CoverageSynthesisArgs): void {
+  if (args.retireUnsupportedRefusedBodies && args.reinstateRetiredBodies) {
+    throw new Error(
+      'research-entity:coverage-synthesis --retire-unsupported-refused-bodies is refused with --reinstate-retired-bodies',
+    );
+  }
   if (args.reinstateRetiredBodies && args.slugs.length === 0) {
     throw new Error(
       'research-entity:coverage-synthesis --reinstate-retired-bodies requires --slugs=<slug,...>',
@@ -557,6 +569,11 @@ export interface WriterEvidenceOptions {
   /** The row's own name, slug and committed citations, for the namesake screen (#5764). */
   identity?: { slug?: unknown; name?: unknown; sourceUrls?: unknown };
   leadNames?: readonly (string | undefined | null)[];
+  /**
+   * The row's `websiteUrl` is stated by a live observation from a Yale-hosted source, such
+   * as the lead's official profile or a department roster, rather than by the page itself.
+   */
+  websiteUrlStatedByYaleSource?: boolean;
 }
 
 const namesakeScreenIdentity = (
@@ -568,6 +585,50 @@ const namesakeScreenIdentity = (
     ? identity.sourceUrls.filter((url): url is string => typeof url === 'string')
     : [],
 });
+
+/**
+ * Whether a page the writer would read names the row's lead, by the lane's own rule
+ * (`descriptionPageNamesRowLead`, #4873), so a person-named row is never written from a
+ * department homepage or another unit's page that does not name its lead.
+ *
+ * A page under the row's own website is admitted for this read without naming the lead
+ * when a Yale-hosted source states that website: a personal site rarely restates its
+ * owner's surname, and the Yale source is the identity evidence the page cannot give.
+ * The lane gate keeps #5818's stricter rule, because a website the external page itself
+ * supplied (#5777) has no such statement.
+ */
+export function writerEvidencePageNamesRowLead(
+  observations: readonly CoverageObservationLike[],
+  options: WriterEvidenceOptions,
+  isPersonRow: boolean,
+): EvidencePageAdmission {
+  const personNames = (options.leadNames ?? []).filter(
+    (name): name is string => typeof name === 'string' && name.trim() !== '',
+  );
+  if (personNames.length === 0) return () => true;
+  const pageTextByUrl = storedPageTextByUrl(observations);
+  const kind = isPersonRow ? 'individual' : options.kind;
+  return (pageUrl, text) => {
+    const pageText = [
+      pageTextByUrl.get(normalizeEvidenceUrl(pageUrl)),
+      options.storedPageText?.(pageUrl),
+      text,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    return personNames.some((personName) =>
+      descriptionPageIsRowLeadsOwn({
+        personName,
+        websiteUrl: options.websiteUrl,
+        websiteUrlStatedByYaleSource: options.websiteUrlStatedByYaleSource,
+        rowName: options.identity?.name,
+        kind,
+        pageUrl,
+        pageText,
+      }),
+    );
+  };
+}
 
 /**
  * The writer's evidence: page text the row carries, ordered by `orderWriterEvidence`,
@@ -588,21 +649,14 @@ export function buildWriterEvidenceSnippets(
           namesakeScreenIdentity(options.identity),
         )
       : observations;
-  const ownedMicrositeEvidence = isPersonRow
-    ? withoutRefusedNonYaleMicrositeDescriptions(
-        ownPersonEvidence,
-        options.leadNames ?? [],
-        observations,
-      )
-    : ownPersonEvidence;
   const admissible = refusedResolverObservations(
-    withOnlyCurrentResearchPageText(ownedMicrositeEvidence),
+    withOnlyCurrentResearchPageText(ownPersonEvidence),
     options.fieldValueRefusals,
   ).kept;
   const ordered = orderWriterEvidence(admissible, options.websiteUrl);
   const pageObservations = ordered.filter((obs) => !isGrantEvidenceSource(obs.sourceName));
   const fromPages = gatherCoverageSnippets(pageObservations, options.storedPageText, {
-    narrowLabSiteDescriptions: isPersonRow,
+    admitsPage: writerEvidencePageNamesRowLead(observations, options, isPersonRow),
   });
   if (hasOwnResearchProse(fromPages)) return fromPages;
   const room = MAX_COVERAGE_SNIPPETS - fromPages.length;

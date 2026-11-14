@@ -13,7 +13,7 @@ export type CardDraftFn = SynthesizeGroundedCardInput['callLLM'];
 import { WRITER_TEXT_NORMALIZER_VERSION, normalizeWriterText } from './utils/writerEvidenceText';
 
 /** Part of the card cache key, so a change to the code-side card checks re-judges every body once. */
-export const CARD_CONTRACT_VERSION = 'card-synthesis-5537-v1';
+export const CARD_CONTRACT_VERSION = 'card-synthesis-5961-v2';
 
 export interface CardInputs {
   promptHash: string;

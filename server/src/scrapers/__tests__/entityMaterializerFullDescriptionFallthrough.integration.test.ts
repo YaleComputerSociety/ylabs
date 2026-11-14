@@ -213,12 +213,7 @@ describe('materializeEntity falls through to the best quality-passing fullDescri
 
   it('does not displace a useful top-confidence winner with a lower-ranked observation', async () => {
     await seedEntity({ name: 'Park Laboratory' });
-    await seedFull(
-      CLEAN_WINNER_FULL,
-      'lab-microsite-description-llm',
-      0.95,
-      '2026-02-01T00:00:00Z',
-    );
+    await seedFull(CLEAN_WINNER_FULL, 'ysm-faculty-directory', 0.95, '2026-02-01T00:00:00Z');
     await seedFull(
       ALTERNATE_CLEAN_FULL,
       'department-undergrad-research',

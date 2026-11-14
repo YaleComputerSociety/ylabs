@@ -1089,7 +1089,7 @@ interface RowLead {
   kind?: unknown;
 }
 
-const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
+export const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
   try {
     const page = new URL(pageUrl);
     const own = new URL(String(websiteUrl || ''));
@@ -1131,6 +1131,21 @@ export function descriptionPageNamesRowLead(
   if (isUnderOwnWebsite(input.pageUrl, input.websiteUrl)) return true;
   if (urlCarriesSurname(input.pageUrl, surname)) return true;
   return ` ${comparableName(input.pageText)} `.includes(` ${surname} `);
+}
+
+/**
+ * `descriptionPageNamesRowLead`, plus a page under the row's own website on any host when a
+ * live Yale-hosted observation states that website (#5961). The writer and topic derivation
+ * both judge pages through this, so the two cannot drift; the lane gate keeps the stricter
+ * `descriptionPageNamesRowLead` (#5818).
+ */
+export function descriptionPageIsRowLeadsOwn(
+  input: RowLead & { pageUrl: string; pageText: string; websiteUrlStatedByYaleSource?: boolean },
+): boolean {
+  if (input.websiteUrlStatedByYaleSource && isUnderOwnWebsite(input.pageUrl, input.websiteUrl)) {
+    return true;
+  }
+  return descriptionPageNamesRowLead(input);
 }
 
 /**

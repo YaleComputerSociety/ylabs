@@ -150,6 +150,17 @@ A zero with neither a query nor a filter active is the served total, which the s
 The tip replaces the "Missing evidence is not proof there is none." note rather than joining it: the owner answered on 2026-11-13 that the note is dropped, which overrode an earlier request to keep both.
 The sidebar stays at the 566px the line above records, inside the same budget, because the tip sits behind an info button there.
 
+## 2026-11-12: The v2 Written-Description Contract (#5961)
+
+Decision (coordinating session, 2026-11-12): items A to F of the design comment on #5961 are approved as designed, and this entry records the code half.
+The lab-site description lane (`lab-microsite-description-llm`) is no longer writer evidence; it stays a lead-ownership and website signal.
+The writer reads a page only when it names the row's lead, by the lane's own `descriptionPageNamesRowLead` rule (#4873).
+A served `fullDescription` whose provenance is that lane is served only when it is on the stored copy of the page it cites; otherwise the row falls back to its written body, then to the next ranked body that serves, and when nothing else serves it keeps its stored text, so an ungrounded body never empties the field or hides the row on its own.
+The writer prompt and the card prompt gain the rules the design names, and `WRITER_CONTRACT_VERSION` and `CARD_CONTRACT_VERSION` are bumped once each.
+Past work presented as current gets a prompt rule rather than a new deterministic refusal, because the existing flag's precision was too low to refuse on (finding 3 of the design comment).
+The re-draft is Claude-local only and is sequenced after the #5894 page-text re-capture; the bar before any apply is recorded on #5961.
+The mechanics are in `docs/research-data-pipeline.md` under "The v2 written-description contract".
+
 ## 2026-11-12: A Card-Length Written Body Serves As Its Own Card (#5537)
 
 This refines the #4788 rule that a written body's card must not restate its body.

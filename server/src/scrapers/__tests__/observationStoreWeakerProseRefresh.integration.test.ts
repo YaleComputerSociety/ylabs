@@ -76,7 +76,11 @@ describe('a useful-but-worse prose refresh cannot displace a clean incumbent end
     });
   });
 
-  const scrapeRun = (value: string, observedAt: string) =>
+  const scrapeRun = (
+    value: string,
+    observedAt: string,
+    reportDrops?: (droppedBy: Record<string, number>) => void,
+  ) =>
     appendObservations(
       [
         {
@@ -95,6 +99,7 @@ describe('a useful-but-worse prose refresh cannot displace a clean incumbent end
         sourceWeight: 0.82,
         dryRun: false,
       },
+      { reportDrops },
     );
 
   const servedFullDescription = async () => {
@@ -123,6 +128,13 @@ describe('a useful-but-worse prose refresh cannot displace a clean incumbent end
     expect(secondRun).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
     expect(await activeFullDescriptions()).toEqual([RESEARCH]);
     expect(await servedFullDescription()).toBe(RESEARCH);
+  });
+
+  it('names the guard that kept the mission paragraph out (#5961)', async () => {
+    await scrapeRun(RESEARCH, '2026-05-01T00:00:00.000Z');
+    const drops: Array<Record<string, number>> = [];
+    await scrapeRun(MISSION, '2026-08-01T00:00:00.000Z', (droppedBy) => drops.push(droppedBy));
+    expect(drops).toEqual([{ weakerProse: 1 }]);
   });
 
   it('lets grounded research prose replace a mission incumbent, so a damaged home recovers', async () => {

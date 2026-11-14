@@ -93,6 +93,7 @@ describe('the writer cache settles imported drafts without a model call (#5537)'
       snippets: snippetsFromRowEvidence(row, EVIDENCE_AT),
       entityName: 'Reef Lab',
       entityType: 'LAB',
+      servingRow: null,
       previousInputHash: 'an-earlier-input',
       store: mongoWrittenDescriptionDerivationStore,
       drafting,
