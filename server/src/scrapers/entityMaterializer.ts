@@ -245,6 +245,10 @@ import {
   WRITTEN_DESCRIPTION_SOURCE_NAME,
 } from './confidenceResolver';
 import {
+  resolvePooledDepartment,
+  type DepartmentSpecificityCatalog,
+} from './pooledDepartmentSpecificity';
+import {
   MaterializationChunkPrefetch,
   prefetchObjectIdString,
   userKeyReferenceId,
@@ -9567,14 +9571,30 @@ async function userKeyJoinEvidence(
     reference.entityKey,
     unscreened,
   );
-  const unjoined: UserKeyJoinEvidence = { researcherId: undefined, titleObservations: [] };
+  const unjoined: UserKeyJoinEvidence = {
+    researcherId: undefined,
+    titleObservations: [],
+    departmentObservations: [],
+  };
   if (kept.length === 0) return unjoined;
   const screened = await screenedUserIdentityJoin(reference, kept, now);
   if ('skipped' in screened) return unjoined;
   return {
     researcherId: prefetchObjectIdString(screened.join.researcher?._id),
     titleObservations: userTitleObservations(screened.observations),
+    departmentObservations: await screenedUserDepartmentObservations(screened.observations),
   };
+}
+
+async function screenedUserDepartmentObservations(observations: readonly any[]): Promise<any[]> {
+  return withUserDepartmentObservationsScreened(
+    observations.filter(
+      (observation) =>
+        observation.field === 'primaryDepartment' &&
+        !shouldIgnoreObservationForEntityMaterialization('user', observation),
+    ),
+    { canonicalDepartment: await catalogDepartment() },
+  );
 }
 
 export interface UserKeyResearcherJoins {
@@ -9671,6 +9691,156 @@ interface ResearcherTitle {
   fromFreshFirstHand: boolean;
 }
 
+interface JoiningKeyInput {
+  researcher: any;
+  identifier: UserKeyReference;
+  now: Date;
+  prefetch?: MaterializationReadSource;
+}
+
+interface JoiningKeyEvidence {
+  researcherId: string;
+  evidence: Map<string, UserKeyJoinEvidence>;
+  ownKeyIsFindable: boolean;
+  cache: MaterializationReadSource['userIdentityJoins'];
+}
+
+/**
+ * The join evidence of every person key the researcher's own identity names, other than
+ * the key being materialized (#5578). Callers pool only the keys whose own engine join also
+ * reaches this researcher, so membership needs both directions and a namesake key the name
+ * resolver alone reaches never enters a pool.
+ */
+async function joiningKeyEvidence(input: JoiningKeyInput): Promise<JoiningKeyEvidence | undefined> {
+  const researcherId = prefetchObjectIdString(input.researcher?._id);
+  if (!researcherId) return undefined;
+  const cache = input.prefetch?.userIdentityJoins;
+  let candidates = cache?.candidatesFor(researcherId);
+  if (!candidates) {
+    candidates = await userKeysNamingResearcherIdentity(input.researcher);
+    cache?.rememberCandidates(researcherId, candidates);
+  }
+  const own = input.identifier;
+  const ownKeyIsFindable = candidates.some((candidate) => sameUserKeyReference(candidate, own));
+  const others = candidates.filter((candidate) => !sameUserKeyReference(candidate, own));
+  const evidence = await userKeyJoinEvidenceFor(others, input.now, input.prefetch);
+  return { researcherId, evidence, ownKeyIsFindable, cache };
+}
+
+async function userKeyJoinEvidenceFor(
+  references: readonly UserKeyReference[],
+  now: Date,
+  prefetch?: MaterializationReadSource,
+): Promise<Map<string, UserKeyJoinEvidence>> {
+  const cache = prefetch?.userIdentityJoins;
+  const evidence = new Map<string, UserKeyJoinEvidence>();
+  const unjoined: UserKeyReference[] = [];
+  for (const reference of references) {
+    const cached = cache?.joinFor(reference);
+    if (cached) evidence.set(userKeyReferenceId(reference), cached);
+    else unjoined.push(reference);
+  }
+  if (unjoined.length === 0) return evidence;
+  const observationsByReference = await liveObservationsOfUserKeys(unjoined, prefetch);
+  const joins = await Promise.all(
+    unjoined.map((reference) =>
+      userKeyJoinEvidence(
+        reference,
+        observationsByReference.get(userKeyReferenceId(reference)) ?? [],
+        now,
+      ),
+    ),
+  );
+  unjoined.forEach((reference, index) => {
+    cache?.rememberJoin(reference, joins[index]);
+    evidence.set(userKeyReferenceId(reference), joins[index]);
+  });
+  return evidence;
+}
+
+/**
+ * Dotted `netid:<local part>` keys (#5744) that alias the researcher's netid: the
+ * directory pairs exactly `<local part>@yale.edu` with that one netid and no other. A key
+ * whose own engine join reaches a different researcher is refused by the caller, and an
+ * address the directory pairs with zero or two or more netids aliases nobody.
+ */
+async function directoryAliasKeysOfResearcher(researcher: any): Promise<UserKeyReference[]> {
+  const netid = normalizedAccountNetid(researcher?.identifiers?.netid);
+  if (!netid || !looksLikeYaleNetid(netid)) return [];
+  const directory = await loadDirectoryNetidsByAddress();
+  const keys: UserKeyReference[] = [];
+  for (const [address, netids] of directory) {
+    if (netids.size !== 1 || !netids.has(netid)) continue;
+    const [local, domain] = address.split('@');
+    if (domain !== 'yale.edu' || !local || looksLikeYaleNetid(local)) continue;
+    keys.push({ entityKey: `netid:${local}` });
+  }
+  return keys;
+}
+
+async function departmentSpecificityCatalog(): Promise<DepartmentSpecificityCatalog | null> {
+  const canonical = await catalogDepartment();
+  if (!canonical) return null;
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  return {
+    canonical,
+    parentDepartmentsFor: (name) => canonicalizer.parentDepartmentsFor(name),
+  };
+}
+
+interface ResearcherDepartment {
+  resolved: ResolvedField | undefined;
+  fromOwnKeyFallback: boolean;
+}
+
+/**
+ * A researcher's primaryDepartment resolved once over the department evidence of every key
+ * that joins the researcher in both directions, plus the dotted keys the directory pairs
+ * with the researcher's netid, so the stored value no longer depends on which key ran
+ * last (#6217). Generalizes the #5578 title mechanism; a key the researcher's identity
+ * cannot name contributes only when no joining key states a department.
+ */
+async function researcherDepartmentOverEveryJoiningKey(
+  input: JoiningKeyInput & { ownObservations: readonly any[] },
+): Promise<ResearcherDepartment> {
+  const refusals = input.researcher?.fieldValueRefusals;
+  const ownDepartment = withoutResearcherRefusedObservations(
+    await screenedUserDepartmentObservations(input.ownObservations),
+    refusals,
+  );
+  const resolveOver = async (observations: any[]) =>
+    resolvePooledDepartment(observations, await departmentSpecificityCatalog(), input.now);
+  const ownKeyFallback = async (): Promise<ResearcherDepartment> => ({
+    resolved: await resolveOver(ownDepartment),
+    fromOwnKeyFallback: true,
+  });
+  const joining = await joiningKeyEvidence(input);
+  if (!joining) return ownKeyFallback();
+  const { researcherId, evidence, ownKeyIsFindable } = joining;
+  const directoryAliases = await directoryAliasKeysOfResearcher(input.researcher);
+  const ownKeyIsAlias = directoryAliases.some((alias) =>
+    sameUserKeyReference(alias, input.identifier),
+  );
+  const aliasKeys = directoryAliases.filter(
+    (alias) =>
+      !sameUserKeyReference(alias, input.identifier) && !evidence.has(userKeyReferenceId(alias)),
+  );
+  const aliasEvidence = await userKeyJoinEvidenceFor(aliasKeys, input.now, input.prefetch);
+  const pooled: any[] = withoutResearcherRefusedObservations(
+    [
+      ...[...evidence.values()].filter((joined) => joined.researcherId === researcherId),
+      ...[...aliasEvidence.values()].filter(
+        (joined) => joined.researcherId === undefined || joined.researcherId === researcherId,
+      ),
+    ].flatMap((joined) => joined.departmentObservations as any[]),
+    refusals,
+  );
+  if (ownKeyIsFindable || ownKeyIsAlias) pooled.push(...ownDepartment);
+  const resolved = await resolveOver(pooled);
+  if (resolved) return { resolved, fromOwnKeyFallback: false };
+  return ownKeyFallback();
+}
+
 async function researcherTitleOverEveryJoiningKey(input: {
   researcher: any;
   identifier: UserKeyReference;
@@ -9684,40 +9854,9 @@ async function researcherTitleOverEveryJoiningKey(input: {
     fromOwnKeyFallback: true,
     fromFreshFirstHand: false,
   });
-  const researcherId = prefetchObjectIdString(input.researcher?._id);
-  if (!researcherId) return ownKeyFallback(input.ownTitle);
-  const cache = input.prefetch?.userIdentityJoins;
-  let candidates = cache?.candidatesFor(researcherId);
-  if (!candidates) {
-    candidates = await userKeysNamingResearcherIdentity(input.researcher);
-    cache?.rememberCandidates(researcherId, candidates);
-  }
-  const own = input.identifier;
-  const ownKeyIsFindable = candidates.some((candidate) => sameUserKeyReference(candidate, own));
-  const others = candidates.filter((candidate) => !sameUserKeyReference(candidate, own));
-  const evidence = new Map<string, UserKeyJoinEvidence>();
-  const unjoined: UserKeyReference[] = [];
-  for (const candidate of others) {
-    const cached = cache?.joinFor(candidate);
-    if (cached) evidence.set(userKeyReferenceId(candidate), cached);
-    else unjoined.push(candidate);
-  }
-  if (unjoined.length > 0) {
-    const observationsByReference = await liveObservationsOfUserKeys(unjoined, input.prefetch);
-    const joins = await Promise.all(
-      unjoined.map((candidate) =>
-        userKeyJoinEvidence(
-          candidate,
-          observationsByReference.get(userKeyReferenceId(candidate)) ?? [],
-          input.now,
-        ),
-      ),
-    );
-    unjoined.forEach((candidate, index) => {
-      cache?.rememberJoin(candidate, joins[index]);
-      evidence.set(userKeyReferenceId(candidate), joins[index]);
-    });
-  }
+  const joining = await joiningKeyEvidence(input);
+  if (!joining) return ownKeyFallback(input.ownTitle);
+  const { researcherId, evidence, ownKeyIsFindable, cache } = joining;
   const refusals = input.researcher?.fieldValueRefusals;
   const pooled: any[] = withoutResearcherRefusedObservations(
     [...evidence.values()]
@@ -10205,11 +10344,11 @@ async function materializeUserIdentityToResearcher(
   if ('skipped' in screened) return skipped(screened.skipped);
   const { join, observations: screenedObservations } = screened;
   const {
-    resolved,
+    resolved: resolvedOverOwnKey,
     displayName,
     displayNameSources,
     title,
-    primaryDepartment,
+    primaryDepartment: primaryDepartmentOverOwnKey,
     imageUrl,
     websiteUrl,
     websiteUrlConfidence,
@@ -10296,7 +10435,7 @@ async function materializeUserIdentityToResearcher(
           userEntityKey: attributionKey,
           alias: keyIdentity.netid ?? '',
           displayName,
-          observedEmail: normalizedAccountEmail(resolved.email?.value),
+          observedEmail: normalizedAccountEmail(resolvedOverOwnKey.email?.value),
           observations: obs.filter(
             (o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o),
           ),
@@ -10321,7 +10460,7 @@ async function materializeUserIdentityToResearcher(
       mintGuard.refusesPerson({
         identifiers: {
           netid: resolvedNetid,
-          email: mintedEmail ?? normalizedAccountEmail(resolved.email?.value),
+          email: mintedEmail ?? normalizedAccountEmail(resolvedOverOwnKey.email?.value),
           orcid,
         },
         profileLinks: Object.values(profileUrls ?? {})
@@ -10361,6 +10500,27 @@ async function materializeUserIdentityToResearcher(
         now: options.now ?? new Date(),
         prefetch: options.chunkPrefetch,
       });
+  const departmentOverEveryKey = created
+    ? undefined
+    : await researcherDepartmentOverEveryJoiningKey({
+        researcher,
+        identifier: identifier.entityKey
+          ? { entityKey: identifier.entityKey }
+          : { entityId: prefetchObjectIdString(identifier.entityId) },
+        ownObservations: screenedObservations,
+        now: options.now ?? new Date(),
+        prefetch: options.chunkPrefetch,
+      });
+  const pooledDepartment =
+    departmentOverEveryKey && !departmentOverEveryKey.fromOwnKeyFallback
+      ? departmentOverEveryKey.resolved
+      : undefined;
+  const resolved = pooledDepartment
+    ? { ...resolvedOverOwnKey, primaryDepartment: pooledDepartment }
+    : resolvedOverOwnKey;
+  const primaryDepartment = pooledDepartment
+    ? textValue(pooledDepartment.value) || undefined
+    : primaryDepartmentOverOwnKey;
   const joinIdentityBeforeWrite = researcherJoinIdentitySnapshot(researcher);
 
   let fieldsWritten = heldPageFieldsWithdrawn;
