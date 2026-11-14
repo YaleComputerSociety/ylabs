@@ -112,15 +112,48 @@ function withoutCurriculumVitaeSentences(line: string): string {
   return splitDescriptionSentences(line).filter(isRecoverableResearchSentence).join(' ');
 }
 
+const ENDS_AS_A_SENTENCE = /[.!?]["')\]\u2019\u201d]?$/;
 const SKIP_LINK_LINE = /^(?:skip|jump)\s+(?:to|past|over|content|navigation|main)\b/i;
 const ACCESSIBILITY_LINK_LINE =
   /\b(?:accessibility\s+(?:statement|policy|notice|help|assistance|feedback|options|settings)|(?:report|request)\s+an?\s+(?:digital\s+)?accessibility\s+(?:issue|problem|barrier|accommodation)|screen\s+readers?\s+only)\b/i;
 const MAX_ACCESSIBILITY_LINE_WORDS = 12;
-const CONTACT_OR_LINK_LABEL_LINE =
-  /^(?:curriculum vitae|c\.?v\.?|r[e\u00e9]sum[e\u00e9]|(?:lab |personal )?web\s?site|home\s?page|e-?mail|phone|tel(?:ephone)?|fax|mobile|office|address|orcid|google scholar|twitter|linkedin|bluesky|github|researchgate)\s*:/i;
+const CURRICULUM_VITAE_LABEL = String.raw`curriculum vitae|c\.?v\.?|r[e\u00e9]sum[e\u00e9]`;
+const CONTACT_OR_LINK_LABEL = String.raw`${CURRICULUM_VITAE_LABEL}|(?:lab |personal )?web\s?site|home\s?page|e-?mail|phone|tel(?:ephone)?|fax|mobile|office|address|orcid|google scholar|twitter|linkedin|bluesky|github|researchgate`;
+const CONTACT_OR_LINK_LABEL_LINE = new RegExp(`^(?:${CONTACT_OR_LINK_LABEL})\\s*:`, 'i');
+const IMAGE_CREDIT_LABEL_LINE =
+  /^(?:(?:photo(?:graph)?|image|picture|illustration|video|cover|header|banner)s?\s+)?credits?\s*:/i;
+const FILE_OR_DATE_NOTE = /\([^)]*\)/g;
+const BARE_LABEL_ORNAMENT = /\s*(?::|\.{2,}|\u2026|[|\u203a\u00bb\u2192>]+)\s*$/;
+const BARE_CONTACT_OR_LINK_LABEL_LINE = new RegExp(`^(?:${CONTACT_OR_LINK_LABEL})$`, 'i');
+const MONTH_OR_SEASON =
+  '(?:spring|summer|fall|autumn|winter|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const LABEL_DATE = new RegExp(`(?:\\b${MONTH_OR_SEASON}\\s+)?\\b(?:19|20)\\d{2}\\b`, 'gi');
+const CURRICULUM_VITAE_LINK_QUALIFIER =
+  /^(?:my|the|full|short|complete|current|updated|academic|printable|downloadable|download|view|see|open)$/i;
+const CURRICULUM_VITAE_LINK_TAIL = new RegExp(`(?:^|\\s)(?:${CURRICULUM_VITAE_LABEL})$`, 'i');
+const OWNER_NAME_TOKEN = /^\p{Lu}[\p{L}'\u2019.-]*$/u;
+const MAX_CURRICULUM_VITAE_LINK_PREFIX_WORDS = 3;
 
 const MAX_DROPPED_LABEL_VALUE_WORDS = 6;
 const LINK_OR_EMAIL_VALUE = /^(?:https?:\/\/|www\.|[\w.+-]+@[\w-]+\.)/i;
+
+const LISTING_NOUN =
+  '(?:news|events|stories|posts|articles|updates|items|entries|publications|projects|results|videos|photos|press(?: releases)?|info(?:rmation)?)';
+const LISTING_QUALIFIER = '(?:upcoming|recent|latest|past|older|our|lab|center|centre|department)';
+const PROPER_NOUN = "\\p{Lu}[\\p{L}&'\u2019-]*";
+const LISTING_NAVIGATION_LINE = new RegExp(
+  '^(?:' +
+    `(?:read|view|see|show|load|browse|learn)\\s+(?:more|less|all|full|the full|complete|entire)(?:\\s+[\\p{L}&'\u2019-]+){0,3}` +
+    `|(?:more|all)(?:\\s+(?:${LISTING_QUALIFIER}|${PROPER_NOUN})){0,2}?\\s+${LISTING_NOUN}` +
+    `|(?:older|newer|previous|next)(?:\\s+${LISTING_QUALIFIER}){0,2}?\\s+${LISTING_NOUN}` +
+    ')\\s*(?:\\.{2,}|\u2026|[\u203a\u00bb\u2192>]+)?$',
+  'iu',
+);
+const IMAGE_BYLINE_LINE =
+  /^(?:photo(?:graph)?s?|images?|pictures?|illustrations?|artwork|video)\s+(?:by|courtesy(?:\s+of)?)\s+(.+)$/i;
+const BYLINE_CONNECTOR = /^(?:and|&|of|the|de|van|von|la|le)$/i;
+const MAX_BYLINE_CREDIT_WORDS = 6;
+const MAX_IMAGE_BYLINE_WORDS = 12;
 
 /** A skip link or an accessibility link line (#6201). */
 function isSkipOrAccessibilityLine(line: string): boolean {
@@ -130,6 +163,107 @@ function isSkipOrAccessibilityLine(line: string): boolean {
   );
 }
 
+const isListingNavigationLine = (line: string): boolean => LISTING_NAVIGATION_LINE.test(line);
+
+function isImageBylineLine(line: string): boolean {
+  const credited = line.match(IMAGE_BYLINE_LINE)?.[1]?.trim();
+  if (!credited || ENDS_AS_A_SENTENCE.test(line) || wordCount(line) > MAX_IMAGE_BYLINE_WORDS) {
+    return false;
+  }
+  const words = credited.split(/\s+/);
+  return (
+    words.length <= MAX_BYLINE_CREDIT_WORDS &&
+    words.some((word) => OWNER_NAME_TOKEN.test(word)) &&
+    words.every((word) => OWNER_NAME_TOKEN.test(word) || BYLINE_CONNECTOR.test(word))
+  );
+}
+
+const POSSESSIVE = /['\u2019]s$/i;
+const HONORIFIC = /^(?:dr|prof|professor|mr|ms|mrs)\.?$/i;
+
+const GENERIC_HOST_LABELS = new Set([
+  'www',
+  'yale',
+  'edu',
+  'org',
+  'com',
+  'net',
+  'io',
+  'sites',
+  'campuspress',
+]);
+
+/**
+ * The lowercased words of the page's own address, which name the person a profile page is
+ * about: its path segments, and its host labels, where a personal site carries the name.
+ */
+export function pageOwnerTokens(pageUrl: string): ReadonlySet<string> {
+  try {
+    const url = new URL(pageUrl);
+    const hostLabels = url.hostname
+      .toLowerCase()
+      .split('.')
+      .filter((label) => !GENERIC_HOST_LABELS.has(label));
+    return new Set(
+      [...url.pathname.toLowerCase().split(/[^\p{L}\p{N}]+/u), ...hostLabels].filter(
+        (token) => token.length >= 2,
+      ),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+const MIN_JOINED_NAME_PART = 3;
+
+const ownerNamesPart = (ownerTokens: ReadonlySet<string>, part: string): boolean =>
+  ownerTokens.has(part) ||
+  (part.length >= MIN_JOINED_NAME_PART &&
+    [...ownerTokens].some((token) => token.length > part.length && token.includes(part)));
+
+const nameParts = (word: string): string[] =>
+  word.replace(POSSESSIVE, '').toLowerCase().split(/[-.]/).filter(Boolean);
+
+/**
+ * A CV link: the label alone, after qualifiers, or after the page's own person, named by a
+ * possessive or by a name word the page's address carries. A capitalized phrase that names
+ * no one on the page ("Robust Visual CV", computer vision) is a topic, not a link (#6159).
+ */
+function isCurriculumVitaeLinkLine(line: string, ownerTokens: ReadonlySet<string>): boolean {
+  if (ENDS_AS_A_SENTENCE.test(line)) return false;
+  const core = line
+    .replace(FILE_OR_DATE_NOTE, ' ')
+    .replace(LABEL_DATE, ' ')
+    .replace(BARE_LABEL_ORNAMENT, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const tail = core.match(CURRICULUM_VITAE_LINK_TAIL);
+  if (!tail) return false;
+  const prefix = core.slice(0, tail.index).split(' ').filter(Boolean);
+  if (prefix.length > MAX_CURRICULUM_VITAE_LINK_PREFIX_WORDS) return false;
+  const names = prefix.filter(
+    (word) => !CURRICULUM_VITAE_LINK_QUALIFIER.test(word) && !HONORIFIC.test(word),
+  );
+  if (names.length === 0) return true;
+  if (!names.every((word) => OWNER_NAME_TOKEN.test(word))) return false;
+  return (
+    POSSESSIVE.test(names[names.length - 1]) ||
+    names.some((word) => nameParts(word).some((part) => ownerNamesPart(ownerTokens, part)))
+  );
+}
+
+const isBareContactOrLinkLabelLine = (line: string, ownerTokens: ReadonlySet<string>): boolean =>
+  BARE_CONTACT_OR_LINK_LABEL_LINE.test(
+    line
+      .replace(FILE_OR_DATE_NOTE, ' ')
+      .replace(BARE_LABEL_ORNAMENT, '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  ) || isCurriculumVitaeLinkLine(line, ownerTokens);
+
+const isLinkOrCaptionLine = (line: string): boolean =>
+  isSkipOrAccessibilityLine(line) || isListingNavigationLine(line) || isImageBylineLine(line);
+
 /**
  * The line without a leading contact or link label such as "Curriculum Vitae:" or "Website:"
  * (#6201), or nothing when what follows the label is short, a link or an email address. On a
@@ -137,7 +271,18 @@ function isSkipOrAccessibilityLine(line: string): boolean {
  * the row over the floor they would ride along into the stored text; a template that puts a
  * label before a blurb keeps the blurb.
  */
-function withoutContactOrLinkLabel(line: string): string {
+function withoutContactOrLinkLabel(
+  line: string,
+  ownerTokens: ReadonlySet<string> = new Set(),
+): string {
+  if (isBareContactOrLinkLabelLine(line, ownerTokens)) return '';
+  const credit = line.match(IMAGE_CREDIT_LABEL_LINE);
+  if (credit) {
+    const value = line.slice(credit[0].length).trim();
+    return ENDS_AS_A_SENTENCE.test(value) && wordCount(value) > MAX_DROPPED_LABEL_VALUE_WORDS
+      ? value
+      : '';
+  }
   const label = line.match(CONTACT_OR_LINK_LABEL_LINE);
   if (!label) return line;
   const value = line.slice(label[0].length).trim();
@@ -146,9 +291,9 @@ function withoutContactOrLinkLabel(line: string): string {
     : value;
 }
 
-function statementTextOfLine(rawLine: string): string {
-  if (isSkipOrAccessibilityLine(rawLine)) return '';
-  const line = withoutContactOrLinkLabel(rawLine);
+function statementTextOfLine(rawLine: string, ownerTokens: ReadonlySet<string>): string {
+  if (isLinkOrCaptionLine(rawLine)) return '';
+  const line = withoutContactOrLinkLabel(rawLine, ownerTokens);
   if (wordCount(line) < MIN_LINE_WORDS || isContactLine(line)) return '';
   return isPageTextCvRecord(line) ? withoutCurriculumVitaeSentences(line) : line;
 }
@@ -158,7 +303,6 @@ const NON_CONTENT_ELEMENTS =
 
 const MAIN_CONTENT = 'main, article, [role="main"]';
 const MIN_HEADING_BLOCK_SUMMARY_WORDS = 12;
-const ENDS_AS_A_SENTENCE = /[.!?]["')\]\u2019\u201d]?$/;
 
 const isPageHeadingBlock = ($: cheerio.CheerioAPI, header: AnyNode): boolean =>
   $(header).attr('role') !== 'banner' &&
@@ -180,8 +324,8 @@ function headingBlockSummaryText(paragraph: AnyNode): string {
     .map((line) => line.trim())
     .filter(Boolean);
   return lines
-    .filter((line) => !isSkipOrAccessibilityLine(line))
-    .map(withoutContactOrLinkLabel)
+    .filter((line) => !isLinkOrCaptionLine(line))
+    .map((line) => withoutContactOrLinkLabel(line))
     .filter((line) => line && (lines.length === 1 || ENDS_AS_A_SENTENCE.test(line)))
     .flatMap((line) => splitDescriptionSentences(line))
     .filter(isRecoverableResearchSentence)
@@ -277,10 +421,11 @@ export function researchStatementTextOfPage(html: string, pageUrl: string): stri
     ...sections.filter((section) => section.kind === 'research'),
     ...sections.filter((section) => section.kind === 'neutral'),
   ];
+  const ownerTokens = pageOwnerTokens(pageUrl);
   const seen = new Set<string>();
   const kept: string[] = [];
   for (const line of ordered.flatMap((section) => section.lines)) {
-    const statement = statementTextOfLine(line);
+    const statement = statementTextOfLine(line, ownerTokens);
     if (!statement || seen.has(statement)) continue;
     seen.add(statement);
     kept.push(statement);
