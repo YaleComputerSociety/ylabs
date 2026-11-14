@@ -146,7 +146,8 @@ The owner kept #5449, no sidebar scrollbar at 1280x720, and kept the group open 
 The stored signals are unchanged; the server gained only a `mentorsUndergrads` request filter and facet on the index field #5603 already declared filterable, and it still accepts `worksWithUndergrads`, which an old link no longer ticks.
 All three options always show once their counts arrive, and an option whose count is 0 stays in place, unavailable but focusable, with a tip saying why (owner, 2026-11-13, #6203).
 The tip wording depends on what drove the count to zero, because a student can only widen what they narrowed: "None match your other filters. Remove a filter to see more." when another filter or an Undergrads option is active, and "None match this search." when only a query is active (owner, 2026-11-13, relayed on #6261 after a peer review found the first wording false on a query-only page).
-A zero with neither a query nor a filter active is the served total, which the student cannot widen at all, so that state shows no tip and says only its count, pending the owner's wording.
+A zero with neither a query nor a filter active is the served total, which the student cannot widen at all, so that state shows no tip and says only its count (owner, 2026-11-13: final, no tip).
+An option whose count never arrives (an absent facet key, not a zero) stays hidden as it did before #6203, because an absent key is a server or loading state rather than a fact about the corpus (2026-11-13, following the existing behaviour).
 The tip replaces the "Missing evidence is not proof there is none." note rather than joining it: the owner answered on 2026-11-13 that the note is dropped, which overrode an earlier request to keep both.
 The sidebar stays at the 566px the line above records, inside the same budget, because the tip sits behind an info button there.
 
