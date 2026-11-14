@@ -59,6 +59,7 @@ import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
 const SERVER_SRC = path.resolve(__dirname, '../..');
 const SCRATCH_SCRIPT = path.resolve(__dirname, 'fixtures/scratchModelDelete.ts');
 const LATE_INTENT_SCRIPT = path.resolve(__dirname, 'fixtures/applyIntentAfterConnect.ts');
+const EARLY_INTENT_SCRIPT = path.resolve(__dirname, 'fixtures/applyIntentBeforeConnect.ts');
 const GUARD_MODULE = '../db/devWriteGuard';
 
 let memoryServer: MongoMemoryServer;
@@ -549,6 +550,55 @@ describe('an apply script run as its own process that connects before its apply 
     expect(run.stderr).toContain(`held by ${OTHER_OWNER_LABEL} running "${OTHER_OWNER_COMMAND}"`);
     expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(3);
   });
+});
+
+describe('an apply script refused the lease at connect whose entry point only sets exitCode (#6286)', () => {
+  const REFUSED_EXIT_CEILING_MS = 15_000;
+
+  const runUntilExitOrCeiling = (env: NodeJS.ProcessEnv) =>
+    new Promise<{ status: number | null; stderr: string; elapsedMs: number; killed: boolean }>(
+      (resolve, reject) => {
+        const startedAt = Date.now();
+        const child = spawn(process.execPath, ['--import', 'tsx', EARLY_INTENT_SCRIPT], {
+          cwd: path.resolve(SERVER_SRC, '..'),
+          env: hermeticChildEnvironment({
+            MONGODBURL: uriFor('Development'),
+            [DEV_WRITE_LEASE_SWITCH_ENV]: '',
+            ...env,
+          }),
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let stderr = '';
+        let killed = false;
+        child.stderr.on('data', (chunk) => (stderr += chunk));
+        const ceiling = setTimeout(() => {
+          killed = true;
+          child.kill('SIGKILL');
+        }, REFUSED_EXIT_CEILING_MS);
+        child.on('error', reject);
+        child.on('close', (status) => {
+          clearTimeout(ceiling);
+          resolve({ status, stderr, elapsedMs: Date.now() - startedAt, killed });
+        });
+      },
+    );
+
+  it(
+    'exits non-zero on its own instead of waiting on the connection it opened',
+    { timeout: REFUSED_EXIT_CEILING_MS + 10_000 },
+    async () => {
+      const dev = database('Development');
+      await seed(dev, SearchRerankCache.collection.collectionName, 3);
+      await seedLeaseHeldByAnotherOwner(dev);
+
+      const run = await runUntilExitOrCeiling({ DEV_WRITE_OWNER: 'test-session' });
+
+      expect(run.killed, run.stderr).toBe(false);
+      expect(run.status, run.stderr).toBe(1);
+      expect(run.stderr).toContain(`held by ${OTHER_OWNER_LABEL} running "${OTHER_OWNER_COMMAND}"`);
+      expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(3);
+    },
+  );
 });
 
 describe('a writing lane run with armed host leases', () => {

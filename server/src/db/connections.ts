@@ -118,7 +118,7 @@ export async function connectScriptMongo(
   enableScriptDiagnosticReportOnSignal();
   const connected = await mongoose.connect(url, scriptMongoConnectOptions(extra));
   watchMongoClientProgress(connected.connection.getClient());
-  await installDevelopmentWriteGuards(connected.connection);
+  await installDevelopmentWriteGuardsOrClose(connected.connection);
   return connected;
 }
 
@@ -131,7 +131,7 @@ export async function createScriptMongoConnection(
     .createConnection(url, scriptMongoConnectOptions(extra))
     .asPromise();
   watchMongoClientProgress(connection.getClient());
-  await installDevelopmentWriteGuards(connection);
+  await installDevelopmentWriteGuardsOrClose(connection);
   return connection;
 }
 
@@ -171,6 +171,19 @@ async function installDevelopmentWriteGuards(connection: mongoose.Connection): P
   if (!descriptor) return;
   const lease = await acquireIntendedDevApplyLease(descriptor);
   if (lease) releaseDevWriteLeasesWhenClosed(connection);
+}
+
+// A refused guard must not leave its connection open: a script whose entry point sets
+// process.exitCode instead of calling process.exit would otherwise never exit (#6286).
+async function installDevelopmentWriteGuardsOrClose(
+  connection: mongoose.Connection,
+): Promise<void> {
+  try {
+    await installDevelopmentWriteGuards(connection);
+  } catch (error) {
+    await connection.close().catch(() => undefined);
+    throw error;
+  }
 }
 
 // Serialise reconnect attempts: if one is already in flight, later callers
@@ -628,7 +641,7 @@ export async function initializeConnections(
   }
   await mongoose.connect(url, connectOptions);
   watchMongoClientProgress(mongoose.connection.getClient());
-  await installDevelopmentWriteGuards(mongoose.connection);
+  await installDevelopmentWriteGuardsOrClose(mongoose.connection);
   console.log(`Connected to database 🚀`);
   // Deliberately non-fatal. An unbuilt index is a performance problem, and
   // refusing to boot on one would turn a slow query into an outage on the very
