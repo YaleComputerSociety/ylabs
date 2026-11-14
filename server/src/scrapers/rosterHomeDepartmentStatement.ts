@@ -24,6 +24,8 @@ const APPOINTMENT_MARKERS: ReadonlyArray<[RegExp, RosterHomeDepartmentWithholdin
 
 const MIN_DEPARTMENT_NAME_CHARS = 5;
 
+const NOT_A_SCHOOL_OF = '(?<!\\bschool\\s)\\bof\\s';
+
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const bareDepartmentName = (name: string): string =>
@@ -44,13 +46,17 @@ function departmentPatterns(deptName: string): string[] {
     .map(escapeRegExp)
     .join('(?:[\\s,&-]|\\band\\b)+');
   const patterns = words ? [`\\b${words}\\b`] : [];
-  if (/^internal medicine$/i.test(bare)) patterns.push('(?<=\\bof\\s)medicine\\b');
+  if (/^internal medicine$/i.test(bare)) {
+    patterns.push(`(?<=${NOT_A_SCHOOL_OF})medicine\\b`);
+  }
   return patterns;
 }
 
-function firstMention(title: string, deptName: string): number {
+const APPOINTMENT_CONTEXT = `(?<=^|[;,]\\s*|${NOT_A_SCHOOL_OF}\\s*)`;
+
+function firstMention(title: string, deptName: string, context = ''): number {
   const positions = departmentPatterns(deptName)
-    .map((pattern) => title.search(new RegExp(pattern, 'i')))
+    .map((pattern) => title.search(new RegExp(`${context}${pattern}`, 'i')))
     .filter((position) => position >= 0);
   return positions.length ? Math.min(...positions) : -1;
 }
@@ -111,7 +117,7 @@ export function rosterHomeDepartmentStatement(input: {
       const bare = bareDepartmentName(name).toLowerCase();
       return bare.length >= MIN_DEPARTMENT_NAME_CHARS && bare !== own;
     })
-    .map((name) => firstMention(title, name))
+    .map((name) => firstMention(title, name, APPOINTMENT_CONTEXT))
     .filter((position) => position >= 0);
   const firstOther = otherPositions.length ? Math.min(...otherPositions) : -1;
   if (firstOther >= 0 && (ownPosition < 0 || firstOther < ownPosition)) {

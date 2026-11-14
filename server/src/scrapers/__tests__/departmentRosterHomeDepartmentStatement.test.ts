@@ -50,6 +50,29 @@ describe('a department roster files its own department as primary only without c
   });
 
   it.each([
+    ['a school name', 'Associate Dean, Fixture School of Medicine; Professor of Fixture Pathology'],
+    ['a school name alone', 'Associate Dean, Fixture School of Medicine'],
+    [
+      'an administrative phrase',
+      'Vice Chair for Clinical Fixture Operations; Professor of Fixture Pathology',
+    ],
+  ])('does not read %s as another department named first', (_shape, title) => {
+    expect(
+      rosterHomeDepartmentStatement({
+        deptName: 'Fixture Pathology',
+        title,
+        departmentNames: [...DEPARTMENTS, 'Fixture Operations'],
+      }),
+    ).toEqual({ kind: 'assert', value: 'Fixture Pathology' });
+  });
+
+  it('still reads another department leading a clause of the title', () => {
+    expect(
+      statementFor('Fixture Pathology', 'Chief, Fixture Urology; Professor of Fixture Pathology'),
+    ).toEqual({ kind: 'withhold', reason: 'another-department-first' });
+  });
+
+  it.each([
     ['secondary', 'Secondary Faculty, Fixture Pathology'],
     ['joint', 'Joint Professor of Fixture Pathology'],
     ['adjunct', 'Adjunct Professor of Fixture Pathology'],
