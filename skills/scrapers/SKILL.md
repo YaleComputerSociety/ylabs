@@ -234,6 +234,8 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   A read binds to the person only through the observation's own entity: their netid-keyed user row, or a row whose own `profileUrl` or `profileUrls` observation names the read's page; a page URL alone never binds, because a shared page in someone's profile links carries other people's card titles.
   A complete read withdraws a listing no page gives any more with `assertsNoValueFor`; a partial read (an unread page or `--only`) withdraws nothing and keeps each row's stored leads beside the new ones.
   `leadTitlesAreAllEmeritus` reads a recorded lead as emeritus (`DEPARTMENT_LISTS_LEAD_AS_EMERITUS`), so `decideEmeritusWayIn` and the detail page's lead label follow it with no lock.
+  Before a run that can make a lead emeritus, count what `wayInWithheld` would hide on the affected rows: stored `waysIn`, stored `undergradInvitation`, and `APPLICATION_FORM_EXISTS` signals, not the signals alone (#6081).
+  Then re-read the rows with `yarn served-check`, because the search document carries the same flag.
 - `official-profile-pi-backfill` keys a page by a netid only when the candidate researcher is the page's person (#5370).
   `profileIdentityAgreesWithUser` accepts a candidate that holds the page's own address, or one whose name agrees and whose own named address does not differ; holding the page URL alone is not enough, because an earlier run gave namesakes that link.
   The resolver also refuses a candidate whose netid the Yale directory lanes do not pair with the page's address, and with no candidate the lane keeps its alias-keyed fallback rather than guessing a netid.
