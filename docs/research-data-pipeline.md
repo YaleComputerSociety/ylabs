@@ -1701,7 +1701,7 @@ Caring for people with a list of conditions and partnering with patients or fami
 Neither refusal applies to a sentence framed as humanities or social-science scholarship (#6245).
 That covers a sentence whose person is a historian, philosopher, anthropologist, sociologist, theologian or similar scholar.
 It also covers a clinical word that sits inside a scholarly frame: the history, politics, ethics, theology, literature or representation of something; social determinants; "as a lens on"; "in" or "under" testimony, literature, film, philosophy, scripture, law, antiquity, monasteries or archives; or a historical period such as nineteenth-century, early modern, medieval or Victorian.
-A medical history ("a history of", "with a family history of") and "law enforcement" are not that frame, so a sentence about patients with a history of melanoma is still refused.
+Only "the history of" opens that frame, so a medical history ("a history of", "a personal history of", "the patient's history of") is not that frame, and neither is "law enforcement", so a sentence about patients with a history of melanoma is still refused.
 A performer (a pianist, cellist, conductor, singer, recital or repertoire, among others) counts as creative practice alongside composers and performers, per the owner's creative-practice decision.
 Measured on 2026-11-14 over the 9,069 stored roster biographies: the clinical refusal alone removes 32 sentences, a blind 3-grader check judged 1 of them research, and that is the only one this frame releases; it newly refuses nothing.
 The rule lives in `deriveBioResearchStatement`, so it also screens `center-profile-research-rows`.
