@@ -181,19 +181,45 @@ function isImageBylineLine(line: string): boolean {
 const POSSESSIVE = /['\u2019]s$/i;
 const HONORIFIC = /^(?:dr|prof|professor|mr|ms|mrs)\.?$/i;
 
-/** The lowercased words of the page's own path, which name the person a profile page is about. */
+const GENERIC_HOST_LABELS = new Set([
+  'www',
+  'yale',
+  'edu',
+  'org',
+  'com',
+  'net',
+  'io',
+  'sites',
+  'campuspress',
+]);
+
+/**
+ * The lowercased words of the page's own address, which name the person a profile page is
+ * about: its path segments, and its host labels, where a personal site carries the name.
+ */
 export function pageOwnerTokens(pageUrl: string): ReadonlySet<string> {
   try {
+    const url = new URL(pageUrl);
+    const hostLabels = url.hostname
+      .toLowerCase()
+      .split('.')
+      .filter((label) => !GENERIC_HOST_LABELS.has(label));
     return new Set(
-      new URL(pageUrl).pathname
-        .toLowerCase()
-        .split(/[^\p{L}\p{N}]+/u)
-        .filter((token) => token.length >= 2),
+      [...url.pathname.toLowerCase().split(/[^\p{L}\p{N}]+/u), ...hostLabels].filter(
+        (token) => token.length >= 2,
+      ),
     );
   } catch {
     return new Set();
   }
 }
+
+const MIN_JOINED_NAME_PART = 3;
+
+const ownerNamesPart = (ownerTokens: ReadonlySet<string>, part: string): boolean =>
+  ownerTokens.has(part) ||
+  (part.length >= MIN_JOINED_NAME_PART &&
+    [...ownerTokens].some((token) => token.length > part.length && token.includes(part)));
 
 const nameParts = (word: string): string[] =>
   word.replace(POSSESSIVE, '').toLowerCase().split(/[-.]/).filter(Boolean);
@@ -222,7 +248,7 @@ function isCurriculumVitaeLinkLine(line: string, ownerTokens: ReadonlySet<string
   if (!names.every((word) => OWNER_NAME_TOKEN.test(word))) return false;
   return (
     POSSESSIVE.test(names[names.length - 1]) ||
-    names.some((word) => nameParts(word).some((part) => ownerTokens.has(part)))
+    names.some((word) => nameParts(word).some((part) => ownerNamesPart(ownerTokens, part)))
   );
 }
 

@@ -31,6 +31,13 @@ describe('researchStatementTextOfPage drops a CV or resume link line (#6159)', (
     expect(keptLines([line])).toEqual([RESEARCH]);
   });
 
+  it('drops a CV link naming the owner of a personal site whose host joins the name', () => {
+    const html = `<html><body><main><p>Hollis Quintrell CV</p><p>${RESEARCH}</p></main></body></html>`;
+    expect(
+      researchStatementTextOfPage(html, 'https://hollisquintrell.example.org/research').split('\n'),
+    ).toEqual([RESEARCH]);
+  });
+
   it('drops a bare contact or link label with nothing after it, as the label rule drops one with a short value', () => {
     expect(
       keptLines(['Personal Website', 'Lab Website', 'Google Scholar', 'Curriculum Vitae:']),
