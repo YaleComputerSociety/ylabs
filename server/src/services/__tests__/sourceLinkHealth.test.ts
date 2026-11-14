@@ -94,10 +94,12 @@ describe('classifySourceLinkHealth', () => {
   it('treats dead-domain network errors as unavailable without a status', () => {
     expect(classifySourceLinkHealth({ errorCode: 'ENOTFOUND' })).toEqual({
       healthStatus: 'UNAVAILABLE',
+      nameNotFound: true,
     });
     expect(classifySourceLinkHealth({ errorCode: 'ECONNREFUSED' })).toEqual({
       healthStatus: 'UNAVAILABLE',
       connectionLevelFailure: true,
+      connectionRefused: true,
     });
   });
 
@@ -150,7 +152,10 @@ describe('probeSourceLink', () => {
     blockedWith('unresolvable');
     const probe = await probeSourceLink('https://gone.example.edu/profile');
     expect(probe).toEqual({ errorCode: 'ENOTFOUND' });
-    expect(classifySourceLinkHealth(probe)).toEqual({ healthStatus: 'UNAVAILABLE' });
+    expect(classifySourceLinkHealth(probe)).toEqual({
+      healthStatus: 'UNAVAILABLE',
+      nameNotFound: true,
+    });
     expect(requestMock).not.toHaveBeenCalled();
   });
 
@@ -398,6 +403,7 @@ describe('probeSourceLink', () => {
       expect(classifySourceLinkHealth(confirmed)).toEqual({
         healthStatus: 'UNAVAILABLE',
         connectionLevelFailure: true,
+        ...(code === 'ECONNREFUSED' ? { connectionRefused: true } : {}),
       });
       expect(requestMock).toHaveBeenCalledTimes(2);
 

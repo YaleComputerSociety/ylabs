@@ -124,9 +124,16 @@ import {
 import { normalizeWebsiteUrlIdentityKey } from '../scripts/researchEntityPiDedupeCore';
 import {
   classifySourceLinkHealth,
+  findSourceLinkHealth,
   probeSourceLink,
+  RESOURCE_GONE_HTTP_STATUS_CODES,
   type SourceLinkProbeResult,
 } from '../services/sourceLinkHealth';
+import {
+  RemovalsByHost,
+  removalConfirmation,
+  type RemovalBasis,
+} from '../services/sourceLinkRemovalConfirmation';
 import { gitCommitIsAncestor, isFullCommitSha } from './scrapeRunCodeIdentity';
 import { userRederiveOnlyFields } from './userMaterializerFieldScope';
 import {
@@ -1088,9 +1095,21 @@ export function classifyRetractionValueOwnership(
   return entitiesSharingTheValue > 1 ? 'shared-boilerplate' : 'sole-holder';
 }
 
+export type RetractionRemovalBasis = RemovalBasis | 'address-no-longer-serves';
+
 export interface RetractionProbeVerdict {
   positivelyDead: boolean;
+  basis?: RetractionRemovalBasis;
 }
+
+export type RetractionValueProbe = (
+  value: string,
+  retraction: Pick<PlannedFieldRetraction, 'entityId'>,
+) => Promise<RetractionProbeVerdict>;
+
+export type SoleHolderRemovalsByHost = ReturnType<
+  RemovalsByHost<RetractionRemovalBasis>['toReport']
+>;
 
 export interface WithheldFieldRetraction {
   entityKey: string;
@@ -1117,16 +1136,18 @@ export interface WithheldFieldRetraction {
  */
 export async function withholdSoleHolderRetractionsThatStillAnswer(
   retractions: readonly PlannedFieldRetraction[],
-  probeValue: (value: string) => Promise<RetractionProbeVerdict>,
+  probeValue: RetractionValueProbe,
 ): Promise<{
   retained: PlannedFieldRetraction[];
   withheld: WithheldFieldRetraction[];
   probedValues: number;
+  removalsByHost: SoleHolderRemovalsByHost;
 }> {
   const retained: PlannedFieldRetraction[] = [];
   const withheld: WithheldFieldRetraction[] = [];
   const withheldStoredRowFields = new Set<string>();
   let probedValues = 0;
+  const removalsByHost = new RemovalsByHost<RetractionRemovalBasis>();
   for (const retraction of retractions) {
     if (
       classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) ===
@@ -1137,16 +1158,20 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
       continue;
     }
     let everyValueIsDead = retraction.retractedValues.length > 0;
+    const confirmedBases: Array<[string, RetractionRemovalBasis]> = [];
     for (const value of retraction.retractedValues) {
       probedValues += 1;
-      const verdict = await probeValue(value);
+      const verdict = await probeValue(value, retraction);
       if (!verdict.positivelyDead) {
         everyValueIsDead = false;
         break;
       }
+      if (verdict.basis) confirmedBases.push([value, verdict.basis]);
     }
-    if (everyValueIsDead) retained.push(retraction);
-    else {
+    if (everyValueIsDead) {
+      retained.push(retraction);
+      for (const [value, basis] of confirmedBases) removalsByHost.record(value, basis);
+    } else {
       withheldStoredRowFields.add(`${retraction.entityId}\u0000${retraction.field}`);
       withheld.push({
         entityKey: retraction.entityKey,
@@ -1165,6 +1190,7 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
     ),
     withheld,
     probedValues,
+    removalsByHost: removalsByHost.toReport(),
   };
 }
 
@@ -1191,6 +1217,7 @@ export interface FieldRetractionResult {
   regatedEntities: number;
   retractions: PlannedFieldRetraction[];
   withheld?: WithheldFieldRetraction[];
+  soleHolderRemovalsByHost?: SoleHolderRemovalsByHost;
   userFieldRetraction?: UserFieldRetractionResult;
 }
 
@@ -1610,23 +1637,61 @@ export function citedAddressNoLongerServesTheResource(probe: SourceLinkProbeResu
 }
 
 /**
- * `UNAVAILABLE` is the only health verdict that licenses removal. `UNKNOWN` covers a
- * throttle, a timeout and a TLS failure, all of which mean a server may well be
- * serving the page, so they are not evidence of absence (#2751).
+ * The lane's own reads already found the value absent, so a probe here is the second of
+ * the two observations a removal needs (#4729). `UNKNOWN` covers a throttle, a timeout and
+ * a TLS failure, all of which mean a server may well be serving the page (#2751). A `404`,
+ * a `410`, or an answer that lands away from the requested page confirms on its own; a
+ * host-level failure confirms only against a stored host-level verdict of the same class
+ * at least six hours older, because one bad minute on a host must not retire a value (#6264).
  */
-export async function probeRetractionValueLiveness(value: string): Promise<RetractionProbeVerdict> {
+export async function probeRetractionValueLiveness(
+  value: string,
+  context: { storedHealth?: unknown; now?: Date } = {},
+): Promise<RetractionProbeVerdict> {
   const probe = await probeSourceLink(value);
+  if (citedAddressNoLongerServesTheResource(probe)) {
+    return { positivelyDead: true, basis: 'address-no-longer-serves' };
+  }
   const health = classifySourceLinkHealth(probe);
-  return {
-    positivelyDead:
-      health.healthStatus === 'UNAVAILABLE' || citedAddressNoLongerServesTheResource(probe),
-  };
+  if (health.healthStatus !== 'UNAVAILABLE') return { positivelyDead: false };
+  if (typeof health.httpStatusCode === 'number') {
+    return {
+      positivelyDead: true,
+      basis: RESOURCE_GONE_HTTP_STATUS_CODES.has(health.httpStatusCode)
+        ? 'gone-status'
+        : 'address-no-longer-serves',
+    };
+  }
+  const confirmation = removalConfirmation(
+    findSourceLinkHealth(context.storedHealth, value),
+    health,
+    context.now ?? new Date(),
+  );
+  return confirmation.confirmed
+    ? { positivelyDead: true, basis: confirmation.basis }
+    : { positivelyDead: false };
 }
+
+async function storedSourceLinkHealthFor(entityId: string): Promise<unknown> {
+  if (!mongoose.isValidObjectId(entityId)) return undefined;
+  const row = await ResearchEntity.findById(entityId).select('sourceLinkHealth').lean<{
+    sourceLinkHealth?: unknown;
+  }>();
+  return row?.sourceLinkHealth;
+}
+
+export const probeRetractionValueAgainstStoredHealth: RetractionValueProbe = async (
+  value,
+  retraction,
+) =>
+  probeRetractionValueLiveness(value, {
+    storedHealth: await storedSourceLinkHealthFor(retraction.entityId),
+  });
 
 export async function reconcileFieldRetractions(options: {
   sourceName: string;
   dryRun?: boolean;
-  probeValue?: (value: string) => Promise<RetractionProbeVerdict>;
+  probeValue?: RetractionValueProbe;
   commitIsAncestor?: CommitIsAncestor;
   contract?: SourceFieldRetractionContract;
 }): Promise<FieldRetractionResult> {
@@ -1683,7 +1748,7 @@ export async function reconcileFieldRetractions(options: {
 
   const screened = await withholdSoleHolderRetractionsThatStillAnswer(
     plan.retractions,
-    options.probeValue ?? probeRetractionValueLiveness,
+    options.probeValue ?? probeRetractionValueAgainstStoredHealth,
   );
   plan.counts.soleHolderValueWithheld = screened.withheld.length;
   plan.counts.storedValuesCleared = screened.retained.filter(
@@ -1710,6 +1775,7 @@ export async function reconcileFieldRetractions(options: {
       regatedEntities: 0,
       retractions: screened.retained,
       withheld: screened.withheld,
+      soleHolderRemovalsByHost: screened.removalsByHost,
     };
   }
 
@@ -1766,6 +1832,7 @@ export async function reconcileFieldRetractions(options: {
     regatedEntities,
     retractions: screened.retained,
     withheld: screened.withheld,
+    soleHolderRemovalsByHost: screened.removalsByHost,
   };
 }
 

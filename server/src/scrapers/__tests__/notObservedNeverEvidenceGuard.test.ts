@@ -30,11 +30,12 @@ const REVIEWED_WITH_OWN_CONFIRMATION: Record<string, string> = {
     'retracts a lab website only on a link-health UNAVAILABLE verdict',
   'scrapers/sources/ysmFacultyDirectoryScraper.ts':
     'retracts a lab website only on a link-health UNAVAILABLE verdict',
-  'scripts/clearDeadLabResearchHomes.ts': 'clears a lab home only on a 404 or 410 (#6258)',
+  'scripts/clearDeadLabResearchHomes.ts':
+    'clears a lab home only when a 404 or 410 probe agrees with a stored gone verdict (#6258, #6264)',
   'scripts/nonFetchingLaneGonePages.ts':
     'supersedes only after a confirming probe agrees the page is gone',
   'scripts/repairLegacyPersonPageUrls.ts':
-    'replaces an unverified original only after its probe answers 404 or 410 (#6258)',
+    'replaces an original only when a 404 or 410 probe agrees with a stored gone verdict (#6258, #6264)',
   'scripts/retireListingItemResearchAreas.ts': 'an unfetchable page retires nothing',
   'scripts/retireOrganizationIdentityWebsiteGrafts.ts':
     'an unresolved URL falls back to its stored spelling and never matches by failure',

@@ -26,6 +26,33 @@ The archive stage keeps the rank rule unchanged, as do `lead_is_staff_of_served_
 It surfaced when #6146 let the YSM lane refresh screened profiles' own titles: for 11 researchers the corrected title would have tripped the hold on the one row each solely leads, and none of those rows carries a hosted-undergraduates signal.
 Measured on Development, 2026-11-13, gate dry run over 4,153 research rows: 2 rows change tier, both from `operator_review` to `student_ready`, and both were held by this reason alone; 1 more row carries it and stays `suppressed` as a duplicate; 0 rows leave `student_ready`.
 
+## 2026-11-14: A Removal Needs Two Observations That Agree (#6264)
+
+Decision (ylabs-manager, 2026-11-14, via the backlog agent on #6264).
+This extends the #6258 rule, that a fetch which observed nothing is never evidence, to an observation that is real but unconfirmed.
+A removal or downgrade of a stored value needs two observations that agree, which is the gone-twice contract of #4729, #4840 and #4862.
+`removalConfirmation` in `server/src/services/sourceLinkRemovalConfirmation.ts` is the one rule the callers below read.
+A `404` or `410` confirms when a stored gone verdict and a fresh probe both report it.
+A host-level failure counts as gone only under all three of the manager's conditions.
+First, nothing `isNotObserved` covers ever counts: not our own pause, not an SSRF guard refusal (including the #6123 case of a campus-only host that resolves privately), not a budget or slot refusal, and not a transient transport error.
+Second, the two observations are the same class, a DNS negative under #2726 or a refused connection (`ECONNREFUSED`), and at least `CONNECTION_FAILURE_CONFIRMATION_GAP_MS` (six hours) apart.
+An unroutable network or host (`ENETUNREACH`, `EHOSTUNREACH`) never counts toward a removal, because it can mean this machine had no route, the lid-close and network-drop failure, so two such moments would confirm a host that never saw a request (ylabs-manager, 2026-11-14, on yale worker 6's review of #6282).
+Those codes are still `UNAVAILABLE` to link health, and its own verdicts and `DEAD_LINK_ERROR_CODES` are unchanged; only the removal rule reads them as no evidence.
+Third, the run report lists removals per host (`RemovalsByHost`), so a lapsed domain reads as one line with its count.
+A host that resolves only into private address space never counts, on either observation.
+Each class is recorded positively on the stored verdict, `connectionRefused` for a refused connection and `nameNotFound` for a DNS negative, because #6116 records a refused connection with no marker when the verdict it replaced was not live, so a missing marker cannot be read as DNS; `connectionLevelFailure` still marks all three connection codes for the backfill's own second-run hold.
+A verdict written before these fields existed, including one marked only by #6116's `confirmingConnectionFailureAt`, has no recorded class and holds as `class-unknown` until the next link-health sweep rewrites it.
+The callers are the field-retraction sole-holder screen (`probeRetractionValueLiveness`), where the lane's own absence reads are the first observation, so a `404`, a `410` or an answer that lands away from the requested page confirms on the probe alone; `clearDeadLabResearchHomes`; and `repairLegacyPersonPageUrls`.
+The last two need a stored gone verdict plus an agreeing probe, so a single `404` now reports as awaiting confirmation.
+`clearDeadLabResearchHomes` never clears on a host-level failure, because every URL it reads sits on one school host.
+The YSE faculty-directory lab-website removal already met the contract: its `assertsNoValueFor` is a lane read, and field retraction needs two such reads plus the probe above before anything clears.
+The single probe there only withdraws the row's lab identity, which stays fail-closed because link health drops the dead verdict once the row stops citing the URL, and waiting would re-mint the lab (#3452).
+The YSM faculty-directory removal is a read of an empty lab slot, so it was never a probe-only removal.
+`lab-site-lead-verification` treats a read whose landing page or members page answered a status other than `404` or `410`, or whose landing host failed at the host level, as partial, and a partial read may raise a stored lead verdict but never lower it (`partialReadWouldDowngrade`), the rule `lab-site-undergrad-invitation` already applies.
+`lanePageHealth`'s per-page withdrawal is unchanged and still needs a status on both observations.
+Measured on Development on 2026-11-14 before the change, no served value differed on any of these paths, so the change is preventive.
+It governs the first `lab-site-lead-verification` run after hold 3g (the 37 rows on #6258), the first per-lane field-retraction lift under hold 5, and the next run of each script.
+
 ## 2026-11-13: A Fetch That Observed Nothing Is Never Evidence (#6258)
 
 Decision (backlog agent, 2026-11-13, challenge upheld on #6258).

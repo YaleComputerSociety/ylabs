@@ -189,6 +189,34 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       type: Date,
       required: false,
     },
+    /**
+     * The `UNAVAILABLE` came from a refused or unroutable connection rather than a DNS
+     * record confirmed absent, so a later removal confirms it only against the same class
+     * of failure (#6264).
+     */
+    connectionLevelFailure: {
+      type: Boolean,
+      required: false,
+    },
+    /**
+     * The `UNAVAILABLE` came from a DNS record confirmed absent. Recorded positively, so
+     * a verdict written before either class field existed reads as unknown and a removal
+     * waits for the next sweep to record its class (#6264).
+     */
+    nameNotFound: {
+      type: Boolean,
+      required: false,
+    },
+    /**
+     * The `UNAVAILABLE` came from a host that answered by refusing the connection
+     * (`ECONNREFUSED`). Unlike an unroutable network or host, which can mean this machine
+     * had no route, only this connection failure is evidence about the host, so it is the
+     * only one a removal may confirm against (#6264).
+     */
+    connectionRefused: {
+      type: Boolean,
+      required: false,
+    },
   },
   { _id: false },
 );

@@ -4,6 +4,7 @@ import { HostPausedError } from '../../utils/hostPause';
 import type { ObservationInput, ScraperContext } from '../../types';
 import {
   LabSiteLeadVerificationScraper,
+  partialReadWouldDowngrade,
   readLabSite,
   type LabSiteVerificationCandidate,
 } from '../labSiteLeadVerificationScraper';
@@ -18,10 +19,10 @@ const CANDIDATE: LabSiteVerificationCandidate = {
 const LANDING_WITH_MEMBERS_LINK =
   '<html><body><h1>Synthetic Tidepool Lab</h1><a href="/people/">Our people</a></body></html>';
 
-async function runWithSubpageError(error: unknown) {
+async function runWithSubpageError(error: unknown, storedState?: string) {
   const emitted: ObservationInput[] = [];
   const scraper = new LabSiteLeadVerificationScraper(
-    async () => [CANDIDATE],
+    async () => [{ ...CANDIDATE, ...(storedState ? { storedState } : {}) }],
     (website, useCache) =>
       readLabSite(website, useCache, async (url) => {
         if (url === CANDIDATE.website) {
@@ -42,10 +43,10 @@ async function runWithSubpageError(error: unknown) {
   return { emitted, result };
 }
 
-async function runWithFetchError(error: unknown) {
+async function runWithFetchError(error: unknown, storedState?: string) {
   const emitted: ObservationInput[] = [];
   const scraper = new LabSiteLeadVerificationScraper(
-    async () => [CANDIDATE],
+    async () => [{ ...CANDIDATE, ...(storedState ? { storedState } : {}) }],
     (website, useCache) =>
       readLabSite(website, useCache, async () => {
         throw error;
@@ -119,5 +120,77 @@ describe('lab-site lead verification never records a fetch that observed nothing
 
     expect(emitted).toHaveLength(1);
     expect(result.notes).toContain('deferredNotObserved=0');
+  });
+});
+
+describe('a partial read never lowers a stored lead verdict (#6264)', () => {
+  const throttled = Object.assign(new Error('Request failed with status code 429'), {
+    response: { status: 429 },
+  });
+
+  it('holds the row when a throttled members page leaves a verdict below the stored one', async () => {
+    const { emitted, result } = await runWithSubpageError(throttled, 'verified');
+
+    expect(emitted).toEqual([]);
+    expect(result.notes).toContain('heldPartialRead=1');
+  });
+
+  it('records the partial read when there is no stored verdict to lower', async () => {
+    const { emitted, result } = await runWithSubpageError(throttled);
+
+    expect(emitted).toHaveLength(1);
+    expect(result.notes).toContain('heldPartialRead=0');
+  });
+
+  it('treats a members page that answered 404 as a complete read, so it may lower the verdict', async () => {
+    const gone = Object.assign(new Error('Request failed with status code 404'), {
+      response: { status: 404 },
+    });
+
+    const { emitted, result } = await runWithSubpageError(gone, 'verified');
+
+    expect(emitted).toHaveLength(1);
+    expect(result.notes).toContain('heldPartialRead=0');
+  });
+
+  it.each([
+    ['a throttled landing page', throttled],
+    [
+      'a landing host with no DNS record',
+      Object.assign(new Error('getaddrinfo ENOTFOUND lab.example.edu'), { code: 'ENOTFOUND' }),
+    ],
+    [
+      'a landing host that refused the connection',
+      Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+    ],
+  ])('holds a stored verified verdict when %s left nothing read', async (_label, error) => {
+    const { emitted, result } = await runWithFetchError(error, 'verified');
+
+    expect(emitted).toEqual([]);
+    expect(result.notes).toContain('heldPartialRead=1');
+  });
+
+  it('lets a landing page that answered 410 lower the stored verdict', async () => {
+    const gone = Object.assign(new Error('Request failed with status code 410'), {
+      response: { status: 410 },
+    });
+
+    const { emitted } = await runWithFetchError(gone, 'verified');
+
+    expect(emitted).toHaveLength(1);
+    expect((emitted[0].value as { state: string }).state).toBe('unreachable');
+  });
+
+  it.each([
+    ['unstated', 'verified', true],
+    ['partial', 'verified', true],
+    ['unstated', 'contradicted', true],
+    ['verified', 'unstated', false],
+    ['contradicted', 'verified', false],
+    ['partial', 'unstated', false],
+    ['unstated', 'unreachable', false],
+    ['unstated', undefined, false],
+  ] as const)('%s over a stored %s downgrades: %s', (next, stored, expected) => {
+    expect(partialReadWouldDowngrade(next, stored)).toBe(expected);
   });
 });

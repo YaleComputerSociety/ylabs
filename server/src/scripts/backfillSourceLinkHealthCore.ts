@@ -1,4 +1,5 @@
 import {
+  CONNECTION_FAILURE_CONFIRMATION_GAP_MS,
   isStaleSourceLinkHealth,
   sourceLinkHealthAgeDays,
   type DatedSourceLinkHealth,
@@ -252,6 +253,9 @@ export interface StoredSourceLinkHealthEntry {
   pendingConnectionFailureAt?: Date;
   pendingConnectionFailureProbedAt?: Date;
   confirmingConnectionFailureAt?: Date;
+  connectionLevelFailure?: true;
+  nameNotFound?: true;
+  connectionRefused?: true;
 }
 
 /**
@@ -321,7 +325,7 @@ const instantOf = (value: unknown): number | undefined => {
   return Number.isFinite(instant) ? instant : undefined;
 };
 
-export const CONNECTION_FAILURE_CONFIRMATION_GAP_MS = 6 * 60 * 60 * 1000;
+export { CONNECTION_FAILURE_CONFIRMATION_GAP_MS } from '../services/sourceLinkHealth';
 
 /**
  * A refused or unroutable connection over a live verdict, held until a second run
@@ -471,6 +475,8 @@ export function resolveSourceLinkHealthEntry(
     httpsSpellingUrl?: string;
     redirectLandingUrl?: string;
     connectionLevelFailure?: true;
+    nameNotFound?: true;
+    connectionRefused?: true;
   },
   stored: StoredSourceLinkHealthEntry | undefined,
   now: Date,
@@ -491,6 +497,9 @@ export function resolveSourceLinkHealthEntry(
     ...(fresh.httpsLandingUrl ? { httpsLandingUrl: fresh.httpsLandingUrl } : {}),
     ...(fresh.httpsSpellingUrl ? { httpsSpellingUrl: fresh.httpsSpellingUrl } : {}),
     ...(fresh.redirectLandingUrl ? { redirectLandingUrl: fresh.redirectLandingUrl } : {}),
+    ...(fresh.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
+    ...(fresh.nameNotFound ? { nameNotFound: true } : {}),
+    ...(fresh.connectionRefused ? { connectionRefused: true } : {}),
     checkedAt: now,
   };
 
@@ -522,6 +531,12 @@ export function resolveSourceLinkHealthEntry(
       ...(kept.httpsLandingUrl ? { httpsLandingUrl: kept.httpsLandingUrl } : {}),
       ...(kept.httpsSpellingUrl ? { httpsSpellingUrl: kept.httpsSpellingUrl } : {}),
       ...(kept.redirectLandingUrl ? { redirectLandingUrl: kept.redirectLandingUrl } : {}),
+      ...(kept.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
+      ...(kept.nameNotFound ? { nameNotFound: true } : {}),
+      ...(kept.connectionRefused ? { connectionRefused: true } : {}),
+      ...(kept.confirmingConnectionFailureAt
+        ? { confirmingConnectionFailureAt: kept.confirmingConnectionFailureAt }
+        : {}),
       ...(kept.checkedAt ? { checkedAt: kept.checkedAt } : {}),
       lastAttemptedAt: now,
     },
@@ -606,6 +621,9 @@ export function carryForwardSourceLinkHealthEntry(
     ...(stored.httpsLandingUrl ? { httpsLandingUrl: stored.httpsLandingUrl } : {}),
     ...(stored.httpsSpellingUrl ? { httpsSpellingUrl: stored.httpsSpellingUrl } : {}),
     ...(stored.redirectLandingUrl ? { redirectLandingUrl: stored.redirectLandingUrl } : {}),
+    ...(stored.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
+    ...(stored.nameNotFound ? { nameNotFound: true } : {}),
+    ...(stored.connectionRefused ? { connectionRefused: true } : {}),
     ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
     ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
     ...(stored.pendingConnectionFailureAt

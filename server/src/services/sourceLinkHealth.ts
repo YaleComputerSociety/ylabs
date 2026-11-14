@@ -98,11 +98,15 @@ export interface SourceLinkHealth {
   redirectLandingUrl?: string;
   /**
    * The `UNAVAILABLE` came from a host that refused or could not route a connection on
-   * both attempts, as opposed to a DNS record confirmed absent. Held in memory only and
-   * never stored: the backfill reads it to make a live link wait for a second run before
-   * a refused connection retires it (#6116).
+   * both attempts, as opposed to a DNS record confirmed absent. The backfill reads it to
+   * make a live link wait for a second run before a refused connection retires it
+   * (#6116), and stores it so a later removal can tell the two classes apart (#6264).
    */
   connectionLevelFailure?: true;
+  /** The `UNAVAILABLE` came from a DNS record confirmed absent (#2726, #6264). */
+  nameNotFound?: true;
+  /** The `UNAVAILABLE` came from a host that refused the connection (#6264). */
+  connectionRefused?: true;
 }
 
 export interface SourceLinkProbeResult {
@@ -145,6 +149,13 @@ export const DEAD_LINK_ERROR_CODES: ReadonlySet<string> = new Set([
 const CONNECTION_LEVEL_ERROR_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
 
 /**
+ * Two host-level observations count as one confirmed fact only this far apart, because a
+ * second probe minutes later meets the same outage rather than observing the host again
+ * (#6116). The backfill's second-run rule and the removal rule (#6264) both read it.
+ */
+export const CONNECTION_FAILURE_CONFIRMATION_GAP_MS = 6 * 60 * 60 * 1000;
+
+/**
  * Only a status that asserts the resource is gone retires a link. Every other
  * 4xx/5xx is a statement about the request or the server, not about whether the
  * page exists: 401/403 are access control, 429 is throttling, 5xx is an outage.
@@ -152,7 +163,7 @@ const CONNECTION_LEVEL_ERROR_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'E
  * citation, which is the inverse of the standing rule that 403/429/5xx/timeout
  * are inconclusive and never retire a link or license a replacement (#2473).
  */
-const RESOURCE_GONE_HTTP_STATUS_CODES = new Set([404, 410]);
+export const RESOURCE_GONE_HTTP_STATUS_CODES = new Set([404, 410]);
 
 /**
  * How long a probe verdict stays usable as a positive assertion of liveness. A
@@ -399,9 +410,16 @@ export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLi
     typeof verdict.httpStatusCode !== 'number' &&
     !!probe.errorCode &&
     CONNECTION_LEVEL_ERROR_CODES.has(probe.errorCode);
+  const nameNotFound =
+    verdict.healthStatus === 'UNAVAILABLE' &&
+    typeof verdict.httpStatusCode !== 'number' &&
+    probe.errorCode === 'ENOTFOUND';
+  const connectionRefused = connectionLevelFailure && probe.errorCode === 'ECONNREFUSED';
   const classified = {
     ...verdict,
     ...(connectionLevelFailure ? { connectionLevelFailure: true as const } : {}),
+    ...(nameNotFound ? { nameNotFound: true as const } : {}),
+    ...(connectionRefused ? { connectionRefused: true as const } : {}),
     ...(httpsLandingUrl ? { httpsLandingUrl } : {}),
     ...(redirectLandingUrl ? { redirectLandingUrl } : {}),
     ...(landed ? { landedOnRequestedResource: true as const } : {}),
@@ -426,6 +444,7 @@ export function isLikelyUnavailableSourceLink(health: SourceLinkHealth | undefin
 
 export interface DatedSourceLinkHealth extends SourceLinkHealth {
   checkedAt?: Date | string | null;
+  confirmingConnectionFailureAt?: Date | string | null;
 }
 
 /**
@@ -490,6 +509,12 @@ export function findSourceLinkHealth(
     ...(typeof match.httpStatusCode === 'number' ? { httpStatusCode: match.httpStatusCode } : {}),
     ...(match.privateAddressHost === true ? { privateAddressHost: true } : {}),
     ...(match.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
+    ...(match.connectionLevelFailure === true ? { connectionLevelFailure: true as const } : {}),
+    ...(match.nameNotFound === true ? { nameNotFound: true as const } : {}),
+    ...(match.connectionRefused === true ? { connectionRefused: true as const } : {}),
+    ...(match.confirmingConnectionFailureAt
+      ? { confirmingConnectionFailureAt: match.confirmingConnectionFailureAt as Date | string }
+      : {}),
     ...(match.checkedAt
       ? { checkedAt: match.checkedAt as DatedSourceLinkHealth['checkedAt'] }
       : {}),

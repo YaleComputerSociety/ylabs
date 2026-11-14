@@ -23,6 +23,8 @@ import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
   emitLanePageHealthForCitedPages,
+  fetchFailureHttpStatus,
+  isGoneHttpStatus,
   LanePageReads,
   type LanePageProbe,
 } from '../lanePageHealth';
@@ -48,6 +50,7 @@ export interface LabSiteVerificationCandidate {
   entityType?: string;
   name?: string;
   leads: LabSiteLeadCandidate[];
+  storedState?: string;
 }
 
 const textValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
@@ -71,7 +74,16 @@ export async function readLabSiteVerificationCandidates(options: {
       $or: [{ website: /^https?:\/\//i }, { websiteUrl: /^https?:\/\//i }],
       ...(only.length ? { slug: { $in: only } } : {}),
     },
-    { _id: 1, slug: 1, website: 1, websiteUrl: 1, entityType: 1, name: 1, displayName: 1 },
+    {
+      _id: 1,
+      slug: 1,
+      website: 1,
+      websiteUrl: 1,
+      entityType: 1,
+      name: 1,
+      displayName: 1,
+      'leadVerification.state': 1,
+    },
   ).lean()) as Array<{
     _id: unknown;
     slug?: string;
@@ -80,6 +92,7 @@ export async function readLabSiteVerificationCandidates(options: {
     entityType?: string;
     name?: string;
     displayName?: string;
+    leadVerification?: { state?: string };
   }>;
   if (!entities.length) return [];
 
@@ -138,6 +151,7 @@ export async function readLabSiteVerificationCandidates(options: {
     if (!leads?.length || !slug || !website) continue;
     const entityType = textValue(entity.entityType);
     const name = textValue(entity.displayName) || textValue(entity.name);
+    const storedState = textValue(entity.leadVerification?.state);
     candidates.push({
       entityId,
       slug,
@@ -145,6 +159,7 @@ export async function readLabSiteVerificationCandidates(options: {
       ...(entityType ? { entityType } : {}),
       ...(name ? { name } : {}),
       leads,
+      ...(storedState ? { storedState } : {}),
     });
   }
   candidates.sort((a, b) => a.slug.localeCompare(b.slug));
@@ -199,6 +214,16 @@ interface LabSiteReading {
   fromCache?: boolean;
   pages?: Array<{ url: string; html: string }>;
   notObserved?: true;
+  partialRead?: true;
+}
+
+function unreadLanding(httpStatusCode: number | undefined): LabSiteReading {
+  return {
+    html: '',
+    visitedUrls: [],
+    httpStatusCode,
+    ...(isGoneHttpStatus(httpStatusCode) ? {} : { partialRead: true as const }),
+  };
 }
 
 /**
@@ -217,10 +242,11 @@ export async function readLabSite(
   } catch (error) {
     if (isNotObserved(error)) return { html: '', visitedUrls: [], notObserved: true };
     const status = (error as { response?: { status?: number } })?.response?.status;
-    return status ? { html: '', visitedUrls: [], httpStatusCode: status } : null;
+    return status ? unreadLanding(status) : null;
   }
-  if (!landing.html) return { html: '', visitedUrls: [], httpStatusCode: landing.httpStatusCode };
+  if (!landing.html) return unreadLanding(landing.httpStatusCode);
   const pages = [landing];
+  let partialRead = false;
   for (const subpageUrl of peopleSubpageUrls(landing.html, landing.finalUrl, MAX_PEOPLE_SUBPAGES)) {
     try {
       const subpage = await fetcher(subpageUrl, useCache);
@@ -231,15 +257,43 @@ export async function readLabSite(
       // deferred rather than judged on the pages that happened to answer (#6258). A members
       // page that answered any status is an observation and is skipped as before.
       if (isNotObserved(error)) return { html: '', visitedUrls: [], notObserved: true };
+      if (!isGoneHttpStatus(fetchFailureHttpStatus(error))) partialRead = true;
     }
   }
   return {
+    ...(partialRead ? { partialRead: true as const } : {}),
     html: pages.map((page) => page.html).join('\n'),
     visitedUrls: pages.map((page) => page.finalUrl),
     pages: pages.map((page) => ({ url: page.finalUrl, html: page.html })),
     httpStatusCode: landing.httpStatusCode,
     ...(landing.fromCache ? { fromCache: true } : {}),
   };
+}
+
+const LEAD_VERDICT_STRENGTH: Readonly<Record<string, number>> = {
+  verified: 3,
+  contradicted: 3,
+  partial: 2,
+  unstated: 1,
+  unreachable: 0,
+};
+
+/**
+ * A members page that answered a throttle or a server error was observed but not read, and
+ * a landing page usually does not name the PI, so a verdict from the pages that did answer
+ * may be weaker than the truth. Such a read may raise a stored verdict but never lower one
+ * (#6264), the rule `lab-site-undergrad-invitation` applies to its own partial reads. A
+ * verified or contradicted lead is a positive finding on a page that was read, so it stands.
+ */
+export function partialReadWouldDowngrade(
+  newState: string,
+  storedState: string | undefined,
+): boolean {
+  if (!storedState) return false;
+  const next = LEAD_VERDICT_STRENGTH[newState];
+  const stored = LEAD_VERDICT_STRENGTH[storedState];
+  if (next === undefined || stored === undefined) return false;
+  return next < stored;
 }
 
 export function labSiteLeadVerificationObservation(
@@ -280,6 +334,7 @@ export class LabSiteLeadVerificationScraper implements IScraper {
     });
     const tally = { verified: 0, partial: 0, contradicted: 0, unstated: 0, unreachable: 0 };
     let deferredNotObserved = 0;
+    let heldPartialRead = 0;
     let observationCount = 0;
     let contradictedLeads = 0;
     const pageReads = new LanePageReads();
@@ -312,6 +367,16 @@ export class LabSiteLeadVerificationScraper implements IScraper {
               candidate.name,
             )
           : unreachableLabSiteVerification(candidate.website, observedAt, reading?.httpStatusCode);
+      if (
+        (!reading || reading.partialRead) &&
+        partialReadWouldDowngrade(verification.state, candidate.storedState)
+      ) {
+        heldPartialRead += 1;
+        context.log(
+          `${candidate.slug}: held, a partial read found ${verification.state} below the stored ${candidate.storedState}`,
+        );
+        continue;
+      }
       tally[verification.state] += 1;
       contradictedLeads += verification.contradictedCount;
       await context.emit(
@@ -341,6 +406,7 @@ export class LabSiteLeadVerificationScraper implements IScraper {
       notes:
         `verified=${tally.verified}; partial=${tally.partial}; contradicted=${tally.contradicted}; ` +
         `unstated=${tally.unstated}; unreachable=${tally.unreachable}; deferredNotObserved=${deferredNotObserved}; ` +
+        `heldPartialRead=${heldPartialRead}; ` +
         `contradictedLeads=${contradictedLeads}. ` +
         'Records verdicts only; no lead is attached, detached, or suppressed.',
     };
