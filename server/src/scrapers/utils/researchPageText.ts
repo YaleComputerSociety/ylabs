@@ -543,6 +543,13 @@ function researchPrefixLength(text: string, researchText: string): number {
 export function researchPageTextValue(
   pages: readonly FetchedResearchPage[],
 ): ResearchPageTextEntry[] {
+  return researchPageTextEntriesWithoutChrome(capResearchPageText(uncappedResearchPageText(pages)));
+}
+
+/** Each page's text before the cap, with the length of its leading research part. */
+function uncappedResearchPageText(
+  pages: readonly FetchedResearchPage[],
+): ResearchPageTextCapEntry[] {
   const seenUrls = new Set<string>();
   const entries: ResearchPageTextCapEntry[] = [];
   const prose = (text: string): string =>
@@ -560,7 +567,42 @@ export function researchPageTextValue(
       researchChars: researchPrefixLength(text, prose(parts.research)),
     });
   }
-  return researchPageTextEntriesWithoutChrome(capResearchPageText(entries));
+  return entries;
+}
+
+export interface ResearchPageTextCapComparison {
+  changed: boolean;
+  linesKeptOnlyByResearchFirst: number;
+  linesKeptOnlyByEvenShare: number;
+}
+
+/**
+ * The stored value under the research-first cap compared with the even share per page it
+ * replaced (#6109), read from the same fetched pages so a dry run can measure the change with
+ * no second fetch. Lines are compared as sets across the row.
+ */
+export function researchPageTextCapComparison(
+  pages: readonly FetchedResearchPage[],
+): ResearchPageTextCapComparison {
+  const uncapped = uncappedResearchPageText(pages);
+  const linesOf = (entries: readonly ResearchPageTextEntry[]): Set<string> =>
+    new Set(entries.flatMap((entry) => entry.text.split('\n')));
+  const researchFirst = linesOf(
+    researchPageTextEntriesWithoutChrome(capResearchPageText(uncapped)),
+  );
+  const evenShare = linesOf(
+    researchPageTextEntriesWithoutChrome(
+      capResearchPageText(uncapped.map(({ url, text }) => ({ url, text }))),
+    ),
+  );
+  const onlyIn = (a: Set<string>, b: Set<string>) => [...a].filter((line) => !b.has(line)).length;
+  const linesKeptOnlyByResearchFirst = onlyIn(researchFirst, evenShare);
+  const linesKeptOnlyByEvenShare = onlyIn(evenShare, researchFirst);
+  return {
+    changed: linesKeptOnlyByResearchFirst + linesKeptOnlyByEvenShare > 0,
+    linesKeptOnlyByResearchFirst,
+    linesKeptOnlyByEvenShare,
+  };
 }
 
 const textOf = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');

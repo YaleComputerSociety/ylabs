@@ -3,6 +3,7 @@ import {
   MAX_RESEARCH_PAGE_TEXT_CHARS,
   capResearchPageText,
   researchPageTextEntries,
+  researchPageTextCapComparison,
   researchPageTextValue,
   researchStatementTextOfPage,
   truncateAtSentenceBoundary,
@@ -385,5 +386,35 @@ describe('researchPageTextEntries', () => {
       ]),
     ).toEqual([{ url: HOME, text: 'kelp' }]);
     expect(researchPageTextEntries(undefined)).toEqual([]);
+  });
+});
+
+describe('researchPageTextCapComparison (#6109)', () => {
+  const researchHtml = (n: number) =>
+    `<h2>Research</h2>${Array.from({ length: n }, (_v, i) => `<p>Our group studies coastal kelp recovery after marine heatwave number ${i + 1}.</p>`).join('')}<p>Our final research aim is coral reef resilience under warming.</p>`;
+  const peopleHtml = (n: number) =>
+    `<h2>People</h2><ul>${Array.from({ length: n }, (_v, i) => `<li>Member Fixture Number ${i + 1}, Graduate Student</li>`).join('')}</ul>`;
+
+  it('reports a row the research-first cap changes, from one set of fetched pages', () => {
+    const comparison = researchPageTextCapComparison([
+      {
+        url: HOME,
+        html: `<html><body><main>${peopleHtml(120)}${researchHtml(150)}</main></body></html>`,
+      },
+      { url: RESEARCH, html: `<html><body><main>${peopleHtml(500)}</main></body></html>` },
+    ] as any);
+    expect(comparison.changed).toBe(true);
+    expect(comparison.linesKeptOnlyByResearchFirst).toBeGreaterThan(0);
+  });
+
+  it('reports no change for a row under the cap', () => {
+    expect(
+      researchPageTextCapComparison([
+        {
+          url: HOME,
+          html: `<html><body><main>${researchHtml(5)}${peopleHtml(5)}</main></body></html>`,
+        },
+      ] as any),
+    ).toEqual({ changed: false, linesKeptOnlyByResearchFirst: 0, linesKeptOnlyByEvenShare: 0 });
   });
 });
