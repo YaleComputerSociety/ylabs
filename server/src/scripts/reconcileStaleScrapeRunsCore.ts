@@ -253,6 +253,8 @@ export interface RecountableScrapeRun {
   observationCount: number;
 }
 
+export type WrittenCountVerdict = 'under_recorded' | 'matching' | 'stored_below_recorded';
+
 export interface WrittenCountRecount {
   id: string;
   sourceName: string;
@@ -260,23 +262,32 @@ export interface WrittenCountRecount {
   startedAt: string;
   recordedObservationCount: number;
   storedObservationCount: number;
-  undercount: number;
+  verdict: WrittenCountVerdict;
 }
 
 export interface WrittenCountRecountPlan {
   runs: number;
-  undercounted: number;
+  underRecorded: number;
   matching: number;
-  recordedTotal: number;
-  storedTotal: number;
+  storedBelowRecorded: number;
+  missingFromRecords: number;
+  storedBelowRecordedBySource: Record<string, number>;
   recounts: WrittenCountRecount[];
 }
 
+const writtenCountVerdict = (recorded: number, stored: number): WrittenCountVerdict =>
+  stored > recorded ? 'under_recorded' : stored === recorded ? 'matching' : 'stored_below_recorded';
+
+/**
+ * A stored count is how many of a run's observations still exist, not how many it wrote, so it
+ * can only correct a record that says too little. A run storing fewer than it recorded most
+ * likely had rows rolled back, retired or superseded after it, and is reported but never written.
+ */
 export function planWrittenCountRecount(
   runs: RecountableScrapeRun[],
   storedCountByRunId: ReadonlyMap<string, number>,
 ): WrittenCountRecountPlan {
-  const recounts = runs.map((run) => {
+  const recounts = runs.map((run): WrittenCountRecount => {
     const stored = storedCountByRunId.get(run.id) ?? 0;
     return {
       id: run.id,
@@ -285,28 +296,48 @@ export function planWrittenCountRecount(
       startedAt: run.startedAt.toISOString(),
       recordedObservationCount: run.observationCount,
       storedObservationCount: stored,
-      undercount: stored - run.observationCount,
+      verdict: writtenCountVerdict(run.observationCount, stored),
     };
   });
+  const of = (verdict: WrittenCountVerdict) =>
+    recounts.filter((recount) => recount.verdict === verdict);
+  const storedBelowRecordedBySource: Record<string, number> = {};
+  for (const recount of of('stored_below_recorded')) {
+    storedBelowRecordedBySource[recount.sourceName] =
+      (storedBelowRecordedBySource[recount.sourceName] ?? 0) + 1;
+  }
   return {
     runs: recounts.length,
-    undercounted: recounts.filter((recount) => recount.undercount > 0).length,
-    matching: recounts.filter((recount) => recount.undercount === 0).length,
-    recordedTotal: recounts.reduce((sum, recount) => sum + recount.recordedObservationCount, 0),
-    storedTotal: recounts.reduce((sum, recount) => sum + recount.storedObservationCount, 0),
-    recounts: recounts.sort((a, b) => b.undercount - a.undercount),
+    underRecorded: of('under_recorded').length,
+    matching: of('matching').length,
+    storedBelowRecorded: of('stored_below_recorded').length,
+    missingFromRecords: of('under_recorded').reduce(
+      (sum, recount) => sum + recount.storedObservationCount - recount.recordedObservationCount,
+      0,
+    ),
+    storedBelowRecordedBySource,
+    recounts: recounts.sort(
+      (a, b) =>
+        b.storedObservationCount -
+        b.recordedObservationCount -
+        (a.storedObservationCount - a.recordedObservationCount),
+    ),
   };
 }
 
+/** The write for one recount, or undefined for a run that stores less than it recorded. */
 export function writtenCountRecountUpdate(
   recount: WrittenCountRecount,
   now: Date,
-): { filter: Record<string, unknown>; update: Record<string, unknown> } {
+): { filter: Record<string, unknown>; update: Record<string, unknown> } | undefined {
+  if (recount.verdict === 'stored_below_recorded') return undefined;
   return {
     filter: { _id: recount.id, status: { $in: [...RECOUNTABLE_SCRAPE_RUN_STATUSES] } },
     update: {
       $set: {
-        reconciledObservationCount: recount.storedObservationCount,
+        ...(recount.verdict === 'under_recorded'
+          ? { storedObservationCountAtReconcile: recount.storedObservationCount }
+          : {}),
         reconciledAt: now,
       },
     },

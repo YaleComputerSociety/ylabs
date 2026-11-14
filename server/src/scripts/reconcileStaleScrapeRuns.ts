@@ -207,8 +207,9 @@ async function recountWrittenObservations(options: ReconcileStaleScrapeRunsArgs)
   let reconciled = 0;
   if (options.apply) {
     for (const recount of plan.recounts) {
-      const { filter, update } = writtenCountRecountUpdate(recount, now);
-      const result = await ScrapeRun.updateOne(filter, update);
+      const write = writtenCountRecountUpdate(recount, now);
+      if (!write) continue;
+      const result = await ScrapeRun.updateOne(write.filter, write.update);
       if ((result.matchedCount ?? 0) > 0) reconciled += 1;
     }
   }
@@ -218,6 +219,8 @@ async function recountWrittenObservations(options: ReconcileStaleScrapeRunsArgs)
     action: 'recount-written',
     measuredAt: now.toISOString(),
     reconciled: options.apply ? reconciled : null,
+    storedBelowRecordedNote:
+      'stored below recorded, likely rollback/retire/supersede; reported only, no field written',
     ...plan,
   };
   console.log(JSON.stringify(report, null, 2));

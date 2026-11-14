@@ -365,41 +365,50 @@ describe('a stalled run (#5086)', () => {
 });
 
 describe('planWrittenCountRecount (#6269)', () => {
-  const recountable = (id: string, observationCount: number) => ({
+  const recountable = (id: string, observationCount: number, sourceName = 'fixture-source') => ({
     id,
-    sourceName: 'fixture-source',
+    sourceName,
     status: 'interrupted',
     startedAt: new Date('2026-11-12T22:00:00Z'),
     observationCount,
   });
+  const now = new Date('2026-11-14T03:00:00Z');
 
-  it('reports each run by how far its record under-counts the observations it wrote', () => {
+  it('sorts runs into under-recorded, matching and stored below recorded', () => {
     const plan = planWrittenCountRecount(
-      [recountable('a', 0), recountable('b', 10), recountable('c', 5)],
+      [
+        recountable('a', 0),
+        recountable('b', 10),
+        recountable('c', 5),
+        recountable('d', 40, 'other-source'),
+      ],
       new Map([
         ['a', 900],
         ['b', 10],
         ['c', 12],
+        ['d', 3],
       ]),
     );
     expect(plan).toMatchObject({
-      runs: 3,
-      undercounted: 2,
+      runs: 4,
+      underRecorded: 2,
       matching: 1,
-      recordedTotal: 15,
-      storedTotal: 922,
+      storedBelowRecorded: 1,
+      missingFromRecords: 907,
+      storedBelowRecordedBySource: { 'other-source': 1 },
     });
-    expect(plan.recounts.map((recount) => [recount.id, recount.undercount])).toEqual([
-      ['a', 900],
-      ['c', 7],
-      ['b', 0],
+    expect(plan.recounts.map((recount) => [recount.id, recount.verdict])).toEqual([
+      ['a', 'under_recorded'],
+      ['c', 'under_recorded'],
+      ['b', 'matching'],
+      ['d', 'stored_below_recorded'],
     ]);
   });
 
   it('counts a run with no stored observations as zero, not as missing', () => {
     expect(planWrittenCountRecount([recountable('a', 0)], new Map()).recounts[0]).toMatchObject({
       storedObservationCount: 0,
-      undercount: 0,
+      verdict: 'matching',
     });
   });
 
@@ -413,12 +422,23 @@ describe('planWrittenCountRecount (#6269)', () => {
     );
   });
 
-  it('writes the true count beside the recorded one and never touches a running row', () => {
-    const now = new Date('2026-11-14T03:00:00Z');
+  it('writes the stored count only where it says more than the record', () => {
     const [recount] = planWrittenCountRecount([recountable('a', 0)], new Map([['a', 7]])).recounts;
     expect(writtenCountRecountUpdate(recount, now)).toEqual({
       filter: { _id: 'a', status: { $in: ['interrupted', 'failure'] } },
-      update: { $set: { reconciledObservationCount: 7, reconciledAt: now } },
+      update: { $set: { storedObservationCountAtReconcile: 7, reconciledAt: now } },
     });
+  });
+
+  it('only stamps a matching run as reconciled', () => {
+    const [recount] = planWrittenCountRecount([recountable('a', 7)], new Map([['a', 7]])).recounts;
+    expect(writtenCountRecountUpdate(recount, now)?.update).toEqual({
+      $set: { reconciledAt: now },
+    });
+  });
+
+  it('writes nothing for a run that stores less than it recorded', () => {
+    const [recount] = planWrittenCountRecount([recountable('a', 40)], new Map([['a', 3]])).recounts;
+    expect(writtenCountRecountUpdate(recount, now)).toBeUndefined();
   });
 });

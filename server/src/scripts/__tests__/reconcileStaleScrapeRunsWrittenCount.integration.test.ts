@@ -107,12 +107,13 @@ describe('the written count of a run that died mid-write (#6269)', () => {
       await countStoredObservationsByRun([String(run._id)]),
     );
     const now = new Date();
-    const { filter, update } = writtenCountRecountUpdate(plan.recounts[0], now);
-    await ScrapeRun.updateOne(filter, update);
+    const write = writtenCountRecountUpdate(plan.recounts[0], now);
+    if (!write) throw new Error('an under-recorded run must be written');
+    await ScrapeRun.updateOne(write.filter, write.update);
 
     expect(await ScrapeRun.findById(run._id).lean()).toMatchObject({
       observationCount: 0,
-      reconciledObservationCount: 12,
+      storedObservationCountAtReconcile: 12,
       reconciledAt: now,
     });
   });
