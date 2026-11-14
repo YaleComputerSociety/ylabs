@@ -145,6 +145,13 @@ export const DEAD_LINK_ERROR_CODES: ReadonlySet<string> = new Set([
 const CONNECTION_LEVEL_ERROR_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
 
 /**
+ * Two host-level observations count as one confirmed fact only this far apart, because a
+ * second probe minutes later meets the same outage rather than observing the host again
+ * (#6116). The backfill's second-run rule and the removal rule (#6264) both read it.
+ */
+export const CONNECTION_FAILURE_CONFIRMATION_GAP_MS = 6 * 60 * 60 * 1000;
+
+/**
  * Only a status that asserts the resource is gone retires a link. Every other
  * 4xx/5xx is a statement about the request or the server, not about whether the
  * page exists: 401/403 are access control, 429 is throttling, 5xx is an outage.
@@ -152,7 +159,7 @@ const CONNECTION_LEVEL_ERROR_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'E
  * citation, which is the inverse of the standing rule that 403/429/5xx/timeout
  * are inconclusive and never retire a link or license a replacement (#2473).
  */
-const RESOURCE_GONE_HTTP_STATUS_CODES = new Set([404, 410]);
+export const RESOURCE_GONE_HTTP_STATUS_CODES = new Set([404, 410]);
 
 /**
  * How long a probe verdict stays usable as a positive assertion of liveness. A

@@ -1,4 +1,5 @@
 import {
+  CONNECTION_FAILURE_CONFIRMATION_GAP_MS,
   isStaleSourceLinkHealth,
   sourceLinkHealthAgeDays,
   type DatedSourceLinkHealth,
@@ -321,7 +322,7 @@ const instantOf = (value: unknown): number | undefined => {
   return Number.isFinite(instant) ? instant : undefined;
 };
 
-export const CONNECTION_FAILURE_CONFIRMATION_GAP_MS = 6 * 60 * 60 * 1000;
+export { CONNECTION_FAILURE_CONFIRMATION_GAP_MS } from '../services/sourceLinkHealth';
 
 /**
  * A refused or unroutable connection over a live verdict, held until a second run
