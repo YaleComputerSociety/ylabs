@@ -15,7 +15,10 @@ import {
   getResearchGroupDetail,
   resolveArchivedResearchEntityCanonicalSlug,
 } from '../services/researchGroupService';
-import { SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON } from '../models/entityArchival';
+import {
+  SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+  SUBJECT_TWIN_MERGE_ARCHIVE_REASON,
+} from '../models/entityArchival';
 import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { partitionMergeGroupsByDistinctPeopleVerdict } from '../services/distinctPeopleVerdicts';
 import { materializeEntity } from '../scrapers/entityMaterializer';
@@ -30,7 +33,9 @@ import { SAME_LEAD_MERGE_CARRIED_FIELDS } from './mergeSameLeadDuplicateGroupsCo
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  isPersonsOwnResearchRow,
   isShellSlug,
+  ownSiteIdentityPairs,
   planSameLeadCorroboratedMerges,
   sameLeadUrlLaneHoldFlags,
   sameLeadUrlLaneHolds,
@@ -95,7 +100,7 @@ async function main(): Promise<void> {
 
   const rows = (await ResearchEntity.find({ archived: { $ne: true } })
     .select(
-      '_id slug name displayName entityType websiteUrl website sourceUrls fieldProvenance studentVisibilityTier recentGrants recentGrantCount fundingAgencies',
+      '_id slug name displayName entityType kind websiteUrl website sourceUrls fieldProvenance studentVisibilityTier recentGrants recentGrantCount fundingAgencies',
     )
     .lean()) as unknown as Array<Record<string, any>>;
   const byId = new Map(rows.map((row) => [String(row._id), row]));
@@ -107,6 +112,21 @@ async function main(): Promise<void> {
   })
     .select('personId target')
     .lean()) as unknown as Array<Record<string, any>>;
+  const memberDocs = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    role: { $nin: LEAD_ROLE_CANONICAL_VALUES as unknown as string[] },
+    archived: { $ne: true },
+    state: { $ne: 'HISTORICAL' },
+  })
+    .select('personId target')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const membersByEntity = new Map<string, Set<string>>();
+  for (const doc of memberDocs) {
+    const entityId = String(doc.target?.id ?? '');
+    if (!entityId) continue;
+    if (!membersByEntity.has(entityId)) membersByEntity.set(entityId, new Set());
+    membersByEntity.get(entityId)!.add(String(doc.personId ?? ''));
+  }
   const leadsByEntity = new Map<string, Set<string>>();
   for (const doc of leadDocs) {
     const entityId = String(doc.target?.id ?? '');
@@ -118,7 +138,19 @@ async function main(): Promise<void> {
   const urlLaneVerdicts = await planUrlIdentityLaneVerdicts();
   const urlLaneHolds = sameLeadUrlLaneHolds(urlLaneVerdicts);
 
-  const groups = exactDuplicateUrlGroups(rows as any[])
+  const exactGroups = exactDuplicateUrlGroups(rows as any[]);
+  const exactPairKeys = new Set(
+    exactGroups.map((group: any) =>
+      ((group.members ?? []) as any[])
+        .map((member) => String(member._id))
+        .sort()
+        .join('|'),
+    ),
+  );
+  const groups = [
+    ...exactGroups,
+    ...ownSiteIdentityPairs(rows as Array<{ _id: unknown; websiteUrl?: unknown }>, exactPairKeys),
+  ]
     .map((group) => {
       const members = ((group as any).members ?? [])
         .map((member: any) => byId.get(String(member._id)))
@@ -146,6 +178,9 @@ async function main(): Promise<void> {
           (Array.isArray(member.recentGrants) ? member.recentGrants.length : 0) +
           (Array.isArray(member.fundingAgencies) ? member.fundingAgencies.length : 0),
         isShell: isShellSlug(String(member.slug)),
+        leadPersonIds: [...(leadsByEntity.get(String(member._id)) ?? [])],
+        memberPersonIds: [...(membersByEntity.get(String(member._id)) ?? [])],
+        isPersonsOwnRow: isPersonsOwnResearchRow(member),
       }));
       return {
         url: String((group as any).url ?? ''),
@@ -267,7 +302,10 @@ async function main(): Promise<void> {
       for (const loser of losers) {
         const archivedLoser = await archiveResearchEntities({
           ids: [loser._id],
-          archivedReason: SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+          archivedReason:
+            merge.corroboration === 'leadless-or-member-led-twin'
+              ? SUBJECT_TWIN_MERGE_ARCHIVE_REASON
+              : SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
           set: { canonicalGroupId: survivor._id, lastObservedAt: now },
           survivorId: survivor._id,
           now,

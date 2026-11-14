@@ -5,6 +5,17 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-13: A Lead's Person Row Folds Into Their Lab Only When It Is The Same Research (#6206)
+
+Decision (owner, 2026-11-13).
+A lab lead's own person-scoped row that shares the lab's website merges into the lab only when it describes the same research as the lab and nothing outside it; otherwise both rows stay.
+When they merge, the lab survives, any evidence only the person row carries moves to it, and the lead stays named on the lab card, so the person is still found through the lab (2026-10-21 decisions).
+Stored evidence does not witness "the same research": in a blind three-grader check, a person row whose text was all read from the lab's own site, and which cited nothing else but the person's profile, was graded the same research in one case and broader research in another, and topic overlap did not separate the two.
+So this is a per-row operator judgement after a blind check, not a lane rule.
+
+One lab stored twice on its own site does fold by lane rule: the two rows name the same lab, their own websites are one identity (`www.` folded), and exactly one row anchors, so the other has no lead or is led only by people of the anchor row (`subjectTwinAnchor` in `scripts/mergeSameLeadDuplicateGroupsCore.ts`).
+A twin led by anyone who neither leads nor belongs to the anchor never folds under it, and a pair the URL-identity lanes plan or quarantine is left to them.
+
 ## 2026-11-13: A Lead's Ruled Rank Is A Signal, Not A Serve-Time Gate (#6266)
 
 Decision (five-agent consensus under the owner's 2026-11-13 delegation, 4 of 5 keeping the rows served).
