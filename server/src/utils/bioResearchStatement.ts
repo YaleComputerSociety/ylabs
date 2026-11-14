@@ -99,8 +99,7 @@ const SCHOLAR_ROLE =
 const PERFORMER_ROLE =
   '(?:pianists?|violinists?|violists?|cellists?|bassists?|guitarists?|percussionists?|organists?|harpists?|flutists?|clarinetists?|oboists?|bassoonists?|trumpeters?|hornists?|saxophonists?|vocalists?|singers?|sopranos?|tenors?|baritones?|conductors?|instrumentalists?|actors?|actresses?)';
 
-const ROLE_MODIFIER =
-  "(?:(?!(?:for|to|of|on|in|with|at|among|by|from)\\b)[\\p{L}'’-]+\\s+){0,2}";
+const ROLE_MODIFIER = "(?:(?!(?:for|to|of|on|in|with|at|among|by|from)\\b)[\\p{L}'’-]+\\s+){0,2}";
 
 const ownPersonHoldsRole = (role: string): RegExp =>
   new RegExp(
