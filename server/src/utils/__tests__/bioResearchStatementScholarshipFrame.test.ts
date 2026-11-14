@@ -83,5 +83,9 @@ describe('clinical service that only borrows a scholarship word stays refused (#
     'Her special interest is in the representation of patients in the care team.',
     'He offers patients minimally invasive surgery, informed by the history of surgical technique.',
     'He is a historian of medicine whose special interest is in the treatment of tuberculosis among his patients.',
+    'She is a laryngologist for singers, and her special interest is in the treatment of voice disorders.',
+    'He is a physician to actors, and his special interest is in the treatment of chronic pain.',
+    'As a surgeon for pianists, his special interest is in the treatment of hand injuries.',
+    'Dr. Lane is a dermatologist to sopranos whose special interest is in the treatment of skin disease.',
   ])('refuses %s', (sentence) => refuses(sentence));
 });

@@ -99,9 +99,12 @@ const SCHOLAR_ROLE =
 const PERFORMER_ROLE =
   '(?:pianists?|violinists?|violists?|cellists?|bassists?|guitarists?|percussionists?|organists?|harpists?|flutists?|clarinetists?|oboists?|bassoonists?|trumpeters?|hornists?|saxophonists?|vocalists?|singers?|sopranos?|tenors?|baritones?|conductors?|instrumentalists?|actors?|actresses?)';
 
+const ROLE_MODIFIER =
+  "(?:(?!(?:for|to|of|on|in|with|at|among|by|from)\\b)[\\p{L}'’-]+\\s+){0,2}";
+
 const ownPersonHoldsRole = (role: string): RegExp =>
   new RegExp(
-    `(?:^\\s*[Aa]s\\s+an?\\s+(?:[\\p{L}'’-]+\\s+){0,2}${role}\\b|\\b(?:[Hh]e|[Ss]he|[Tt]hey|I)\\s+(?:is|was|are|am)\\s+(?:also\\s+)?(?:an?|the)\\s+(?:[\\p{L}'’-]+\\s+){0,2}${role}\\b(?![\\p{L}-])|^\\s*(?:Dr\\.?\\s+|Professor\\s+)?\\p{Lu}[\\p{L}'’.-]+(?:\\s+\\p{Lu}[\\p{L}'’.-]+){0,3}\\s+is\\s+(?:also\\s+)?an?\\s+(?:[\\p{L}'’-]+\\s+){0,2}${role}\\b(?![\\p{L}-]))`,
+    `(?:^\\s*[Aa]s\\s+an?\\s+${ROLE_MODIFIER}${role}\\b|\\b(?:[Hh]e|[Ss]he|[Tt]hey|I)\\s+(?:is|was|are|am)\\s+(?:also\\s+)?(?:an?|the)\\s+${ROLE_MODIFIER}${role}\\b(?![\\p{L}-])|^\\s*(?:Dr\\.?\\s+|Professor\\s+)?\\p{Lu}[\\p{L}'’.-]+(?:\\s+\\p{Lu}[\\p{L}'’.-]+){0,3}\\s+is\\s+(?:also\\s+)?an?\\s+${ROLE_MODIFIER}${role}\\b(?![\\p{L}-]))`,
     'u',
   );
 
