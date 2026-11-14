@@ -12,8 +12,7 @@ export type RosterTitleUnit =
   { kind: 'section'; value: string } | { kind: 'other-unit' } | { kind: 'not-a-unit' };
 
 export type RosterHomeDepartmentStatement =
-  | { kind: 'assert'; value: string }
-  | { kind: 'withhold'; reason: RosterHomeDepartmentWithholding };
+  { kind: 'assert'; value: string } | { kind: 'withhold'; reason: RosterHomeDepartmentWithholding };
 
 const APPOINTMENT_MARKERS: ReadonlyArray<[RegExp, RosterHomeDepartmentWithholding]> = [
   [/\bsecondary\b/i, 'secondary'],
