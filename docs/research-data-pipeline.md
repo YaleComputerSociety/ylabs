@@ -1440,6 +1440,7 @@ Only when the pool states no title and a key falls back to its own title (a key 
 A pooled write deletes `profileFieldWriters.title`, so a fallback writer recorded before the pool stated a title never decides a later fallback round against keys it was never ranked against.
 `primaryDepartment` is resolved the same way, once per researcher over the screened department readings of every joining key (`researcherDepartmentOverEveryJoiningKey` in `scrapers/entityMaterializer.ts`, #6217), so the resolved value no longer depends on which key materialized last.
 The pooled value then goes through the writer precedence below like any other resolved department.
+A directory department only fills an empty field (#5741), so it never enters the pool, and a pool with no other reading leaves the key's own department to that precedence.
 A key joins the pool only in both directions: the researcher's own identity names it and the key's own engine join reaches the researcher, so a namesake key the name resolver alone reaches never enters it.
 A dotted `netid:<local part>` key (#5744) also joins when the directory pairs exactly `<local part>@yale.edu` with exactly one netid, the researcher's, unless its own join reaches a different researcher; an address paired with zero or several netids aliases nobody.
 Pooled readings are resolved in a fixed order (value, source, `observedAt`, id), because the resolver keeps the first-seen value on an exact tie.

@@ -9809,12 +9809,17 @@ async function departmentSpecificityCatalog(): Promise<DepartmentSpecificityCata
  * that joins the researcher in both directions, plus the dotted keys the directory pairs
  * with the researcher's netid, so the stored value no longer depends on which key ran
  * last (#6217). Generalizes the #5578 title mechanism; a key the researcher's identity
- * cannot name contributes only when no joining key states a department.
+ * cannot name contributes only when no joining key states a department. A directory
+ * department only fills an empty field (#5741), so it never enters the pool: a pool with no
+ * other reading leaves the key's own resolve to the writer precedence.
  */
 async function researcherDepartmentOverEveryJoiningKey(
-  input: JoiningKeyInput & { ownObservations: readonly any[] },
+  input: JoiningKeyInput & {
+    joining: JoiningKeyEvidence | undefined;
+    ownObservations: readonly any[];
+  },
 ): Promise<ResolvedField | undefined> {
-  const joining = await joiningKeyEvidence(input);
+  const { joining } = input;
   if (!joining) return undefined;
   const refusals = input.researcher?.fieldValueRefusals;
   const { researcherId, evidence, ownKeyIsFindable } = joining;
@@ -9844,23 +9849,26 @@ async function researcherDepartmentOverEveryJoiningKey(
       ),
     );
   }
-  return resolvePooledDepartment(pooled, await departmentSpecificityCatalog(), input.now);
+  const stated = pooled.filter(
+    (observation) => !isFillOnlyFieldValue('primaryDepartment', [observation.sourceName]),
+  );
+  if (stated.length === 0) return undefined;
+  return resolvePooledDepartment(stated, await departmentSpecificityCatalog(), input.now);
 }
 
 async function researcherTitleOverEveryJoiningKey(input: {
   researcher: any;
-  identifier: UserKeyReference;
+  joining: JoiningKeyEvidence | undefined;
   ownObservations: readonly any[];
   ownTitle: string | undefined;
   now: Date;
-  prefetch?: MaterializationReadSource;
 }): Promise<ResearcherTitle> {
   const ownKeyFallback = (title: string | undefined): ResearcherTitle => ({
     title,
     fromOwnKeyFallback: true,
     fromFreshFirstHand: false,
   });
-  const joining = await joiningKeyEvidence(input);
+  const { joining } = input;
   if (!joining) return ownKeyFallback(input.ownTitle);
   const { researcherId, evidence, ownKeyIsFindable, cache } = joining;
   const refusals = input.researcher?.fieldValueRefusals;
@@ -10490,6 +10498,18 @@ async function materializeUserIdentityToResearcher(
     identityJoin = 'minted-from-pi-attribution';
   }
   const created = mintedFromPiAttribution;
+  const resolvedAt = options.now ?? new Date();
+  const ownKey: UserKeyReference = identifier.entityKey
+    ? { entityKey: identifier.entityKey }
+    : { entityId: prefetchObjectIdString(identifier.entityId) };
+  const joining = created
+    ? undefined
+    : await joiningKeyEvidence({
+        researcher,
+        identifier: ownKey,
+        now: resolvedAt,
+        prefetch: options.chunkPrefetch,
+      });
   const {
     title: researcherTitle,
     fromOwnKeyFallback: titleFromOwnKeyFallback,
@@ -10498,23 +10518,19 @@ async function materializeUserIdentityToResearcher(
     ? { title, fromOwnKeyFallback: true, fromFreshFirstHand: false }
     : await researcherTitleOverEveryJoiningKey({
         researcher,
-        identifier: identifier.entityKey
-          ? { entityKey: identifier.entityKey }
-          : { entityId: prefetchObjectIdString(identifier.entityId) },
+        joining,
         ownObservations: screenedObservations,
         ownTitle: title,
-        now: options.now ?? new Date(),
-        prefetch: options.chunkPrefetch,
+        now: resolvedAt,
       });
   const pooledDepartment = created
     ? undefined
     : await researcherDepartmentOverEveryJoiningKey({
         researcher,
-        identifier: identifier.entityKey
-          ? { entityKey: identifier.entityKey }
-          : { entityId: prefetchObjectIdString(identifier.entityId) },
+        identifier: ownKey,
+        joining,
         ownObservations: screenedObservations,
-        now: options.now ?? new Date(),
+        now: resolvedAt,
         prefetch: options.chunkPrefetch,
       });
   const resolved = pooledDepartment

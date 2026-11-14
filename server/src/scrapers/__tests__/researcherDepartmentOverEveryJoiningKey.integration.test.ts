@@ -23,7 +23,7 @@ import { resetOrgUnitCanonicalizerCache } from '../orgUnitCanonicalization';
 import { clearC4Flags } from './c4FlagTestEnv';
 
 const NETID = 'qs6217';
-const RESEARCHER_EMAIL = 'quinn.s@yale.edu';
+const RESEARCHER_EMAIL = 'quinn.s6217@yale.edu';
 const OFFICIAL_PAGE = 'https://medicine.yale.edu/profile/quinn-synthetic/';
 const PROFILE_KEY = 'ysm:quinn-synthetic';
 const ROSTER_KEY = 'dept:fixture-informatics:quinn-synthetic';
@@ -224,7 +224,7 @@ describe("a researcher's primaryDepartment is resolved over every key that joins
       sourceName: 'dept-faculty-roster',
       sourceUrl: 'https://fixture-psychology.yale.edu/people/',
       confidence: 0.9,
-      email: 'quinn.namesake@yale.edu',
+      email: 'quinn.namesake6217@yale.edu',
       department: 'Psychology',
     });
     await setStoredDepartment('Anesthesiology');
