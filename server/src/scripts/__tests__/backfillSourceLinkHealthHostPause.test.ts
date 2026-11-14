@@ -14,7 +14,7 @@ afterEach(() => resetHostPauseStateForTests());
 
 describe('probeUncachedUrlsByHost and a paused host', () => {
   it('sends a paused host no probes, caches no verdict for it, and notes the pause', async () => {
-    recordHostBackoff('dept.example.edu', { status: 403, statedUntil: PAUSED_UNTIL });
+    await recordHostBackoff('dept.example.edu', { status: 403, statedUntil: PAUSED_UNTIL });
     const probed: string[] = [];
     const cache = new Map<string, SourceLinkHealth>();
     const result = { checked: 0, errors: 0, deferredPausedHost: 0 };
@@ -53,7 +53,7 @@ describe('probeUncachedUrlsByHost and a paused host', () => {
       {
         checkLink: async (url) => {
           probed.push(url);
-          recordHostBackoff('dept.example.edu', { status: 429 });
+          await recordHostBackoff('dept.example.edu', { status: 429 });
           return { healthStatus: 'UNKNOWN', httpStatusCode: 429 } as SourceLinkHealth;
         },
         hostConcurrency: 1,

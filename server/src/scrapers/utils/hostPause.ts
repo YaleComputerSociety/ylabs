@@ -1,5 +1,9 @@
 import { normalizeExcludedHost } from '../../utils/excludedHosts';
+import { HostPausedError, type HostPause } from './hostPausedError';
 import { hostPausedUntil, recordHostBackoff } from './hostPauseState';
+import { HostBudgetUnavailableError, type HostBackoffVerdict } from './machineHostBudget';
+
+export { HostPausedError, type HostPause } from './hostPausedError';
 
 /**
  * A host refusing the lane is rate limiting it, never a verdict on the host (owner decision,
@@ -15,11 +19,6 @@ export const HOST_PAUSE_STATUSES: ReadonlySet<number> = new Set([429, 503]);
  * that response's refusal or success to the policy fetch and a host is never counted twice.
  */
 export const HOST_PAUSE_POLICY_FETCH = '__ylabsHostPausePolicyFetch';
-
-export interface HostPause {
-  host: string;
-  until: Date;
-}
 
 const STATED_PAUSE_RE = /\b(?:banned|blocked)\s+(?:up\s+to|until)\b([^<\n]{0,120})/i;
 const UNREADABLE_STATED_DATE_DEFAULT_MS = 24 * 60 * 60_000;
@@ -100,14 +99,14 @@ export function statedPauseUntil(body: unknown, now: Date = new Date()): Date | 
  * out (`recordTierOneExhausted`). A caller with no quick retries of its own passes no
  * `quickRetryWaitMs`, so every 429 or 503 pauses the host.
  */
-export function recordHostRefusal(input: {
+export async function recordHostRefusal(input: {
   host: string;
   status: number;
   headers?: unknown;
   body?: unknown;
   retryAfterMs?: number;
   quickRetryWaitMs?: number;
-}): HostPause | undefined {
+}): Promise<HostPause | undefined> {
   if (!input.host) return undefined;
   const statedUntil = input.status === 403 ? statedPauseUntil(input.body) : undefined;
   const retryAfterMs = input.retryAfterMs ?? retryAfterMsFromHeaders(input.headers);
@@ -115,7 +114,7 @@ export function recordHostRefusal(input: {
     HOST_PAUSE_STATUSES.has(input.status) &&
     (input.quickRetryWaitMs === undefined || (retryAfterMs ?? 0) > input.quickRetryWaitMs);
   if (!statedUntil && !outlastsQuickRetries) return undefined;
-  recordHostBackoff(normalizeExcludedHost(input.host), {
+  await recordAnsweredRefusal(normalizeExcludedHost(input.host), {
     status: input.status,
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
     ...(statedUntil ? { statedUntil } : {}),
@@ -123,12 +122,27 @@ export function recordHostRefusal(input: {
   return activeHostPause(input.host);
 }
 
-export function recordTierOneExhausted(host: string, status: number, retryAfterMs?: number): void {
+export async function recordTierOneExhausted(
+  host: string,
+  status: number,
+  retryAfterMs?: number,
+): Promise<void> {
   if (!host) return;
-  recordHostBackoff(normalizeExcludedHost(host), {
+  await recordAnsweredRefusal(normalizeExcludedHost(host), {
     status,
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
   });
+}
+
+async function recordAnsweredRefusal(host: string, verdict: HostBackoffVerdict): Promise<void> {
+  try {
+    await recordHostBackoff(host, verdict);
+  } catch (error) {
+    if (!(error instanceof HostBudgetUnavailableError)) throw error;
+    console.warn(
+      `[host-pause] could not record a ${verdict.status} from ${host}: ${error.message}`,
+    );
+  }
 }
 
 /**
@@ -143,18 +157,6 @@ export function activeHostPause(host: string | undefined): HostPause | undefined
   if (!key) return undefined;
   const until = hostPausedUntil(key);
   return until ? { host: key, until } : undefined;
-}
-
-export class HostPausedError extends Error {
-  constructor(
-    readonly pause: HostPause,
-    readonly requestSent = false,
-  ) {
-    super(
-      `${pause.host} is pausing this run's requests until ${pause.until.toISOString()} after refusing them; the run comes back to it then.`,
-    );
-    this.name = 'HostPausedError';
-  }
 }
 
 /**

@@ -21,6 +21,7 @@ import {
 } from '../machineHostBudget';
 import { SsrfBlockedError } from '../../../utils/ssrfGuard';
 import { SCRAPER_USER_AGENT } from '../scraperUserAgent';
+import { HostPausedError } from '../hostPause';
 
 const DEAD_PID = 4_000_001;
 const OTHER_LIVE_PID = 4_000_002;
@@ -176,12 +177,16 @@ describe('MachineHostBudgetLimiter failing safe', () => {
     fs.writeFileSync(limiter.statePath('lab.example.org'), '{not json');
     const startedAt = clock;
 
-    const release = await limiter.acquire('lab.example.org');
-    release();
-
-    expect(clock - startedAt).toBeGreaterThanOrEqual(MACHINE_HOST_CORRUPT_STATE_PAUSE_MS);
+    await expect(limiter.acquire('lab.example.org')).rejects.toBeInstanceOf(HostPausedError);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('is unreadable'));
     expect(limiter.readState('lab.example.org')?.v).toBe(1);
+    expect(limiter.pausedUntil('lab.example.org')?.getTime()).toBe(
+      startedAt + MACHINE_HOST_CORRUPT_STATE_PAUSE_MS,
+    );
+
+    clock = startedAt + MACHINE_HOST_CORRUPT_STATE_PAUSE_MS;
+    const release = await limiter.acquire('lab.example.org');
+    release();
   });
 
   it('throws without sending when the budget directory cannot be written', async () => {
