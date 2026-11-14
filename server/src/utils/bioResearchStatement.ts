@@ -102,10 +102,10 @@ const SENTENCE_OPENS_BY_NAMING_ITS_PERSON_A_SCHOLAR = new RegExp(
 );
 
 const NAMES_A_CLINICIAN_OR_CLINICAL_WORK =
-  /\b(?:physicians?|psychiatrists?|clinicians?|nurses?|practitioners?|doctors?|pediatricians?|therapists?|cardiologists?|dermatologists?|neurologists?|oncologists?|urologists?|laryngologists?|ophthalmologists?|rheumatologists?|radiologists?|anesthesiologists?|clinics?|clinical|practice|surg\w*|repairs?|reconstruct\w*|procedures?|implants?|transplant\w*|biops\w*|injections?|\w+ectom(?:y|ies)|\w+plast(?:y|ies))\b/i;
+  /\b(?:physicians?|psychiatrists?|clinicians?|nurses?|practitioners?|doctors?|pediatricians?|therapists?|cardiologists?|dermatologists?|neurologists?|oncologists?|urologists?|laryngologists?|ophthalmologists?|rheumatologists?|radiologists?|anesthesiologists?|clinics?|clinical|practi[cs](?:e|es|ed|ing)|surg\w*|repairs?|reconstruct\w*|procedures?|implants?|transplant\w*|biops\w*|injections?|\w+ectom(?:y|ies)|\w+plast(?:y|ies))\b/i;
 
 const DESCRIBES_PATIENT_CARE =
-  /\b(?:treat\w*|car(?:es?|ing|ed)\s+for|sees|seeing|manag\w*|perform\w*|operat\w*|consult\w*|provid\w*|deliver\w*|offer\w*)\b/i;
+  /\b(?:treat\w*|car(?:es?|ing|ed)\s+for|se(?:e|es|eing|en)|saw|manag\w*|perform\w*|operat\w*|consult\w*|provid\w*|deliver\w*|offer\w*)\b/i;
 
 const isFramedAsScholarship = (sentence: string): boolean =>
   SENTENCE_OPENS_BY_NAMING_ITS_PERSON_A_SCHOLAR.test(sentence) &&

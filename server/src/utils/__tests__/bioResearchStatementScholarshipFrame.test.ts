@@ -74,6 +74,7 @@ describe('a scholar who also names clinical work or a clinician stays refused (#
     'She is a historian whose special interest is in skin disease at the clinic.',
     'She is a historian whose special interest is in skin disease in clinical settings.',
     'She is a historian whose special interest is in skin disease in medical practice.',
+    'She is a historian whose special interest is in skin disease, which she practices on daily.',
     'As a historian of medicine, her special interest is in hernia repair in patients.',
     'As a historian of medicine, her special interest is in breast reconstruction in patients.',
     'As a historian of medicine, her special interest is in spine surgery in patients.',
@@ -96,6 +97,8 @@ describe('a scholar who describes patient care stays refused (#6245)', () => {
     'cared for',
     'sees',
     'seeing',
+    'saw',
+    'has seen',
     'manages',
     'performs scans on',
     'operates on',
@@ -108,6 +111,11 @@ describe('a scholar who describes patient care stays refused (#6245)', () => {
       `She is a historian whose special interest is in skin disease, which she ${verb} daily.`,
     ),
   );
+
+  it('refuses historians who see skin disease', () =>
+    refuses(
+      'They are historians whose special interest is in skin disease, which they see daily.',
+    ));
 });
 
 describe('creative practice, which the owner counts as research, stays exempt', () => {
