@@ -253,7 +253,7 @@ export interface StoredSourceLinkHealthEntry {
   pendingConnectionFailureAt?: Date;
   pendingConnectionFailureProbedAt?: Date;
   confirmingConnectionFailureAt?: Date;
-  connectionLevelFailure?: boolean;
+  connectionLevelFailure?: true;
 }
 
 /**
