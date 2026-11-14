@@ -413,6 +413,7 @@ import {
   withoutDirectoryContradictedProfileEvidenceForKey,
   profilePageContradictsNetid,
   profilePageOwnerNetids,
+  type DirectoryNetidsByAddress,
   type ProfilePageOwnerNetids,
 } from './directoryContradictedProfileNetid';
 import { derivedResearcherEmail } from './verifiedResearcherEmail';
@@ -9768,14 +9769,29 @@ async function directoryAliasKeysOfResearcher(researcher: any): Promise<UserKeyR
   const netid = normalizedAccountNetid(researcher?.identifiers?.netid);
   if (!netid || !looksLikeYaleNetid(netid)) return [];
   const directory = await loadDirectoryNetidsByAddress();
-  const keys: UserKeyReference[] = [];
+  return directoryAliasKeysByNetid(directory).get(netid) ?? [];
+}
+
+const directoryAliasKeysByNetidCache = new WeakMap<
+  DirectoryNetidsByAddress,
+  Map<string, UserKeyReference[]>
+>();
+
+function directoryAliasKeysByNetid(
+  directory: DirectoryNetidsByAddress,
+): Map<string, UserKeyReference[]> {
+  const cached = directoryAliasKeysByNetidCache.get(directory);
+  if (cached) return cached;
+  const byNetid = new Map<string, UserKeyReference[]>();
   for (const [address, netids] of directory) {
-    if (netids.size !== 1 || !netids.has(netid)) continue;
+    if (netids.size !== 1) continue;
     const [local, domain] = address.split('@');
     if (domain !== 'yale.edu' || !local || looksLikeYaleNetid(local)) continue;
-    keys.push({ entityKey: `netid:${local}` });
+    const [netid] = netids;
+    byNetid.set(netid, [...(byNetid.get(netid) ?? []), { entityKey: `netid:${local}` }]);
   }
-  return keys;
+  directoryAliasKeysByNetidCache.set(directory, byNetid);
+  return byNetid;
 }
 
 async function departmentSpecificityCatalog(): Promise<DepartmentSpecificityCatalog | null> {
@@ -9788,11 +9804,6 @@ async function departmentSpecificityCatalog(): Promise<DepartmentSpecificityCata
   };
 }
 
-interface ResearcherDepartment {
-  resolved: ResolvedField | undefined;
-  fromOwnKeyFallback: boolean;
-}
-
 /**
  * A researcher's primaryDepartment resolved once over the department evidence of every key
  * that joins the researcher in both directions, plus the dotted keys the directory pairs
@@ -9802,20 +9813,10 @@ interface ResearcherDepartment {
  */
 async function researcherDepartmentOverEveryJoiningKey(
   input: JoiningKeyInput & { ownObservations: readonly any[] },
-): Promise<ResearcherDepartment> {
-  const refusals = input.researcher?.fieldValueRefusals;
-  const ownDepartment = withoutResearcherRefusedObservations(
-    await screenedUserDepartmentObservations(input.ownObservations),
-    refusals,
-  );
-  const resolveOver = async (observations: any[]) =>
-    resolvePooledDepartment(observations, await departmentSpecificityCatalog(), input.now);
-  const ownKeyFallback = async (): Promise<ResearcherDepartment> => ({
-    resolved: await resolveOver(ownDepartment),
-    fromOwnKeyFallback: true,
-  });
+): Promise<ResolvedField | undefined> {
   const joining = await joiningKeyEvidence(input);
-  if (!joining) return ownKeyFallback();
+  if (!joining) return undefined;
+  const refusals = input.researcher?.fieldValueRefusals;
   const { researcherId, evidence, ownKeyIsFindable } = joining;
   const directoryAliases = await directoryAliasKeysOfResearcher(input.researcher);
   const ownKeyIsAlias = directoryAliases.some((alias) =>
@@ -9835,10 +9836,15 @@ async function researcherDepartmentOverEveryJoiningKey(
     ].flatMap((joined) => joined.departmentObservations as any[]),
     refusals,
   );
-  if (ownKeyIsFindable || ownKeyIsAlias) pooled.push(...ownDepartment);
-  const resolved = await resolveOver(pooled);
-  if (resolved) return { resolved, fromOwnKeyFallback: false };
-  return ownKeyFallback();
+  if (ownKeyIsFindable || ownKeyIsAlias) {
+    pooled.push(
+      ...withoutResearcherRefusedObservations(
+        await screenedUserDepartmentObservations(input.ownObservations),
+        refusals,
+      ),
+    );
+  }
+  return resolvePooledDepartment(pooled, await departmentSpecificityCatalog(), input.now);
 }
 
 async function researcherTitleOverEveryJoiningKey(input: {
@@ -10500,7 +10506,7 @@ async function materializeUserIdentityToResearcher(
         now: options.now ?? new Date(),
         prefetch: options.chunkPrefetch,
       });
-  const departmentOverEveryKey = created
+  const pooledDepartment = created
     ? undefined
     : await researcherDepartmentOverEveryJoiningKey({
         researcher,
@@ -10511,10 +10517,6 @@ async function materializeUserIdentityToResearcher(
         now: options.now ?? new Date(),
         prefetch: options.chunkPrefetch,
       });
-  const pooledDepartment =
-    departmentOverEveryKey && !departmentOverEveryKey.fromOwnKeyFallback
-      ? departmentOverEveryKey.resolved
-      : undefined;
   const resolved = pooledDepartment
     ? { ...resolvedOverOwnKey, primaryDepartment: pooledDepartment }
     : resolvedOverOwnKey;
