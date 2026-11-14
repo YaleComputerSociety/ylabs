@@ -268,6 +268,47 @@ describe("a researcher's primaryDepartment is resolved over every key that joins
     expect(await titleIn([PROFILE_KEY, ROSTER_KEY])).toBe(await titleIn([ROSTER_KEY, PROFILE_KEY]));
   });
 
+  describe("a key the researcher's identity names but whose own join reaches someone else", () => {
+    const OTHER_NETID = 'ro6217';
+    const seedOtherPersonKey = async (overrides: Partial<KeyEvidence>) => {
+      await Researcher.create({
+        displayName: 'Rowan Other',
+        identifiers: { netid: OTHER_NETID },
+      });
+      await seedKey({
+        entityKey: `netid:${OTHER_NETID}`,
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://fixture-psychology.yale.edu/people/',
+        confidence: 0.9,
+        email: RESEARCHER_EMAIL,
+        fname: 'Rowan',
+        lname: 'Other',
+        ...overrides,
+      });
+    };
+
+    it("keeps that key's department out of the pool", async () => {
+      await seedKey({ ...PROFILE, department: 'Ophthalmology & Visual Science' });
+      await seedOtherPersonKey({ department: 'Psychology' });
+
+      expect(await materializeInOrder([PROFILE_KEY])).toBe('Ophthalmology & Visual Science');
+    });
+
+    it("keeps that key's title out of the pool", async () => {
+      await seedKey({ ...ROSTER, title: 'Lecturer in Informatics' });
+      await seedOtherPersonKey({ title: 'Professor of Psychology' });
+      await Researcher.updateOne(
+        { 'identifiers.netid': NETID },
+        { $unset: { 'profile.title': 1, profileFieldWriters: 1 } },
+      );
+
+      await materializeEntity('user', { entityKey: ROSTER_KEY }, { now: NOW });
+
+      const researcher: any = await Researcher.findOne({ 'identifiers.netid': NETID }).lean();
+      expect(researcher?.profile?.title).toBe('Lecturer in Informatics');
+    });
+  });
+
   describe('the directory alias rule', () => {
     const seedDirectory = async (localPart: string, netids: string[]) => {
       for (const netid of netids) {
