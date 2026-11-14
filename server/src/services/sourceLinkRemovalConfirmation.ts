@@ -17,6 +17,7 @@ export interface StoredRemovalVerdict {
   httpStatusCode?: unknown;
   privateAddressHost?: unknown;
   confirmingConnectionFailureAt?: unknown;
+  connectionLevelFailure?: unknown;
   checkedAt?: unknown;
 }
 
@@ -32,13 +33,15 @@ const isGoneStatus = (status: unknown): boolean =>
   typeof status === 'number' && RESOURCE_GONE_HTTP_STATUS_CODES.has(status);
 
 /**
- * A stored status-less `UNAVAILABLE` is one of two host facts, told apart by the marker
- * #6116 leaves: a refused connection retires a live link only once a second run agrees
- * and records `confirmingConnectionFailureAt`, while a confirmed DNS negative retires at
- * once and carries none (#2726).
+ * A stored status-less `UNAVAILABLE` is one of two host facts. A refused connection is
+ * stored with `connectionLevelFailure`, or, on a verdict written before that field, with
+ * the `confirmingConnectionFailureAt` marker #6116 leaves; a confirmed DNS negative
+ * carries neither (#2726).
  */
 function storedHostLevelClass(stored: StoredRemovalVerdict): HostLevelClass {
-  return stored.confirmingConnectionFailureAt ? 'connection-refused' : 'name-absent';
+  return stored.connectionLevelFailure === true || stored.confirmingConnectionFailureAt
+    ? 'connection-refused'
+    : 'name-absent';
 }
 
 function freshHostLevelClass(fresh: SourceLinkHealth): HostLevelClass {
@@ -102,12 +105,12 @@ export function removalHost(url: string): string {
  * reports that domain as one line with its count rather than as many unrelated rows
  * (#6264, manager condition 3).
  */
-export class RemovalsByHost {
-  private readonly counts = new Map<string, Map<RemovalBasis, number>>();
+export class RemovalsByHost<Basis extends string = RemovalBasis> {
+  private readonly counts = new Map<string, Map<Basis, number>>();
 
-  record(url: string, basis: RemovalBasis): void {
+  record(url: string, basis: Basis): void {
     const host = removalHost(url);
-    const byBasis = this.counts.get(host) ?? new Map<RemovalBasis, number>();
+    const byBasis = this.counts.get(host) ?? new Map<Basis, number>();
     byBasis.set(basis, (byBasis.get(basis) ?? 0) + 1);
     this.counts.set(host, byBasis);
   }
@@ -115,13 +118,13 @@ export class RemovalsByHost {
   toReport(): Array<{
     host: string;
     count: number;
-    byBasis: Partial<Record<RemovalBasis, number>>;
+    byBasis: Partial<Record<Basis, number>>;
   }> {
     return [...this.counts]
       .map(([host, byBasis]) => ({
         host,
         count: [...byBasis.values()].reduce((sum, n) => sum + n, 0),
-        byBasis: Object.fromEntries(byBasis) as Partial<Record<RemovalBasis, number>>,
+        byBasis: Object.fromEntries(byBasis) as Partial<Record<Basis, number>>,
       }))
       .sort((a, b) => b.count - a.count || a.host.localeCompare(b.host));
   }

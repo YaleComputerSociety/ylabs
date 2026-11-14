@@ -98,9 +98,9 @@ export interface SourceLinkHealth {
   redirectLandingUrl?: string;
   /**
    * The `UNAVAILABLE` came from a host that refused or could not route a connection on
-   * both attempts, as opposed to a DNS record confirmed absent. Held in memory only and
-   * never stored: the backfill reads it to make a live link wait for a second run before
-   * a refused connection retires it (#6116).
+   * both attempts, as opposed to a DNS record confirmed absent. The backfill reads it to
+   * make a live link wait for a second run before a refused connection retires it
+   * (#6116), and stores it so a later removal can tell the two classes apart (#6264).
    */
   connectionLevelFailure?: true;
 }
@@ -433,6 +433,7 @@ export function isLikelyUnavailableSourceLink(health: SourceLinkHealth | undefin
 
 export interface DatedSourceLinkHealth extends SourceLinkHealth {
   checkedAt?: Date | string | null;
+  confirmingConnectionFailureAt?: Date | string | null;
 }
 
 /**
@@ -497,6 +498,10 @@ export function findSourceLinkHealth(
     ...(typeof match.httpStatusCode === 'number' ? { httpStatusCode: match.httpStatusCode } : {}),
     ...(match.privateAddressHost === true ? { privateAddressHost: true } : {}),
     ...(match.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
+    ...(match.connectionLevelFailure === true ? { connectionLevelFailure: true as const } : {}),
+    ...(match.confirmingConnectionFailureAt
+      ? { confirmingConnectionFailureAt: match.confirmingConnectionFailureAt as Date | string }
+      : {}),
     ...(match.checkedAt
       ? { checkedAt: match.checkedAt as DatedSourceLinkHealth['checkedAt'] }
       : {}),

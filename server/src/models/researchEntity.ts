@@ -189,6 +189,15 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       type: Date,
       required: false,
     },
+    /**
+     * The `UNAVAILABLE` came from a refused or unroutable connection rather than a DNS
+     * record confirmed absent, so a later removal confirms it only against the same class
+     * of failure (#6264).
+     */
+    connectionLevelFailure: {
+      type: Boolean,
+      required: false,
+    },
   },
   { _id: false },
 );

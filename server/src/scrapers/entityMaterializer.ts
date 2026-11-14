@@ -16764,6 +16764,11 @@ async function materializeFromRunUnderRemovalGuard(
     materializeUser: (identifier, onlyFields) =>
       materializeEntity('user', identifier, { dryRun: false, userWriteOnlyFields: onlyFields }),
   });
+  for (const { host, count, byBasis } of fieldRetractionResult.soleHolderRemovalsByHost ?? []) {
+    console.info(
+      `[field-retraction] ${fieldRetractionResult.outcome} sole-holder removals on ${host}: ${count} ${JSON.stringify(byBasis)}`,
+    );
+  }
   if (fieldRetractionResult.userFieldRetraction) {
     const userRetraction = fieldRetractionResult.userFieldRetraction;
     console.info(

@@ -227,6 +227,7 @@ async function main() {
       plannedRetractions: result.retractions.length,
       plannedStoredValueClears: result.retractions.filter((entry) => entry.clearsStoredValue)
         .length,
+      soleHolderRemovalsByHost: result.soleHolderRemovalsByHost ?? [],
     })),
     applied: applied.map((result) => ({
       sourceName: result.sourceName,
@@ -234,6 +235,7 @@ async function main() {
       counts: result.counts,
       frozenFields: result.frozenFields,
       regatedEntities: result.regatedEntities,
+      soleHolderRemovalsByHost: result.soleHolderRemovalsByHost ?? [],
     })),
     retractions: planned.flatMap((result) => result.retractions),
     plannedUser: plannedUser.map((result) => ({

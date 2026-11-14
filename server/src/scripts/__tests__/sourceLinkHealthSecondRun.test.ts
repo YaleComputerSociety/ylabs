@@ -237,6 +237,23 @@ describe('a connection failure waits for a second run before retiring a live lin
     expect(resolved.entry).toEqual({
       url: URL_A,
       healthStatus: 'UNAVAILABLE',
+      connectionLevelFailure: true,
+      checkedAt: FIRST_RUN_PROBE,
+    });
+  });
+
+  it('stores a refused connection with no prior verdict as a refused connection, not a DNS negative (#6264)', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      refused(),
+      undefined,
+      FIRST_RUN_PROBE,
+      FIRST_RUN,
+    );
+    expect(resolved.entry).toEqual({
+      url: URL_A,
+      healthStatus: 'UNAVAILABLE',
+      connectionLevelFailure: true,
       checkedAt: FIRST_RUN_PROBE,
     });
   });

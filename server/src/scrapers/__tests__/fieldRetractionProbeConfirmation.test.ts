@@ -20,6 +20,26 @@ const storedNameAbsent = (hoursAgo: number) => [
   { url: URL, healthStatus: 'UNAVAILABLE', checkedAt: hoursBefore(hoursAgo) },
 ];
 
+const storedRefusedConfirmedByMarker = (hoursAgo: number) => [
+  {
+    url: URL,
+    healthStatus: 'UNAVAILABLE',
+    checkedAt: hoursBefore(hoursAgo),
+    pendingConnectionFailureAt: hoursBefore(hoursAgo + 7),
+    pendingConnectionFailureProbedAt: hoursBefore(hoursAgo + 7),
+    confirmingConnectionFailureAt: hoursBefore(hoursAgo),
+  },
+];
+
+const storedRefusedWithoutLiveVerdict = (hoursAgo: number) => [
+  {
+    url: URL,
+    healthStatus: 'UNAVAILABLE',
+    checkedAt: hoursBefore(hoursAgo),
+    connectionLevelFailure: true,
+  },
+];
+
 beforeEach(() => probeMock.mockReset());
 
 describe('the retraction probe confirms a lane absence only with a second observation (#6264)', () => {
@@ -51,6 +71,40 @@ describe('the retraction probe confirms a lane absence only with a second observ
     expect(
       await probeRetractionValueLiveness(URL, { storedHealth: storedNameAbsent(7), now: NOW }),
     ).toEqual({ positivelyDead: true, basis: 'name-absent' });
+  });
+
+  it.each([
+    [
+      'a refused connection the backfill confirmed over a live verdict',
+      storedRefusedConfirmedByMarker,
+    ],
+    ['a refused connection stored with no live verdict before it', storedRefusedWithoutLiveVerdict],
+  ])('never pairs a fresh DNS negative with %s', async (_label, stored) => {
+    probeMock.mockResolvedValue({ errorCode: 'ENOTFOUND', requestedUrl: URL });
+    expect(await probeRetractionValueLiveness(URL, { storedHealth: stored(7), now: NOW })).toEqual({
+      positivelyDead: false,
+    });
+  });
+
+  it.each([
+    [
+      'a refused connection the backfill confirmed over a live verdict',
+      storedRefusedConfirmedByMarker,
+    ],
+    ['a refused connection stored with no live verdict before it', storedRefusedWithoutLiveVerdict],
+  ])('retracts on a refused connection that agrees with %s', async (_label, stored) => {
+    probeMock.mockResolvedValue({ errorCode: 'ECONNREFUSED', requestedUrl: URL });
+    expect(await probeRetractionValueLiveness(URL, { storedHealth: stored(7), now: NOW })).toEqual({
+      positivelyDead: true,
+      basis: 'connection-refused',
+    });
+  });
+
+  it('never pairs a fresh refused connection with a stored DNS negative', async () => {
+    probeMock.mockResolvedValue({ errorCode: 'ECONNREFUSED', requestedUrl: URL });
+    expect(
+      await probeRetractionValueLiveness(URL, { storedHealth: storedNameAbsent(7), now: NOW }),
+    ).toEqual({ positivelyDead: false });
   });
 
   it('holds a DNS negative seen again under 6 hours later', async () => {
@@ -99,16 +153,21 @@ describe('sole-holder retractions report their removals per host (#6264)', () =>
         retraction('a', 'https://lapsed.example.edu/one/'),
         retraction('b', 'https://lapsed.example.edu/two/'),
         retraction('c', 'https://alive.example.edu/'),
+        retraction('d', 'https://moved.example.edu/'),
       ],
-      async (value) =>
-        value.includes('lapsed')
-          ? { positivelyDead: true, basis: 'name-absent' }
-          : { positivelyDead: false },
+      async (value) => {
+        if (value.includes('lapsed')) return { positivelyDead: true, basis: 'name-absent' };
+        if (value.includes('moved')) {
+          return { positivelyDead: true, basis: 'address-no-longer-serves' };
+        }
+        return { positivelyDead: false };
+      },
     );
-    expect(result.retained).toHaveLength(2);
+    expect(result.retained).toHaveLength(3);
     expect(result.withheld).toHaveLength(1);
     expect(result.removalsByHost).toEqual([
       { host: 'lapsed.example.edu', count: 2, byBasis: { 'name-absent': 2 } },
+      { host: 'moved.example.edu', count: 1, byBasis: { 'address-no-longer-serves': 1 } },
     ]);
   });
 });

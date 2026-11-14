@@ -253,6 +253,7 @@ export interface StoredSourceLinkHealthEntry {
   pendingConnectionFailureAt?: Date;
   pendingConnectionFailureProbedAt?: Date;
   confirmingConnectionFailureAt?: Date;
+  connectionLevelFailure?: boolean;
 }
 
 /**
@@ -492,6 +493,7 @@ export function resolveSourceLinkHealthEntry(
     ...(fresh.httpsLandingUrl ? { httpsLandingUrl: fresh.httpsLandingUrl } : {}),
     ...(fresh.httpsSpellingUrl ? { httpsSpellingUrl: fresh.httpsSpellingUrl } : {}),
     ...(fresh.redirectLandingUrl ? { redirectLandingUrl: fresh.redirectLandingUrl } : {}),
+    ...(fresh.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
     checkedAt: now,
   };
 
@@ -523,6 +525,10 @@ export function resolveSourceLinkHealthEntry(
       ...(kept.httpsLandingUrl ? { httpsLandingUrl: kept.httpsLandingUrl } : {}),
       ...(kept.httpsSpellingUrl ? { httpsSpellingUrl: kept.httpsSpellingUrl } : {}),
       ...(kept.redirectLandingUrl ? { redirectLandingUrl: kept.redirectLandingUrl } : {}),
+      ...(kept.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
+      ...(kept.confirmingConnectionFailureAt
+        ? { confirmingConnectionFailureAt: kept.confirmingConnectionFailureAt }
+        : {}),
       ...(kept.checkedAt ? { checkedAt: kept.checkedAt } : {}),
       lastAttemptedAt: now,
     },
@@ -607,6 +613,7 @@ export function carryForwardSourceLinkHealthEntry(
     ...(stored.httpsLandingUrl ? { httpsLandingUrl: stored.httpsLandingUrl } : {}),
     ...(stored.httpsSpellingUrl ? { httpsSpellingUrl: stored.httpsSpellingUrl } : {}),
     ...(stored.redirectLandingUrl ? { redirectLandingUrl: stored.redirectLandingUrl } : {}),
+    ...(stored.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
     ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
     ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
     ...(stored.pendingConnectionFailureAt

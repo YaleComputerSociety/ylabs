@@ -1095,9 +1095,11 @@ export function classifyRetractionValueOwnership(
   return entitiesSharingTheValue > 1 ? 'shared-boilerplate' : 'sole-holder';
 }
 
+export type RetractionRemovalBasis = RemovalBasis | 'address-no-longer-serves';
+
 export interface RetractionProbeVerdict {
   positivelyDead: boolean;
-  basis?: RemovalBasis | 'address-no-longer-serves';
+  basis?: RetractionRemovalBasis;
 }
 
 export type RetractionValueProbe = (
@@ -1105,7 +1107,9 @@ export type RetractionValueProbe = (
   retraction: Pick<PlannedFieldRetraction, 'entityId'>,
 ) => Promise<RetractionProbeVerdict>;
 
-export type SoleHolderRemovalsByHost = ReturnType<RemovalsByHost['toReport']>;
+export type SoleHolderRemovalsByHost = ReturnType<
+  RemovalsByHost<RetractionRemovalBasis>['toReport']
+>;
 
 export interface WithheldFieldRetraction {
   entityKey: string;
@@ -1143,7 +1147,7 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
   const withheld: WithheldFieldRetraction[] = [];
   const withheldStoredRowFields = new Set<string>();
   let probedValues = 0;
-  const removalsByHost = new RemovalsByHost();
+  const removalsByHost = new RemovalsByHost<RetractionRemovalBasis>();
   for (const retraction of retractions) {
     if (
       classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) ===
@@ -1154,7 +1158,7 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
       continue;
     }
     let everyValueIsDead = retraction.retractedValues.length > 0;
-    const confirmedBases: Array<[string, RemovalBasis]> = [];
+    const confirmedBases: Array<[string, RetractionRemovalBasis]> = [];
     for (const value of retraction.retractedValues) {
       probedValues += 1;
       const verdict = await probeValue(value, retraction);
@@ -1162,9 +1166,7 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
         everyValueIsDead = false;
         break;
       }
-      if (verdict.basis && verdict.basis !== 'address-no-longer-serves') {
-        confirmedBases.push([value, verdict.basis]);
-      }
+      if (verdict.basis) confirmedBases.push([value, verdict.basis]);
     }
     if (everyValueIsDead) {
       retained.push(retraction);
