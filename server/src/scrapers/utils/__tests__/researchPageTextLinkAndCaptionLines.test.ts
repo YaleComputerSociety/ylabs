@@ -43,6 +43,8 @@ describe('researchStatementTextOfPage drops a CV or resume link line (#6159)', (
     'My CV (January 2025) is here.',
     'For more information, please see my CV.',
     'Fixture Institute CV Fellowship, 2017',
+    'Robust Visual CV',
+    'Deep Generative CV',
   ])('keeps "%s", which names other words around the label or is a sentence', (line) => {
     expect(keptLines([line])).toContain(line);
   });
@@ -74,6 +76,9 @@ describe('researchStatementTextOfPage drops a listing navigation link line (#615
     'More news about our kelp restoration work will follow this spring.',
     'Recent News',
     'Next Year Country',
+    'Next generation sequencing projects',
+    'Next Generation Sequencing Projects',
+    'Previous kelp survey results',
   ])('keeps "%s", which is a sentence or not a navigation link', (line) => {
     expect(keptLines([line])).toContain(line);
   });
@@ -102,6 +107,14 @@ describe('researchStatementTextOfPage drops a photo or image credit line (#6159)
     ).toContain(
       'This survey was funded by the Fixture Ocean Trust and the Fixture Science Foundation.',
     );
+  });
+
+  it.each([
+    'Images by multiphoton microscopy of regenerating kelp tissue',
+    'Photographs by drone survey across three coastal sites',
+    'Video by underwater camera traps over two seasons',
+  ])('keeps the period-less topic line "%s", which credits no one', (line) => {
+    expect(keptLines([line])).toContain(line);
   });
 
   it('keeps a sentence that begins like a by-line', () => {
