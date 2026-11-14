@@ -232,6 +232,7 @@ export class ScraperOrchestrator {
         stall = detected;
         reportStall(new ScrapeRunStalledError(detected));
       },
+      writeCounts: options.dryRun ? undefined : () => ({ observationCount, entitiesObserved }),
     });
     let interrupted = false;
     const detachStopClose = registerDevWriteStopCleanup({

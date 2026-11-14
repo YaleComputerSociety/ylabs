@@ -101,6 +101,32 @@ describe('startScrapeRunHeartbeat (#3595)', () => {
     expect(beat.mock.calls[0]).toEqual(['run-1', expect.any(Date)]);
   });
 
+  it('sends the write counters with every beat once they are wired (#6269)', async () => {
+    vi.useFakeTimers();
+    const beat = vi.fn().mockResolvedValue({ matched: true });
+    let written = 0;
+    const heartbeat = startScrapeRunHeartbeat(
+      {
+        runId: 'run-1',
+        sourceName: 'fixture-source',
+        intervalMs: 100,
+        writeCounts: () => ({ observationCount: written, entitiesObserved: written }),
+      },
+      { beat },
+    );
+
+    written = 40;
+    await vi.advanceTimersByTimeAsync(100);
+    written = 75;
+    await vi.advanceTimersByTimeAsync(100);
+    heartbeat.stop();
+
+    expect(beat.mock.calls.map(([, , counts]) => counts)).toEqual([
+      { observationCount: 40, entitiesObserved: 40 },
+      { observationCount: 75, entitiesObserved: 75 },
+    ]);
+  });
+
   it('reports once when the row was closed by something else', async () => {
     vi.useFakeTimers();
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);

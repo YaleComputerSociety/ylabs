@@ -241,3 +241,105 @@ export function assertReconcileStaleScrapeRunsApplyAllowed(input: {
   });
   return { environment: guard.environment, dbLabel: guard.dbLabel };
 }
+
+/** A run whose record may under-count its writes: it never reached its own finalise. */
+export const RECOUNTABLE_SCRAPE_RUN_STATUSES = ['interrupted', 'failure'] as const;
+
+export interface RecountableScrapeRun {
+  id: string;
+  sourceName: string;
+  status: string;
+  startedAt: Date;
+  observationCount: number;
+}
+
+export type WrittenCountVerdict = 'under_recorded' | 'matching' | 'stored_below_recorded';
+
+export interface WrittenCountRecount {
+  id: string;
+  sourceName: string;
+  status: string;
+  startedAt: string;
+  recordedObservationCount: number;
+  storedObservationCount: number;
+  verdict: WrittenCountVerdict;
+}
+
+export interface WrittenCountRecountPlan {
+  runs: number;
+  underRecorded: number;
+  matching: number;
+  storedBelowRecorded: number;
+  missingFromRecords: number;
+  storedBelowRecordedBySource: Record<string, number>;
+  recounts: WrittenCountRecount[];
+}
+
+const writtenCountVerdict = (recorded: number, stored: number): WrittenCountVerdict =>
+  stored > recorded ? 'under_recorded' : stored === recorded ? 'matching' : 'stored_below_recorded';
+
+/**
+ * A stored count is how many of a run's observations still exist, not how many it wrote, so it
+ * can only correct a record that says too little. A run storing fewer than it recorded most
+ * likely had rows rolled back, retired or superseded after it, and is reported but never written.
+ */
+export function planWrittenCountRecount(
+  runs: RecountableScrapeRun[],
+  storedCountByRunId: ReadonlyMap<string, number>,
+): WrittenCountRecountPlan {
+  const recounts = runs.map((run): WrittenCountRecount => {
+    const stored = storedCountByRunId.get(run.id) ?? 0;
+    return {
+      id: run.id,
+      sourceName: run.sourceName,
+      status: run.status,
+      startedAt: run.startedAt.toISOString(),
+      recordedObservationCount: run.observationCount,
+      storedObservationCount: stored,
+      verdict: writtenCountVerdict(run.observationCount, stored),
+    };
+  });
+  const of = (verdict: WrittenCountVerdict) =>
+    recounts.filter((recount) => recount.verdict === verdict);
+  const storedBelowRecordedBySource: Record<string, number> = {};
+  for (const recount of of('stored_below_recorded')) {
+    storedBelowRecordedBySource[recount.sourceName] =
+      (storedBelowRecordedBySource[recount.sourceName] ?? 0) + 1;
+  }
+  return {
+    runs: recounts.length,
+    underRecorded: of('under_recorded').length,
+    matching: of('matching').length,
+    storedBelowRecorded: of('stored_below_recorded').length,
+    missingFromRecords: of('under_recorded').reduce(
+      (sum, recount) => sum + recount.storedObservationCount - recount.recordedObservationCount,
+      0,
+    ),
+    storedBelowRecordedBySource,
+    recounts: recounts.sort(
+      (a, b) =>
+        b.storedObservationCount -
+        b.recordedObservationCount -
+        (a.storedObservationCount - a.recordedObservationCount),
+    ),
+  };
+}
+
+/** The write for one recount, or undefined for a run that stores less than it recorded. */
+export function writtenCountRecountUpdate(
+  recount: WrittenCountRecount,
+  now: Date,
+): { filter: Record<string, unknown>; update: Record<string, unknown> } | undefined {
+  if (recount.verdict === 'stored_below_recorded') return undefined;
+  return {
+    filter: { _id: recount.id, status: { $in: [...RECOUNTABLE_SCRAPE_RUN_STATUSES] } },
+    update: {
+      $set: {
+        ...(recount.verdict === 'under_recorded'
+          ? { storedObservationCountAtReconcile: recount.storedObservationCount }
+          : {}),
+        reconciledAt: now,
+      },
+    },
+  };
+}

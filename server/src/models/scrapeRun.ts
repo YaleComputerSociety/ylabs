@@ -90,6 +90,14 @@ const scrapeRunSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    storedObservationCountAtReconcile: {
+      type: Number,
+      required: false,
+    },
+    reconciledAt: {
+      type: Date,
+      required: false,
+    },
     entitiesObserved: {
       type: Number,
       default: 0,

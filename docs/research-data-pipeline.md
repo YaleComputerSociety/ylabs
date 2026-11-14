@@ -455,6 +455,8 @@ The contract now has six parts.
   The bounds can be raised with `--stale-after-minutes` and `--legacy-older-than-hours` but never lowered.
   Each write pins the `heartbeatAt` it read, so a run that beat after the plan was built is left alone, and `finishedAt` is set to the last sign of life rather than the time of the cleanup.
   `--apply` requires `--confirm-reconcile-stale-scrape-runs` and refuses any target that is not Development, because Beta and Production receive `scrape_runs` only through promotion.
+  A run's write counters also ride on its heartbeat (#6269), so a run that dies mid-write records roughly what it wrote, and `--recount-written` recounts interrupted and failed runs by their stored observations.
+  It writes `storedObservationCountAtReconcile` only where the store holds more than the record, stamps `reconciledAt` on a run that matches, and only reports a run that stores less than it recorded, because rows deleted after a run make the stored count a floor rather than the number written.
 - **Every new run closes the dead runs before it records its own.**
   `ScraperOrchestrator.run` calls `reapDeadScrapeRuns` (`server/src/scrapers/staleScrapeRunReaper.ts`) before it creates its `ScrapeRun`, with the same plan and the same status-only update as `scrape-runs:reconcile-stale --heartbeat-stale-only`: a heartbeat-stale row closes as `interrupted`, and a fresh heartbeat, a source lock held by anyone other than the caller, or a live owner process on this host keeps it.
   The caller's own lock does not count, so re-running a source closes its own dead predecessor.
