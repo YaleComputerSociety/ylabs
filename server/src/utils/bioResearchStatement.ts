@@ -94,37 +94,23 @@ const STATES_INQUIRY =
   /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|quality\s+of\s+care|health\s+services|disparit(?:y|ies)|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?|biolog\w*|genes?|genetic\w*|genomic\w*|why|whether|engineer\w*|benchmark\w*|machine\s+learning|build(?:s|ing)?\s+(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|software|robots?|systems?|platforms?)|software|robot\w*|sensors?|wearables?|survey\w*|assess\w*|pilot(?:s|ing|ed)?|prob(?:e|es|ing)|imaging|estimat\w*|registr(?:y|ies)|track(?:s|ing)|characteri[sz]\w*|quantif\w*|randomi[sz]\w*|predict\w*|catalog\w*|correlat\w*|compar(?:e|es|ing|ison|isons)|algorithms?|sequenc(?:e|es|ing)|(?:co-)?design(?:s|ing|ed)?|map(?:s|ping)?\s+(?:the|how|which|where)|improv(?:e|es|ing)\s+(?:the\s+)?(?:[\w-]+\s+){0,2}care|immunolog\w*|pharmacolog\w*|pathogenesis|microbiome|circuits?|prevention|screening|polic(?:y|ies)|decision[-\s]making|safety|implementation|develop\w*\s+(?:and\s+test\s+)?(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|therap\w*|methods?|strateg(?:y|ies)|approach(?:es)?|models?|algorithms?|interventions?|measures?|assays?|drugs?|vaccines?|gene)|test(?:s|ing)?\b)\b/i;
 
 const SCHOLAR_ROLE =
-  '(?:historians?|philosophers?|anthropologists?|sociologists?|ethnographers?|theologians?|classicists?|philologists?|archaeologists?|literary\\s+critics?|political\\s+theorists?)';
+  '(?:historians?|philosophers?|anthropologists?|sociologists?|theologians?|classicists?)';
 
-const PERFORMER_ROLE =
-  '(?:pianists?|violinists?|violists?|cellists?|bassists?|guitarists?|percussionists?|organists?|harpists?|flutists?|clarinetists?|oboists?|bassoonists?|trumpeters?|hornists?|saxophonists?|vocalists?|singers?|sopranos?|tenors?|baritones?|conductors?|instrumentalists?|actors?|actresses?)';
-
-const ROLE_MODIFIER = "(?:(?!(?:for|to|of|on|in|with|at|among|by|from)\\b)[\\p{L}'’-]+\\s+){0,2}";
-
-const ownPersonHoldsRole = (role: string): RegExp =>
-  new RegExp(
-    `(?:^\\s*[Aa]s\\s+an?\\s+${ROLE_MODIFIER}${role}\\b|\\b(?:[Hh]e|[Ss]he|[Tt]hey|I)\\s+(?:is|was|are|am)\\s+(?:also\\s+)?(?:an?|the)\\s+${ROLE_MODIFIER}${role}\\b(?![\\p{L}-])|^\\s*(?:Dr\\.?\\s+|Professor\\s+)?\\p{Lu}[\\p{L}'’.-]+(?:\\s+\\p{Lu}[\\p{L}'’.-]+){0,3}\\s+is\\s+(?:also\\s+)?an?\\s+${ROLE_MODIFIER}${role}\\b(?![\\p{L}-]))`,
-    'u',
-  );
-
-const OWN_PERSON_IS_A_SCHOLAR = ownPersonHoldsRole(SCHOLAR_ROLE);
-const OWN_PERSON_IS_A_PERFORMER = ownPersonHoldsRole(PERFORMER_ROLE);
-
-const CLINICAL_WORD = CLINICAL_VOCABULARY.source;
-
-const SCHOLARLY_FRAME_GOVERNS_CLINICAL_WORD = new RegExp(
-  `\\bthe\\s+(?:history|histories|politics|theology|iconography|political\\s+economy)\\s+of\\s+(?:[\\w'’-]+\\s+){0,3}${CLINICAL_WORD}|\\bsocial\\s+determinants\\s+of\\s+(?:[\\w'’-]+\\s+){0,2}(?:diseases?|illness(?:es)?|disorders?|conditions?)\\b|${CLINICAL_WORD}\\s+(?:[\\w'’-]+\\s+){0,3}(?:in|during)\\s+(?:the\\s+)?(?:[\\w'’-]+\\s+){0,2}(?:testimon(?:y|ies)|scripture|tragedy|tragedies|myths?|antiquity|monaster(?:y|ies)|(?:[a-z]+-century|early\\s+modern|medieval|renaissance|victorian|colonial)\\s+[\\w'’-]+)`,
-  'i',
+const SENTENCE_OPENS_BY_NAMING_ITS_PERSON_A_SCHOLAR = new RegExp(
+  `^\\s*(?:As\\s+an?\\s+|(?:He|She|They)\\s+(?:is|was|are)\\s+(?:also\\s+)?(?:an?\\s+)?)(?:[\\p{L}-]+\\s+){0,2}${SCHOLAR_ROLE}\\b(?![\\p{L}'’-])`,
+  'u',
 );
 
-const OWN_PERSON_PATIENT_SERVICE =
-  /\b(?:(?:treats?|treating|treated|sees|seeing|manag(?:es|ing))\s+(?:[\w-]+\s+){0,2}patients|(?:cares?|caring|cared)\s+for\s+(?:[\w-]+\s+){0,2}patients|(?:provid|deliver|offer)\w*\s+(?:[\w-]+\s+){0,2}patients|(?:provid|deliver|offer)\w*\b[^.]{0,80}\bcare|(?:his|her|their)\s+(?:own\s+)?(?:patients|clinic|clinical\s+practice|practice))\b/i;
+const NAMES_A_CLINICIAN_OR_CLINICAL_WORK =
+  /\b(?:physicians?|psychiatrists?|clinicians?|nurses?|practitioners?|doctors?|pediatricians?|therapists?|cardiologists?|dermatologists?|neurologists?|oncologists?|urologists?|laryngologists?|ophthalmologists?|rheumatologists?|radiologists?|anesthesiologists?|clinics?|clinical|practice|surg\w*|repairs?|reconstruct\w*|procedures?|implants?|transplant\w*|biops\w*|injections?|\w+ectom(?:y|ies)|\w+plast(?:y|ies))\b/i;
+
+const DESCRIBES_PATIENT_CARE =
+  /\b(?:treat\w*|car(?:es?|ing|ed)\s+for|sees|seeing|manag\w*|perform\w*|operat\w*|consult\w*|provid\w*|deliver\w*|offer\w*)\b/i;
 
 const isFramedAsScholarship = (sentence: string): boolean =>
-  !OWN_PERSON_PATIENT_SERVICE.test(sentence) &&
-  (OWN_PERSON_IS_A_SCHOLAR.test(sentence) ||
-    OWN_PERSON_IS_A_PERFORMER.test(sentence) ||
-    SCHOLARLY_FRAME_GOVERNS_CLINICAL_WORD.test(sentence));
+  SENTENCE_OPENS_BY_NAMING_ITS_PERSON_A_SCHOLAR.test(sentence) &&
+  !NAMES_A_CLINICIAN_OR_CLINICAL_WORK.test(sentence) &&
+  !DESCRIBES_PATIENT_CARE.test(sentence);
 
 const CREATIVE_PRACTICE =
   /\b(?:music\w*|compos(?:e|es|er|ers|ing|ition|itions)|choreograph\w*|danc(?:e|es|er|ers|ing)|(?<!to-)plays?|playwright\w*|theat(?:er|re)\w*|performance\s+art|performers?|artists?|artwork|paint\w*|sculpt\w*|poe(?:t|ts|try|ms?)|fiction|novels?|writ(?:e|es|ing)\s+(?:plays|poems|fiction|novels|music)|film\w*|photograph\w*|portrait\w*|documentar\w*|opera|songs?|lullab\w*|murals?|memoirs?|essays?|textiles?|installations?|comed(?:y|ies|ian|ians)|stand-up)\b/i;
