@@ -3,7 +3,10 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ScrapeRun } from '../../models/scrapeRun';
 import { writeScrapeRunHeartbeat } from '../../scrapers/scrapeRunLiveness';
-import { countStoredObservationsByRun } from '../reconcileStaleScrapeRuns';
+import {
+  countStoredObservationsByRun,
+  loadRecountableScrapeRuns,
+} from '../reconcileStaleScrapeRuns';
 import {
   planWrittenCountRecount,
   writtenCountRecountUpdate,
@@ -116,5 +119,33 @@ describe('the written count of a run that died mid-write (#6269)', () => {
       storedObservationCountAtReconcile: 12,
       reconciledAt: now,
     });
+  });
+
+  it('never selects a running run, however late its heartbeat, so a live run is not stamped mid-write', async () => {
+    const live = await ScrapeRun.create({
+      sourceId,
+      sourceName: 'fixture-source',
+      triggeredBy: 'cli',
+      startedAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
+      heartbeatAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+      owner: { host: 'fixture-host', pid: process.pid },
+      status: 'running',
+      observationCount: 0,
+    });
+    const dead = await ScrapeRun.create({
+      sourceId,
+      sourceName: 'fixture-source',
+      triggeredBy: 'cli',
+      startedAt: new Date(),
+      status: 'interrupted',
+      observationCount: 0,
+    });
+    await storeObservations(live._id, 4);
+
+    const selected = (await loadRecountableScrapeRuns()).map((run) => run.id);
+    expect(selected).toEqual([String(dead._id)]);
+    expect(await ScrapeRun.findById(live._id).lean()).not.toHaveProperty(
+      'storedObservationCountAtReconcile',
+    );
   });
 });

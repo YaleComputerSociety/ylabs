@@ -862,6 +862,40 @@ describe('ScraperOrchestrator', () => {
       expect(statusWrites()).toEqual(['success']);
     });
 
+    it('flushes the write counters on each heartbeat of a writing run, and never for a dry run (#6269)', async () => {
+      vi.useFakeTimers();
+      mocks.appendObservations.mockResolvedValue({ inserted: 3, skipped: 0, superseded: 0 });
+      const flushed = () =>
+        mocks.scrapeRunUpdateOne.mock.calls
+          .map(([, update]) => (update as { $max?: { observationCount?: number } }).$max)
+          .filter(Boolean);
+      for (const dryRun of [false, true]) {
+        mocks.scrapeRunUpdateOne.mockClear();
+        let finish: () => void = () => undefined;
+        const orchestrator = new ScraperOrchestrator({ runHeartbeatIntervalMs: 1_000 });
+        orchestrator.register({
+          name: 'fixture-source',
+          displayName: 'Fixture source',
+          run: async (ctx) => {
+            await ctx.emit([
+              { entityType: 'researchEntity', entityKey: 'fixture-a', field: 'name', value: 'A' },
+              { entityType: 'researchEntity', entityKey: 'fixture-b', field: 'name', value: 'B' },
+              { entityType: 'researchEntity', entityKey: 'fixture-c', field: 'name', value: 'C' },
+            ]);
+            return new Promise((resolve) => {
+              finish = () => resolve({ observationCount: 3, entitiesObserved: 3 });
+            });
+          },
+        });
+
+        const running = orchestrator.run('fixture-source', { ...OPTIONS, dryRun });
+        await vi.advanceTimersByTimeAsync(1_500);
+        expect(flushed()).toEqual(dryRun ? [] : [{ observationCount: 3, entitiesObserved: 3 }]);
+        finish();
+        await running;
+      }
+    });
+
     it('marks an interrupted run interrupted before the signal is re-raised', async () => {
       const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
       const listenersBefore = process.listeners('SIGTERM').length;

@@ -168,7 +168,9 @@ async function main(): Promise<void> {
   await mongoose.disconnect();
 }
 
-async function loadRecountableScrapeRuns(sourceName?: string): Promise<RecountableScrapeRun[]> {
+export async function loadRecountableScrapeRuns(
+  sourceName?: string,
+): Promise<RecountableScrapeRun[]> {
   const docs = (await ScrapeRun.find({
     status: { $in: [...RECOUNTABLE_SCRAPE_RUN_STATUSES] },
     reconciledAt: { $exists: false },
