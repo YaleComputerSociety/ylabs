@@ -889,10 +889,13 @@ describe('ScraperOrchestrator', () => {
         });
 
         const running = orchestrator.run('fixture-source', { ...OPTIONS, dryRun });
-        await vi.advanceTimersByTimeAsync(1_500);
-        expect(flushed()).toEqual(dryRun ? [] : [{ observationCount: 3, entitiesObserved: 3 }]);
-        finish();
-        await running;
+        try {
+          await vi.advanceTimersByTimeAsync(1_500);
+          expect(flushed()).toEqual(dryRun ? [] : [{ observationCount: 3, entitiesObserved: 3 }]);
+        } finally {
+          finish();
+          await running;
+        }
       }
     });
 
