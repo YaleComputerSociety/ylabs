@@ -66,6 +66,16 @@ describe('a department roster files its own department as primary only without c
     ).toEqual({ kind: 'assert', value: 'Fixture Pathology' });
   });
 
+  it('does not read "School of Medicine" as the Internal Medicine department', () => {
+    expect(
+      rosterHomeDepartmentStatement({
+        deptName: 'Fixture Pathology',
+        title: 'Associate Dean, Fixture School of Medicine; Professor of Fixture Pathology',
+        departmentNames: ['Internal Medicine', 'Fixture Pathology'],
+      }),
+    ).toEqual({ kind: 'assert', value: 'Fixture Pathology' });
+  });
+
   it('still reads another department leading a clause of the title', () => {
     expect(
       statementFor('Fixture Pathology', 'Chief, Fixture Urology; Professor of Fixture Pathology'),
