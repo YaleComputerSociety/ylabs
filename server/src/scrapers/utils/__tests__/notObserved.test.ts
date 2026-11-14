@@ -64,6 +64,11 @@ describe('isNotObserved', () => {
     ['an unreachable network', withCode('ENETUNREACH')],
     ['a certificate that does not cover the host', withCode('ERR_TLS_CERT_ALTNAME_INVALID')],
     ['an expired certificate', withCode('CERT_HAS_EXPIRED')],
+    [
+      'a redirect loop, whose host answered every hop (#3135)',
+      withCode('ERR_FR_TOO_MANY_REDIRECTS'),
+    ],
+    ['a redirect loop wrapped by a redirect hook', wrapped(withCode('ERR_TOO_MANY_REDIRECTS'))],
   ])('treats %s as an observation', (_label, error) => {
     expect(isNotObserved(error)).toBe(false);
   });

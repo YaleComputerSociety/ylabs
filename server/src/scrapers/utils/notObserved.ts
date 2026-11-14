@@ -5,6 +5,16 @@ import { TLS_VERIFICATION_ERROR_CODES } from '../../utils/tlsVerificationErrors'
 import { isRefusedBeforeSending } from './httpFetch';
 
 /**
+ * A redirect loop carries no status, but the host answered every hop, so it is an observation
+ * that the cited address no longer serves the resource (#3135). `fieldRetraction.ts` reads the
+ * same set, so a lane and the retraction probe cannot disagree about it.
+ */
+export const REDIRECT_LOOP_ERROR_CODES: ReadonlySet<string> = new Set([
+  'ERR_FR_TOO_MANY_REDIRECTS',
+  'ERR_TOO_MANY_REDIRECTS',
+]);
+
+/**
  * `HostPausedBudgetError` is kept beside the current names on ylabs-ae's request (#6168): a stale
  * process still running the pre-#6168 pause code raises it, and it is the same refusal.
  */
@@ -82,7 +92,9 @@ export function isNotObserved(error: unknown): boolean {
     const code = codeOf(link);
     return (
       code !== undefined &&
-      (DEAD_LINK_ERROR_CODES.has(code) || TLS_VERIFICATION_ERROR_CODES.has(code))
+      (DEAD_LINK_ERROR_CODES.has(code) ||
+        TLS_VERIFICATION_ERROR_CODES.has(code) ||
+        REDIRECT_LOOP_ERROR_CODES.has(code))
     );
   });
 }

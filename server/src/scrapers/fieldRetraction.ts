@@ -116,6 +116,7 @@ import {
 } from '../services/researchEntityCanonicalTombstone';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { REDIRECT_LOOP_ERROR_CODES } from './utils/notObserved';
 import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
@@ -1577,8 +1578,6 @@ async function loadEntityStates(
  * the operator path by the script's own apply guard plus confirm flag, so the same
  * action never has two switches that can disagree.
  */
-const REDIRECT_LOOP_ERROR_CODES = new Set(['ERR_FR_TOO_MANY_REDIRECTS', 'ERR_TOO_MANY_REDIRECTS']);
-
 const comparableRegistrableHost = (url: string | undefined): string | null => {
   if (!url) return null;
   try {
