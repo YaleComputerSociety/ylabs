@@ -8,11 +8,13 @@ import {
   RETIRED_SOURCE_NAMES,
   assertSeedSourcesWriteAllowed,
   buildSeedSourcesOutput,
+  changedSourceSeedFields,
   parseSeedSourcesArgs,
   writeSeedSourcesOutput,
 } from '../seedSources';
 import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from '../retiredPaperPipeline';
 import { getSourceCoverage } from '../sourceCoverageRegistry';
+import { Source } from '../../models/source';
 
 const productionEnv = {
   SCRAPER_ENV: 'production',
@@ -129,5 +131,22 @@ describe('seedSources CLI helpers', () => {
     expect(() => writeSeedSourcesOutput(payload, '/etc/sources.json')).toThrow(
       /--output must write under/,
     );
+  });
+});
+
+describe('a seeded coverage block survives the Source schema (#6259)', () => {
+  const modelTextSources = ACTIVE_SOURCE_NAMES.filter(
+    (name) => getSourceCoverage(name)?.producesModelText === true,
+  );
+
+  it('covers at least one source whose lane writes model text', () => {
+    expect(modelTextSources.length).toBeGreaterThan(0);
+  });
+
+  it.each(modelTextSources)('re-plans no coverage change for %s after a write', (name) => {
+    const coverage = getSourceCoverage(name);
+    const stored = JSON.parse(JSON.stringify(new Source({ name, coverage }).toObject()));
+    expect(stored.coverage.producesModelText).toBe(true);
+    expect(changedSourceSeedFields({ coverage: stored.coverage }, { coverage })).toEqual([]);
   });
 });
