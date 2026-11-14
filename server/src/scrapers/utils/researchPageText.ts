@@ -413,24 +413,39 @@ function pageSections(lines: readonly string[]): PageSection[] {
  * sit, a flagged paragraph keeping its research sentences. Every line is kept only once.
  */
 export function researchStatementTextOfPage(html: string, pageUrl: string): string {
-  if (!html) return '';
+  const { research, neutral } = researchStatementPartsOfPage(html, pageUrl);
+  return [research, neutral].filter(Boolean).join('\n');
+}
+
+/**
+ * `researchStatementTextOfPage` split at the point where the page's research sections end, so
+ * the cap can spend a row's budget on research lines before neutral ones (#6283).
+ */
+export function researchStatementPartsOfPage(
+  html: string,
+  pageUrl: string,
+): { research: string; neutral: string } {
+  if (!html) return { research: '', neutral: '' };
   const sections = pageSections(pageLinesWithHeadingMarks(html, pageUrl)).filter(
     (section) => section.kind !== 'publications-or-contact',
   );
-  const ordered = [
-    ...sections.filter((section) => section.kind === 'research'),
-    ...sections.filter((section) => section.kind === 'neutral'),
-  ];
   const ownerTokens = pageOwnerTokens(pageUrl);
   const seen = new Set<string>();
-  const kept: string[] = [];
-  for (const line of ordered.flatMap((section) => section.lines)) {
-    const statement = statementTextOfLine(line, ownerTokens);
-    if (!statement || seen.has(statement)) continue;
-    seen.add(statement);
-    kept.push(statement);
-  }
-  return kept.join('\n');
+  const statementsOf = (kind: PageSection['kind']): string[] => {
+    const kept: string[] = [];
+    for (const line of sections
+      .filter((section) => section.kind === kind)
+      .flatMap((section) => section.lines)) {
+      const statement = statementTextOfLine(line, ownerTokens);
+      if (!statement || seen.has(statement)) continue;
+      seen.add(statement);
+      kept.push(statement);
+    }
+    return kept;
+  };
+  const research = statementsOf('research').join('\n');
+  const neutral = statementsOf('neutral').join('\n');
+  return { research, neutral };
 }
 
 const SENTENCE_END = /[.!?]["')\]’”]?(?=\s|$)/g;
@@ -454,31 +469,68 @@ export function truncateAtSentenceBoundary(text: string, maxChars: number): stri
 }
 
 /**
- * Shares the total budget fairly: pages are served shortest first, each taking at most an
- * even share of what is left, so a short page keeps all of its text and a long one gives
- * up only its tail. Page order is preserved in the result.
+ * A page's text before the cap, with the length of its leading research part: the page's
+ * research-section lines come first in its text, so that part is a prefix.
  */
-export function capResearchPageText(
-  entries: readonly ResearchPageTextEntry[],
-  maxChars: number = MAX_RESEARCH_PAGE_TEXT_CHARS,
-): ResearchPageTextEntry[] {
-  const allowance = new Map<number, number>();
-  let remaining = maxChars;
-  const byLength = entries
-    .map((entry, index) => ({ index, length: entry.text.length }))
+export interface ResearchPageTextCapEntry extends ResearchPageTextEntry {
+  researchChars?: number;
+}
+
+/**
+ * Fair shares of `budget` over `lengths`: shortest first, each taking at most an even share of
+ * what is left, so a short part keeps all of its text and a long one gives up only its tail.
+ */
+function fairShares(lengths: readonly number[], budget: number): number[] {
+  const shares = lengths.map(() => 0);
+  let remaining = budget;
+  const byLength = lengths
+    .map((length, index) => ({ index, length }))
     .sort((a, b) => a.length - b.length || a.index - b.index);
-  byLength.forEach((page, position) => {
+  byLength.forEach((part, position) => {
     const share = Math.floor(remaining / (byLength.length - position));
-    const granted = Math.min(page.length, share);
-    allowance.set(page.index, granted);
+    const granted = Math.min(part.length, share);
+    shares[part.index] = granted;
     remaining -= granted;
   });
+  return shares;
+}
+
+/**
+ * Caps a row's pages to `maxChars` in total, spending the budget on research-section lines
+ * across every page before any neutral line (#6283). Each page's research prefix is shared
+ * fairly first; only what is left is shared over the pages' neutral remainders, so another
+ * page's people list or chrome can no longer outlast a research sentence. A row under the cap
+ * is unchanged, and page order is preserved in the result.
+ */
+export function capResearchPageText(
+  entries: readonly ResearchPageTextCapEntry[],
+  maxChars: number = MAX_RESEARCH_PAGE_TEXT_CHARS,
+): ResearchPageTextEntry[] {
+  const research = entries.map((entry) =>
+    Math.min(entry.text.length, Math.max(0, entry.researchChars ?? 0)),
+  );
+  const researchShares = fairShares(research, maxChars);
+  const left = maxChars - researchShares.reduce((sum, share) => sum + share, 0);
+  const neutralShares = fairShares(
+    entries.map((entry, index) => entry.text.length - research[index]),
+    left,
+  );
   return entries
     .map((entry, index) => ({
       url: entry.url,
-      text: truncateAtSentenceBoundary(entry.text, allowance.get(index) ?? 0),
+      text: truncateAtSentenceBoundary(entry.text, researchShares[index] + neutralShares[index]),
     }))
     .filter((entry) => entry.text.length >= MIN_RESEARCH_PAGE_TEXT_CHARS);
+}
+
+/**
+ * How much of a page's text is its research part. The research part is stripped on its own to
+ * find it; when a strip reads differently with the neutral lines after it, the part is not a
+ * prefix and the page is treated as all neutral, which is the cap's earlier behaviour.
+ */
+function researchPrefixLength(text: string, researchText: string): number {
+  if (!researchText || !text.startsWith(researchText)) return 0;
+  return researchText.length;
 }
 
 /**
@@ -492,16 +544,21 @@ export function researchPageTextValue(
   pages: readonly FetchedResearchPage[],
 ): ResearchPageTextEntry[] {
   const seenUrls = new Set<string>();
-  const entries: ResearchPageTextEntry[] = [];
+  const entries: ResearchPageTextCapEntry[] = [];
+  const prose = (text: string): string =>
+    withoutResearchPageChromeMenusAndListings(redactDirectContactInfo(text)).trim();
   for (const page of pages) {
     if (seenUrls.has(page.url)) continue;
     seenUrls.add(page.url);
-    const text = withoutResearchPageChromeMenusAndListings(
-      redactDirectContactInfo(researchStatementTextOfPage(page.html, page.url)),
-    ).trim();
+    const parts = researchStatementPartsOfPage(page.html, page.url);
+    const text = prose([parts.research, parts.neutral].filter(Boolean).join('\n'));
     if (text.length < MIN_RESEARCH_PAGE_TEXT_CHARS) continue;
     if (entries.some((entry) => entry.text === text)) continue;
-    entries.push({ url: page.url, text });
+    entries.push({
+      url: page.url,
+      text,
+      researchChars: researchPrefixLength(text, prose(parts.research)),
+    });
   }
   return researchPageTextEntriesWithoutChrome(capResearchPageText(entries));
 }

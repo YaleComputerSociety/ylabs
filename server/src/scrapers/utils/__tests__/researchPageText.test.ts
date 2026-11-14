@@ -263,6 +263,99 @@ describe('capResearchPageText', () => {
   });
 });
 
+describe('capResearchPageText spends the budget on research lines first (#6283)', () => {
+  const sentence = (subject: string, n: number) =>
+    Array.from({ length: n }, (_v, i) => `The group studies ${subject} in setting ${i + 1}.`).join(
+      '\n',
+    );
+  const peopleList = (n: number) =>
+    Array.from({ length: n }, (_v, i) => `Member Fixture ${i + 1} Graduate Student`).join('\n');
+  const research = `${sentence('kelp forest recovery', 110)}\nThe last research sentence names coral bleaching.`;
+  const neutral = peopleList(60);
+
+  it("keeps a research sentence past the even share and cuts another page's people list first", () => {
+    const otherPage = peopleList(220);
+    const capped = capResearchPageText(
+      [
+        { url: HOME, text: `${research}\n${neutral}`, researchChars: research.length },
+        { url: RESEARCH, text: otherPage, researchChars: 0 },
+      ],
+      research.length + 500,
+    );
+    expect(capped[0].text).toContain('The last research sentence names coral bleaching.');
+    expect(capped.reduce((sum, entry) => sum + entry.text.length, 0)).toBeLessThanOrEqual(
+      research.length + 500,
+    );
+    expect(capped[1].text.length).toBeLessThan(otherPage.length);
+  });
+
+  it('would have dropped that sentence under an even share per page', () => {
+    const otherPage = peopleList(220);
+    const capped = capResearchPageText(
+      [
+        { url: HOME, text: `${research}\n${neutral}` },
+        { url: RESEARCH, text: otherPage },
+      ],
+      research.length + 500,
+    );
+    expect(capped[0].text).not.toContain('The last research sentence names coral bleaching.');
+  });
+
+  it('leaves a row under the cap unchanged', () => {
+    const entries = [
+      { url: HOME, text: `${research}\n${neutral}`, researchChars: research.length },
+      { url: RESEARCH, text: peopleList(5), researchChars: 0 },
+    ];
+    expect(capResearchPageText(entries, 100000)).toEqual(
+      entries.map(({ url, text }) => ({ url, text })),
+    );
+  });
+
+  it('shares the research budget fairly when research alone exceeds the cap', () => {
+    const capped = capResearchPageText(
+      [
+        { url: HOME, text: `${research}\n${neutral}`, researchChars: research.length },
+        { url: RESEARCH, text: research, researchChars: research.length },
+      ],
+      research.length,
+    );
+    expect(capped.every((entry) => !entry.text.includes('Member Fixture'))).toBe(true);
+    expect(capped.reduce((sum, entry) => sum + entry.text.length, 0)).toBeLessThanOrEqual(
+      research.length,
+    );
+  });
+
+  it('stores no cap bookkeeping in the value', () => {
+    const [entry] = capResearchPageText(
+      [{ url: HOME, text: research, researchChars: research.length }],
+      100000,
+    );
+    expect(Object.keys(entry).sort()).toEqual(['text', 'url']);
+  });
+});
+
+describe('researchPageTextValue caps research sections before neutral ones (#6283)', () => {
+  const researchHtml = (n: number) =>
+    `<h2>Research</h2>${Array.from({ length: n }, (_v, i) => `<p>Our group studies coastal kelp recovery after marine heatwave number ${i + 1}.</p>`).join('')}<p>Our final research aim is coral reef resilience under warming.</p>`;
+  const peopleHtml = (n: number) =>
+    `<h2>People</h2><ul>${Array.from({ length: n }, (_v, i) => `<li>Member Fixture Number ${i + 1}, Graduate Student</li>`).join('')}</ul>`;
+
+  it('keeps the last research sentence of a long research section on a row at the cap', () => {
+    const value = researchPageTextValue([
+      {
+        url: HOME,
+        html: `<html><body><main>${peopleHtml(120)}${researchHtml(150)}</main></body></html>`,
+      },
+      { url: RESEARCH, html: `<html><body><main>${peopleHtml(500)}</main></body></html>` },
+    ] as any);
+    const total = value.reduce((sum, entry) => sum + entry.text.length, 0);
+    expect(total).toBeLessThanOrEqual(MAX_RESEARCH_PAGE_TEXT_CHARS);
+    expect(value.find((entry) => entry.url === HOME)?.text).toContain(
+      'Our final research aim is coral reef resilience under warming.',
+    );
+  });
+});
+
 describe('truncateAtSentenceBoundary', () => {
   it('cuts at the last sentence end inside the window', () => {
     expect(truncateAtSentenceBoundary('One two three. Four five six. Seven', 32)).toBe(
