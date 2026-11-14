@@ -203,6 +203,24 @@ describe("a researcher's primaryDepartment is resolved over every key that joins
     expect(descending).toBe(ascending);
   });
 
+  it('never lets a fill-only directory reading hold out an official department through the pool', async () => {
+    await seedKey({
+      entityKey: DIRECTORY_KEY,
+      sourceName: 'yale-directory',
+      sourceUrl: 'https://directory.yale.edu/',
+      confidence: 0.9,
+      department: 'Biomedical Informatics & Data Science',
+    });
+    await seedKey({ ...PROFILE, department: 'Ophthalmology & Visual Science' });
+
+    expect(await materializeInOrder([DIRECTORY_KEY, PROFILE_KEY])).toBe(
+      'Ophthalmology & Visual Science',
+    );
+    expect(await materializeInOrder([PROFILE_KEY, DIRECTORY_KEY])).toBe(
+      'Ophthalmology & Visual Science',
+    );
+  });
+
   it('writes nothing on a second pass over every key', async () => {
     await seedKey({ ...PROFILE, department: 'Ophthalmology & Visual Science' });
     await seedKey({ ...ROSTER, department: 'Biomedical Informatics & Data Science' });
