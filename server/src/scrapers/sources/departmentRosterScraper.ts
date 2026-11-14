@@ -141,7 +141,16 @@ import {
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
 import { isTruncatedPersonTitle } from '../../utils/titleHygiene';
-import { orgUnitMatchKey } from '../orgUnitCanonicalization';
+import {
+  getOrgUnitCanonicalizer,
+  orgUnitMatchKey,
+  type OrgUnitCanonicalizer,
+} from '../orgUnitCanonicalization';
+import {
+  rosterHomeDepartmentStatement,
+  rosterTitleSectionParenthetical,
+  type RosterTitleUnit,
+} from '../rosterHomeDepartmentStatement';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
   ROSTER_LANE_FAILED_READ_STATUSES,
@@ -4400,10 +4409,31 @@ export function rosterAbsenceClaims(entry: FacultyEntry): string[] {
   ];
 }
 
+const assertsHomeDepartment = (dept: DeptConfig): boolean =>
+  !dept.affiliatesOnly &&
+  !dept.schoolWideDirectory &&
+  !dept.crossListedProgramme &&
+  !dept.withholdsHomeDepartment;
+
+/** The department names a roster title can name, so a title naming another one first is read. */
+export function rosterDepartmentVocabulary(configs: Iterable<DeptConfig>): Set<string> {
+  const names = new Set<string>();
+  for (const config of [...DEFAULT_DEPT_CONFIGS, ...configs]) {
+    if (assertsHomeDepartment(config)) names.add(config.deptName);
+  }
+  return names;
+}
+
+export interface RosterHomeDepartmentContext {
+  departmentNames: Iterable<string>;
+  classifyUnit?: (parenthetical: string) => RosterTitleUnit;
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
   sourceUrl: string,
+  homeDepartment?: RosterHomeDepartmentContext,
 ): { observations: ObservationInput[]; entityKey: string } {
   const cleaned = normalizeRosterName(entry.name);
   const { first, last } = splitName(withoutTrailingPostNominals(cleaned));
@@ -4440,7 +4470,15 @@ function entryToUserObservations(
   }
   if (!dept.affiliatesOnly && !dept.schoolWideDirectory) {
     if (!dept.crossListedProgramme && !dept.withholdsHomeDepartment) {
-      obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
+      const statement = rosterHomeDepartmentStatement({
+        deptName: dept.deptName,
+        title: entry.title,
+        departmentNames: homeDepartment?.departmentNames ?? rosterDepartmentVocabulary([dept]),
+        classifyUnit: homeDepartment?.classifyUnit,
+      });
+      if (statement.kind === 'assert') {
+        obs.push({ ...rosterBase, field: 'primaryDepartment', value: statement.value });
+      }
     }
     obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
   }
@@ -4945,7 +4983,41 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly rosterOwnerKeyRowLoader?: RosterOwnerKeyRowLoader,
     private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
     private readonly legacyKeyRowLoader: LegacyKeyRowLoader = loadLegacyKeyRows,
+    private readonly orgUnitCanonicalizerLoader: () => Promise<OrgUnitCanonicalizer> = getOrgUnitCanonicalizer,
   ) {}
+
+  private orgUnitCanonicalizer?: Promise<OrgUnitCanonicalizer | undefined>;
+
+  private departmentVocabulary?: Set<string>;
+
+  /**
+   * The context the home-department emit reads. The catalog is loaded only for a title that
+   * attaches a parenthetical to the roster's department, so a run with no such title never reads it.
+   */
+  private async homeDepartmentContext(
+    entry: FacultyEntry,
+    dept: DeptConfig,
+  ): Promise<RosterHomeDepartmentContext> {
+    this.departmentVocabulary ??= rosterDepartmentVocabulary(this.configs);
+    const departmentNames = this.departmentVocabulary;
+    if (!rosterTitleSectionParenthetical(entry.title, dept.deptName)) return { departmentNames };
+    this.orgUnitCanonicalizer ??= this.orgUnitCanonicalizerLoader().catch(() => undefined);
+    const canonicalizer = await this.orgUnitCanonicalizer;
+    if (!canonicalizer) return { departmentNames };
+    const parent = canonicalizer.canonicalizeDepartments(dept.deptName).values[0] ?? dept.deptName;
+    return {
+      departmentNames,
+      classifyUnit: (parenthetical) => {
+        const { values, unmatched } = canonicalizer.canonicalizeDepartments(parenthetical);
+        const units = values.filter((value) => !unmatched.includes(value));
+        const section = units.find((value) =>
+          canonicalizer.parentDepartmentsFor(value).includes(parent),
+        );
+        if (section) return { kind: 'section', value: section };
+        return units.length ? { kind: 'other-unit' } : { kind: 'not-a-unit' };
+      },
+    };
+  }
 
   private loadRosterOwnerKeyRows(): ReturnType<RosterOwnerKeyRowLoader> {
     if (this.rosterOwnerKeyRowLoader) return this.rosterOwnerKeyRowLoader();
@@ -5140,7 +5212,12 @@ export class DepartmentRosterScraper implements IScraper {
         const currentSlug = rosterResearchEntitySlug(entry, dept);
         const legacySlug = legacyRosterResearchEntitySlug(entry, dept);
         const { observations: currentUserObs, entityKey: currentOwnerKey } =
-          entryToUserObservations(entry, dept, sourceUrl);
+          entryToUserObservations(
+            entry,
+            dept,
+            sourceUrl,
+            await this.homeDepartmentContext(entry, dept),
+          );
         const legacyOwnerKey = legacyRosterOwnerKey(currentOwnerKey, entry, dept);
         const adoption = decideLegacyKeyAdoption({
           currentSlug,
