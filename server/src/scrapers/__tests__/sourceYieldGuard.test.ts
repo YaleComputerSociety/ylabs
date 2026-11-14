@@ -29,6 +29,13 @@ describe('classifyRunYield', () => {
     expect(classifyRunYield(productiveRun)).toBe('productive');
   });
 
+  it('counts a failed run as productive when its recount found writes its own record missed (#6269)', () => {
+    expect(
+      classifyRunYield({ status: 'failure', observationCount: 0, reconciledObservationCount: 2 }),
+    ).toBe('productive');
+    expect(classifyRunYield({ status: 'failure', observationCount: 0 })).toBe('barren');
+  });
+
   it('does not require recorded fetch metrics, because the dead lanes record none', () => {
     expect(classifyRunYield({ status: 'success', observationCount: 0, metrics: undefined })).toBe(
       'barren',

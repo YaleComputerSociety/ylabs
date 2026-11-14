@@ -98,6 +98,17 @@ const scrapeRunSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // What a recount of this run's own observations found, and when (#6269). A run killed
+    // outright never flushes its counters, so `observationCount` on a crashed record is
+    // unknown rather than zero, and only these say what it actually wrote.
+    reconciledObservationCount: {
+      type: Number,
+      required: false,
+    },
+    reconciledAt: {
+      type: Date,
+      required: false,
+    },
     entitiesUpdated: {
       type: Number,
       default: 0,

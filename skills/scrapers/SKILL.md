@@ -515,6 +515,12 @@ A run whose work hangs stops heartbeating too (#5086): real work bumps the proce
   Do not run it with `--apply` while a sweep is running unless you have read its dry run: a sweep started on code older than #3595 writes rows with no heartbeat, which only the lock and the 72-hour bound protect.
 - Every Development sweep already reaps heartbeat-stale rows: its first post-run stage, `stale-scrape-run-reap`, runs the command with `--heartbeat-stale-only --started-before <sweep start>`.
   That closes only `heartbeat_stale` rows (stale heartbeat, owner not a live process on this host, no held source lock) that started before the sweep, and keeps pre-heartbeat rows as `legacy_operator_only`, so a `legacy_abandoned` row still needs the operator-run command.
+- A crashed run's `observationCount` is unknown, not zero (#6269).
+  A process killed outright (a full disk, or a lid-close that drops the network) runs no handler, so before #6269 its record could claim 0 while its observations existed.
+  Across the whole `scrape_runs` history, 50 interrupted or failed applies did, holding 197,875 observations between them, and about as many crashed records reading 0 really had written nothing, so a 0 on a crashed record is right only by chance.
+  The heartbeat now flushes `observationCount` and `entitiesObserved` on every beat, so a killed run's record is right to within one interval.
+  The same `scrape-runs:reconcile-stale` command recounts every interrupted, failed or heartbeat-stale run by `scrapeRunId` and, on `--apply`, stores `reconciledObservationCount` and `reconciledAt` beside the run's own claim, which it never overwrites; the barren-streak guard reads the larger of the two.
+  Recount through the `Observation` model, or cast to an ObjectId first: the raw driver matches a string `scrapeRunId` against nothing and reads exactly like "this run wrote nothing" (`scrapeRunIdFilterValue`).
 - A new signal cleanup goes through `onInterrupt` in `utils/interruptCleanup.ts`, never its own `process.once` plus re-raise, because two handlers that each re-raise race and the first kills the process while the other is still writing.
 - The stored values are not enum-valid: Development holds 2 rows with `completed` and 1 with `failed`, written by raw operator updates that bypass the validator (the #2137 family).
   Any status check must treat the stored set as open, not as the enum.

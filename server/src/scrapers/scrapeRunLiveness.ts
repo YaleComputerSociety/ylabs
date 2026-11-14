@@ -70,19 +70,37 @@ export function isLocalProcessAlive(pid: number): boolean {
   }
 }
 
+/** What a run has written so far, flushed with each heartbeat (#6269). */
+export interface ScrapeRunProgressCounts {
+  observationCount: number;
+  entitiesObserved: number;
+}
+
 export interface ScrapeRunHeartbeatDependencies {
-  beat: (runId: unknown, at: Date) => Promise<{ matched: boolean }>;
+  beat: (
+    runId: unknown,
+    at: Date,
+    progress?: ScrapeRunProgressCounts,
+  ) => Promise<{ matched: boolean }>;
   now?: () => number;
   lastProgressAtMs?: () => number;
 }
 
+/**
+ * The beat also flushes what the run has written so far (#6269). A process killed outright,
+ * by a full disk or a lid-close that drops the network, runs no handler, so the counters it
+ * would have written at finalise are lost and the record claims it wrote nothing while its
+ * observations exist. Carrying them on the beat costs no extra write and bounds that lie to
+ * one heartbeat interval.
+ */
 export async function writeScrapeRunHeartbeat(
   runId: unknown,
   at: Date,
+  progress?: ScrapeRunProgressCounts,
 ): Promise<{ matched: boolean }> {
   const result = await ScrapeRun.updateOne(
     { _id: runId, status: 'running' },
-    { $set: { heartbeatAt: at } },
+    { $set: { heartbeatAt: at, ...(progress ?? {}) } },
   );
   return { matched: (result.matchedCount ?? 0) > 0 };
 }
@@ -94,6 +112,7 @@ export function startScrapeRunHeartbeat(
     intervalMs?: number;
     stallWindowMs?: number;
     onStall?: (stall: ScrapeRunStall) => void;
+    progress?: () => ScrapeRunProgressCounts;
   },
   deps: ScrapeRunHeartbeatDependencies = { beat: writeScrapeRunHeartbeat },
 ): { stop: () => void } {
@@ -123,7 +142,7 @@ export function startScrapeRunHeartbeat(
       return;
     }
     deps
-      .beat(input.runId, new Date(nowMs))
+      .beat(input.runId, new Date(nowMs), input.progress?.())
       .then(({ matched }) => {
         if (matched || stopped || reportedClosed) return;
         reportedClosed = true;

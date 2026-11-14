@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { Observation } from '../models/observation';
 import { ScrapeRun } from '../models/scrapeRun';
 import { isLocalProcessAlive } from '../scrapers/scrapeRunLiveness';
 import {
@@ -12,6 +13,15 @@ import {
   loadRunningScrapeRuns,
 } from '../scrapers/staleScrapeRunReaper';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  countCorrectionFor,
+  needsCountCorrection,
+  runRecordCountIsUnreliable,
+  scrapeRunIdFilterValue,
+  summarizeCountCorrections,
+  type ScrapeRunCountCorrection,
+  type ScrapeRunCountFacts,
+} from './reconcileScrapeRunCountsCore';
 import {
   assertReconcileStaleScrapeRunsApplyAllowed,
   planStaleScrapeRunReconciliation,
@@ -92,6 +102,73 @@ export function parseReconcileStaleScrapeRunsArgs(argv: string[]): ReconcileStal
   return options;
 }
 
+/**
+ * What each run with an untrustworthy count actually wrote (#6269). A run killed outright never
+ * flushes its counters, so its record can claim nothing while its observations exist: of the
+ * records reading 0 across this corpus's history, about half were false and about half were
+ * true, which is why a crashed record's count is unknown rather than zero and has to be
+ * recounted. The recount reads `observations` by `scrapeRunId`, cast to an ObjectId, and writes
+ * only `reconciledObservationCount` and `reconciledAt`, leaving the run's own claim in place.
+ */
+async function reconcileRunCounts(input: {
+  apply: boolean;
+  now: Date;
+  staleHeartbeatMs: number;
+  sourceName?: string;
+}) {
+  const candidates = (await ScrapeRun.find(
+    {
+      ...(input.sourceName ? { sourceName: input.sourceName } : {}),
+      status: { $in: ['interrupted', 'failure', 'running'] },
+    },
+    {
+      sourceName: 1,
+      status: 1,
+      startedAt: 1,
+      heartbeatAt: 1,
+      finishedAt: 1,
+      observationCount: 1,
+      options: 1,
+    },
+  ).lean()) as unknown as ScrapeRunCountFacts[];
+  const unreliable = candidates.filter((run) =>
+    runRecordCountIsUnreliable(run, input.now.getTime(), input.staleHeartbeatMs),
+  );
+
+  const corrections: ScrapeRunCountCorrection[] = [];
+  for (const run of unreliable) {
+    const runId = scrapeRunIdFilterValue(run._id);
+    if (!runId) continue;
+    const actual = await Observation.countDocuments({ scrapeRunId: runId });
+    const correction = countCorrectionFor(run, actual);
+    if (needsCountCorrection(correction.reportedObservations, actual)) corrections.push(correction);
+  }
+
+  let recordsUpdated = 0;
+  if (input.apply) {
+    for (const correction of corrections) {
+      const result = await ScrapeRun.updateOne(
+        { _id: correction.runId },
+        {
+          $set: {
+            reconciledObservationCount: correction.actualObservations,
+            reconciledAt: input.now,
+          },
+        },
+      );
+      if ((result.matchedCount ?? 0) > 0) recordsUpdated += 1;
+    }
+  }
+
+  return {
+    runsExamined: candidates.length,
+    runsWithUnreliableCounts: unreliable.length,
+    ...summarizeCountCorrections(corrections),
+    recordsUpdated: input.apply ? recordsUpdated : null,
+    corrections,
+  };
+}
+
 async function main(): Promise<void> {
   const options = parseReconcileStaleScrapeRunsArgs(process.argv.slice(2));
   const thresholds = resolveStaleScrapeRunThresholds(options);
@@ -121,6 +198,13 @@ async function main(): Promise<void> {
     startedBefore: options.startedBefore,
   });
 
+  const counts = await reconcileRunCounts({
+    apply: options.apply,
+    now,
+    staleHeartbeatMs: thresholds.staleHeartbeatMs,
+    sourceName: options.sourceName,
+  });
+
   let closed = 0;
   let changedSinceRead = 0;
   if (options.apply) {
@@ -145,6 +229,7 @@ async function main(): Promise<void> {
     changedSinceRead: options.apply ? changedSinceRead : null,
     reap: plan.reap,
     keep: plan.keep,
+    counts,
   };
   console.log(JSON.stringify(report, null, 2));
   if (options.output) {

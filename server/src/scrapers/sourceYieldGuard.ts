@@ -25,6 +25,7 @@ export type RunYieldClass = 'productive' | 'barren' | 'inconclusive';
 export interface RunYieldFacts {
   status?: string;
   observationCount?: number;
+  reconciledObservationCount?: number;
   invalidated?: boolean;
   metrics?: ScraperMetrics;
   options?: { only?: unknown } | null;
@@ -59,7 +60,10 @@ export function classifyRunYield(run: RunYieldFacts): RunYieldClass {
   if (run.invalidated || run.status === 'running' || run.status === 'interrupted') {
     return 'inconclusive';
   }
-  if ((run.observationCount || 0) > 0) return 'productive';
+  // A failed run's own count can be a false zero (#6269); its recount is what it wrote.
+  if (Math.max(run.observationCount || 0, run.reconciledObservationCount || 0) > 0) {
+    return 'productive';
+  }
   if (isEntityScopedRun(run.options)) return 'inconclusive';
   if (workPlannerSkippedEveryTarget(run.metrics)) return 'inconclusive';
   return 'barren';
@@ -201,7 +205,7 @@ export async function readPriorRunYieldFacts(args: {
     _id: { $ne: args.currentRunId },
   })
     .select(
-      'status observationCount invalidated metrics.workPlanner metrics.unitYields options.only',
+      'status observationCount reconciledObservationCount invalidated metrics.workPlanner metrics.unitYields options.only',
     )
     .sort({ startedAt: -1 })
     .limit(BARREN_RUN_HISTORY_SCAN_LIMIT)

@@ -228,6 +228,7 @@ export class ScraperOrchestrator {
       sourceName: source.name,
       intervalMs: this.config.runHeartbeatIntervalMs,
       stallWindowMs: this.config.runStallWindowMs ?? resolveScrapeRunStallWindowMs(),
+      progress: () => ({ observationCount, entitiesObserved }),
       onStall: (detected) => {
         stall = detected;
         reportStall(new ScrapeRunStalledError(detected));

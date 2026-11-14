@@ -98,7 +98,31 @@ describe('startScrapeRunHeartbeat (#3595)', () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(beat).toHaveBeenCalledTimes(3);
-    expect(beat.mock.calls[0]).toEqual(['run-1', expect.any(Date)]);
+    expect(beat.mock.calls[0]).toEqual(['run-1', expect.any(Date), undefined]);
+  });
+
+  it('flushes what the run has written so far with each beat (#6269)', async () => {
+    vi.useFakeTimers();
+    const beat = vi.fn().mockResolvedValue({ matched: true });
+    let observationCount = 0;
+    const heartbeat = startScrapeRunHeartbeat(
+      {
+        runId: 'run-1',
+        sourceName: 'fixture-source',
+        intervalMs: 100,
+        progress: () => ({ observationCount, entitiesObserved: observationCount * 2 }),
+      },
+      { beat },
+    );
+
+    observationCount = 7;
+    await vi.advanceTimersByTimeAsync(100);
+    observationCount = 19;
+    await vi.advanceTimersByTimeAsync(100);
+    heartbeat.stop();
+
+    expect(beat.mock.calls[0]?.[2]).toEqual({ observationCount: 7, entitiesObserved: 14 });
+    expect(beat.mock.calls[1]?.[2]).toEqual({ observationCount: 19, entitiesObserved: 38 });
   });
 
   it('reports once when the row was closed by something else', async () => {
