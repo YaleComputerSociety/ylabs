@@ -40,7 +40,7 @@ Third, the run report lists removals per host (`RemovalsByHost`), so a lapsed do
 A host that resolves only into private address space never counts, on either observation.
 Each class is recorded positively on the stored verdict, `connectionLevelFailure` for a refused connection and `nameNotFound` for a DNS negative, because #6116 records a refused connection with no marker when the verdict it replaced was not live, so a missing marker cannot be read as DNS.
 A verdict written before both fields existed has no recorded class and holds as `class-unknown` until the next link-health sweep rewrites it.
-The callers are the field-retraction sole-holder screen (`probeRetractionValueLiveness`), where the lane's own absence reads are the first observation; `clearDeadLabResearchHomes`; and `repairLegacyPersonPageUrls`.
+The callers are the field-retraction sole-holder screen (`probeRetractionValueLiveness`), where the lane's own absence reads are the first observation, so a `404`, a `410` or an answer that lands away from the requested page confirms on the probe alone; `clearDeadLabResearchHomes`; and `repairLegacyPersonPageUrls`.
 The last two need a stored gone verdict plus an agreeing probe, so a single `404` now reports as awaiting confirmation.
 `clearDeadLabResearchHomes` never clears on a host-level failure, because every URL it reads sits on one school host.
 The YSE faculty-directory lab-website removal already met the contract: its `assertsNoValueFor` is a lane read, and field retraction needs two such reads plus the probe above before anything clears.
