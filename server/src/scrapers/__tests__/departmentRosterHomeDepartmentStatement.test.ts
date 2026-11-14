@@ -50,13 +50,40 @@ describe('a department roster files its own department as primary only without c
   });
 
   it.each([
-    ['secondary', 'Professor of Fixture Pathology (secondary appointment)'],
-    ['joint', 'Professor of Fixture Pathology, joint appointment'],
+    ['secondary', 'Secondary Faculty, Fixture Pathology'],
+    ['joint', 'Joint Professor of Fixture Pathology'],
     ['adjunct', 'Adjunct Professor of Fixture Pathology'],
-    ['courtesy', 'Professor of Fixture Pathology by courtesy'],
+    ['courtesy', 'Courtesy Professor of Fixture Pathology'],
     ['visiting', 'Visiting Professor of Fixture Pathology'],
   ])('withholds on the %s appointment marker', (reason, title) => {
     expect(statementFor('Fixture Pathology', title)).toEqual({ kind: 'withhold', reason });
+  });
+
+  it.each([
+    [
+      'a courtesy appointment in a later department',
+      'Professor of Fixture Pathology and (by courtesy) of Fixture Urology',
+    ],
+    [
+      'a courtesy appointment in a later unit',
+      'Professor of Fixture Pathology, by courtesy, Fixture School of Management',
+    ],
+    [
+      'a word that only looks like a marker',
+      'Professor of Fixture Pathology; Chief, Joint Reconstruction',
+    ],
+  ])('ignores a marker after the roster department: %s', (_shape, title) => {
+    expect(statementFor('Fixture Pathology', title)).toEqual({
+      kind: 'assert',
+      value: 'Fixture Pathology',
+    });
+  });
+
+  it('still withholds on a marker when the title never names the roster department', () => {
+    expect(statementFor('Fixture Pathology', 'Adjunct Professor')).toEqual({
+      kind: 'withhold',
+      reason: 'adjunct',
+    });
   });
 
   it('states a section the catalog places under the roster department instead of the parent', () => {

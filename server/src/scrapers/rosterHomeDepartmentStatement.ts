@@ -76,7 +76,10 @@ export function rosterTitleSectionParenthetical(
  * Whether a department roster may file its own department as a listed person's
  * `primaryDepartment`, read from the person's title on that page (#6274). It withholds only on
  * positive evidence that the home appointment is elsewhere: an appointment marker
- * (secondary, joint, adjunct, courtesy, visiting), or another department named before this one.
+ * (secondary, joint, adjunct, courtesy, visiting) that comes before this department's first
+ * mention, or another department named before this one. A marker after this department
+ * qualifies a later appointment ("of Pathology and (by courtesy) of Urology") or is not a
+ * marker at all ("Joint Reconstruction"), so it leaves this department's claim alone.
  * A title that attaches a catalogued unit to this department, as a YSM title does with a
  * section, withholds the parent: it states the section when the catalog places it under this
  * department, and nothing when the unit sits elsewhere. A parenthetical the catalog does not
@@ -95,11 +98,14 @@ export function rosterHomeDepartmentStatement(input: {
 }): RosterHomeDepartmentStatement {
   const title = input.title?.trim();
   if (!title) return { kind: 'assert', value: input.deptName };
+  const ownPosition = firstMention(title, input.deptName);
   for (const [marker, reason] of APPOINTMENT_MARKERS) {
-    if (marker.test(title)) return { kind: 'withhold', reason };
+    const markerPosition = title.search(marker);
+    if (markerPosition < 0) continue;
+    if (ownPosition >= 0 && markerPosition > ownPosition) continue;
+    return { kind: 'withhold', reason };
   }
   const own = bareDepartmentName(input.deptName).toLowerCase();
-  const ownPosition = firstMention(title, input.deptName);
   const otherPositions = [...new Set(input.departmentNames)]
     .filter((name) => {
       const bare = bareDepartmentName(name).toLowerCase();
