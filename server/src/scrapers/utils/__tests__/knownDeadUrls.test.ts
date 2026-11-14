@@ -9,6 +9,9 @@ import {
 import {
   goneStatusByUrlKey,
   isKnownDeadUrl,
+  knownDeadUrlKey,
+  knownDeadUrlKeyHash,
+  withKnownDeadUrlFetchMetrics,
   withKnownDeadUrlScope,
   type StoredLinkVerdict,
 } from '../knownDeadUrls';
@@ -92,6 +95,8 @@ describe('fetchPageWithPolicy inside a known-dead scope (#6210)', () => {
       skipped: 1,
       skippedByStoredVerdict: 1,
       skippedAsRepeatInRun: 0,
+      learnedKeyHashes: [],
+      learnedByStatus: {},
     });
   });
 
@@ -148,5 +153,67 @@ describe('fetchPageWithPolicy inside a known-dead scope (#6210)', () => {
     await fetchPageWithPolicy(DEAD, { ...base, request });
     expect(request).toHaveBeenCalledTimes(1);
     expect(isKnownDeadUrl(DEAD)).toBe(false);
+  });
+});
+
+describe('a run records the URLs it found gone (#6231)', () => {
+  const base = {
+    assertUrl: async (url: string) => ({ toString: () => url }) as URL,
+    limiter: new HostRateLimiter({ minIntervalMs: 0, sleep: async () => {} }),
+    sleep: vi.fn(async () => {}),
+    jitter: () => 0,
+  };
+  const noStoredVerdicts = async () => [] as StoredLinkVerdict[];
+  const answering = (status: number) =>
+    vi.fn<HttpRequestFn>(() => Promise.resolve({ status, data: '', finalUrl: LIVE }));
+
+  it('records a 404 it observed by key hash and status', async () => {
+    const { stats } = await withKnownDeadUrlScope(
+      () => fetchPageWithPolicy(LIVE, { ...base, request: answering(404) }).catch(() => undefined),
+      noStoredVerdicts,
+    );
+    expect(stats.learned).toBe(1);
+    expect(stats.learnedByStatus).toEqual({ '404': 1 });
+    expect(stats.learnedKeyHashes).toEqual([knownDeadUrlKeyHash(knownDeadUrlKey(LIVE)!)]);
+  });
+
+  it.each([403, 429, 500, 503])(
+    'records nothing for a %i, which says nothing about the page',
+    async (status) => {
+      const { stats } = await withKnownDeadUrlScope(
+        () =>
+          fetchPageWithPolicy(LIVE, { ...base, request: answering(status) }).catch(() => undefined),
+        noStoredVerdicts,
+      );
+      expect(stats.learned).toBe(0);
+      expect(stats.learnedKeyHashes).toEqual([]);
+    },
+  );
+
+  it('records nothing for a fetch that observed nothing', async () => {
+    const reset = vi.fn<HttpRequestFn>(() =>
+      Promise.reject(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })),
+    );
+    const { stats } = await withKnownDeadUrlScope(
+      () => fetchPageWithPolicy(LIVE, { ...base, request: reset }).catch(() => undefined),
+      noStoredVerdicts,
+    );
+    expect(stats.learned).toBe(0);
+  });
+
+  it('keeps the stats on the run when it learned a URL but skipped none', () => {
+    const result = withKnownDeadUrlFetchMetrics(
+      { observationCount: 0, entitiesObserved: 0 } as any,
+      {
+        known: 0,
+        learned: 1,
+        skipped: 0,
+        skippedByStoredVerdict: 0,
+        skippedAsRepeatInRun: 0,
+        learnedKeyHashes: ['abcdef0123456789'],
+        learnedByStatus: { '404': 1 },
+      },
+    );
+    expect(result.fetchMetrics?.knownDeadUrlSkip?.learnedKeyHashes).toEqual(['abcdef0123456789']);
   });
 });

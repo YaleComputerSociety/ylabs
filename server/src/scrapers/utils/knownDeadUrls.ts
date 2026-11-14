@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'async_hooks';
+import { createHash } from 'crypto';
 import mongoose from 'mongoose';
 import {
   SOURCE_LINK_HEALTH_FRESHNESS_DAYS,
@@ -9,6 +10,7 @@ import type { ScraperFetchMetrics, ScraperResult } from '../types';
 
 const MILLISECONDS_PER_DAY = 86_400_000;
 const RESOURCE_GONE_STATUSES: ReadonlySet<number> = new Set([404, 410]);
+const MAX_LEARNED_KEY_HASHES = 5000;
 const COLLECTIONS_WITH_LINK_HEALTH = ['research_entities', 'fellowships'] as const;
 
 export interface StoredLinkVerdict {
@@ -24,7 +26,19 @@ export interface KnownDeadUrlStats {
   skipped: number;
   skippedByStoredVerdict: number;
   skippedAsRepeatInRun: number;
+  /**
+   * The URLs this run itself found gone, as short hashes of `knownDeadUrlKey`, so consecutive
+   * runs of a lane can be compared to count re-requests of a URL that was gone last time
+   * (#6231) without storing the URLs. Capped at MAX_LEARNED_KEY_HASHES per run.
+   */
+  learnedKeyHashes: string[];
+  learnedByStatus: Record<string, number>;
+  learnedKeyHashesTruncated?: true;
   loadFailed?: true;
+}
+
+export function knownDeadUrlKeyHash(key: string): string {
+  return createHash('sha256').update(key).digest('hex').slice(0, 16);
 }
 
 interface KnownDeadUrlScope {
@@ -142,6 +156,8 @@ export async function withKnownDeadUrlScope<T>(
     skipped: 0,
     skippedByStoredVerdict: 0,
     skippedAsRepeatInRun: 0,
+    learnedKeyHashes: [],
+    learnedByStatus: {},
     ...(loadFailed ? { loadFailed: true as const } : {}),
   };
   const value = await scopeStorage.run({ goneStatusByKey, learnedKeys: new Set(), stats }, run);
@@ -180,13 +196,20 @@ export function rememberGoneUrl(url: string, status: number): void {
   scope.goneStatusByKey.set(key, status);
   scope.learnedKeys.add(key);
   scope.stats.learned += 1;
+  scope.stats.learnedByStatus[String(status)] =
+    (scope.stats.learnedByStatus[String(status)] ?? 0) + 1;
+  if (scope.stats.learnedKeyHashes.length < MAX_LEARNED_KEY_HASHES) {
+    scope.stats.learnedKeyHashes.push(knownDeadUrlKeyHash(key));
+  } else {
+    scope.stats.learnedKeyHashesTruncated = true;
+  }
 }
 
 export function withKnownDeadUrlFetchMetrics(
   result: ScraperResult,
   stats: KnownDeadUrlStats,
 ): ScraperResult {
-  if (stats.skipped === 0 && !stats.loadFailed) return result;
+  if (stats.skipped === 0 && stats.learned === 0 && !stats.loadFailed) return result;
   const fetchMetrics: ScraperFetchMetrics = result.fetchMetrics ?? {
     attempts: [],
     summary: {
