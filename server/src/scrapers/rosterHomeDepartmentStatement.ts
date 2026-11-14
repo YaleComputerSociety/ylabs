@@ -52,7 +52,11 @@ function departmentPatterns(deptName: string): string[] {
   return patterns;
 }
 
-const APPOINTMENT_CONTEXT = `(?<=^|[;,]\\s*|${NOT_A_SCHOOL_OF}\\s*)`;
+/**
+ * Where a title names an appointment: its start, a clause after a semicolon, comma or spaced
+ * dash, or after "of" (not "School of") or "in", the FAS form ("Lecturer in History").
+ */
+const APPOINTMENT_CONTEXT = `(?<=^|[;,]\\s*|\\s[-\u2013]\\s+|${NOT_A_SCHOOL_OF}\\s*|\\bin\\s)`;
 
 function firstMention(title: string, deptName: string, context = ''): number {
   const positions = departmentPatterns(deptName)

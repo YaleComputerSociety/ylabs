@@ -76,6 +76,35 @@ describe('a department roster files its own department as primary only without c
     ).toEqual({ kind: 'assert', value: 'Fixture Pathology' });
   });
 
+  it('reads another department after "in", the FAS appointment form', () => {
+    expect(statementFor('Fixture Pathology', 'Lecturer in Fixture Urology')).toEqual({
+      kind: 'withhold',
+      reason: 'another-department-first',
+    });
+  });
+
+  it('still asserts "Professor in the Practice" of the roster department', () => {
+    expect(
+      statementFor('Fixture Pathology', 'Professor in the Practice of Fixture Pathology'),
+    ).toEqual({ kind: 'assert', value: 'Fixture Pathology' });
+  });
+
+  it('reads another department after a spaced dash as its own clause', () => {
+    expect(statementFor('Fixture Pathology', 'Assistant Professor - Fixture Urology')).toEqual({
+      kind: 'withhold',
+      reason: 'another-department-first',
+    });
+  });
+
+  it('does not take the Internal Medicine roster position from "School of Medicine"', () => {
+    expect(
+      statementFor(
+        'Internal Medicine',
+        'Associate Dean, Fixture School of Medicine; Professor of Fixture Pathology',
+      ),
+    ).toEqual({ kind: 'withhold', reason: 'another-department-first' });
+  });
+
   it('still reads another department leading a clause of the title', () => {
     expect(
       statementFor('Fixture Pathology', 'Chief, Fixture Urology; Professor of Fixture Pathology'),
