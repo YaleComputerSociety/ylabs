@@ -28,6 +28,26 @@ const storedRefusedConfirmedByMarker = (hoursAgo: number) => [
     pendingConnectionFailureAt: hoursBefore(hoursAgo + 7),
     pendingConnectionFailureProbedAt: hoursBefore(hoursAgo + 7),
     confirmingConnectionFailureAt: hoursBefore(hoursAgo),
+    connectionLevelFailure: true,
+    connectionRefused: true,
+  },
+];
+
+const storedLegacyRefusedMarkerOnly = (hoursAgo: number) => [
+  {
+    url: URL,
+    healthStatus: 'UNAVAILABLE',
+    checkedAt: hoursBefore(hoursAgo),
+    confirmingConnectionFailureAt: hoursBefore(hoursAgo),
+  },
+];
+
+const storedUnroutable = (hoursAgo: number) => [
+  {
+    url: URL,
+    healthStatus: 'UNAVAILABLE',
+    checkedAt: hoursBefore(hoursAgo),
+    connectionLevelFailure: true,
   },
 ];
 
@@ -37,6 +57,7 @@ const storedRefusedWithoutLiveVerdict = (hoursAgo: number) => [
     healthStatus: 'UNAVAILABLE',
     checkedAt: hoursBefore(hoursAgo),
     connectionLevelFailure: true,
+    connectionRefused: true,
   },
 ];
 
@@ -117,6 +138,36 @@ describe('the retraction probe confirms a lane absence only with a second observ
       positivelyDead: true,
       basis: 'connection-refused',
     });
+  });
+
+  it.each(['ENETUNREACH', 'EHOSTUNREACH'])(
+    'never retracts on two %s observations 6 hours apart, which can mean this machine had no route',
+    async (code) => {
+      probeMock.mockResolvedValue({ errorCode: code, requestedUrl: URL });
+      expect(
+        await probeRetractionValueLiveness(URL, { storedHealth: storedUnroutable(7), now: NOW }),
+      ).toEqual({ positivelyDead: false });
+    },
+  );
+
+  it('never pairs an unroutable host with a refused connection', async () => {
+    probeMock.mockResolvedValue({ errorCode: 'ENETUNREACH', requestedUrl: URL });
+    expect(
+      await probeRetractionValueLiveness(URL, {
+        storedHealth: storedRefusedWithoutLiveVerdict(7),
+        now: NOW,
+      }),
+    ).toEqual({ positivelyDead: false });
+  });
+
+  it('holds a refused connection stored before its class was recorded', async () => {
+    probeMock.mockResolvedValue({ errorCode: 'ECONNREFUSED', requestedUrl: URL });
+    expect(
+      await probeRetractionValueLiveness(URL, {
+        storedHealth: storedLegacyRefusedMarkerOnly(7),
+        now: NOW,
+      }),
+    ).toEqual({ positivelyDead: false });
   });
 
   it('never pairs a fresh refused connection with a stored DNS negative', async () => {

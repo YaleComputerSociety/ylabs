@@ -21,9 +21,8 @@ export interface StoredRemovalVerdict {
   healthStatus?: unknown;
   httpStatusCode?: unknown;
   privateAddressHost?: unknown;
-  confirmingConnectionFailureAt?: unknown;
-  connectionLevelFailure?: unknown;
   nameNotFound?: unknown;
+  connectionRefused?: unknown;
   checkedAt?: unknown;
 }
 
@@ -39,23 +38,22 @@ const isGoneStatus = (status: unknown): boolean =>
   typeof status === 'number' && RESOURCE_GONE_HTTP_STATUS_CODES.has(status);
 
 /**
- * A stored status-less `UNAVAILABLE` is one of two host facts, and each is recorded
- * positively: `connectionLevelFailure` (or, on an older verdict, the
- * `confirmingConnectionFailureAt` marker #6116 leaves) for a refused connection, and
- * `nameNotFound` for a DNS record confirmed absent. A verdict written before either field
- * existed carries neither, and #6116 records a refused connection with no marker when the
- * verdict it replaced was not live, so its class cannot be inferred from the absence of a
- * marker; it waits for the next sweep to record one.
+ * A stored status-less `UNAVAILABLE` counts toward a removal only when it records, in a
+ * positive marker, one of the two failures that are evidence about the host: `nameNotFound`
+ * for a DNS record confirmed absent, and `connectionRefused` for a host that answered by
+ * refusing the connection. An unroutable network or host (`ENETUNREACH`, `EHOSTUNREACH`)
+ * can mean this machine had no route, the lid-close and network-drop failure, so it never
+ * counts, and neither does a verdict written before these markers existed (manager,
+ * 2026-11-14, on yale worker 6's review of #6282). Link-health verdicts themselves are
+ * unchanged; this is only the removal rule's reading of them.
  */
 function storedHostLevelClass(stored: StoredRemovalVerdict): HostLevelClass | undefined {
-  if (stored.connectionLevelFailure === true || stored.confirmingConnectionFailureAt) {
-    return 'connection-refused';
-  }
+  if (stored.connectionRefused === true) return 'connection-refused';
   return stored.nameNotFound === true ? 'name-absent' : undefined;
 }
 
 function freshHostLevelClass(fresh: SourceLinkHealth): HostLevelClass | undefined {
-  if (fresh.connectionLevelFailure) return 'connection-refused';
+  if (fresh.connectionRefused) return 'connection-refused';
   return fresh.nameNotFound ? 'name-absent' : undefined;
 }
 

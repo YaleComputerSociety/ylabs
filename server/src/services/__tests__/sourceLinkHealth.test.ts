@@ -99,6 +99,7 @@ describe('classifySourceLinkHealth', () => {
     expect(classifySourceLinkHealth({ errorCode: 'ECONNREFUSED' })).toEqual({
       healthStatus: 'UNAVAILABLE',
       connectionLevelFailure: true,
+      connectionRefused: true,
     });
   });
 
@@ -402,6 +403,7 @@ describe('probeSourceLink', () => {
       expect(classifySourceLinkHealth(confirmed)).toEqual({
         healthStatus: 'UNAVAILABLE',
         connectionLevelFailure: true,
+        ...(code === 'ECONNREFUSED' ? { connectionRefused: true } : {}),
       });
       expect(requestMock).toHaveBeenCalledTimes(2);
 

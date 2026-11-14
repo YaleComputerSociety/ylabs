@@ -207,6 +207,16 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       type: Boolean,
       required: false,
     },
+    /**
+     * The `UNAVAILABLE` came from a host that answered by refusing the connection
+     * (`ECONNREFUSED`). Unlike an unroutable network or host, which can mean this machine
+     * had no route, only this connection failure is evidence about the host, so it is the
+     * only one a removal may confirm against (#6264).
+     */
+    connectionRefused: {
+      type: Boolean,
+      required: false,
+    },
   },
   { _id: false },
 );

@@ -105,6 +105,8 @@ export interface SourceLinkHealth {
   connectionLevelFailure?: true;
   /** The `UNAVAILABLE` came from a DNS record confirmed absent (#2726, #6264). */
   nameNotFound?: true;
+  /** The `UNAVAILABLE` came from a host that refused the connection (#6264). */
+  connectionRefused?: true;
 }
 
 export interface SourceLinkProbeResult {
@@ -412,10 +414,12 @@ export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLi
     verdict.healthStatus === 'UNAVAILABLE' &&
     typeof verdict.httpStatusCode !== 'number' &&
     probe.errorCode === 'ENOTFOUND';
+  const connectionRefused = connectionLevelFailure && probe.errorCode === 'ECONNREFUSED';
   const classified = {
     ...verdict,
     ...(connectionLevelFailure ? { connectionLevelFailure: true as const } : {}),
     ...(nameNotFound ? { nameNotFound: true as const } : {}),
+    ...(connectionRefused ? { connectionRefused: true as const } : {}),
     ...(httpsLandingUrl ? { httpsLandingUrl } : {}),
     ...(redirectLandingUrl ? { redirectLandingUrl } : {}),
     ...(landed ? { landedOnRequestedResource: true as const } : {}),
@@ -507,6 +511,7 @@ export function findSourceLinkHealth(
     ...(match.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
     ...(match.connectionLevelFailure === true ? { connectionLevelFailure: true as const } : {}),
     ...(match.nameNotFound === true ? { nameNotFound: true as const } : {}),
+    ...(match.connectionRefused === true ? { connectionRefused: true as const } : {}),
     ...(match.confirmingConnectionFailureAt
       ? { confirmingConnectionFailureAt: match.confirmingConnectionFailureAt as Date | string }
       : {}),

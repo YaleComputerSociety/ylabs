@@ -239,6 +239,7 @@ describe('a connection failure waits for a second run before retiring a live lin
       url: URL_A,
       healthStatus: 'UNAVAILABLE',
       connectionLevelFailure: true,
+      connectionRefused: true,
       checkedAt: FIRST_RUN_PROBE,
     });
   });
@@ -255,6 +256,7 @@ describe('a connection failure waits for a second run before retiring a live lin
       url: URL_A,
       healthStatus: 'UNAVAILABLE',
       connectionLevelFailure: true,
+      connectionRefused: true,
       checkedAt: FIRST_RUN_PROBE,
     });
   });

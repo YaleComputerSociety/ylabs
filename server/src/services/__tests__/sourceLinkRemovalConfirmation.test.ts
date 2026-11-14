@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { CONNECTION_FAILURE_CONFIRMATION_GAP_MS, type SourceLinkHealth } from '../sourceLinkHealth';
+import {
+  classifySourceLinkHealth,
+  CONNECTION_FAILURE_CONFIRMATION_GAP_MS,
+  type SourceLinkHealth,
+} from '../sourceLinkHealth';
 import {
   RemovalsByHost,
   removalConfirmation,
@@ -23,7 +27,7 @@ const nameAbsentStored = (hoursAgo = 7): StoredRemovalVerdict => ({
 const connectionStored = (hoursAgo = 7): StoredRemovalVerdict => ({
   healthStatus: 'UNAVAILABLE',
   checkedAt: hoursBefore(hoursAgo),
-  confirmingConnectionFailureAt: hoursBefore(hoursAgo),
+  connectionRefused: true,
 });
 
 const freshGone = (status = 404): SourceLinkHealth => ({
@@ -34,6 +38,7 @@ const freshNameAbsent: SourceLinkHealth = { healthStatus: 'UNAVAILABLE', nameNot
 const freshRefused: SourceLinkHealth = {
   healthStatus: 'UNAVAILABLE',
   connectionLevelFailure: true,
+  connectionRefused: true,
 };
 
 describe('removalConfirmation (#6264)', () => {
@@ -161,6 +166,57 @@ describe('removalConfirmation (#6264)', () => {
         reason: 'probe-disagrees',
       });
     });
+  });
+});
+
+describe('only a refused connection is host evidence (manager, 2026-11-14)', () => {
+  const storedFrom = (fresh: SourceLinkHealth, hoursAgo: number): StoredRemovalVerdict => ({
+    ...fresh,
+    checkedAt: hoursBefore(hoursAgo),
+  });
+
+  it('confirms two ECONNREFUSED observations 6 hours apart', () => {
+    const fresh = classifySourceLinkHealth({ errorCode: 'ECONNREFUSED' });
+    expect(removalConfirmation(storedFrom(fresh, 7), fresh, NOW)).toEqual({
+      confirmed: true,
+      basis: 'connection-refused',
+    });
+  });
+
+  it.each(['ENETUNREACH', 'EHOSTUNREACH'])(
+    'never confirms two %s observations 6 hours apart',
+    (code) => {
+      const fresh = classifySourceLinkHealth({ errorCode: code });
+      expect(removalConfirmation(storedFrom(fresh, 7), fresh, NOW)).toEqual({
+        confirmed: false,
+        reason: 'class-unknown',
+      });
+    },
+  );
+
+  it.each([
+    ['ENETUNREACH', 'ECONNREFUSED'],
+    ['ECONNREFUSED', 'EHOSTUNREACH'],
+  ])('never pairs a stored %s with a fresh %s', (storedCode, freshCode) => {
+    const stored = storedFrom(classifySourceLinkHealth({ errorCode: storedCode }), 7);
+    expect(
+      removalConfirmation(stored, classifySourceLinkHealth({ errorCode: freshCode }), NOW)
+        .confirmed,
+    ).toBe(false);
+  });
+
+  it('holds a refused connection recorded only by the older #6116 marker', () => {
+    expect(
+      removalConfirmation(
+        {
+          healthStatus: 'UNAVAILABLE',
+          checkedAt: hoursBefore(7),
+          confirmingConnectionFailureAt: hoursBefore(7),
+        } as StoredRemovalVerdict,
+        freshRefused,
+        NOW,
+      ),
+    ).toEqual({ confirmed: false, reason: 'class-unknown' });
   });
 });
 

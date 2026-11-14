@@ -255,6 +255,7 @@ export interface StoredSourceLinkHealthEntry {
   confirmingConnectionFailureAt?: Date;
   connectionLevelFailure?: true;
   nameNotFound?: true;
+  connectionRefused?: true;
 }
 
 /**
@@ -475,6 +476,7 @@ export function resolveSourceLinkHealthEntry(
     redirectLandingUrl?: string;
     connectionLevelFailure?: true;
     nameNotFound?: true;
+    connectionRefused?: true;
   },
   stored: StoredSourceLinkHealthEntry | undefined,
   now: Date,
@@ -497,6 +499,7 @@ export function resolveSourceLinkHealthEntry(
     ...(fresh.redirectLandingUrl ? { redirectLandingUrl: fresh.redirectLandingUrl } : {}),
     ...(fresh.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
     ...(fresh.nameNotFound ? { nameNotFound: true } : {}),
+    ...(fresh.connectionRefused ? { connectionRefused: true } : {}),
     checkedAt: now,
   };
 
@@ -530,6 +533,7 @@ export function resolveSourceLinkHealthEntry(
       ...(kept.redirectLandingUrl ? { redirectLandingUrl: kept.redirectLandingUrl } : {}),
       ...(kept.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
       ...(kept.nameNotFound ? { nameNotFound: true } : {}),
+      ...(kept.connectionRefused ? { connectionRefused: true } : {}),
       ...(kept.confirmingConnectionFailureAt
         ? { confirmingConnectionFailureAt: kept.confirmingConnectionFailureAt }
         : {}),
@@ -619,6 +623,7 @@ export function carryForwardSourceLinkHealthEntry(
     ...(stored.redirectLandingUrl ? { redirectLandingUrl: stored.redirectLandingUrl } : {}),
     ...(stored.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
     ...(stored.nameNotFound ? { nameNotFound: true } : {}),
+    ...(stored.connectionRefused ? { connectionRefused: true } : {}),
     ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
     ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
     ...(stored.pendingConnectionFailureAt
