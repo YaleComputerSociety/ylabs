@@ -51,7 +51,14 @@ export interface ModelRequest {
   body: Record<string, unknown>;
   timeoutMs: number;
   usageWrite?: 'awaited' | 'background';
+  retryWhenThrottled?: boolean;
 }
+
+export const MODEL_THROTTLE_STATUSES: ReadonlySet<number> = new Set([429, 503]);
+export const MODEL_THROTTLE_MAX_ATTEMPTS = 3;
+export const MODEL_THROTTLE_MAX_TOTAL_WAIT_MS = 30_000;
+export const MODEL_THROTTLE_BASE_DELAY_MS = 1_000;
+export const MODEL_RETRY_AFTER_JITTER_MS = 250;
 
 const storeInDatabaseWhenConnected: ModelUsageSink = async (record) => {
   if (mongoose.connection.readyState !== 1) return;
@@ -133,21 +140,87 @@ export function withoutModelCalls<T>(scope: string, run: () => Promise<T>): Prom
 
 export const modelCallsAreRefused = (): boolean => modelFreeScope.getStore() !== undefined;
 
+function refuseInModelFreeScope(request: ModelRequest): void {
+  const refusingScope = modelFreeScope.getStore();
+  if (refusingScope === undefined) return;
+  const key = `${refusingScope}:${request.caller}`;
+  if (!reportedRefusals.has(key)) {
+    reportedRefusals.add(key);
+    console.warn(
+      `[model-client] ${refusingScope} refused a ${request.caller} call; nothing new is written`,
+    );
+  }
+  throw new ModelCallRefusedError(refusingScope, request.caller);
+}
+
+interface ThrottledResponse {
+  status?: unknown;
+  headers?: Record<string, unknown>;
+}
+
+const throttledResponse = (error: unknown): ThrottledResponse | undefined =>
+  (error as { response?: ThrottledResponse } | undefined)?.response;
+
+const isThrottle = (response: ThrottledResponse | undefined): boolean =>
+  typeof response?.status === 'number' && MODEL_THROTTLE_STATUSES.has(response.status);
+
+export function retryAfterMs(
+  headers: Record<string, unknown> | undefined,
+  now: number = Date.now(),
+): number | undefined {
+  const milliseconds = Number(headers?.['retry-after-ms']);
+  if (Number.isFinite(milliseconds) && milliseconds >= 0) return milliseconds;
+  const raw = headers?.['retry-after'];
+  if (typeof raw !== 'string' && typeof raw !== 'number') return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+  const date = Date.parse(String(raw));
+  return Number.isFinite(date) ? Math.max(0, date - now) : undefined;
+}
+
+export function throttleDelayMs(
+  retryNumber: number,
+  serverDelayMs: number | undefined,
+  random: () => number = Math.random,
+): number {
+  if (serverDelayMs !== undefined) {
+    return serverDelayMs + Math.floor(random() * MODEL_RETRY_AFTER_JITTER_MS);
+  }
+  return Math.floor(random() * MODEL_THROTTLE_BASE_DELAY_MS * 2 ** (retryNumber - 1));
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function postModelRequest(
   endpoint: ModelEndpoint,
   request: ModelRequest,
 ): Promise<AxiosResponse> {
-  const refusingScope = modelFreeScope.getStore();
-  if (refusingScope !== undefined) {
-    const key = `${refusingScope}:${request.caller}`;
-    if (!reportedRefusals.has(key)) {
-      reportedRefusals.add(key);
-      console.warn(
-        `[model-client] ${refusingScope} refused a ${request.caller} call; nothing new is written`,
-      );
+  refuseInModelFreeScope(request);
+  let waitedMs = 0;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await postModelRequestOnce(endpoint, request);
+    } catch (error) {
+      const response = throttledResponse(error);
+      if (
+        request.retryWhenThrottled === false ||
+        !isThrottle(response) ||
+        attempt >= MODEL_THROTTLE_MAX_ATTEMPTS
+      ) {
+        throw error;
+      }
+      const delayMs = throttleDelayMs(attempt, retryAfterMs(response?.headers));
+      if (waitedMs + delayMs > MODEL_THROTTLE_MAX_TOTAL_WAIT_MS) throw error;
+      waitedMs += delayMs;
+      await sleep(delayMs);
     }
-    throw new ModelCallRefusedError(refusingScope, request.caller);
   }
+}
+
+async function postModelRequestOnce(
+  endpoint: ModelEndpoint,
+  request: ModelRequest,
+): Promise<AxiosResponse> {
   const startedAt = Date.now();
   let response: AxiosResponse;
   try {
