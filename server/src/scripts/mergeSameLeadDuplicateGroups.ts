@@ -44,6 +44,14 @@ import {
   type SameLeadMergeMember,
 } from './mergeSameLeadDuplicateGroupsCore';
 import { planUrlIdentityLaneVerdicts } from './dedupeResearchEntitiesByPi';
+import {
+  MERGE_SURVIVOR_ONLY_FIELDS_FLAG,
+  assertScopedSurvivorApply,
+  parseMergeSurvivorOnlyFields,
+  planScopedSurvivorRematerialize,
+  rematerializeMergeSurvivors,
+  type ScopedSurvivorPlan,
+} from './mergeSameLeadSurvivorScope';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -74,12 +82,20 @@ async function main(): Promise<void> {
   let output: string | undefined;
   let dryRun = true;
   let confirmed = false;
+  let onlyFields: string[] | undefined;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--output') {
       output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
     } else if (argv[i].startsWith('--output=')) {
       output = resolveSafeJsonReportOutputPath(argv[i].slice('--output='.length));
+    } else if (argv[i] === MERGE_SURVIVOR_ONLY_FIELDS_FLAG) {
+      onlyFields = parseMergeSurvivorOnlyFields(argv[i + 1]);
+      i += 1;
+    } else if (argv[i].startsWith(`${MERGE_SURVIVOR_ONLY_FIELDS_FLAG}=`)) {
+      onlyFields = parseMergeSurvivorOnlyFields(
+        argv[i].slice(`${MERGE_SURVIVOR_ONLY_FIELDS_FLAG}=`.length),
+      );
     } else if (argv[i] === '--apply') dryRun = false;
     else if (argv[i] === CONFIRM_FLAG) confirmed = true;
     else if (argv[i] !== '--dry-run')
@@ -91,10 +107,11 @@ async function main(): Promise<void> {
     mongoUrl: process.env.MONGODBURL,
   });
   if (!dryRun && !confirmed) throw new Error(`${SCRIPT_NAME} apply requires ${CONFIRM_FLAG}`);
+  assertScopedSurvivorApply({ apply: !dryRun, onlyFields, scriptName: SCRIPT_NAME });
   console.log(
     `Environment: ${guard.environment}; target: ${guard.dbLabel}; mode: ${
       dryRun ? 'dry-run' : 'apply'
-    }`,
+    }; survivor rematerialize scope: ${onlyFields ? onlyFields.join(',') : 'none given'}`,
   );
   await initializeConnections();
 
@@ -231,6 +248,20 @@ async function main(): Promise<void> {
   };
   let researchPlanCarry = emptyResearchPlanCarryReport();
 
+  const survivorSlugs = outcome.merges
+    .map((merge) => byId.get(merge.survivorId))
+    .filter((survivor): survivor is Record<string, any> => Boolean(survivor))
+    .map((survivor) => String(survivor.slug));
+  let scopedSurvivorPlan: ScopedSurvivorPlan[] | null = null;
+  if (dryRun && onlyFields) {
+    scopedSurvivorPlan = await planScopedSurvivorRematerialize({
+      survivorSlugs,
+      onlyFields,
+      materialize: materializeEntity,
+      loadCurrent: async (slug) =>
+        (await ResearchEntity.findOne({ slug }).lean()) as Record<string, unknown> | null,
+    });
+  }
   if (dryRun) {
     for (const merge of outcome.merges) {
       researchPlanCarry = addResearchPlanCarryReports(
@@ -327,14 +358,11 @@ async function main(): Promise<void> {
 
     // Two re-materializations. The second is the durability check: a merge that only holds
     // for one pass is not finished.
-    for (let pass = 0; pass < 2; pass += 1) {
-      for (const merge of outcome.merges) {
-        const survivor = byId.get(merge.survivorId);
-        if (!survivor) continue;
-        await materializeEntity('researchEntity', { entityKey: String(survivor.slug) }, {});
-        applied.rematerializations += 1;
-      }
-    }
+    applied.rematerializations += await rematerializeMergeSurvivors({
+      survivorSlugs,
+      onlyFields: onlyFields ?? [],
+      materialize: materializeEntity,
+    });
 
     // Read BOTH sides, and the redirect, rather than trusting the write. About 45% of
     // archived slugs 404 and the resolver walks canonicalGroupId, so the repointed path is
@@ -391,6 +419,8 @@ async function main(): Promise<void> {
       {
         script: SCRIPT_NAME,
         mode: dryRun ? 'dry-run' : 'apply',
+        survivorRematerializeScope: onlyFields ?? null,
+        scopedSurvivorPlan,
         applied,
         researchPlanCarry,
         researchPlansThatWouldMove: researchPlansThatWouldMove(researchPlanCarry),
