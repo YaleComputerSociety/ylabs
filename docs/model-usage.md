@@ -24,6 +24,12 @@ Renaming that caller, or dropping its usage records, would therefore lift its sp
 
 - Each caller is a name from `MODEL_CALLERS` in `modelClient.ts`: the lane's source name for a scraper lane, or the script's name for an operator script.
 - A failed call is recorded with `succeeded: false` and zero tokens, so a run that retries a failing upstream shows up as failures rather than vanishing.
+- `modelClient.ts` retries a 429 or 503 itself (#6253): at most 3 attempts per call and at most 30 seconds of waiting in total.
+  It waits for the `retry-after-ms` or `Retry-After` header plus up to 250 ms of jitter, or backs off exponentially with full jitter when neither header is sent.
+  A wait that would pass the total cap throws the throttle at once instead of stalling the run.
+  Each attempt is its own record, so a throttled call reads as one or two `succeeded: false` rows before its result.
+  A throttled request is rejected rather than billed, so a call still bills at most once and a caller's per-call budget still bounds its spend.
+  The search query embedding opts out with `retryWhenThrottled: false`, because it sits on a student's request and its own breaker already declines a 429.
 - A response a benchmark replay serves from its frozen pages is not recorded, because nothing was billed. `snapshotBenchmarkMode.ts` marks such a response with the `FROZEN_MODEL_RESPONSE_HEADER` header.
 - A request a benchmark replay refuses because it has no frozen response is not recorded either, because it never left the process.
 - `scrape:canary` is write-free by construction, so it switches recording off with `setModelUsageSink(null)`, and its model calls are not in the report.
