@@ -72,6 +72,7 @@ export interface UserKeyReference {
 export interface UserKeyJoinEvidence {
   researcherId: string | undefined;
   titleObservations: unknown[];
+  departmentObservations: unknown[];
 }
 
 export function userKeyReferenceId(reference: UserKeyReference): string {
