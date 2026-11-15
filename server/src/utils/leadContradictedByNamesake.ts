@@ -11,13 +11,6 @@ const comparableUrl = (value: unknown): string =>
 
 export type ServedSiteLeadVerdict = 'CONFIRMED' | 'NAMESAKE';
 
-/**
- * The verdicts the row's own website gave its leads, keyed by person, read only when the
- * verified page is the page the row still serves. A verdict about a website the row no
- * longer serves says nothing about the row, and the gate reads no contradiction shape but
- * `NAMESAKE` (#3750, #5962), so only a confirmation and a `NAMESAKE` contradiction are
- * returned.
- */
 interface LeadVerdictBearer {
   leadVerification?: unknown;
   websiteUrl?: unknown;
@@ -38,6 +31,13 @@ export function leadVerificationReadsServedPage(entity: LeadVerdictBearer): bool
   return [verification.checkedUrl, verification.requestedUrl].map(comparableUrl).includes(served);
 }
 
+/**
+ * The verdicts the row's own website gave its leads, keyed by person, read only when the
+ * verified page is the page the row still serves. A verdict about a website the row no
+ * longer serves says nothing about the row, and the gate reads no contradiction shape but
+ * `NAMESAKE` (#3750, #5962), so only a confirmation and a `NAMESAKE` contradiction are
+ * returned.
+ */
 export function servedSiteLeadVerdicts(
   entity: LeadVerdictBearer,
 ): Map<string, ServedSiteLeadVerdict> {
