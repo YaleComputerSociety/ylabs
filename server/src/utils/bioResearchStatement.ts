@@ -93,6 +93,27 @@ const CLINICAL_VOCABULARY =
 const STATES_INQUIRY =
   /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|quality\s+of\s+care|health\s+services|disparit(?:y|ies)|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?|biolog\w*|genes?|genetic\w*|genomic\w*|why|whether|engineer\w*|benchmark\w*|machine\s+learning|build(?:s|ing)?\s+(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|software|robots?|systems?|platforms?)|software|robot\w*|sensors?|wearables?|survey\w*|assess\w*|pilot(?:s|ing|ed)?|prob(?:e|es|ing)|imaging|estimat\w*|registr(?:y|ies)|track(?:s|ing)|characteri[sz]\w*|quantif\w*|randomi[sz]\w*|predict\w*|catalog\w*|correlat\w*|compar(?:e|es|ing|ison|isons)|algorithms?|sequenc(?:e|es|ing)|(?:co-)?design(?:s|ing|ed)?|map(?:s|ping)?\s+(?:the|how|which|where)|improv(?:e|es|ing)\s+(?:the\s+)?(?:[\w-]+\s+){0,2}care|immunolog\w*|pharmacolog\w*|pathogenesis|microbiome|circuits?|prevention|screening|polic(?:y|ies)|decision[-\s]making|safety|implementation|develop\w*\s+(?:and\s+test\s+)?(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|therap\w*|methods?|strateg(?:y|ies)|approach(?:es)?|models?|algorithms?|interventions?|measures?|assays?|drugs?|vaccines?|gene)|test(?:s|ing)?\b)\b/i;
 
+const SCHOLAR_ROLE = '(?:historian|philosopher|anthropologist|sociologist|theologian|classicist)';
+
+const SCHOLAR_ROLE_FILLER =
+  '(?:(?!(?:for|to|of|on|in|with|at|among|by|from|and|or)\\b)[\\p{L}-]+\\s+){0,2}';
+
+const SENTENCE_OPENS_BY_NAMING_ITS_PERSON_A_SCHOLAR = new RegExp(
+  `^\\s*(?:As\\s+|(?:He|She)\\s+(?:is|was)\\s+(?:also\\s+)?)an?\\s+${SCHOLAR_ROLE_FILLER}${SCHOLAR_ROLE}\\b(?![\\p{L}'’-])`,
+  'u',
+);
+
+const NAMES_A_CLINICIAN_OR_CLINICAL_WORK =
+  /\b(?:physicians?|psychiatrists?|clinicians?|nurses?|practitioners?|doctors?|pediatricians?|therapists?|cardiologists?|dermatologists?|neurologists?|oncologists?|urologists?|laryngologists?|ophthalmologists?|rheumatologists?|radiologists?|anesthesiologists?|otolaryngologists?|dentists?|optometrists?|pharmacists?|midwi(?:fe|ves)|chiropractors?|clinics?|clinical|practi[cs](?:e|es|ed|ing)|surg\w*|repairs?|reconstruct\w*|procedures?|implants?|transplant\w*|biops\w*|injections?|\w+ectom(?:y|ies)|\w+plast(?:y|ies))\b/i;
+
+const DESCRIBES_PATIENT_CARE =
+  /\b(?:treat\w*|car(?:es?|ing|ed)\s+for|se(?:e|es|eing|en)|saw|manag\w*|perform\w*|operat\w*|consult\w*|provid\w*|deliver\w*|offer\w*)\b/i;
+
+const isFramedAsScholarship = (sentence: string): boolean =>
+  SENTENCE_OPENS_BY_NAMING_ITS_PERSON_A_SCHOLAR.test(sentence) &&
+  !NAMES_A_CLINICIAN_OR_CLINICAL_WORK.test(sentence) &&
+  !DESCRIBES_PATIENT_CARE.test(sentence);
+
 const CREATIVE_PRACTICE =
   /\b(?:music\w*|compos(?:e|es|er|ers|ing|ition|itions)|choreograph\w*|danc(?:e|es|er|ers|ing)|(?<!to-)plays?|playwright\w*|theat(?:er|re)\w*|performance\s+art|performers?|artists?|artwork|paint\w*|sculpt\w*|poe(?:t|ts|try|ms?)|fiction|novels?|writ(?:e|es|ing)\s+(?:plays|poems|fiction|novels|music)|film\w*|photograph\w*|portrait\w*|documentar\w*|opera|songs?|lullab\w*|murals?|memoirs?|essays?|textiles?|installations?|comed(?:y|ies|ian|ians)|stand-up)\b/i;
 
@@ -368,6 +389,7 @@ function isClinicalConditionListSentence(sentence: string): boolean {
 export function isClinicalOnlyBiographySentence(sentence: string): boolean {
   if (CREATIVE_PRACTICE.test(sentence)) return false;
   if (isClinicalConditionListSentence(sentence)) return true;
+  if (isFramedAsScholarship(sentence)) return false;
   return (
     [...CLINICAL_SERVICE_SHAPES, ...PATIENT_SERVICE_SHAPES, PATIENT_SERVICE_PURPOSE].some((shape) =>
       shape.test(sentence),
