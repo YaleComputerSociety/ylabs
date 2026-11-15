@@ -53,6 +53,10 @@ describe('a scholar role that does not name the bio’s own person is not the ex
     `She is a very well known historian ${CLINICAL_INTEREST}.`,
     `They are philosophers, and his special interests include acne scarring and rosacea.`,
     `She is historian ${CLINICAL_INTEREST}.`,
+    `she is a historian ${CLINICAL_INTEREST}.`,
+    `She is a historiané ${CLINICAL_INTEREST}.`,
+    `She is a women's historian ${CLINICAL_INTEREST}.`,
+    `They are a historian ${CLINICAL_INTEREST}.`,
   ])('refuses %s', (sentence) => refuses(sentence));
 
   it.each(['for', 'to', 'of', 'on', 'in', 'with', 'at', 'among', 'by', 'from', 'and', 'or'])(
