@@ -11,6 +11,7 @@ The key is `searchRerankCacheQueryKey(query, filters)` in `server/src/services/r
 It applies the same acronym rewrite search does (`rewriteAcronymToPhrase`, #5169), so an acronym typed alone shares its phrase's entry; an entry seeded under a bare acronym before that change is read only by a search the student asked to keep literal.
 A search sent with `rewriteAcronym: false` keys as the bare acronym, and a live-miss job it queues carries `rewriteAcronym: false`, so the job keys and searches its candidates the same way.
 It reads the typed query the way search tokenizes it (lowercased, diacritics folded, punctuation and filler words dropped, whitespace collapsed), before spelling correction, so an entry for a logged query matches that query exactly as a student typed it.
+The exception is a sentence-shaped query whose research topic search extracts (`extractResearchTopicFromSentenceQuery`, #6223): it keys on that topic, taken after spelling correction, so a cached order is never applied to a different candidate set, and a search sent with `extractSentenceTopic: false` keys on the sentence as typed.
 It adds only the student-chosen filters (`kind`, `entityType`, `school`, `departments`, `researchAreas`, `hostsUndergrads`, `welcomesUndergrads`, `mentorsUndergrads`, `worksWithUndergrads`), in a fixed key order with each list sorted and lowercased, so the same choice made in any order is one entry.
 The visibility tier is an operator scope and never splits an entry.
 
