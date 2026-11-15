@@ -163,8 +163,12 @@ import {
   leadSurname,
   nonYaleMicrositeOwnership,
   rowIsScopedToLead,
+  urlCarriesSurname as urlCarriesPersonSurname,
   urlHostAndPath,
 } from '../utils/nonYaleMicrositeOwnership';
+import { LEAD_TITLE_CORE } from '../utils/labSiteLeadStatements';
+import { isPersonalNameDomainWebsite } from '../../utils/personalNameWebsite';
+import { isLikelyOfficialPersonProfileUrl } from '../../services/leadProfileIdentity';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 export const DEFAULT_MODEL = 'gpt-5-mini';
@@ -1132,19 +1136,126 @@ export function descriptionPageNamesRowLead(
   return ` ${comparableName(input.pageText)} `.includes(` ${surname} `);
 }
 
+const LEAD_SEGMENT_PARENTS = new Set(['lab', 'labs']);
+
+function hostAndLabSegment(pageUrl: string): string {
+  try {
+    const url = new URL(pageUrl);
+    const segments = url.pathname.split('/').filter(Boolean);
+    const labIndex = segments.findIndex((segment) =>
+      LEAD_SEGMENT_PARENTS.has(segment.toLowerCase()),
+    );
+    const labSegment = labIndex >= 0 ? (segments[labIndex + 1] ?? '') : '';
+    return `https://${url.hostname}/${labSegment}`;
+  } catch {
+    return '';
+  }
+}
+
+function profileLeaf(pageUrl: string): string {
+  try {
+    const url = new URL(pageUrl);
+    const leaf = url.pathname.split('/').filter(Boolean).pop() ?? '';
+    return `https://profile.invalid/${leaf}`;
+  } catch {
+    return '';
+  }
+}
+
+const LEAD_ROLE_PHRASE =
+  /\b(?:led|directed|overseen|headed|run)\s+by\s+|\bunder\s+the\s+(?:direction|leadership|supervision)\s+of\s+/i;
+const LEAD_TITLE_PATTERN = new RegExp(`\\b(?:${LEAD_TITLE_CORE})\\b`, 'i');
+const MAX_LEAD_ROLE_GAP = 60;
+
 /**
- * `descriptionPageNamesRowLead`, plus a page under the row's own website on any host when a
- * live Yale-hosted observation states that website (#5961). The writer and topic derivation
- * both judge pages through this, so the two cannot drift; the lane gate keeps the stricter
- * `descriptionPageNamesRowLead` (#5818).
+ * Whether a line states the person in a lead role: a lead title beside the name
+ * ("Principal Investigator: <name>", "<name>, Director") or a lead phrase governing it
+ * ("led by <name>"). A name in a list, an author line or a byline is presence, not a role.
  */
+function lineNamesPersonInLeadRole(line: string, personName: string): boolean {
+  const tokens = comparableName(personName).split(' ').filter(Boolean);
+  if (tokens.length < 2) return false;
+  const given = tokens[0];
+  const surname = tokens[tokens.length - 1];
+  const words = comparableName(line).split(' ').filter(Boolean);
+  return words.some((word, index) => {
+    if (word !== surname) return false;
+    const lead = words.slice(Math.max(0, index - 3), index);
+    const namesPerson =
+      lead.includes(given) ||
+      lead.some((token) => token.length === 1 && token === given[0]) ||
+      lead.some((token) => ['dr', 'prof', 'professor'].includes(token));
+    if (!namesPerson) return false;
+    const before = words.slice(0, index).join(' ').slice(-MAX_LEAD_ROLE_GAP);
+    const after = words
+      .slice(index + 1)
+      .join(' ')
+      .slice(0, MAX_LEAD_ROLE_GAP);
+    return (
+      LEAD_TITLE_PATTERN.test(before) ||
+      LEAD_ROLE_PHRASE.test(`${before} `) ||
+      LEAD_TITLE_PATTERN.test(after)
+    );
+  });
+}
+
+function pageNamesPersonInLeadRole(pageText: string, personName: string): boolean {
+  return pageText.split('\n').some((line) => lineNamesPersonInLeadRole(line, personName));
+}
+
+/**
+ * Whether a page the writer reads is the person's own (#6316, the #6315 evidence rule): it
+ * names them in a lead role, is named for them (an eponymous host or `/lab/` segment), is their
+ * own name-domain, or is their official profile, whose address names them and whose heading the
+ * capture checked (#5974). Being under the row's stored website, a Yale source stating that
+ * website, or the surname merely appearing in the text never counts, because a department or
+ * school homepage stored as a person's website passed all three. Only the writer judges pages
+ * this way; the lane gate and topic derivation keep `descriptionPageNamesRowLead`.
+ */
+function leafNamesPersonInFull(pageUrl: string, personName: string): boolean {
+  const tokens = comparableName(personName)
+    .split(' ')
+    .filter((token) => token.length >= 2);
+  if (tokens.length < 2) return false;
+  let leaf = '';
+  try {
+    leaf = new URL(pageUrl).pathname.split('/').filter(Boolean).pop() ?? '';
+  } catch {
+    return false;
+  }
+  const parts = leaf
+    .toLowerCase()
+    .split(/[-_.~+]+/)
+    .map((part) => part.replace(/\d+$/, ''))
+    .filter(Boolean);
+  const given = tokens[0];
+  const surname = tokens[tokens.length - 1];
+  const surnameJoined = tokens.slice(1).join('');
+  const joined = parts.join('');
+  return (
+    (parts.includes(given) && (parts.includes(surname) || parts.includes(surnameJoined))) ||
+    joined === `${given}${surnameJoined}` ||
+    joined === `${surnameJoined}${given}`
+  );
+}
+
 export function descriptionPageIsRowLeadsOwn(
-  input: RowLead & { pageUrl: string; pageText: string; websiteUrlStatedByYaleSource?: boolean },
+  input: RowLead & { pageUrl: string; pageText: string; leadFullNameShared?: boolean },
 ): boolean {
-  if (input.websiteUrlStatedByYaleSource && isUnderOwnWebsite(input.pageUrl, input.websiteUrl)) {
+  const personName = input.personName ?? '';
+  const surname = leadSurname(personName);
+  if (!surname) return true;
+  if (!rowIsScopedToLead(input, surname)) return true;
+  if (urlCarriesPersonSurname(hostAndLabSegment(input.pageUrl), personName)) return true;
+  if (isPersonalNameDomainWebsite(input.pageUrl, personName)) return true;
+  if (
+    isLikelyOfficialPersonProfileUrl(input.pageUrl) &&
+    urlCarriesPersonSurname(profileLeaf(input.pageUrl), personName)
+  ) {
     return true;
   }
-  return descriptionPageNamesRowLead(input);
+  if (!input.leadFullNameShared && leafNamesPersonInFull(input.pageUrl, personName)) return true;
+  return pageNamesPersonInLeadRole(input.pageText, personName);
 }
 
 /**

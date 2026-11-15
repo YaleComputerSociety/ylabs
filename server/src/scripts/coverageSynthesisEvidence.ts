@@ -4,8 +4,7 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
 import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
-import { isUnderOwnWebsite } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
-import { isYaleHostedPage } from '../scrapers/utils/nonYaleMicrositeOwnership';
+import { Researcher } from '../models/researcher';
 import type { CoverageObservationLike, CoverageSnippet } from '../scrapers/coverageSynthesis';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import { containsAsciiControl } from '../utils/asciiControl';
@@ -57,7 +56,7 @@ export interface WriterRowEvidence {
   observations: WriterObservation[];
   mergedInObservations: WriterObservation[];
   leadNames?: string[];
-  websiteUrlStatedByYaleSource?: boolean;
+  leadFullNameShared?: boolean;
 }
 
 export const WRITER_EVIDENCE_FILE_VERSION = 1;
@@ -100,38 +99,32 @@ export async function loadWriterObservations(
   );
 }
 
-const sameWebsite = (a: unknown, b: unknown): boolean =>
-  typeof a === 'string' &&
-  typeof b === 'string' &&
-  isUnderOwnWebsite(a, b) &&
-  isUnderOwnWebsite(b, a);
+const comparableFullName = (value: unknown): string =>
+  String(value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]+/g, ' ')
+    .trim();
 
-export function websiteUrlIsStatedByYaleSource(
-  websiteUrl: unknown,
-  websiteObservations: readonly { value?: unknown; sourceUrl?: unknown }[],
-): boolean {
-  return websiteObservations.some(
-    (obs) =>
-      typeof obs.sourceUrl === 'string' &&
-      isYaleHostedPage(obs.sourceUrl) &&
-      sameWebsite(obs.value, websiteUrl),
-  );
-}
-
-export async function loadWebsiteUrlStatedByYaleSource(
-  anchors: Record<string, unknown>[],
-  websiteUrl: unknown,
-): Promise<boolean> {
-  if (anchors.length === 0 || typeof websiteUrl !== 'string' || !websiteUrl) return false;
-  const websiteObservations = (await Observation.find({
-    entityType: 'researchEntity',
-    ...materializationReadScopeFilter(),
-    field: 'websiteUrl',
-    $or: anchors,
+/**
+ * Whether another live person in the corpus carries the lead's full display name, so a page
+ * address naming that name cannot tell which of them it is about (#6316). Archived records
+ * are merge residue of the same person, not a second person.
+ */
+export async function loadLeadFullNameShared(leadName: unknown): Promise<boolean> {
+  const wanted = comparableFullName(leadName);
+  if (!wanted || !wanted.includes(' ')) return false;
+  const surname = wanted.split(' ').pop() as string;
+  const candidates = (await Researcher.find({
+    archived: { $ne: true },
+    displayName: { $regex: surname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
   })
-    .select('value sourceUrl')
-    .lean()) as Array<{ value?: unknown; sourceUrl?: unknown }>;
-  return websiteUrlIsStatedByYaleSource(websiteUrl, websiteObservations);
+    .select('displayName')
+    .lean()) as Array<{ displayName?: unknown }>;
+  return (
+    candidates.filter((person) => comparableFullName(person.displayName) === wanted).length > 1
+  );
 }
 
 export async function loadWriterEntitiesBySlug(
@@ -161,6 +154,13 @@ export function writerServingRow(row: {
  * Every live lead of the row, the materializer's lead first: the page filter admits a page
  * that names any lead, as topic derivation does (#6127), and the serving bar reads the first.
  */
+export async function writerLeadIdentity(
+  entityId: unknown,
+): Promise<{ leadNames: string[]; leadFullNameShared: boolean }> {
+  const leadNames = await writerLeadNames(entityId);
+  return { leadNames, leadFullNameShared: await loadLeadFullNameShared(leadNames[0]) };
+}
+
 export async function writerLeadNames(entityId: unknown): Promise<string[]> {
   const leadName = await loadResearchEntityLeadPersonName(entityId);
   const id = entityId === undefined || entityId === null ? '' : String(entityId);
@@ -187,11 +187,7 @@ export async function loadWriterRowEvidence(
       entity: { ...entity, _id: entity._id === undefined ? undefined : String(entity._id) },
       observations: await loadWriterObservations(anchors, verifiedRunIds),
       mergedInObservations: await loadWriterObservations(mergedInAnchors, verifiedRunIds),
-      leadNames: await writerLeadNames(entity._id),
-      websiteUrlStatedByYaleSource: await loadWebsiteUrlStatedByYaleSource(
-        anchors,
-        entity.websiteUrl,
-      ),
+      ...(await writerLeadIdentity(entity._id)),
     });
   }
   return rows;
@@ -205,7 +201,7 @@ export function snippetsFromRowEvidence(row: WriterRowEvidence, now: Date): Cove
     kind: row.entity.kind,
     identity: row.entity,
     leadNames: row.leadNames,
-    websiteUrlStatedByYaleSource: row.websiteUrlStatedByYaleSource === true,
+    leadFullNameShared: row.leadFullNameShared === true,
     now,
   };
   const own = buildWriterEvidenceSnippets(row.observations, row.entity.recentGrants, options);
@@ -252,7 +248,7 @@ export function parseWriterEvidenceFile(value: unknown): WriterEvidenceFile {
       ...(Array.isArray(row.leadNames)
         ? { leadNames: row.leadNames.filter((name): name is string => typeof name === 'string') }
         : {}),
-      ...(row.websiteUrlStatedByYaleSource === true ? { websiteUrlStatedByYaleSource: true } : {}),
+      ...(row.leadFullNameShared === true ? { leadFullNameShared: true } : {}),
     })),
   };
 }

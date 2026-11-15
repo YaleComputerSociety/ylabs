@@ -569,11 +569,8 @@ export interface WriterEvidenceOptions {
   /** The row's own name, slug and committed citations, for the namesake screen (#5764). */
   identity?: { slug?: unknown; name?: unknown; sourceUrls?: unknown };
   leadNames?: readonly (string | undefined | null)[];
-  /**
-   * The row's `websiteUrl` is stated by a live observation from a Yale-hosted source, such
-   * as the lead's official profile or a department roster, rather than by the page itself.
-   */
-  websiteUrlStatedByYaleSource?: boolean;
+  /** Another person in the corpus carries the lead's full name (#6316). */
+  leadFullNameShared?: boolean;
 }
 
 const namesakeScreenIdentity = (
@@ -619,8 +616,8 @@ export function writerEvidencePageNamesRowLead(
     return personNames.some((personName) =>
       descriptionPageIsRowLeadsOwn({
         personName,
+        leadFullNameShared: options.leadFullNameShared,
         websiteUrl: options.websiteUrl,
-        websiteUrlStatedByYaleSource: options.websiteUrlStatedByYaleSource,
         rowName: options.identity?.name,
         kind,
         pageUrl,
