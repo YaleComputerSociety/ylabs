@@ -147,6 +147,11 @@ import {
   type OrgUnitCanonicalizer,
 } from '../orgUnitCanonicalization';
 import {
+  silentRosterPagesAssertingHome,
+  silentRosterPagesNote,
+  type RosterTitleTally,
+} from '../silentRosterDirectories';
+import {
   rosterHomeDepartmentStatement,
   rosterTitleSectionParenthetical,
   type RosterTitleUnit,
@@ -2222,6 +2227,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://filmstudies.yale.edu/people/faculty',
     paginated: false,
     extractor: viewsTableRowExtractor,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'spanish-portuguese',
@@ -2929,6 +2935,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://applied.math.yale.edu/people/faculty',
     paginated: false,
     extractor: viewsTableRowExtractor,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'history-science-medicine-public-health',
@@ -2937,6 +2944,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://hshm.yale.edu/people/faculty',
     paginated: false,
     extractor: viewsTableRowExtractor,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'judaic-studies',
@@ -5113,6 +5121,7 @@ export class DepartmentRosterScraper implements IScraper {
     let coLedSitesRead: Promise<CoLedSiteIndex> | undefined;
     const coLedSiteIndex = () => (coLedSitesRead ??= this.coLedSiteIndexLoader());
     let attachedToExistingRow = 0;
+    const titleTallies = new Map<string, RosterTitleTally>();
     let adoptedLegacyKeys = 0;
     let refusedLegacyKeys = 0;
     const processEntries = async (
@@ -5211,6 +5220,15 @@ export class DepartmentRosterScraper implements IScraper {
         }
         const currentSlug = rosterResearchEntitySlug(entry, dept);
         const legacySlug = legacyRosterResearchEntitySlug(entry, dept);
+        const tally = titleTallies.get(dept.deptKey) ?? {
+          deptKey: dept.deptKey,
+          assertsHomeDepartment: assertsHomeDepartment(dept),
+          entries: 0,
+          untitled: 0,
+        };
+        tally.entries += 1;
+        if (!entry.title?.trim()) tally.untitled += 1;
+        titleTallies.set(dept.deptKey, tally);
         const { observations: currentUserObs, entityKey: currentOwnerKey } =
           entryToUserObservations(
             entry,
@@ -5703,6 +5721,10 @@ export class DepartmentRosterScraper implements IScraper {
           .join(', ')}`,
       );
     }
+    const silentPagesNote = silentRosterPagesNote(
+      silentRosterPagesAssertingHome([...titleTallies.values()]),
+    );
+    if (silentPagesNote) ctx.log(silentPagesNote);
     const partialSources = perDept.filter((d) => d.status === 'partial-read');
     if (partialSources.length > 0) {
       ctx.log(

@@ -169,6 +169,7 @@
     "programs:audit-freshness": "tsx src/scripts/auditProgramCatalogFreshness.ts",
     "scrapers:audit-freshness": "tsx src/scripts/auditSourceFreshness.ts",
     "departments:audit-catalog-drift": "tsx src/scripts/auditDepartmentCatalogDrift.ts",
+    "roster:audit-silent-directories": "tsx src/scripts/auditSilentRosterDirectories.ts",
     "departments:audit-roster-lanes": "tsx src/scripts/auditRosterLanes.ts",
     "research-homes:audit-rosters": "tsx src/scripts/auditResearchHomeRosters.ts",
     "research-homes:propose-undergrad-rosters": "tsx src/scripts/proposeUndergradRosterConfigs.ts",

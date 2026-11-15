@@ -1560,6 +1560,9 @@ A parenthetical attached to the department ("of Medicine (Digestive Diseases)") 
 A page that states nothing (no title, or a title naming no department) still asserts the roster's department, so a person listed on one roster keeps it; the lane cannot see whether another roster lists the person, and a roster reading ranks below a first-hand profile.
 Readings stored before this change stay live until a re-read supersedes them, and resolving rival section and department readings is the resolver's job (#6217), not the lane's.
 
+A roster run also logs a warn-only note naming each page it read where at least 80% of entries carry no title and the config still files its own department as everyone's home, and points to `yarn --cwd server roster:audit-silent-directories` (#6299).
+That read-only audit joins every listed key with the engine's user-key join, too slow to run inside the lane, and warns on a config whose first-hand-backed entries (at least 10) name a unit that is neither this department nor a section under it in at least half the cases; `scrapers/silentRosterDirectories.ts` holds the predicate, and the answer to a warning is `withholdsHomeDepartment`.
+
 `crossListedProgramme` exists because adding five programme lanes without it overwrote the home department of 110 researchers, replacing Psychology, Linguistics, Philosophy and Computer Science with the programme name.
 That is #1427 in a milder form: the programme label itself is true and is what a student filters on, but the appointment claim behind `primaryDepartment` is not.
 
