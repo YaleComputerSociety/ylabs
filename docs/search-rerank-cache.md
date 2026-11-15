@@ -87,7 +87,7 @@ A fixed seed covers only the queries it was scored on, so a recurring offline ro
 Run each command through the machine's heavy-command slot.
 
 1. `collect --since=<date of the last round> [--out=<round.json>]` reads the distinct `searchQuery` values of `search` events since that date, grouped by text alone, so no user, session or event field is read.
-   The source is `PRODUCTION_READONLY_MONGODBURL`, and the command refuses a credential that can write, or one whose privileges it cannot list.
+   The source is `PRODUCTION_READONLY_MONGODBURL`, which must name the `Prod` database, and the command refuses a credential that can write, or one whose privileges it cannot list.
    `--aggregates=<file>` reads `[{ "query", "searchCount" }]` from a file instead, which is how the command is tried without touching Production.
    Spellings that share a cache key are counted together.
    A query is kept only when it is short enough for the cache, names a topic rather than only access-filter words (such as "has hosted undergrad"), keys no seeded entry on Development, and passes the same Development gate the live-miss job uses, which refuses name queries; the served top 30 of each kept query is read there too.
@@ -98,7 +98,7 @@ Run each command through the machine's heavy-command slot.
    A query missing a score for any candidate is refused.
 4. A separate blind judge grades the packet under the judge guide, writing `[{ "qid", "slug", "grade" }]`.
 5. `gate --round=<round.json> --scores=<scores.json> --grades=<grades.json> [--seed-out=<seed.json>]` computes nDCG@10 per query and applies the import rule.
-   A round is imported only when the mean change has a 95% bootstrap interval above 0, the queries it makes worse lose no more on average than the queries it makes better gain, and every pair is graded.
+   A round is imported only when it scores at least 10 queries, the mean change has a 95% bootstrap interval above 0, the queries it makes worse lose no more on average than the queries it makes better gain, and every pair is graded.
    It prints the means, the interval, and the better and worse counts, exits 2 on a refusal, and writes the seeder input only when the round passes.
 6. Import with the seeder above into Development as a new `full-v<n>-<date>` version, then dry-run again and re-read the served result.
    Beta and Production receive it through the promotion runbook.

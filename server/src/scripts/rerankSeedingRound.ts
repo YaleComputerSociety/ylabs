@@ -21,6 +21,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { MongoClient } from 'mongodb';
 import { connectScriptMongo } from '../db/connections';
+import { DEVELOPMENT_DATABASE_NAME, PRODUCTION_DATABASE_NAME } from './databaseCopyPairs';
 import { SearchRerankCache } from '../models/searchRerankCache';
 import { searchResearchGroupsForRerankCandidates } from '../services/researchGroupService';
 import { SEARCH_RERANK_WINDOW } from '../services/searchRerankCache';
@@ -51,7 +52,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const REPOSITORY_ROOT = path.resolve(__dirname, '../../..');
-const DEVELOPMENT_DATABASE = 'Development';
 
 const readJson = (file: string): unknown => JSON.parse(fs.readFileSync(file, 'utf8'));
 
@@ -62,6 +62,11 @@ async function readProductionQueryAggregates(since: Date): Promise<SearchQueryAg
   try {
     await client.connect();
     const database = client.db();
+    if (database.databaseName !== PRODUCTION_DATABASE_NAME) {
+      throw new Error(
+        `${ROUND_SOURCE_URL_ENV} must name the ${PRODUCTION_DATABASE_NAME} database (got ${database.databaseName})`,
+      );
+    }
     assertReadOnlySourcePrivileges(
       await database.command({ connectionStatus: 1, showPrivileges: true }),
     );
@@ -113,7 +118,7 @@ async function collect(args: RoundArgs): Promise<void> {
   await connectScriptMongo(developmentUrl);
   try {
     const databaseName = mongoose.connection.db?.databaseName;
-    if (databaseName !== DEVELOPMENT_DATABASE) {
+    if (databaseName !== DEVELOPMENT_DATABASE_NAME) {
       throw new Error(`${ROUND_SCRIPT_NAME} collect reads Development only (got ${databaseName})`);
     }
     const existingEntries = await SearchRerankCache.find({})

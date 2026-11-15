@@ -14,6 +14,7 @@ export const ROUND_SOURCE_URL_ENV = 'PRODUCTION_READONLY_MONGODBURL';
 export const ROUND_TOP_K = 10;
 export const ROUND_BOOTSTRAP_SAMPLES = 4000;
 export const ROUND_RELEVANT_GRADE = 2;
+export const ROUND_MIN_QUERIES = 10;
 
 export type RoundCommand = 'collect' | 'judge-packet' | 'gate';
 
@@ -93,8 +94,14 @@ export function writePrivateRoundFile(
   if (isInside(resolved, fs.realpathSync(repositoryRoot))) {
     throw new Error(`${ROUND_SCRIPT_NAME} writes round files only outside the repository`);
   }
-  fs.writeFileSync(resolved, `${JSON.stringify(value, null, 1)}\n`, { mode: 0o600 });
-  fs.chmodSync(resolved, 0o600);
+  const { O_WRONLY, O_CREAT, O_TRUNC, O_NOFOLLOW } = fs.constants;
+  const descriptor = fs.openSync(resolved, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0o600);
+  try {
+    fs.fchmodSync(descriptor, 0o600);
+    fs.writeFileSync(descriptor, `${JSON.stringify(value, null, 1)}\n`);
+  } finally {
+    fs.closeSync(descriptor);
+  }
   return resolved;
 }
 
@@ -129,6 +136,17 @@ const SOURCE_WRITE_ACTIONS: ReadonlySet<string> = new Set([
   'dropUser',
   'grantRole',
   'revokeRole',
+  'createRole',
+  'dropRole',
+  'changePassword',
+  'changeCustomData',
+  'setAuthenticationRestriction',
+  'createSearchIndexes',
+  'updateSearchIndex',
+  'dropSearchIndex',
+  'compact',
+  'reIndex',
+  'applyOps',
 ]);
 
 interface ConnectionStatusPrivilege {
@@ -601,8 +619,8 @@ const bootstrapMeanCi = (values: readonly number[], samples: number): [number, n
 
 /**
  * The import rule from #6222: a round's entries are imported only when nDCG@10 rises with
- * a 95% bootstrap interval above 0, and the queries it makes worse lose no more on
- * average than the queries it makes better gain. Any ungraded pair refuses the round,
+ * a 95% bootstrap interval above 0 over at least ROUND_MIN_QUERIES scored queries, and
+ * the queries it makes worse lose no more on average than the queries it makes better gain. Any ungraded pair refuses the round,
  * because an ungraded row counts as grade 0 and would bias the comparison.
  */
 export function gateRound(
@@ -617,7 +635,9 @@ export function gateRound(
   const meanGainOnBetter = mean(gains);
   const meanLossOnWorse = mean(losses);
   const refusals: string[] = [];
-  if (outcomes.length === 0) refusals.push('no scored queries');
+  if (outcomes.length < ROUND_MIN_QUERIES) {
+    refusals.push(`fewer than ${ROUND_MIN_QUERIES} scored queries`);
+  }
   if (ungradedPairs > 0) refusals.push('ungraded pairs');
   if (!(ci95[0] > 0)) refusals.push('95% interval does not exclude 0');
   if (meanLossOnWorse > meanGainOnBetter)

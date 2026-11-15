@@ -83,6 +83,15 @@ describe('assertReadOnlySourcePrivileges', () => {
     expect(() => assertReadOnlySourcePrivileges(status(['find', 'listCollections']))).not.toThrow();
   });
 
+  it('refuses a credential whose only writes are role, password or search index changes', () => {
+    expect(() =>
+      assertReadOnlySourcePrivileges(status(['find', 'createRole', 'changePassword'])),
+    ).toThrow(/can write \(changePassword, createRole\)/);
+    expect(() => assertReadOnlySourcePrivileges(status(['find', 'updateSearchIndex']))).toThrow(
+      /can write \(updateSearchIndex\)/,
+    );
+  });
+
   it('refuses a credential that can write', () => {
     expect(() => assertReadOnlySourcePrivileges(status(['find', 'insert', 'update']))).toThrow(
       /can write \(insert, update\)/,
@@ -277,13 +286,13 @@ describe('ndcgOutcomes and gateRound', () => {
   ];
 
   it('imports a round whose reranking raises nDCG@10 on every query', () => {
-    const queries = ['R1', 'R2', 'R3'].map((row) => roundQuery(row, served));
+    const queries = Array.from({ length: 10 }, (_, index) => roundQuery(`R${index + 1}`, served));
     const scores = new Map(queries.map((query) => [query.row, lifted]));
     const grades = parseJudgeGrades([queries.flatMap((query) => gradeList(query.row))]);
     const outcomes = ndcgOutcomes(queries, scores, grades);
     expect(outcomes.every((outcome) => outcome.rerankedNdcg === 1)).toBe(true);
     const report = gateRound(outcomes, 200);
-    expect(report).toMatchObject({ verdict: 'import', better: 3, worse: 0, refusals: [] });
+    expect(report).toMatchObject({ verdict: 'import', better: 10, worse: 0, refusals: [] });
     expect(report.ci95[0]).toBeGreaterThan(0);
     expect(seedInputFromRound(queries, scores)[0]).toEqual({
       query: 'synthetic topic R1',
@@ -310,13 +319,27 @@ describe('ndcgOutcomes and gateRound', () => {
     );
     expect(report).toMatchObject({ verdict: 'refuse', better: 1, worse: 1 });
     expect(report.refusals).toEqual([
+      'fewer than 10 scored queries',
       '95% interval does not exclude 0',
       'worse queries lose more than better ones gain',
     ]);
   });
 
   it('refuses an empty round', () => {
-    expect(gateRound([], 200).refusals).toContain('no scored queries');
+    expect(gateRound([], 200).refusals).toContain('fewer than 10 scored queries');
+  });
+
+  it('refuses a round too small for its interval to mean anything, even when every query improves', () => {
+    const improved = Array.from({ length: 3 }, (_, index) => ({
+      row: `R${index + 1}`,
+      servedNdcg: 0.5,
+      rerankedNdcg: 0.9,
+      delta: 0.4,
+      ungradedPairs: 0,
+    }));
+    const report = gateRound(improved, 200);
+    expect(report.ci95[0]).toBeGreaterThan(0);
+    expect(report).toMatchObject({ verdict: 'refuse', refusals: ['fewer than 10 scored queries'] });
   });
 });
 
@@ -330,6 +353,30 @@ describe('writePrivateRoundFile', () => {
     );
     expect(fs.statSync(written).mode & 0o777).toBe(0o600);
     fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  it('makes an existing world-readable file owner-only before rewriting it', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rerank-round-'));
+    const target = path.join(directory, 'round.json');
+    fs.writeFileSync(target, 'old', { mode: 0o644 });
+    fs.chmodSync(target, 0o644);
+    writePrivateRoundFile(target, { queries: [] }, REPOSITORY_ROOT);
+    expect(fs.statSync(target).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(fs.readFileSync(target, 'utf8'))).toEqual({ queries: [] });
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  it('refuses a target that is a symlink into the repository', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rerank-round-'));
+    const inside = path.join(REPOSITORY_ROOT, `.rerank-round-symlink-target-${process.pid}`);
+    const link = path.join(directory, 'round.json');
+    fs.symlinkSync(inside, link);
+    try {
+      expect(() => writePrivateRoundFile(link, {}, REPOSITORY_ROOT)).toThrow();
+      expect(fs.existsSync(inside)).toBe(false);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('refuses a path inside the repository', () => {
