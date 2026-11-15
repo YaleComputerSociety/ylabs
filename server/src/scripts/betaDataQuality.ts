@@ -608,7 +608,7 @@ async function buildSourceHealthSummary(
     startedAt: { $gte: since },
   })
     .select(
-      'sourceName status startedAt finishedAt heartbeatAt observationCount materializationErrors materializationConflicts invalidated',
+      'sourceName status startedAt finishedAt heartbeatAt observationCount storedObservationCountAtReconcile materializationErrors materializationConflicts invalidated',
     )
     .sort({ sourceName: 1, startedAt: -1 })
     .lean();
