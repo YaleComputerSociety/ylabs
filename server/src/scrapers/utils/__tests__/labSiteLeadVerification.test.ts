@@ -834,6 +834,44 @@ describe('a person row adopting a site it appears on (#6313)', () => {
   });
 });
 
+describe('a surname-named site with a namesake on it (#6313 peer review)', () => {
+  const observedAt = new Date('2026-11-15T00:00:00.000Z');
+  const eponymSite = 'https://medicine.yale.edu/lab/quill/';
+  const verify = (leads: LabSiteLeadCandidate[], html: string) =>
+    buildLabSiteLeadVerification(
+      leads,
+      { website: eponymSite, visitedUrls: [eponymSite], html, pages: [{ url: eponymSite, html }] },
+      observedAt,
+      'FACULTY_RESEARCH_AREA',
+      'Robin Quill Faculty Research',
+    ).leads;
+
+  it('confirms neither of two same-surname candidates on the surname alone', () => {
+    const html =
+      '<p><a href="/profile/robin-quill/">Robin Quill</a></p>' +
+      '<p><a href="/profile/dale-quill/">Dale Quill</a></p>';
+    const judged = verify(
+      [
+        lead(),
+        lead({
+          personId: '000000000000000000000002',
+          displayName: 'Dale Quill',
+          officialProfileUrls: ['https://medicine.yale.edu/profile/dale-quill/'],
+        }),
+      ],
+      html,
+    );
+    expect(judged.map((one) => one.verdict)).toEqual(['UNSTATED', 'UNSTATED']);
+  });
+
+  it('does not confirm a lone subject when the site lists a namesake', () => {
+    const html =
+      '<p><a href="/profile/robin-quill/">Robin Quill</a></p>' +
+      '<p><a href="/lab/quill/profile/dale-quill/">Dale Quill</a></p>';
+    expect(verify([lead()], html)[0].verdict).toBe('UNSTATED');
+  });
+});
+
 describe('surnameInLabPath (#6313)', () => {
   it('reads the lab segment of a school-hosted lab address', () => {
     expect(surnameInLabPath('https://medicine.yale.edu/lab/quill/', 'Robin Quill')).toBe(true);

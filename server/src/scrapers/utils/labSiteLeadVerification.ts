@@ -637,14 +637,28 @@ export function surnameInLabPath(website: unknown, displayName: unknown): boolea
   return Boolean(labName) && flattenForNameMatch(labName).includes(surname);
 }
 
+const siteListsANamesakeOf = (lead: LabSiteLeadCandidate, siteSlugs: Set<string>) => {
+  const leadSlugs = lead.officialProfileUrls.map(profileSlugFromUrl).filter(Boolean);
+  return [...siteSlugs]
+    .filter((slug) => !leadSlugs.includes(slug))
+    .some((slug) => slugContradictionShape(slug, lead.displayName) === 'NAMESAKE');
+};
+
+/**
+ * A surname in the address cannot tell the lead from someone sharing it, so it names the
+ * site for this person only while no other candidate and no person the site lists carries
+ * that surname (#6313 peer review).
+ */
 const siteIsNamedForLead = (
   reading: LabSiteReading,
   lead: LabSiteLeadCandidate,
   contestedSurnames: ReadonlySet<string>,
+  siteSlugs: Set<string>,
 ) =>
-  (!contestedSurnames.has(surnameCore(lead.displayName)) &&
-    surnameInSiteUrl(reading.website, lead.displayName)) ||
-  surnameInLabPath(reading.website, lead.displayName);
+  !contestedSurnames.has(surnameCore(lead.displayName)) &&
+  !siteListsANamesakeOf(lead, siteSlugs) &&
+  (surnameInSiteUrl(reading.website, lead.displayName) ||
+    surnameInLabPath(reading.website, lead.displayName));
 
 /**
  * Appearing on a site a person row adopted does not make the person its lead: a blind
@@ -704,7 +718,7 @@ export function judgeLeadAgainstSite(
     presence &&
     leadIsTheRecordSubject &&
     !statedAsSiteLead &&
-    !siteIsNamedForLead(reading, lead, contestedSurnames)
+    !siteIsNamedForLead(reading, lead, contestedSurnames, siteSlugs)
   ) {
     return {
       ...base,
@@ -720,20 +734,8 @@ export function judgeLeadAgainstSite(
     }
     return { ...base, verdict: 'CONFIRMED', ...presence };
   }
-  const namesake =
-    !leadIsTheRecordSubject &&
-    [...siteSlugs]
-      .filter((slug) => !leadSlugs.includes(slug))
-      .some((slug) => slugContradictionShape(slug, lead.displayName) === 'NAMESAKE');
+  const namesake = !leadIsTheRecordSubject && siteListsANamesakeOf(lead, siteSlugs);
   if (namesake) return contradicted('NAMESAKE', reading.visitedUrls[0] || reading.website);
-  if (leadIsTheRecordSubject && statedAsSiteLead) {
-    return {
-      ...base,
-      verdict: 'CONFIRMED',
-      matchedBy: 'NAMED_AS_ROW_LEAD',
-      evidenceUrl: statedAsSiteLead,
-    };
-  }
   if (rowReading.namedAsRowLeadOn) {
     return {
       ...base,
