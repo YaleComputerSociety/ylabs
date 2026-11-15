@@ -37,6 +37,7 @@ import {
   storedScorecardSupersedesFile,
   type StoredGateScorecard,
 } from './gateScorecardSnapshotStore';
+import { effectiveObservationCount } from '../scrapers/effectiveObservationCount';
 
 export type PromotionStatus = 'ready' | 'watch' | 'blocked';
 
@@ -450,7 +451,7 @@ export function summarizeDryRunPosture(runs: any[]) {
           sourceName: run.sourceName,
           status: run.status,
           startedAt: run.startedAt?.toISOString?.() || run.startedAt,
-          observationCount: run.observationCount || 0,
+          observationCount: effectiveObservationCount(run),
           entitiesObserved: run.entitiesObserved || 0,
         }
       : null;
