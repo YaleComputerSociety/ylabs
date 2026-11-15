@@ -36,6 +36,9 @@ const surgeryCatalog = {
   canonicalDepartment: (name: string) => (name === 'Surgery' ? name : undefined),
 };
 
+// Applied Mathematics, Film & Media Studies and History of Science & Medicine are catalog
+// departments flagged anyway: their title-less pages measured 0.91 or more first-hand
+// disagreement (#6299). Jewish Studies is not flagged, because its page fails the silent test.
 const CATALOG_DEPARTMENT_CONFIGS: Readonly<Record<string, string>> = {
   'wright-lab': 'Its deptName is Physics, the catalog department its people belong to.',
   'ysm-biomedical-informatics-data-science':

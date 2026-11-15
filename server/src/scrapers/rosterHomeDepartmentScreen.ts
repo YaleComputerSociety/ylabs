@@ -11,6 +11,9 @@ export const DEPT_FACULTY_ROSTER_SOURCE = 'dept-faculty-roster';
  * resolver does not load the roster lane; a guard test holds it equal to the configs (#6071).
  */
 export const ROSTER_DEPT_NAMES_WITHHOLDING_HOME_DEPARTMENT: ReadonlySet<string> = new Set([
+  'Applied Mathematics',
+  'Film and Media Studies',
+  'History of Science, Medicine & Public Health',
   'Physician Associate Program',
   'Stem Cell Center',
   'West Campus Institutes',
