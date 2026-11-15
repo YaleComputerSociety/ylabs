@@ -854,16 +854,19 @@ const DEPARTURE_EVIDENCE_VERDICTS = new Set<CenterRosterEdgeRetirementVerdict | 
  * A center's lead goes away only when evidence says the person left (a past or emeritus
  * section, or their own page) or names a successor who keeps a lead edge. A role claim the
  * roster stopped stating, or a listing it stopped carrying, ends no lead that would leave
- * the center with none: the edge is kept and reported for operator review instead (#6084).
+ * the center with none: the edge is kept and reported for operator review instead (#6308).
  */
 function lastLeadEdgesWithoutDepartureEvidence(
   edges: readonly CenterRosterGovernedEdge[],
   retiredEdges: readonly PlannedEdgeRetirement[],
+  personRolesAssertedByOtherSources: ReadonlySet<string> | undefined,
 ): PlannedEdgeRetirement[] {
   const retiredIds = new Set(retiredEdges.map((edge) => edge.edgeId));
-  const keepsAnotherLead = edges.some(
-    (edge) => LEAD_CANONICAL_ROLES.has(edge.role) && !retiredIds.has(edge.edgeId),
-  );
+  const keepsAnotherLead =
+    edges.some((edge) => LEAD_CANONICAL_ROLES.has(edge.role) && !retiredIds.has(edge.edgeId)) ||
+    [...(personRolesAssertedByOtherSources ?? [])].some((personRole) =>
+      LEAD_CANONICAL_ROLES.has(personRole.slice(personRole.lastIndexOf('|') + 1)),
+    );
   if (keepsAnotherLead) return [];
   return retiredEdges.filter(
     (edge) => LEAD_CANONICAL_ROLES.has(edge.role) && !DEPARTURE_EVIDENCE_VERDICTS.has(edge.verdict),
@@ -1184,7 +1187,11 @@ export function planCenterRosterRetirement(input: {
     }
   }
 
-  const keptLeadEdges = lastLeadEdgesWithoutDepartureEvidence(input.edges, retiredEdges);
+  const keptLeadEdges = lastLeadEdgesWithoutDepartureEvidence(
+    input.edges,
+    retiredEdges,
+    input.protectedPersonRoles,
+  );
   for (const edge of keptLeadEdges) {
     retiredEdges.splice(retiredEdges.indexOf(edge), 1);
     plan.protectedLeadEdges.push(edge);

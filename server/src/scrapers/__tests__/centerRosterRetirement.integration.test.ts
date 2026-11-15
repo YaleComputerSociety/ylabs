@@ -379,7 +379,7 @@ describe(
     });
 
     // Blair is a second director, so Avery's stale lead may end; a center's LAST lead
-    // survives a role change instead (#6084 decision, see the next test).
+    // survives a role change instead (#6308 decision, see the next test).
     it('ends a stale lead edge once two complete reads list the person under another role', async () => {
       const twoDirectors = [ROSTER[0], member('Blair', 'director'), ...ROSTER.slice(2)];
       await runLane([twoDirectors]);
