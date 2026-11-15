@@ -294,7 +294,9 @@ export function siteNamesInitialAndSurname(html: string, displayName: unknown): 
 /**
  * Whether the research home's own HOSTNAME carries this person's surname
  * (`roelab.yale.edu`, `roe-lab.org`). Deliberately the hostname only, never a
- * path segment: a dedicated domain is the lab asserting whose lab it is, but
+ * path segment, as a presence signal; `surnameInLabPath` is the one exception, and
+ * only names a person row's site for a subject already present on it with no
+ * same-surname candidate, linked person, or stated lead beside them. A dedicated domain is the lab asserting whose lab it is, but
  * `medicine.yale.edu/lab/roe/` is one slug on a multi-lab CMS and every namesake
  * matches it equally well. Treating a path segment as confirmation would make
  * this signal certify exactly the surname-only attachment `surnameOnlyMatch`
@@ -644,19 +646,30 @@ const siteListsANamesakeOf = (lead: LabSiteLeadCandidate, siteSlugs: Set<string>
     .some((slug) => slugContradictionShape(slug, lead.displayName) === 'NAMESAKE');
 };
 
+const siteStatesANamesakeOf = (lead: LabSiteLeadCandidate, evidence: RowLeadEvidence) => {
+  const surname = surnameCore(lead.displayName);
+  return evidence.statements.some(
+    (statement) =>
+      surnameCore(statement.personName) === surname &&
+      !statementNamesLead(statement.personName, lead),
+  );
+};
+
 /**
  * A surname in the address cannot tell the lead from someone sharing it, so it names the
- * site for this person only while no other candidate and no person the site lists carries
- * that surname (#6313 peer review).
+ * site for this person only while no other candidate, no person the site links, and no
+ * person the site states as a lead carries that surname (#6313 peer review).
  */
 const siteIsNamedForLead = (
   reading: LabSiteReading,
   lead: LabSiteLeadCandidate,
   contestedSurnames: ReadonlySet<string>,
   siteSlugs: Set<string>,
+  evidence: RowLeadEvidence,
 ) =>
   !contestedSurnames.has(surnameCore(lead.displayName)) &&
   !siteListsANamesakeOf(lead, siteSlugs) &&
+  !siteStatesANamesakeOf(lead, evidence) &&
   (surnameInSiteUrl(reading.website, lead.displayName) ||
     surnameInLabPath(reading.website, lead.displayName));
 
@@ -713,20 +726,21 @@ export function judgeLeadAgainstSite(
     evidenceUrl,
     contradictedBy: shape,
   });
-  const statedAsSiteLead = siteStatesLead(lead, rowEvidence);
-  if (
-    presence &&
-    leadIsTheRecordSubject &&
-    !statedAsSiteLead &&
-    !siteIsNamedForLead(reading, lead, contestedSurnames, siteSlugs)
-  ) {
-    return {
-      ...base,
-      verdict: 'UNSTATED',
-      matchedBy: 'NONE',
-      evidenceUrl: '',
-      ...(presence.namedOnPage ? { namedOnPage: true } : {}),
-    };
+  if (presence && leadIsTheRecordSubject) {
+    const namedOnPage = presence.namedOnPage ? { namedOnPage: true } : {};
+    const statedAsSiteLead = siteStatesLead(lead, rowEvidence);
+    if (statedAsSiteLead) {
+      return {
+        ...base,
+        verdict: 'CONFIRMED',
+        matchedBy: 'NAMED_AS_ROW_LEAD',
+        evidenceUrl: statedAsSiteLead,
+        ...namedOnPage,
+      };
+    }
+    if (!siteIsNamedForLead(reading, lead, contestedSurnames, siteSlugs, rowEvidence)) {
+      return { ...base, verdict: 'UNSTATED', matchedBy: 'NONE', evidenceUrl: '', ...namedOnPage };
+    }
   }
   if (presence) {
     if (rowReading.contradiction) {

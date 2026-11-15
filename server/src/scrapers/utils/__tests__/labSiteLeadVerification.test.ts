@@ -781,7 +781,11 @@ describe('a person row adopting a site it appears on (#6313)', () => {
       '<html><head><title>Tidal Imaging Lab</title></head><body>' +
       '<div class="person"><h3><a href="/profile/robin-quill/">Robin Quill, PhD</a></h3><p>Principal Investigator</p></div>' +
       '</body></html>';
-    expect(personRow(leadPage).verdict).toBe('CONFIRMED');
+    expect(personRow(leadPage)).toMatchObject({
+      verdict: 'CONFIRMED',
+      matchedBy: 'NAMED_AS_ROW_LEAD',
+      evidenceUrl: website,
+    });
   });
 
   it.each(['Associate Director, Imaging Core', 'Postdoctoral Associate; Head of Microscopy'])(
@@ -868,6 +872,15 @@ describe('a surname-named site with a namesake on it (#6313 peer review)', () =>
     const html =
       '<p><a href="/profile/robin-quill/">Robin Quill</a></p>' +
       '<p><a href="/lab/quill/profile/dale-quill/">Dale Quill</a></p>';
+    expect(verify([lead()], html)[0].verdict).toBe('UNSTATED');
+  });
+
+  it('does not confirm a lone subject when the site titles an unlinked namesake as its lead', () => {
+    const html =
+      '<html><head><title>Quill Lab</title></head><body>' +
+      '<div class="person"><h3>Dale Quill, PhD</h3><p>Principal Investigator</p></div>' +
+      '<div class="person"><h3><a href="/profile/robin-quill/">Robin Quill</a></h3><p>Graduate Student</p></div>' +
+      '</body></html>';
     expect(verify([lead()], html)[0].verdict).toBe('UNSTATED');
   });
 });
