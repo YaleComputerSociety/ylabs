@@ -2,6 +2,11 @@ import {
   parseOperatorDatabaseEnvironment,
   type OperatorDatabaseEnvironment,
 } from './operatorDatabaseEnvironment';
+import {
+  formatServedSustainedRefusalReadings,
+  NO_SUSTAINED_REFUSAL_RUN,
+  type ServedSustainedRefusalReadings,
+} from './servedSustainedRefusalReadings';
 
 export const SERVED_CORPUS_SCOREBOARD_ENVIRONMENTS = [
   'development',
@@ -119,6 +124,7 @@ export interface ServedCorpusScoreboard {
   noLongerServedRows: Array<{ slug: string; tier: string; archived: boolean }>;
   changedRows: ServedBaselineRowComparison[];
   servedRows: ServedResearchEntityRow[];
+  sustainedRefusal: ServedSustainedRefusalReadings;
 }
 
 const usage = [
@@ -443,6 +449,7 @@ export function buildServedCorpusScoreboard(input: {
   corpus: ServedCorpusScoreboardCorpusTotals;
   baseline: ServedCorpusBaselineEntry[];
   rows: ServedResearchEntityRow[];
+  sustainedRefusal?: ServedSustainedRefusalReadings;
 }): ServedCorpusScoreboard {
   const bySlug = indexServedRowsBySlug(input.rows);
   const exportCaps = detectBaselineExportCaps(input.baseline);
@@ -512,6 +519,7 @@ export function buildServedCorpusScoreboard(input: {
     servedRows: input.baseline
       .map((entry) => bySlug.get(entry.slug))
       .filter((row): row is ServedResearchEntityRow => Boolean(row)),
+    sustainedRefusal: input.sustainedRefusal ?? NO_SUSTAINED_REFUSAL_RUN,
   };
 }
 
@@ -635,6 +643,12 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
     corpus.reachable === 0 && corpus.studentReadyNotArchived > 0,
     `no tier-admitted row in the corpus serves a page. Treat this as a broken route or a broken scoreboard, not as a corpus collapse.`,
   );
+  for (const host of scoreboard.sustainedRefusal.hosts) {
+    failIf(
+      host.servedReadingsUnconfirmed > corpus.studentReadyNotArchived,
+      `served readings unconfirmed on ${host.host} (${host.servedReadingsUnconfirmed}) exceeds the served population (${corpus.studentReadyNotArchived})`,
+    );
+  }
   failIf(
     baseline.comparedOnTruncatedPrefix > baseline.stillServed,
     `rows compared on a truncated prefix (${baseline.comparedOnTruncatedPrefix}) exceeds still served (${baseline.stillServed})`,
@@ -715,6 +729,18 @@ export function formatServedCorpusScoreboardTable(scoreboards: ServedCorpusScore
       '  serves no page',
       (s) => (s.corpus.servesNoPage === undefined ? 'not measured' : String(s.corpus.servesNoPage)),
     ],
+    [
+      'unconfirmed, sustained refusal',
+      (s) =>
+        s.sustainedRefusal.hosts.length === 0
+          ? 'none flagged'
+          : String(
+              s.sustainedRefusal.hosts.reduce(
+                (sum, host) => sum + host.servedReadingsUnconfirmed,
+                0,
+              ),
+            ),
+    ],
     ['baseline slugs present', (s) => `${s.baseline.present}/${s.baseline.slugs}`],
     ['still served', (s) => `${s.baseline.stillServed}/${s.baseline.slugs}`],
     ['held back at serve time', (s) => String(s.baseline.heldBackAtServeTime)],
@@ -790,6 +816,8 @@ export function formatServedCorpusScoreboardDetail(
     );
     lines.push(...scoreboard.corpus.servesNoPageSlugs.map((slug) => `  - ${slug}`));
   }
+
+  lines.push('', ...formatServedSustainedRefusalReadings(scoreboard.sustainedRefusal));
 
   const cappedFields = Object.entries(scoreboard.baselineExportCaps);
   if (cappedFields.length > 0) {
