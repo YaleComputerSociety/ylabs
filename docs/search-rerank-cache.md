@@ -80,6 +80,31 @@ The report's `textHashes` says what happened: `read-from-index`, `index-unreacha
 A seed without hashes is still served and still judged by the candidate-set rule, so seeding Beta or Production from a laptop degrades staleness detection rather than failing.
 A promotion seeds Beta and Production that way, from the laptop that holds the seed file, because a Render shell cannot read it; the exact runbook, its expected counts, turning the serve flag on, verification and rollback are in `docs/release-process.md` ("Seed the search rerank cache after the copy and the reindex").
 
+## Seeding rounds (#6222)
+
+A fixed seed covers only the queries it was scored on, so a recurring offline round adds the new ones, with no model spend.
+`yarn --cwd server research-search:rerank-seeding-round <command>` runs the file-handling steps; scoring and judging are local Claude sessions in between.
+Run each command through the machine's heavy-command slot.
+
+1. `collect --since=<date of the last round> [--out=<round.json>]` reads the distinct `searchQuery` values of `search` events since that date, grouped by text alone, so no user, session or event field is read.
+   The source is `PRODUCTION_READONLY_MONGODBURL`, and the command refuses a credential that can write, or one whose privileges it cannot list.
+   `--aggregates=<file>` reads `[{ "query", "searchCount" }]` from a file instead, which is how the command is tried without touching Production.
+   Spellings that share a cache key are counted together.
+   A query is kept only when it is short enough for the cache, names a topic rather than only access-filter words (such as "has hosted undergrad"), keys no seeded entry on Development, and passes the same Development gate the live-miss job uses, which refuses name queries; the served top 30 of each kept query is read there too.
+   Without `--out` it prints counts only (exclusions by reason, and kept queries by word count) and writes nothing.
+   With `--out` it writes the round and a scoring batch beside it (`<round>.scoring-batch.json`), each outside the repository with mode 0600, so a dropped name query is never written to disk.
+2. Score the batch with local Claude under the rerank-session guide, one scoring session at a time, writing `[{ "row", "scores": { "<index>": <0-3> } }]`.
+3. `judge-packet --round=<round.json> --scores=<scores.json> --out=<packet.json>` writes, in a shuffled order, the union of each query's served top 10 and its reranked top 10, reordered the way serving does.
+   A query missing a score for any candidate is refused.
+4. A separate blind judge grades the packet under the judge guide, writing `[{ "qid", "slug", "grade" }]`.
+5. `gate --round=<round.json> --scores=<scores.json> --grades=<grades.json> [--seed-out=<seed.json>]` computes nDCG@10 per query and applies the import rule.
+   A round is imported only when the mean change has a 95% bootstrap interval above 0, the queries it makes worse lose no more on average than the queries it makes better gain, and every pair is graded.
+   It prints the means, the interval, and the better and worse counts, exits 2 on a refusal, and writes the seeder input only when the round passes.
+6. Import with the seeder above into Development as a new `full-v<n>-<date>` version, then dry-run again and re-read the served result.
+   Beta and Production receive it through the promotion runbook.
+
+Issue and pull request text reports a round by these counts only, never a query or a row.
+
 ## Environments and privacy
 
 The cache is environment-local: it is in `NEVER_COPY_COLLECTIONS` and in the collections a Development refresh preserves (`server/src/scripts/mirrorCollectionPolicy.ts`).

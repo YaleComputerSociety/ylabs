@@ -187,9 +187,11 @@ export async function searchRerankLiveMissSpendTodayUsd(now: Date): Promise<numb
   );
 }
 
-async function candidatesWithServedText(
+export type SearchRerankServedCandidate = SearchRerankLiveMissCandidate & { slug: string };
+
+export async function searchRerankCandidatesWithServedText(
   entities: ReadonlyArray<Record<string, unknown>>,
-): Promise<SearchRerankLiveMissCandidate[]> {
+): Promise<SearchRerankServedCandidate[]> {
   const slugs = entities.map((entity) => text(entity.slug)).filter(Boolean);
   const rows = (await ResearchEntity.find({
     slug: { $in: slugs },
@@ -207,6 +209,7 @@ async function candidatesWithServedText(
     return [
       {
         entityId,
+        slug: text(entity.slug),
         name: text(served.displayName) || text(served.name) || text(entity.name),
         departments: textList(served.departments),
         shortDescription: text(served.shortDescription),
@@ -214,6 +217,14 @@ async function candidatesWithServedText(
       },
     ];
   });
+}
+
+async function candidatesWithServedText(
+  entities: ReadonlyArray<Record<string, unknown>>,
+): Promise<SearchRerankLiveMissCandidate[]> {
+  return (await searchRerankCandidatesWithServedText(entities)).map(
+    ({ slug: _slug, ...candidate }) => candidate,
+  );
 }
 
 const isDuplicateKeyError = (error: unknown): boolean =>
