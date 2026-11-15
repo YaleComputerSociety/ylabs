@@ -868,6 +868,22 @@ describe('a surname-named site with a namesake on it (#6313 peer review)', () =>
     expect(judged.map((one) => one.verdict)).toEqual(['UNSTATED', 'UNSTATED']);
   });
 
+  it('confirms neither same-surname candidate when the site shows only one of them', () => {
+    const html = '<p><a href="/profile/robin-quill/">Robin Quill</a></p>';
+    const judged = verify(
+      [
+        lead(),
+        lead({
+          personId: '000000000000000000000002',
+          displayName: 'Dale Quill',
+          officialProfileUrls: ['https://medicine.yale.edu/profile/dale-quill/'],
+        }),
+      ],
+      html,
+    );
+    expect(judged[0].verdict).toBe('UNSTATED');
+  });
+
   it('does not confirm a lone subject when the site lists a namesake', () => {
     const html =
       '<p><a href="/profile/robin-quill/">Robin Quill</a></p>' +
