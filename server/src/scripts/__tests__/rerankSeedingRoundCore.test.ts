@@ -100,6 +100,7 @@ describe('assertReadOnlySourcePrivileges', () => {
           'listCollections',
           'listIndexes',
           'listSearchIndexes',
+          'performRawDataOperations',
           'planCacheRead',
         ]),
       ),

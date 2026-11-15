@@ -134,6 +134,7 @@ const SOURCE_READ_ACTIONS: ReadonlySet<string> = new Set([
   'listCollections',
   'listIndexes',
   'listSearchIndexes',
+  'performRawDataOperations',
   'planCacheRead',
 ]);
 
