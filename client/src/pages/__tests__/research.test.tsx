@@ -4483,6 +4483,53 @@ describe('Research sentence topic rewrite notice (#6223)', () => {
     });
   });
 
+  it('clears the topic notice when the next search was not rewritten', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearch(departments, [`/research?q=${encodeURIComponent(SENTENCE)}`]);
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+    expect(document.body.textContent).toContain('Searching for the topic prosthetic hand');
+
+    fireEvent.change(screen.getByLabelText('Search y/labs'), {
+      target: { value: 'coastal ecology' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() => {
+      expect(searchRequests.at(-1)).toEqual(expect.objectContaining({ q: 'coastal ecology' }));
+    });
+    await waitFor(() => {
+      expect(document.body.textContent).not.toContain('Searching for the topic');
+    });
+  });
+
+  it('names the topic searched when the sentence was also spelling-corrected', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([topicEntity], {
+        estimatedTotalHits: 1,
+        queryCorrection: {
+          originalQuery: 'design a beter prosthetic hand',
+          correctedQuery: 'design a better prosthetic hand',
+        },
+        topicRewrite: {
+          originalQuery: 'design a beter prosthetic hand',
+          topicQuery: 'prosthetic hand',
+        },
+      });
+    });
+
+    renderResearch(departments, [
+      `/research?q=${encodeURIComponent('design a beter prosthetic hand')}`,
+    ]);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain("result for 'prosthetic hand'");
+    expect(document.body.textContent).toContain('Searching for the topic prosthetic hand');
+    expect(document.body.textContent).not.toContain('Spelling corrected');
+  });
+
   it('shows no topic notice for a search that was not rewritten', async () => {
     const searchRequests: Array<Record<string, unknown>> = [];
     serveSentenceSearch(searchRequests);

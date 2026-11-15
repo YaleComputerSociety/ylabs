@@ -1,10 +1,30 @@
 export const MIN_SENTENCE_QUERY_WORDS = 4;
 
 const REQUEST_OPENING =
-  /^(?:(?:i\s+(?:want|would\s+like|'d\s+like|wanna|hope|plan)\s+to|i\s+am\s+interested\s+in|i'm\s+interested\s+in|interested\s+in|looking\s+for|search(?:ing)?\s+for)\b\s*)+/;
+  /^(?:(?:i\s+(?:want|would\s+like|hope|plan)\s+to|i'd\s+like\s+to|i\s+wanna|wanna|i\s+am\s+interested\s+in|i'm\s+interested\s+in|interested\s+in|looking\s+for|search(?:ing)?\s+for)\b\s*)+/;
 
-const GOAL_VERB_OPENING =
-  /^(?:(?:(?:want|try|trying|hope|like)\s+to\s+)?(?:clean\s+up|build|make|design|create|develop|invent|engineer|study|research|investigate|explore|understand|learn|figure\s+out|find(?:\s+out)?|help|stop|end|reduce|prevent|fix|solve|improve|predict|measure|track|grow|get|use|write|read|document|translate|transcribe|look\s+(?:for|at|into)|work\s+(?:in|on|with)|protect|stage|save|cure|treat|teach|map|model|analy[sz]e|test|discover)\b\s*)+/;
+const INTENT_TO = /^(?:want|try|trying|hope|like)\s+to\s+/;
+
+const UNAMBIGUOUS_GOAL_VERB =
+  '(?:clean\\s+up|build|make|create|develop|invent|investigate|explore|understand|learn|figure\\s+out|find(?:\\s+out)?|stop|reduce|prevent|fix|solve|improve|predict|grow|get|write|translate|transcribe|look\\s+(?:for|at|into)|work\\s+(?:in|on|with)|protect|save|cure|teach|analy[sz]e|discover)';
+
+const NOUN_LIKE_GOAL_VERB =
+  '(?:design|model|test|map|stage|track|use|read|help|research|measure|document|study|treat|engineer|end)';
+
+const GOAL_OBJECT_LEAD =
+  '(?:a|an|the|my|our|new|better|how|why|what|which|whether|where|when|ways?|people|kids|children|students|things|some|more)';
+
+const GOAL_VERB_OPENING = new RegExp(
+  `^(?:(?:${UNAMBIGUOUS_GOAL_VERB}|${NOUN_LIKE_GOAL_VERB})\\b\\s*)+`,
+);
+
+const OPENS_WITH_A_GOAL_VERB = new RegExp(
+  `^(?:${UNAMBIGUOUS_GOAL_VERB}\\b|${NOUN_LIKE_GOAL_VERB}\\s+${GOAL_OBJECT_LEAD}\\b)`,
+);
+
+const OPENS_WITH_ANY_GOAL_VERB = new RegExp(
+  `^(?:${UNAMBIGUOUS_GOAL_VERB}|${NOUN_LIKE_GOAL_VERB})\\b`,
+);
 
 const AUDIENCE_OR_LOGISTICS_PHRASE =
   /\b(?:for\s+(?:a\s+)?(?:freshm[ae]n|first[- ]years?|undergrads?|undergraduates?|beginners)|(?:as\s+an?\s+)?(?:freshm[ae]n|undergrads?|undergraduates?)|with\s+no\s+experience|no\s+experience|research|labs?|at\s+yale|in\s+a\s+lab)\b/g;
@@ -36,8 +56,14 @@ export interface SentenceQueryTopic {
 export function extractResearchTopicFromSentenceQuery(query: string): SentenceQueryTopic | null {
   const words = normalizedQueryWords(query);
   if (words.length < MIN_SENTENCE_QUERY_WORDS) return null;
-  let text = words.join(' ').replace(REQUEST_OPENING, '').trim();
-  if (!GOAL_VERB_OPENING.test(text)) return null;
+  const typed = words.join(' ');
+  const afterRequest = typed.replace(REQUEST_OPENING, '').trim();
+  const statesIntent = afterRequest !== typed || INTENT_TO.test(afterRequest);
+  let text = afterRequest.replace(INTENT_TO, '');
+  const opensWithGoal = statesIntent
+    ? OPENS_WITH_ANY_GOAL_VERB.test(text)
+    : OPENS_WITH_A_GOAL_VERB.test(text);
+  if (!opensWithGoal) return null;
   text = text.replace(GOAL_VERB_OPENING, '').trim();
   text = text.replace(AUDIENCE_OR_LOGISTICS_PHRASE, ' ');
   const topicWords = text

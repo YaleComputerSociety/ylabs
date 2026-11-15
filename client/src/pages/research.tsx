@@ -923,6 +923,7 @@ const Research = () => {
     setSearchDegraded(false);
     setQueryCorrection(null);
     setAcronymRewrite(null);
+    setTopicRewrite(null);
     if (!options.preserveResults) {
       setFewCloseMatches(null);
       setGroupedResults(emptyGroupedResults(resultQueryLabel));
@@ -1260,6 +1261,7 @@ const Research = () => {
     setSearchDegraded(false);
     setQueryCorrection(null);
     setAcronymRewrite(null);
+    setTopicRewrite(null);
     setFewCloseMatches(null);
     setSearchLoading(false);
     setIsLoadingMore(false);
@@ -2163,6 +2165,10 @@ const Research = () => {
     </>
   );
 
+  const searchedTopic = topicRewrite
+    ? (acronymRewrite?.rewrittenQuery ?? topicRewrite.topicQuery)
+    : undefined;
+
   const searchResultSummary = (layoutClassName: string) => (
     <p
       ref={resultSummaryRef}
@@ -2174,9 +2180,9 @@ const Research = () => {
     >
       {resultSummary(
         activeResults,
-        queryCorrection?.correctedQuery ??
+        searchedTopic ??
+          queryCorrection?.correctedQuery ??
           acronymRewrite?.rewrittenQuery ??
-          topicRewrite?.topicQuery ??
           submittedQuery,
         searchLoading,
         departmentSearch?.label,
@@ -2186,7 +2192,14 @@ const Research = () => {
     </p>
   );
 
-  const searchSpellingNotice = searchLoading ? null : queryCorrection ? (
+  const searchSpellingNotice = searchLoading ? null : topicRewrite && searchedTopic ? (
+    <SearchSpellingNotice
+      originalQuery={topicRewrite.originalQuery}
+      correctedQuery={searchedTopic}
+      searchedLabel="Searching for the topic"
+      onSearchOriginal={searchLiteralTopic}
+    />
+  ) : queryCorrection ? (
     <SearchSpellingNotice
       originalQuery={queryCorrection.originalQuery}
       onSearchOriginal={searchOriginalSpelling}
@@ -2197,13 +2210,6 @@ const Research = () => {
       correctedQuery={acronymRewrite.rewrittenQuery}
       searchedLabel="Searching for"
       onSearchOriginal={searchLiteralAcronym}
-    />
-  ) : topicRewrite ? (
-    <SearchSpellingNotice
-      originalQuery={topicRewrite.originalQuery}
-      correctedQuery={topicRewrite.topicQuery}
-      searchedLabel="Searching for the topic"
-      onSearchOriginal={searchLiteralTopic}
     />
   ) : null;
 

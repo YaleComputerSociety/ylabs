@@ -2239,7 +2239,7 @@ export async function searchResearchGroupsViaMeili(
       : undefined;
   const moreTopicResults = await optionalMoreTopicResults({
     searchQuery,
-    typedQuery: query,
+    typedQuery: rankedQuery,
     acronym,
     filters: filterableToggles.filters,
     filtered: searched,
