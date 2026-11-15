@@ -2248,7 +2248,7 @@ async function buildSourceFreshness() {
     Source.find({}).select('name displayName enabled cadence coverage').lean(),
     ScrapeRun.find({ startedAt: { $gte: since } })
       .select(
-        'sourceName status startedAt finishedAt heartbeatAt observationCount entitiesObserved materializationErrors materializationConflicts invalidated options',
+        'sourceName status startedAt finishedAt heartbeatAt observationCount storedObservationCountAtReconcile entitiesObserved materializationErrors materializationConflicts invalidated options',
       )
       .sort({ startedAt: -1 })
       .lean(),

@@ -2,6 +2,7 @@ import { isRetiredSourceName, scriptDrivenSourceOwner } from '../scrapers/source
 import { sourceIsExpectedToRecur } from '../scrapers/sourceYieldGuard';
 import { classifyScrapeRunLiveness, isAbandonedScrapeRun } from '../scrapers/scrapeRunLiveness';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { effectiveObservationCount } from '../scrapers/effectiveObservationCount';
 
 export type SourceHealthRisk = 'ok' | 'warn' | 'error';
 export type SourceHealthReviewArtifactReason =
@@ -30,6 +31,7 @@ export interface SourceHealthRunInput {
   finishedAt?: Date | string;
   heartbeatAt?: Date | string;
   observationCount?: number;
+  storedObservationCountAtReconcile?: number;
   materializationErrors?: number;
   materializationConflicts?: number;
   invalidated?: boolean;
@@ -344,7 +346,7 @@ export function buildSourceHealthRows(
               status: latestRun.status,
               startedAt: iso(latestRun.startedAt),
               finishedAt: iso(latestRun.finishedAt),
-              observationCount: latestRun.observationCount || 0,
+              observationCount: effectiveObservationCount(latestRun),
               materializationErrors: latestRun.materializationErrors || 0,
               materializationConflicts: latestRun.materializationConflicts || 0,
               ...(latestRunId
