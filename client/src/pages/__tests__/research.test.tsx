@@ -4438,16 +4438,19 @@ describe('Research sentence topic rewrite notice (#6223)', () => {
     displayName: 'Synthetic Design Lab',
   };
 
+  const facetDistribution = { entityType: { LAB: 3, CORE_FACILITY: 1 } };
+
   const serveSentenceSearch = (searchRequests: Array<Record<string, unknown>>) =>
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
       searchRequests.push(body as Record<string, unknown>);
-      if (body.q !== SENTENCE) return researchSearchResponse([topicEntity]);
+      if (body.q !== SENTENCE) return researchSearchResponse([topicEntity], { facetDistribution });
       if (body.extractSentenceTopic === false) {
-        return researchSearchResponse([typedEntity], { estimatedTotalHits: 1 });
+        return researchSearchResponse([typedEntity], { estimatedTotalHits: 1, facetDistribution });
       }
       return researchSearchResponse([topicEntity], {
         estimatedTotalHits: 1,
+        facetDistribution,
         topicRewrite: { originalQuery: SENTENCE, topicQuery: 'prosthetic hand' },
       });
     });
@@ -4481,6 +4484,29 @@ describe('Research sentence topic rewrite notice (#6223)', () => {
         expect.objectContaining({ q: SENTENCE, sortBy: 'name', extractSentenceTopic: false }),
       );
     });
+  });
+
+  it('keeps the typed sentence when a filter changes after choosing it', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearch(departments, [`/research?q=${encodeURIComponent(SENTENCE)}`]);
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: SENTENCE }));
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.change(screen.getByLabelText('Filter by type'), {
+      target: { value: 'CORE_FACILITY' },
+    });
+
+    await waitFor(() => {
+      expect(searchRequests.at(-1)).toEqual(
+        expect.objectContaining({ q: SENTENCE, extractSentenceTopic: false }),
+      );
+    });
+    expect(document.body.textContent).not.toContain('Searching for the topic');
   });
 
   it('clears the topic notice when the next search was not rewritten', async () => {
