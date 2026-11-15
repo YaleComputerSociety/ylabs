@@ -202,6 +202,32 @@ const LocationDisplay = () => {
   return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
 };
 
+const renderResearchWithLocation = (initialEntries: string[]) =>
+  render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <ConfigContext.Provider
+        value={{
+          ...defaultConfigContext,
+          isLoading: false,
+          isLoaded: true,
+          departments,
+          departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+        }}
+      >
+        <LocationDisplay />
+        <Research />
+      </ConfigContext.Provider>
+    </MemoryRouter>,
+  );
+
+const reloadResearchAt = (url: string) => {
+  cleanup();
+  __resetResearchPageSnapshotForTests();
+  renderResearchWithLocation([url]);
+};
+
+const currentLocation = () => screen.getByTestId('location').textContent ?? '';
+
 const ClearResearchLocation = () => {
   const navigate = useNavigate();
   return (
@@ -4250,6 +4276,39 @@ describe('Research acronym rewrite notice (#5169)', () => {
     expect(document.body.textContent).not.toContain('Searching for natural language processing');
   });
 
+  it('keeps the typed acronym after a reload and in a shared link', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveAcronymSearch(searchRequests);
+
+    renderResearchWithLocation(['/research?q=NLP']);
+    expect(await screen.findByRole('heading', { name: 'Synthetic Language Lab' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'NLP' }));
+    expect(await screen.findByRole('heading', { name: 'Synthetic Acronym Lab' })).toBeTruthy();
+    await waitFor(() => expect(currentLocation()).toBe('/research?q=NLP&literal=acronym'));
+
+    searchRequests.length = 0;
+    reloadResearchAt(currentLocation());
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Acronym Lab' })).toBeTruthy();
+    expect(searchRequests).toHaveLength(1);
+    expect(searchRequests[0]).toEqual(expect.objectContaining({ q: 'NLP', rewriteAcronym: false }));
+    expect(document.body.textContent).not.toContain('Searching for natural language processing');
+  });
+
+  it('opens a shared link that chose the typed spelling without correcting it', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveAcronymSearch(searchRequests);
+
+    renderResearchWithLocation(['/research?q=NLP&literal=spelling,acronym,unknown']);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Acronym Lab' })).toBeTruthy();
+    expect(searchRequests[0]).toEqual(
+      expect.objectContaining({ q: 'NLP', correctSpelling: false, rewriteAcronym: false }),
+    );
+    expect(searchRequests[0]).not.toHaveProperty('extractSentenceTopic');
+  });
+
   it('shows no rewrite notice for a search that was not rewritten', async () => {
     const searchRequests: Array<Record<string, unknown>> = [];
     serveAcronymSearch(searchRequests);
@@ -4507,6 +4566,91 @@ describe('Research sentence topic rewrite notice (#6223)', () => {
       );
     });
     expect(document.body.textContent).not.toContain('Searching for the topic');
+  });
+
+  it('keeps the typed sentence after a reload', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearchWithLocation([`/research?q=${encodeURIComponent(SENTENCE)}`]);
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: SENTENCE }));
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+    await waitFor(() => expect(currentLocation()).toContain('literal=topic'));
+
+    const chosenUrl = currentLocation();
+    searchRequests.length = 0;
+    reloadResearchAt(chosenUrl);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+    expect(searchRequests[0]).toEqual(
+      expect.objectContaining({ q: SENTENCE, extractSentenceTopic: false }),
+    );
+    expect(document.body.textContent).not.toContain('Searching for the topic');
+  });
+
+  it('opens a shared link that chose the typed sentence on the typed sentence', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearchWithLocation([`/research?q=${encodeURIComponent(SENTENCE)}&literal=topic`]);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+    expect(searchRequests).toHaveLength(1);
+    expect(searchRequests[0]).toEqual(
+      expect.objectContaining({ q: SENTENCE, extractSentenceTopic: false }),
+    );
+    expect(document.body.textContent).not.toContain('Searching for the topic');
+    expect(currentLocation()).toContain('literal=topic');
+  });
+
+  it('searches the topic again when the URL goes back to the rewritten search', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+    const rewrittenSearchUrl = `/research?q=${encodeURIComponent(SENTENCE)}`;
+
+    render(
+      <MemoryRouter initialEntries={[`/research?q=${encodeURIComponent(SENTENCE)}&literal=topic`]}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <NavigateToResearchUrl to={rewrittenSearchUrl} label="Open the rewritten search" />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open the rewritten search' }));
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+    expect(searchRequests.at(-1)).toEqual(expect.objectContaining({ q: SENTENCE }));
+    expect(searchRequests.at(-1)).not.toHaveProperty('extractSentenceTopic');
+    expect(document.body.textContent).toContain('Searching for the topic prosthetic hand');
+  });
+
+  it('drops the typed-sentence choice from the URL when a new query is searched', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearchWithLocation([`/research?q=${encodeURIComponent(SENTENCE)}&literal=topic`]);
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Search y/labs'), {
+      target: { value: 'coastal ecology' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() => expect(currentLocation()).toBe('/research?q=coastal+ecology'));
+    expect(searchRequests.at(-1)).toEqual(expect.objectContaining({ q: 'coastal ecology' }));
+    expect(searchRequests.at(-1)).not.toHaveProperty('extractSentenceTopic');
   });
 
   it('clears the topic notice when the next search was not rewritten', async () => {

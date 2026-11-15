@@ -30,6 +30,24 @@ describe('extracting the research topic from a sentence-shaped query (#6223)', (
     'is there research for painters',
   ])('leaves %s as typed', (query) => expect(topicOf(query)).toBeNull());
 
+  it.each([
+    'stop motion animation for film',
+    'make up artistry for the stage',
+    'makeup and special effects design',
+    'get out the vote campaign research',
+    'stop-motion puppets and set building',
+  ])('keeps %s as typed, because its opening verb belongs to a topic phrase', (query) =>
+    expect(topicOf(query)).toBeNull(),
+  );
+
+  it.each([
+    ["I'm interested in stop motion animation", null],
+    ['I want to make stop motion films', 'stop motion films'],
+    ['I want to help get out the vote in local elections', 'get out the vote local elections'],
+    ['learn make up artistry for theater', 'make up artistry theater'],
+    ['I want to stop motion sickness in astronauts', 'motion sickness astronauts'],
+  ])('keeps the topic phrase whole in %s', (query, topic) => expect(topicOf(query)).toBe(topic));
+
   it('never rewrites a query of fewer than four words', () => {
     for (const query of ['design', 'design housing', 'design housing better']) {
       expect(topicOf(query)).toBeNull();

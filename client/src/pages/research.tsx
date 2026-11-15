@@ -139,6 +139,42 @@ const readSearchParamList = <T extends string>(
     });
 };
 
+// A "Search instead for" choice rides in the URL so a reload or a shared link keeps
+// searching what was typed instead of re-applying the rewrite the student declined.
+const LITERAL_SEARCH_PARAM = 'literal';
+
+type LiteralSearchChoices = Pick<
+  ResearchEntitySearchOptions,
+  'exactSpelling' | 'literalAcronym' | 'literalTopic'
+>;
+
+const LITERAL_SEARCH_PARAM_VALUES = [
+  ['spelling', 'exactSpelling'],
+  ['acronym', 'literalAcronym'],
+  ['topic', 'literalTopic'],
+] as const;
+
+const readLiteralSearchParam = (params: URLSearchParams): LiteralSearchChoices => {
+  const chosen = new Set(
+    readSearchParamList(
+      params,
+      LITERAL_SEARCH_PARAM,
+      LITERAL_SEARCH_PARAM_VALUES.map(([value]) => value),
+    ),
+  );
+  return Object.fromEntries(
+    LITERAL_SEARCH_PARAM_VALUES.filter(([value]) => chosen.has(value)).map(([, option]) => [
+      option,
+      true,
+    ]),
+  );
+};
+
+const literalSearchParamValue = (choices: LiteralSearchChoices | undefined): string =>
+  LITERAL_SEARCH_PARAM_VALUES.filter(([, option]) => choices?.[option] === true)
+    .map(([value]) => value)
+    .join(',');
+
 const HOSTS_UNDERGRADS_PARAM = 'undergrad';
 
 const readHostsUndergradsParam = (params: URLSearchParams): boolean =>
@@ -716,6 +752,7 @@ const Research = () => {
       hostsUndergrads?: boolean;
       welcomesUndergrads?: boolean;
       mentorsUndergrads?: boolean;
+      literal?: LiteralSearchChoices;
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -730,6 +767,8 @@ const Research = () => {
     if (nextState.hostsUndergrads) params.set(HOSTS_UNDERGRADS_PARAM, '1');
     if (nextState.welcomesUndergrads) params.set(WELCOMES_UNDERGRADS_PARAM, '1');
     if (nextState.mentorsUndergrads) params.set(MENTORS_UNDERGRADS_PARAM, '1');
+    const literal = nextQuery ? literalSearchParamValue(nextState.literal) : '';
+    if (literal) params.set(LITERAL_SEARCH_PARAM, literal);
 
     if (isAdmin) {
       if (nextState.showWeakest) params.set('weak', '1');
@@ -939,6 +978,7 @@ const Research = () => {
           hostsUndergrads: filters.hostsUndergrads === true,
           welcomesUndergrads: filters.welcomesUndergrads === true,
           mentorsUndergrads: filters.mentorsUndergrads === true,
+          literal: options,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -1019,6 +1059,7 @@ const Research = () => {
             hostsUndergrads,
             welcomesUndergrads,
             mentorsUndergrads,
+            literal: options,
             showWeakest: showWeakestProfilesFirst,
             quality: qualityFilters,
             trustTiers: trustTierFilters,
@@ -1346,6 +1387,7 @@ const Research = () => {
     const urlHostsUndergrads = readHostsUndergradsParam(searchParams);
     const urlWelcomesUndergrads = readWelcomesUndergradsParam(searchParams);
     const urlMentorsUndergrads = readMentorsUndergradsParam(searchParams);
+    const urlLiteral = readLiteralSearchParam(searchParams);
     const urlQualityFilters = urlQualityFiltersKey
       ? (urlQualityFiltersKey.split(',') as ResearchQualityFilter[])
       : [];
@@ -1440,7 +1482,9 @@ const Research = () => {
       if (
         !urlDepartmentLabel &&
         submittedQuery === urlQuery.trim() &&
-        JSON.stringify(activeSearchRequest?.filters || {}) === JSON.stringify(studentFilters)
+        JSON.stringify(activeSearchRequest?.filters || {}) === JSON.stringify(studentFilters) &&
+        literalSearchParamValue(activeSearchRequest?.options) ===
+          literalSearchParamValue(urlLiteral)
       ) {
         return;
       }
@@ -1448,6 +1492,7 @@ const Research = () => {
         filters: studentFilters,
         syncUrl: false,
         preserveResults: submittedQuery === urlQuery.trim(),
+        ...urlLiteral,
       });
       return;
     }

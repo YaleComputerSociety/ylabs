@@ -16,10 +16,25 @@ const GOAL_OBJECT_LEAD =
 
 const WORD_END = "(?![\\p{L}\\p{N}'-])";
 
-const GOAL_VERB_OPENING = new RegExp(
-  `^(?:(?:${UNAMBIGUOUS_GOAL_VERB}|${NOUN_LIKE_GOAL_VERB})${WORD_END}\\s*)+`,
+const ONE_GOAL_VERB_OPENING = new RegExp(
+  `^(?:${UNAMBIGUOUS_GOAL_VERB}|${NOUN_LIKE_GOAL_VERB})${WORD_END}\\s*`,
   'u',
 );
+
+const FIXED_TOPIC_PHRASE_OPENING = new RegExp(
+  `^(?:stop[\\s-]+motion(?!\\s+sickness${WORD_END})|make[\\s-]*up|get\\s+out\\s+the\\s+vote)${WORD_END}`,
+  'u',
+);
+
+const opensWithFixedTopicPhrase = (text: string): boolean => FIXED_TOPIC_PHRASE_OPENING.test(text);
+
+const withoutOpeningGoalVerbs = (text: string): string => {
+  let remaining = text;
+  while (!opensWithFixedTopicPhrase(remaining) && ONE_GOAL_VERB_OPENING.test(remaining)) {
+    remaining = remaining.replace(ONE_GOAL_VERB_OPENING, '');
+  }
+  return remaining.trim();
+};
 
 const OPENS_WITH_A_GOAL_VERB = new RegExp(
   `^(?:${UNAMBIGUOUS_GOAL_VERB}${WORD_END}|${NOUN_LIKE_GOAL_VERB}\\s+${GOAL_OBJECT_LEAD}${WORD_END})`,
@@ -68,13 +83,18 @@ export function extractResearchTopicFromSentenceQuery(query: string): SentenceQu
   const opensWithGoal = statesIntent
     ? OPENS_WITH_ANY_GOAL_VERB.test(text)
     : OPENS_WITH_A_GOAL_VERB.test(text);
-  if (!opensWithGoal) return null;
-  text = text.replace(GOAL_VERB_OPENING, '').trim();
-  text = text.replace(AUDIENCE_OR_LOGISTICS_PHRASE, ' ');
-  const topicWords = text
-    .split(/\s+/)
-    .filter(Boolean)
-    .filter((word) => !FUNCTION_WORDS.has(word) && !GENERIC_VERBS.has(word));
+  if (!opensWithGoal || opensWithFixedTopicPhrase(text)) return null;
+  text = withoutOpeningGoalVerbs(text);
+  const fixedPhrase = text.match(FIXED_TOPIC_PHRASE_OPENING)?.[0] ?? '';
+  const topicWords = [
+    ...(fixedPhrase ? [fixedPhrase] : []),
+    ...text
+      .slice(fixedPhrase.length)
+      .replace(AUDIENCE_OR_LOGISTICS_PHRASE, ' ')
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((word) => !FUNCTION_WORDS.has(word) && !GENERIC_VERBS.has(word)),
+  ];
   if (topicWords.length === 0) return null;
   const topicQuery = topicWords.join(' ');
   if (topicQuery === words.join(' ')) return null;
