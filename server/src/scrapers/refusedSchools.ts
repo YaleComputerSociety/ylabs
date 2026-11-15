@@ -43,3 +43,26 @@ export function withoutRefusedSchools(
   }
   return [...new Set(removed)];
 }
+
+const SCHOOL_PROVENANCE_PATH = 'fieldProvenance.school';
+
+/**
+ * `withoutRefusedSchools`, for a resolve that also stamps `fieldProvenance.school` from the
+ * observation that won `school`. When a refusal moves the scalar school to the next admissible
+ * `schools` entry, or clears it, that observation no longer backs the stored value, so its
+ * stamp is dropped and the stored one unset rather than left naming the refused value's
+ * source, which `backfillLeadDepartmentInheritance` selects rows by (#6175).
+ */
+export function withoutRefusedSchoolsOrTheirProvenance(
+  set: Record<string, unknown>,
+  unset: Record<string, ''>,
+  fieldValueRefusals: unknown,
+): string[] {
+  const winningSchool = set.school;
+  const removed = withoutRefusedSchools(set, fieldValueRefusals);
+  if (typeof winningSchool === 'string' && winningSchool && set.school !== winningSchool) {
+    delete set[SCHOOL_PROVENANCE_PATH];
+    unset[SCHOOL_PROVENANCE_PATH] = '';
+  }
+  return removed;
+}

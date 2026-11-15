@@ -557,7 +557,7 @@ import {
   getOrgUnitCanonicalizer,
   researchEntityOrgUnitProfileUrls,
 } from './orgUnitCanonicalization';
-import { withoutRefusedSchools } from './refusedSchools';
+import { withoutRefusedSchools, withoutRefusedSchoolsOrTheirProvenance } from './refusedSchools';
 import {
   applyResearchEntityResearchAreaCanonicalization,
   getResearchAreaCanonicalizer,
@@ -13258,7 +13258,7 @@ export async function projectFromLog(
     await (
       input.applyResearchEntityOrgUnitCanonicalization ?? applyResearchEntityOrgUnitCanonicalization
     )(set, entityDoc, orgUnitProfileUrls);
-    withoutRefusedSchools(set, entityDoc?.fieldValueRefusals);
+    withoutRefusedSchoolsOrTheirProvenance(set, unset, entityDoc?.fieldValueRefusals);
     await canonicalizeResearchAreas(set, set.departments ?? entityDoc?.departments);
     const observedResearchAreasWhollyRejected =
       hasNonEmptyStringArray(observedResearchAreas) && isEmptyArray(set.researchAreas);
