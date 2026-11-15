@@ -292,7 +292,8 @@ Materialize flags:
                        email, emailSupport, orcid, title, primaryDepartment, imageUrl,
                        websiteUrl. identifiers.orcid also writes only the ORCID
                        entries of profileLinks. Planned paths
-                       outside the scope are dropped and reported; other entity
+                       outside the scope are left as stored and reported as
+                       outOfScopePaths (not written, not deleted); other entity
                        types, mints, run reconciliations and the visibility gate
                        are skipped. Per-key paths go to --output only.
 

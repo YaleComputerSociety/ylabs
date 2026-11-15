@@ -55,11 +55,11 @@ describe('observations:rematerialize-user-keys arguments', () => {
       skipped: { 'office-mailbox-user-key': 1 },
       errors: 1,
       plannedPathSet: ['profile.title'],
-      droppedPathSet: [],
+      outOfScopePathSet: [],
     });
   });
 
-  it('parses a field scope and reports the planned and dropped path sets (#5816)', () => {
+  it('parses a field scope and reports the planned and out-of-scope path sets (#5816)', () => {
     const required = ['--keys-file=/tmp/k.json', '--output=/tmp/r.json'];
     expect(parseRematerializeUserKeysArgs(required).onlyFields).toEqual([]);
     expect(
@@ -78,18 +78,18 @@ describe('observations:rematerialize-user-keys arguments', () => {
           entityKey: 'a',
           fieldsWritten: 1,
           plannedPaths: ['identifiers.email'],
-          droppedPaths: ['profile.title'],
+          outOfScopePaths: ['profile.title'],
         },
         {
           entityKey: 'b',
           fieldsWritten: 0,
           plannedPaths: [],
-          droppedPaths: ['displayName', 'profile.title'],
+          outOfScopePaths: ['displayName', 'profile.title'],
         },
       ]),
     ).toMatchObject({
       plannedPathSet: ['identifiers.email'],
-      droppedPathSet: ['displayName', 'profile.title'],
+      outOfScopePathSet: ['displayName', 'profile.title'],
     });
   });
 });

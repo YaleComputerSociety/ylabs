@@ -358,7 +358,7 @@ export function buildScraperCliPreflight(
     }
     if (onlyFields.length > 0 && typeof flags.output !== 'string') {
       throw new Error(
-        '--only-fields requires --output <path>: the per-key planned and dropped paths are written there.',
+        '--only-fields requires --output <path>: the per-key planned and out-of-scope paths are written there.',
       );
     }
     const guard = applyScraperEnvironmentGuards({

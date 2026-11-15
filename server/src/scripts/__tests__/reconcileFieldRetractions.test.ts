@@ -191,7 +191,7 @@ describe('observations:reconcile-field-retractions user re-derive scope (#5711, 
         onlyFields: ['identifiers.orcid'],
         fieldsWritten: 2,
         plannedPaths: ['identifiers.orcid', 'profileLinks.ORCID'],
-        droppedPaths: [],
+        outOfScopePaths: [],
       },
     ]);
     await expect(rederive({ entityKey: 'k3' }, ['netid'])).rejects.toThrow(/no user materializer/);

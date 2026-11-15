@@ -81,7 +81,7 @@ describe('user materializer field scope (#5816)', () => {
       partitionPlannedPaths(changed, expandUserMaterializerScope(['primaryDepartment'])),
     ).toEqual({
       kept: ['profile.primaryDepartment', 'profileFieldWriters.primaryDepartment'],
-      dropped: ['displayName', 'identifiers.email'],
+      outOfScope: ['displayName', 'identifiers.email'],
     });
     expect(changedResearcherPaths(before, { ...before, profile: { title: 'Lecturer' } })).toEqual(
       [],

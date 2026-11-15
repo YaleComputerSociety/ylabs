@@ -197,7 +197,7 @@ describe('reconcile re-derives a retracted person inside the retracted field sco
       expect(applied).toMatchObject({ retiredObservations: 1, rederivedSubjects: 1 });
       expect(rows).toHaveLength(1);
       expect(rows[0].plannedPaths.every((path) => paths.includes(path as never))).toBe(true);
-      expect(rows[0].droppedPaths).toEqual(expect.arrayContaining(['displayName']));
+      expect(rows[0].outOfScopePaths).toEqual(expect.arrayContaining(['displayName']));
       const after = await Researcher.findById(id).lean<any>();
       unchangedOutside(before, after, retracted);
       if (retracted === 'orcid') {

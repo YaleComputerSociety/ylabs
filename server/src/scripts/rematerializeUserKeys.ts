@@ -14,9 +14,10 @@
  *     --apply --confirm-rematerialize-user-keys --output=<tmp>.json
  *
  * `--only-fields=<paths>` scopes the write to named researcher paths (#5816): every planned
- * path outside the expanded scope is dropped and listed per key under `droppedPaths`, a key
- * no researcher joins mints nothing, and each pass summary carries `plannedPathSet` and
- * `droppedPathSet`, so "nothing outside the scope" is a check that `plannedPathSet` is a
+ * path outside the expanded scope is left as stored, neither written nor deleted, and listed per
+ * key under `outOfScopePaths` (#6276); a key no researcher joins mints nothing, and each pass
+ * summary carries `plannedPathSet` and
+ * `outOfScopePathSet`, so "nothing outside the scope" is a check that `plannedPathSet` is a
  * subset of the printed `scope`. Accepted paths: displayName, profile.title,
  * profile.primaryDepartment, profile.imageUrl, profile.websiteUrl, identifiers.email,
  * identifiers.emailSupport, identifiers.orcid, profileLinks, profileFieldWriters and
@@ -69,7 +70,7 @@ async function visit(
       fieldsWritten: Number(result?.fieldsWritten ?? 0),
       plannedPaths: Array.isArray(result?.plannedPaths) ? result.plannedPaths : [],
       ...(onlyFields.length > 0
-        ? { droppedPaths: Array.isArray(result?.droppedPaths) ? result.droppedPaths : [] }
+        ? { outOfScopePaths: Array.isArray(result?.outOfScopePaths) ? result.outOfScopePaths : [] }
         : {}),
       ...(result?.skipped ? { skipped: String(result.skipped) } : {}),
     };
