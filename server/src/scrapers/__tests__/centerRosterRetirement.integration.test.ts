@@ -378,11 +378,14 @@ describe(
       }
     });
 
+    // Blair is a second director, so Avery's stale lead may end; a center's LAST lead
+    // survives a role change instead (#6084 decision, see the next test).
     it('ends a stale lead edge once two complete reads list the person under another role', async () => {
-      await runLane([ROSTER]);
+      const twoDirectors = [ROSTER[0], member('Blair', 'director'), ...ROSTER.slice(2)];
+      await runLane([twoDirectors]);
       expect((await currentEdges('Avery')).map((edge) => edge.role)).toEqual(['DIRECTOR']);
 
-      const demoted = [member('Avery'), ...ROSTER.slice(1)];
+      const demoted = [member('Avery'), ...twoDirectors.slice(1)];
       await runLane([demoted]);
       expect((await currentEdges('Avery')).map((edge) => edge.role)).toContain('DIRECTOR');
 
@@ -390,6 +393,18 @@ describe(
       expect((await currentEdges('Avery')).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
       const director = (await edgesFor('Avery')).find((edge) => edge.role === 'DIRECTOR');
       expect(director).toMatchObject({ state: 'HISTORICAL' });
+      expect((await currentEdges('Blair')).map((edge) => edge.role)).toEqual(['DIRECTOR']);
+    });
+
+    it("keeps a center's only lead edge when two complete reads list the person under another role", async () => {
+      await runLane([ROSTER]);
+      const demoted = [member('Avery'), ...ROSTER.slice(1)];
+      await runLane([demoted]);
+      await runLane([demoted]);
+
+      expect((await currentEdges('Avery')).map((edge) => edge.role)).toContain('DIRECTOR');
+      await runLane([demoted]);
+      expect((await currentEdges('Avery')).map((edge) => edge.role)).toContain('DIRECTOR');
     });
 
     it('re-syncs the center search document after the retirement ends its edges', async () => {
@@ -499,6 +514,7 @@ describe(
         retiredProfileClaims: [],
         retiredRelationshipKeys: [`${CENTER_SLUG}:old-spelling`],
         retiredEdges: [],
+        protectedLeadEdges: [],
         observationIds: [],
         counts: {} as CenterRosterRetirementPlan['counts'],
       };
@@ -590,6 +606,7 @@ describe(
           retiredProfileClaims: [],
           retiredRelationshipKeys: [retiredKey],
           retiredEdges: [],
+          protectedLeadEdges: [],
           observationIds: [],
           counts: {} as CenterRosterRetirementPlan['counts'],
         },

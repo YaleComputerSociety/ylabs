@@ -16065,8 +16065,12 @@ function logCenterRosterRetirement(
     (total, center) => total + (center.applied?.indexSyncFailures ?? 0),
     0,
   );
+  const keptLeadEdges = result.centers.reduce(
+    (total, center) => total + (center.counts?.protectedLeadEdges ?? 0),
+    0,
+  );
   console.info(
-    `[center-roster-retirement] ${lane.sourceName} ${result.dryRun ? 'planned' : 'reconciled'} ${result.centers.length} center read(s): ${acted.length} retiring (${sum('retiredMemberKeys')} member keys, ${sum('retiredEdges')} role edges of which ${sum('retiredLeadEdges')} leads), ${frozen.length} frozen, ${notAdmitted.length} read(s) not admitted, ${indexSyncFailures} center index sync failure(s)`,
+    `[center-roster-retirement] ${lane.sourceName} ${result.dryRun ? 'planned' : 'reconciled'} ${result.centers.length} center read(s): ${acted.length} retiring (${sum('retiredMemberKeys')} member keys, ${sum('retiredEdges')} role edges of which ${sum('retiredLeadEdges')} leads), ${keptLeadEdges} last lead edge(s) kept for operator review, ${frozen.length} frozen, ${notAdmitted.length} read(s) not admitted, ${indexSyncFailures} center index sync failure(s)`,
   );
 }
 

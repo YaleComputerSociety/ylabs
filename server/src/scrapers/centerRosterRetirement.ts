@@ -804,6 +804,7 @@ export interface CenterRosterRetirementCounts {
   retiredRelationshipKeys: number;
   retiredEdges: number;
   retiredLeadEdges: number;
+  protectedLeadEdges: number;
   retiredObservations: number;
   sectionReads: number;
   departedEdges: number;
@@ -837,11 +838,37 @@ export interface CenterRosterRetirementPlan {
   retiredProfileClaims: string[];
   retiredRelationshipKeys: string[];
   retiredEdges: PlannedEdgeRetirement[];
+  protectedLeadEdges: PlannedEdgeRetirement[];
   observationIds: string[];
   counts: CenterRosterRetirementCounts;
 }
 
 const LEAD_CANONICAL_ROLES = new Set(['PI', 'DIRECTOR', 'CO_DIRECTOR']);
+
+const DEPARTURE_EVIDENCE_VERDICTS = new Set<CenterRosterEdgeRetirementVerdict | undefined>([
+  'departed',
+  'witnessed-omitted',
+]);
+
+/**
+ * A center's lead goes away only when evidence says the person left (a past or emeritus
+ * section, or their own page) or names a successor who keeps a lead edge. A role claim the
+ * roster stopped stating, or a listing it stopped carrying, ends no lead that would leave
+ * the center with none: the edge is kept and reported for operator review instead (#6084).
+ */
+function lastLeadEdgesWithoutDepartureEvidence(
+  edges: readonly CenterRosterGovernedEdge[],
+  retiredEdges: readonly PlannedEdgeRetirement[],
+): PlannedEdgeRetirement[] {
+  const retiredIds = new Set(retiredEdges.map((edge) => edge.edgeId));
+  const keepsAnotherLead = edges.some(
+    (edge) => LEAD_CANONICAL_ROLES.has(edge.role) && !retiredIds.has(edge.edgeId),
+  );
+  if (keepsAnotherLead) return [];
+  return retiredEdges.filter(
+    (edge) => LEAD_CANONICAL_ROLES.has(edge.role) && !DEPARTURE_EVIDENCE_VERDICTS.has(edge.verdict),
+  );
+}
 
 const emptyCounts = (): CenterRosterRetirementCounts => ({
   admittedReads: 0,
@@ -859,6 +886,7 @@ const emptyCounts = (): CenterRosterRetirementCounts => ({
   retiredRelationshipKeys: 0,
   retiredEdges: 0,
   retiredLeadEdges: 0,
+  protectedLeadEdges: 0,
   retiredObservations: 0,
   sectionReads: 0,
   departedEdges: 0,
@@ -973,6 +1001,7 @@ export function planCenterRosterRetirement(input: {
     retiredProfileClaims: [],
     retiredRelationshipKeys: [],
     retiredEdges: [],
+    protectedLeadEdges: [],
     observationIds: [],
     counts,
   };
@@ -982,6 +1011,7 @@ export function planCenterRosterRetirement(input: {
     groupObservations(input.memberObservations, (row) => row.entityKey),
   );
   counts.governedMemberKeys = memberGroups.length;
+  const memberGroupRows = new Map(memberGroups.map((group) => [group.key, group.rows]));
   const retiredMemberKeys = new Set<string>();
   for (const group of memberGroups) {
     const absent = absentReadRunIds(
@@ -1009,6 +1039,7 @@ export function planCenterRosterRetirement(input: {
     claimOf: (value: string) => string,
     listedClaims: (read: CenterRosterRead) => ReadonlySet<string>,
     comparableClaim: (claim: string) => string = (claim) => claim,
+    observationIdsByClaim?: Map<string, string[]>,
   ): string[] => {
     const claimGroups = groupObservations(
       input.memberObservations.filter(
@@ -1033,13 +1064,20 @@ export function planCenterRosterRetirement(input: {
       if (absent.length < minReads) continue;
       retiredClaims.push(group.key);
       for (const row of group.rows) retiredObservationIds.add(row.observationId);
+      observationIdsByClaim?.set(
+        group.key,
+        group.rows.map((row) => row.observationId),
+      );
     }
     return retiredClaims;
   };
+  const roleClaimObservationIds = new Map<string, string[]>();
   const retiredRoleClaims = retireStaleMemberClaims(
     'role',
     (role) => role,
     (read) => read.memberClaims,
+    (claim) => claim,
+    roleClaimObservationIds,
   );
   const retiredProfileClaims = retireStaleMemberClaims(
     'profileUrl',
@@ -1145,6 +1183,27 @@ export function planCenterRosterRetirement(input: {
       counts.edgesAwaitingSecondRead += 1;
     }
   }
+
+  const keptLeadEdges = lastLeadEdgesWithoutDepartureEvidence(input.edges, retiredEdges);
+  for (const edge of keptLeadEdges) {
+    retiredEdges.splice(retiredEdges.indexOf(edge), 1);
+    plan.protectedLeadEdges.push(edge);
+    const claimRole = edge.membershipKey.slice(edge.membershipKey.lastIndexOf('|') + 1);
+    for (const memberKey of memberKeysByIdentity.get(comparableIdentity(edge.membershipKey)) ??
+      []) {
+      if (retiredMemberKeys.delete(memberKey)) {
+        for (const row of memberGroupRows.get(memberKey) ?? []) {
+          retiredObservationIds.delete(row.observationId);
+        }
+      }
+      const claim = memberClaimKey(memberKey, claimRole);
+      const claimIndex = retiredRoleClaims.indexOf(claim);
+      if (claimIndex < 0) continue;
+      retiredRoleClaims.splice(claimIndex, 1);
+      for (const id of roleClaimObservationIds.get(claim) ?? []) retiredObservationIds.delete(id);
+    }
+  }
+  counts.protectedLeadEdges = plan.protectedLeadEdges.length;
 
   const maxFraction = input.maxAbsentFraction ?? CENTER_ROSTER_MAX_ABSENT_FRACTION;
   const freeze = (reason: CenterRosterFreezeReason): CenterRosterRetirementPlan => ({
@@ -1580,7 +1639,7 @@ export async function reconcileCenterRosterRetirementsFromRun(
     if (lane.adoptsSectionContract && plan.counts.sectionReads > 0) {
       const { counts } = plan;
       console.info(
-        `[center-roster-retirement] ${lane.sourceName} ${sanitizeLogValue(entityKey)} sections: latest read lists ${counts.latestReadListings.current} current, ${counts.latestReadListings.unclassified} unlabelled, ${counts.latestReadListings.past} past, ${counts.latestReadListings.emeritus} emeritus; ${counts.departedEdges} departed edge(s), ${counts.departedEdgesAwaitingSecondRead} awaiting a second read, ${counts.witnessedOmittedEdges} witnessed-omitted, ${counts.omittedUnwitnessedEdges} omitted-unwitnessed edge(s), ${counts.omittedUnwitnessedMemberKeys} omitted-unwitnessed member key(s)`,
+        `[center-roster-retirement] ${lane.sourceName} ${sanitizeLogValue(entityKey)} sections: latest read lists ${counts.latestReadListings.current} current, ${counts.latestReadListings.unclassified} unlabelled, ${counts.latestReadListings.past} past, ${counts.latestReadListings.emeritus} emeritus; ${counts.departedEdges} departed edge(s), ${counts.departedEdgesAwaitingSecondRead} awaiting a second read, ${counts.witnessedOmittedEdges} witnessed-omitted, ${counts.omittedUnwitnessedEdges} omitted-unwitnessed edge(s), ${counts.omittedUnwitnessedMemberKeys} omitted-unwitnessed member key(s), ${counts.protectedLeadEdges} last lead edge(s) kept for operator review`,
       );
     }
     const result: CenterRosterRetirementCenterResult = {
