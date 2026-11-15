@@ -16,6 +16,7 @@ import {
   slugContradictionShape,
   slugNamesAnotherLead,
   surnameCore,
+  surnameInLabPath,
   surnameInSiteUrl,
   unreachableLabSiteVerification,
   type LabSiteLeadCandidate,
@@ -743,5 +744,85 @@ describe('a different person stated as the row lead, whatever the slug order', (
         ),
       ),
     ).toMatchObject({ verdict: 'UNSTATED' });
+  });
+});
+
+describe('a person row adopting a site it appears on (#6313)', () => {
+  const observedAt = new Date('2026-11-15T00:00:00.000Z');
+  const website = 'https://medicine.yale.edu/lab/tidal/';
+  const personRow = (html: string, entityType = 'FACULTY_RESEARCH_AREA') =>
+    buildLabSiteLeadVerification(
+      [lead()],
+      { website, visitedUrls: [website], html, pages: [{ url: website, html }] },
+      observedAt,
+      entityType,
+      'Robin Quill Faculty Research',
+    ).leads[0];
+  const memberPage =
+    '<html><head><title>Tidal Imaging Lab</title></head><body>' +
+    '<p>Principal Investigator: Ada Brook, PhD</p>' +
+    '<h2>Members</h2><div><a href="/profile/robin-quill/">Robin Quill</a><p>Postdoctoral Fellow</p></div>' +
+    '</body></html>';
+
+  it('leaves a person the site only links or names unconfirmed', () => {
+    expect(personRow(memberPage)).toMatchObject({
+      verdict: 'UNSTATED',
+      matchedBy: 'NONE',
+      namedOnPage: true,
+    });
+  });
+
+  it('never contradicts the person row subject on that evidence', () => {
+    expect(personRow(memberPage).verdict).not.toBe('CONTRADICTED');
+  });
+
+  it('confirms a person the site titles as its lead', () => {
+    const leadPage =
+      '<html><head><title>Tidal Imaging Lab</title></head><body>' +
+      '<div class="person"><h3><a href="/profile/robin-quill/">Robin Quill, PhD</a></h3><p>Principal Investigator</p></div>' +
+      '</body></html>';
+    expect(personRow(leadPage).verdict).toBe('CONFIRMED');
+  });
+
+  it('still confirms a site whose lab path carries the person surname', () => {
+    const eponymSite = 'https://medicine.yale.edu/lab/quill/';
+    const html = '<p>Robin Quill</p><p>Postdoctoral Fellow</p>';
+    const judged = buildLabSiteLeadVerification(
+      [lead()],
+      { website: eponymSite, visitedUrls: [eponymSite], html, pages: [{ url: eponymSite, html }] },
+      observedAt,
+      'FACULTY_RESEARCH_AREA',
+      'Robin Quill Faculty Research',
+    ).leads[0];
+    expect(judged.verdict).toBe('CONFIRMED');
+  });
+
+  it('keeps presence confirming the lead of a lab row', () => {
+    const labPage = '<p><a href="/profile/robin-quill/">Robin Quill</a></p>';
+    const judged = buildLabSiteLeadVerification(
+      [lead()],
+      { website, visitedUrls: [website], html: labPage, pages: [{ url: website, html: labPage }] },
+      observedAt,
+      'LAB',
+      'Tidal Imaging Lab',
+    ).leads[0];
+    expect(judged.verdict).toBe('CONFIRMED');
+  });
+});
+
+describe('surnameInLabPath (#6313)', () => {
+  it('reads the lab segment of a school-hosted lab address', () => {
+    expect(surnameInLabPath('https://medicine.yale.edu/lab/quill/', 'Robin Quill')).toBe(true);
+    expect(surnameInLabPath('https://medicine.yale.edu/labs/quill-lab/', 'Robin Quill')).toBe(true);
+  });
+
+  it('ignores a surname outside the lab segment', () => {
+    expect(surnameInLabPath('https://medicine.yale.edu/lab/tidal/quill/', 'Robin Quill')).toBe(
+      false,
+    );
+    expect(surnameInLabPath('https://medicine.yale.edu/profile/robin-quill/', 'Robin Quill')).toBe(
+      false,
+    );
+    expect(surnameInLabPath('https://medicine.yale.edu/lab/', 'Robin Quill')).toBe(false);
   });
 });

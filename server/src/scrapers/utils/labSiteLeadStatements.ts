@@ -594,15 +594,19 @@ function isNotAboutCurrentLeads($: cheerio.CheerioAPI, pageUrl: string): boolean
  * `<h1>` does. `header` is kept on purpose, because CMS person cards put the name and
  * title inside one.
  */
-export function rowLeadEvidence(pages: readonly LabSitePage[], rowName: unknown): RowLeadEvidence {
+export function rowLeadEvidence(
+  pages: readonly LabSitePage[],
+  rowName: unknown,
+  options: { landingIsOwn?: boolean } = {},
+): RowLeadEvidence {
   const aliases = rowNameAliases(rowName);
   const evidence: RowLeadEvidence = { statements: [], nonLeadListings: [], leadTitledNames: [] };
   if (!aliases.length || !pages.length) return evidence;
-  let landingIsOwn = false;
+  let landingIsOwn = options.landingIsOwn === true;
   pages.forEach((page, index) => {
     const $ = cheerio.load(String(page.html ?? ''));
     const headingNamesRow = pageHeadingNamesRow($, aliases);
-    if (index === 0) landingIsOwn = headingNamesRow;
+    if (index === 0) landingIsOwn = landingIsOwn || headingNamesRow;
     const ownPage = landingIsOwn || headingNamesRow;
     if (isNotAboutCurrentLeads($, page.url)) return;
     $('script, style, noscript, nav, footer, template, svg').remove();

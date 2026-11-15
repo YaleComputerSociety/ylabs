@@ -621,6 +621,45 @@ function readRowEvidenceFor(
   return {};
 }
 
+const LAB_PATH_SEGMENT = /^labs?$/;
+
+export function surnameInLabPath(website: unknown, displayName: unknown): boolean {
+  const surname = surnameCore(displayName);
+  if (surname.length < 4 || !givenNameCore(displayName)) return false;
+  let segments: string[];
+  try {
+    segments = new URL(textValue(website)).pathname.split('/').filter(Boolean);
+  } catch {
+    return false;
+  }
+  const labIndex = segments.findIndex((segment) => LAB_PATH_SEGMENT.test(segment.toLowerCase()));
+  const labName = labIndex >= 0 ? segments[labIndex + 1] : undefined;
+  return Boolean(labName) && flattenForNameMatch(labName).includes(surname);
+}
+
+const siteIsNamedForLead = (
+  presence: PresenceConfirmation,
+  reading: LabSiteReading,
+  lead: LabSiteLeadCandidate,
+) =>
+  presence.matchedBy === 'SURNAME_IN_SITE_URL' ||
+  surnameInLabPath(reading.website, lead.displayName);
+
+/**
+ * Appearing on a site a person row adopted does not make the person its lead: a blind
+ * grade found the people such a page names or links were trainees and staff as often as
+ * leads (#6313). Only a lead title or a sentence about the site naming them does.
+ */
+function siteStatesLead(
+  lead: LabSiteLeadCandidate,
+  evidence: RowLeadEvidence,
+  landingUrl: string,
+): string {
+  const statement = evidence.statements.find((one) => statementNamesLead(one.personName, lead));
+  if (statement) return statement.pageUrl;
+  return evidence.leadTitledNames.some((name) => statementNamesLead(name, lead)) ? landingUrl : '';
+}
+
 /**
  * Judge one lead against what the site says. `CONTRADICTED` needs positive evidence
  * about somebody else or about this lead's own non-lead role, so a thin, JS-rendered,
@@ -664,6 +703,25 @@ export function judgeLeadAgainstSite(
     evidenceUrl,
     contradictedBy: shape,
   });
+  const statedAsSiteLead = siteStatesLead(
+    lead,
+    rowEvidence,
+    reading.visitedUrls[0] || reading.website,
+  );
+  if (
+    presence &&
+    leadIsTheRecordSubject &&
+    !statedAsSiteLead &&
+    !siteIsNamedForLead(presence, reading, lead)
+  ) {
+    return {
+      ...base,
+      verdict: 'UNSTATED',
+      matchedBy: 'NONE',
+      evidenceUrl: '',
+      ...(presence.namedOnPage ? { namedOnPage: true } : {}),
+    };
+  }
   if (presence) {
     if (rowReading.contradiction) {
       return contradicted(rowReading.contradiction.shape, rowReading.contradiction.evidenceUrl);
@@ -676,6 +734,14 @@ export function judgeLeadAgainstSite(
       .filter((slug) => !leadSlugs.includes(slug))
       .some((slug) => slugContradictionShape(slug, lead.displayName) === 'NAMESAKE');
   if (namesake) return contradicted('NAMESAKE', reading.visitedUrls[0] || reading.website);
+  if (leadIsTheRecordSubject && statedAsSiteLead) {
+    return {
+      ...base,
+      verdict: 'CONFIRMED',
+      matchedBy: 'NAMED_AS_ROW_LEAD',
+      evidenceUrl: statedAsSiteLead,
+    };
+  }
   if (rowReading.namedAsRowLeadOn) {
     return {
       ...base,
@@ -760,10 +826,9 @@ export function buildLabSiteLeadVerification(
   const haystack = siteHaystack(reading.html, reading.visitedUrls);
   const contestedSurnames = contestedSurnamesAmong(bounded);
   const leadIsTheRecordSubject = leadIsTheRecordSubjectFor(entityType);
-  const rowEvidence =
-    leadIsTheRecordSubject || !reading.pages?.length
-      ? EMPTY_ROW_LEAD_EVIDENCE
-      : rowLeadEvidence(reading.pages, entityName);
+  const rowEvidence = !reading.pages?.length
+    ? EMPTY_ROW_LEAD_EVIDENCE
+    : rowLeadEvidence(reading.pages, entityName, { landingIsOwn: leadIsTheRecordSubject });
   const judgements = bounded.map((lead) =>
     judgeLeadAgainstSite(
       lead,
