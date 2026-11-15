@@ -11,6 +11,7 @@
  * "labs" (Econ, History, etc.); otherwise `kind: 'lab'`. This is determined by the
  * primary department's category.
  */
+import { extractResearchTopicFromSentenceQuery } from '../utils/sentenceQueryTopic';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
@@ -651,6 +652,7 @@ export interface ResearchGroupSearchOptions {
   embeddingSpendKey?: string;
   correctSpelling?: boolean;
   rewriteAcronym?: boolean;
+  extractSentenceTopic?: boolean;
   resolveFilterValues?: boolean;
   rerankLiveMissClient?: SearchRerankLiveMissClient;
 }
@@ -665,6 +667,11 @@ export interface ResearchSearchAcronymRewrite {
   rewrittenQuery: string;
 }
 
+export interface ResearchSearchTopicRewrite {
+  originalQuery: string;
+  topicQuery: string;
+}
+
 export interface ResearchGroupSearchResult {
   researchEntities: PublicResearchEntityDto[];
   estimatedTotalHits: number;
@@ -674,6 +681,7 @@ export interface ResearchGroupSearchResult {
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
   acronymRewrite?: ResearchSearchAcronymRewrite;
+  topicRewrite?: ResearchSearchTopicRewrite;
   appliedFilters?: AppliedStudentFilters;
   moreTopicResults?: PublicResearchEntityDto[];
   fewCloseMatches?: SearchFewCloseMatches;
@@ -1181,6 +1189,7 @@ const sanitizeResearchGroupSearchOptions = (
         : undefined,
     correctSpelling: options.correctSpelling !== false,
     rewriteAcronym: options.rewriteAcronym !== false,
+    extractSentenceTopic: options.extractSentenceTopic !== false,
   };
 };
 
@@ -2186,7 +2195,13 @@ export async function searchResearchGroupsViaMeili(
       ? { query: nameQuery, corrections: [] }
       : correctResearchSearchQuerySpelling(nameQuery);
   const acronym: AcronymRewriteChoice = { rewriteAcronym: options.rewriteAcronym !== false };
-  const searchQuery = searchedAcronymForm(spelling.query, acronym);
+  const sentenceTopic =
+    options.extractSentenceTopic === false
+      ? null
+      : extractResearchTopicFromSentenceQuery(spelling.query);
+  const topicQuery = sentenceTopic?.topicQuery ?? spelling.query;
+  const searchQuery = searchedAcronymForm(topicQuery, acronym);
+  const rankedQuery = sentenceTopic ? topicQuery : query;
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
   const isFilterable = answersFromMongoBrowse(searchQuery, options)
     ? undefined
@@ -2202,12 +2217,12 @@ export async function searchResearchGroupsViaMeili(
       ? { ...filterableToggles.dropped, ...availableResearchTypes.dropped }
       : undefined;
   const rerankQueryKey =
-    readsSearchRerankCache() && normalizeResearchSearchQuery(query).raw !== ''
-      ? searchRerankCacheQueryKey(query, filters, acronym)
+    readsSearchRerankCache() && normalizeResearchSearchQuery(rankedQuery).raw !== ''
+      ? searchRerankCacheQueryKey(rankedQuery, filters, acronym)
       : undefined;
   const rerankLiveMiss =
     rerankQueryKey && options.rerankLiveMissClient && isSearchRerankLiveMissEnabled()
-      ? { typedQuery: query, filters, acronym, client: options.rerankLiveMissClient }
+      ? { typedQuery: rankedQuery, filters, acronym, client: options.rerankLiveMissClient }
       : undefined;
   const { result: searched, answeredAsNameSearch } = await searchResearchGroupsForQuery(
     searchQuery,
@@ -2224,7 +2239,7 @@ export async function searchResearchGroupsViaMeili(
       : undefined;
   const moreTopicResults = await optionalMoreTopicResults({
     searchQuery,
-    typedQuery: query,
+    typedQuery: rankedQuery,
     acronym,
     filters: filterableToggles.filters,
     filtered: searched,
@@ -2241,9 +2256,10 @@ export async function searchResearchGroupsViaMeili(
     ...(spelling.corrections.length > 0
       ? { queryCorrection: { originalQuery, correctedQuery: spelling.query } }
       : {}),
-    ...(searchQuery !== spelling.query
+    ...(searchQuery !== topicQuery
       ? { acronymRewrite: { originalQuery, rewrittenQuery: searchQuery } }
       : {}),
+    ...(sentenceTopic ? { topicRewrite: { originalQuery, topicQuery } } : {}),
   };
 }
 

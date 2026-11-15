@@ -23,7 +23,7 @@ const SearchSpellingNotice = ({
     <button
       type="button"
       onClick={onSearchOriginal}
-      className="yr-focus-ring -my-1.5 inline-block rounded-control px-0.5 py-1.5 font-medium text-brand underline underline-offset-2 hover:text-brand-navy"
+      className="yr-focus-ring -my-1.5 mx-1 inline-block max-w-full rounded-control px-0.5 py-1.5 text-left font-medium text-brand underline underline-offset-2 hover:text-brand-navy"
     >
       {originalQuery}
     </button>
