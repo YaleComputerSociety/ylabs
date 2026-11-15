@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
+import { leadVerificationReadsServedPage } from '../utils/leadContradictedByNamesake';
 import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 import { isOrganizationalHomeEntity } from '../utils/profileAreaDuplicateRisk';
 
@@ -34,6 +35,8 @@ export interface WitnessedFoldEntity {
   archived?: boolean;
   leadVerification?: {
     state?: string;
+    checkedUrl?: string;
+    requestedUrl?: string;
     leads?: Array<{
       personId?: unknown;
       role?: string;
@@ -106,6 +109,14 @@ const pageNamesTheLead = (lead: { matchedBy?: string; namedOnPage?: boolean }) =
 function labPageNamesPersonAsPi(lab: WitnessedFoldEntity, personId: string): boolean {
   const verification = lab.leadVerification;
   if (!verification || verification.state === 'contradicted') return false;
+  if (
+    !leadVerificationReadsServedPage({
+      leadVerification: verification,
+      websiteUrl: lab.mergeFields?.websiteUrl,
+    })
+  ) {
+    return false;
+  }
   return (verification.leads || []).some(
     (lead) =>
       String(lead.personId) === personId &&
