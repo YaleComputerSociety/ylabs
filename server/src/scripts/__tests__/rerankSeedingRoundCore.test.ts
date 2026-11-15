@@ -21,6 +21,7 @@ import {
   seedInputFromRound,
   slugScoresFromScorerOutput,
   writePrivateRoundFile,
+  xorshiftRandom,
 } from '../rerankSeedingRoundCore';
 
 const REPOSITORY_ROOT = path.resolve(__dirname, '../../../..');
@@ -383,5 +384,17 @@ describe('writePrivateRoundFile', () => {
     expect(() =>
       writePrivateRoundFile(path.join(REPOSITORY_ROOT, 'round.json'), {}, REPOSITORY_ROOT),
     ).toThrow(/outside the repository/);
+  });
+});
+
+describe('xorshiftRandom', () => {
+  it('draws evenly over [0, 1) with no repeating short cycle', () => {
+    const next = xorshiftRandom(1);
+    const draws = Array.from({ length: 20000 }, next);
+    const buckets = new Array(10).fill(0);
+    for (const draw of draws) buckets[Math.floor(draw * 10)] += 1;
+    expect(draws.every((draw) => draw >= 0 && draw < 1)).toBe(true);
+    expect(new Set(draws).size).toBe(draws.length);
+    for (const bucket of buckets) expect(Math.abs(bucket - 2000)).toBeLessThan(200);
   });
 });

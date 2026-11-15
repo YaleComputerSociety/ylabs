@@ -464,14 +464,18 @@ export interface JudgePair {
   description: string;
 }
 
-const seededShuffle = <T>(items: T[], seed: number): T[] => {
+export const xorshiftRandom = (seed: number): (() => number) => {
   let state = seed >>> 0 || 1;
-  const next = () => {
+  return () => {
     state ^= state << 13;
     state ^= state >>> 17;
     state ^= state << 5;
     return (state >>> 0) / 0x100000000;
   };
+};
+
+const seededShuffle = <T>(items: T[], seed: number): T[] => {
+  const next = xorshiftRandom(seed);
   const shuffled = [...items];
   for (let index = shuffled.length - 1; index > 0; index -= 1) {
     const swap = Math.floor(next() * (index + 1));
@@ -600,11 +604,7 @@ const mean = (values: readonly number[]): number =>
 
 const bootstrapMeanCi = (values: readonly number[], samples: number): [number, number] => {
   if (values.length === 0) return [0, 0];
-  let state = 1;
-  const next = () => {
-    state = (state * 1103515245 + 12345) % 2147483648;
-    return state / 2147483648;
-  };
+  const next = xorshiftRandom(1);
   const means: number[] = [];
   for (let sample = 0; sample < samples; sample += 1) {
     let total = 0;
