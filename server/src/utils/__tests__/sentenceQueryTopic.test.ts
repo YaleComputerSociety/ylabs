@@ -14,6 +14,8 @@ describe('extracting the research topic from a sentence-shaped query (#6223)', (
     ['I want to protect oysters from acidic oceans', 'oysters acidic oceans'],
     ['want to work in venture capital', 'venture capital'],
     ['build a robot for freshmen with no experience', 'robot'],
+    ['make lab-grown meat for people', 'lab-grown meat'],
+    ['develop research-grade sensors for drones', 'research-grade sensors drones'],
   ])('reads %s as %s', (query, topic) => expect(topicOf(query)).toBe(topic));
 
   it.each([

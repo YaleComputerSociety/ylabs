@@ -14,20 +14,25 @@ const NOUN_LIKE_GOAL_VERB =
 const GOAL_OBJECT_LEAD =
   '(?:a|an|the|my|our|new|better|how|why|what|which|whether|where|when|ways?|people|kids|children|students|things|some|more)';
 
+const WORD_END = "(?![\\p{L}\\p{N}'-])";
+
 const GOAL_VERB_OPENING = new RegExp(
-  `^(?:(?:${UNAMBIGUOUS_GOAL_VERB}|${NOUN_LIKE_GOAL_VERB})\\b\\s*)+`,
+  `^(?:(?:${UNAMBIGUOUS_GOAL_VERB}|${NOUN_LIKE_GOAL_VERB})${WORD_END}\\s*)+`,
+  'u',
 );
 
 const OPENS_WITH_A_GOAL_VERB = new RegExp(
-  `^(?:${UNAMBIGUOUS_GOAL_VERB}\\b|${NOUN_LIKE_GOAL_VERB}\\s+${GOAL_OBJECT_LEAD}\\b)`,
+  `^(?:${UNAMBIGUOUS_GOAL_VERB}${WORD_END}|${NOUN_LIKE_GOAL_VERB}\\s+${GOAL_OBJECT_LEAD}${WORD_END})`,
+  'u',
 );
 
 const OPENS_WITH_ANY_GOAL_VERB = new RegExp(
-  `^(?:${UNAMBIGUOUS_GOAL_VERB}|${NOUN_LIKE_GOAL_VERB})\\b`,
+  `^(?:${UNAMBIGUOUS_GOAL_VERB}|${NOUN_LIKE_GOAL_VERB})${WORD_END}`,
+  'u',
 );
 
 const AUDIENCE_OR_LOGISTICS_PHRASE =
-  /\b(?:for\s+(?:a\s+)?(?:freshm[ae]n|first[- ]years?|undergrads?|undergraduates?|beginners)|(?:as\s+an?\s+)?(?:freshm[ae]n|undergrads?|undergraduates?)|with\s+no\s+experience|no\s+experience|research|labs?|at\s+yale|in\s+a\s+lab)\b/g;
+  /(?<![\p{L}\p{N}'-])(?:for\s+(?:a\s+)?(?:freshm[ae]n|first[- ]years?|undergrads?|undergraduates?|beginners)|(?:as\s+an?\s+)?(?:freshm[ae]n|undergrads?|undergraduates?)|with\s+no\s+experience|no\s+experience|research|labs?|at\s+yale|in\s+a\s+lab)(?![\p{L}\p{N}'-])/gu;
 
 const FUNCTION_WORDS = new Set(
   'a an the that which who whom whose can could do does did is are was were be been being would should may might must to of for in on at by with from into about and or but so than then them they their there it its this these those some any something things stuff me my i we our you your people really just also very more better kind sort lot lots way ways'.split(
