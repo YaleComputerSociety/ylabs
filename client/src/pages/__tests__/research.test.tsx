@@ -74,6 +74,7 @@ const mockSearchResponses = (
       qualityFilters?: string[];
       correctSpelling?: boolean;
       rewriteAcronym?: boolean;
+      extractSentenceTopic?: boolean;
     },
   ) => unknown,
 ) => {
@@ -4417,5 +4418,78 @@ describe('Research few close matches notice (#6094)', () => {
     expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search')).toHaveLength(
       searchCalls,
     );
+  });
+});
+
+describe('Research sentence topic rewrite notice (#6223)', () => {
+  const SENTENCE = 'design a better prosthetic hand';
+  const topicEntity = {
+    ...researchEntity,
+    _id: 'topic-1',
+    slug: 'synthetic-prosthetics-lab',
+    name: 'Synthetic Prosthetics Lab',
+    displayName: 'Synthetic Prosthetics Lab',
+  };
+  const typedEntity = {
+    ...researchEntity,
+    _id: 'typed-1',
+    slug: 'synthetic-design-lab',
+    name: 'Synthetic Design Lab',
+    displayName: 'Synthetic Design Lab',
+  };
+
+  const serveSentenceSearch = (searchRequests: Array<Record<string, unknown>>) =>
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      searchRequests.push(body as Record<string, unknown>);
+      if (body.q !== SENTENCE) return researchSearchResponse([topicEntity]);
+      if (body.extractSentenceTopic === false) {
+        return researchSearchResponse([typedEntity], { estimatedTotalHits: 1 });
+      }
+      return researchSearchResponse([topicEntity], {
+        estimatedTotalHits: 1,
+        topicRewrite: { originalQuery: SENTENCE, topicQuery: 'prosthetic hand' },
+      });
+    });
+
+  it('names the topic searched and lets the student search the sentence as typed', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearch(departments, [`/research?q=${encodeURIComponent(SENTENCE)}`]);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain("result for 'prosthetic hand'");
+    expect(document.body.textContent).toContain(
+      `Searching for the topic prosthetic hand. Search instead for ${SENTENCE}`,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: SENTENCE }));
+
+    expect(document.activeElement).toBe(screen.getByRole('status'));
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+    expect(searchRequests.at(-1)).toEqual(
+      expect.objectContaining({ q: SENTENCE, extractSentenceTopic: false }),
+    );
+    expect(document.body.textContent).not.toContain('Searching for the topic');
+
+    fireEvent.click(screen.getByRole('combobox', { name: /Sort research/ }));
+    fireEvent.click(screen.getByRole('option', { name: 'Name' }));
+
+    await waitFor(() => {
+      expect(searchRequests.at(-1)).toEqual(
+        expect.objectContaining({ q: SENTENCE, sortBy: 'name', extractSentenceTopic: false }),
+      );
+    });
+  });
+
+  it('shows no topic notice for a search that was not rewritten', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearch(departments, ['/research?q=coastal%20ecology']);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+    expect(document.body.textContent).not.toContain('Searching for the topic');
   });
 });

@@ -57,6 +57,7 @@ import {
 } from '../types/researchEntity';
 import type {
   ResearchSearchAcronymRewrite,
+  ResearchSearchTopicRewrite,
   ResearchSearchFewCloseMatches,
   ResearchSearchQueryCorrection,
 } from '../types/researchGroup';
@@ -184,6 +185,7 @@ interface ResearchEntitySearchPage {
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
   acronymRewrite?: ResearchSearchAcronymRewrite;
+  topicRewrite?: ResearchSearchTopicRewrite;
   fewCloseMatches?: ResearchSearchFewCloseMatches;
   appliedFilters?: ResearchEntitySearchResponse['appliedFilters'];
   moreTopicResults?: ResearchEntity[];
@@ -265,6 +267,7 @@ interface ResearchPageSnapshot {
   defaultSearchDegraded: boolean;
   queryCorrection: ResearchSearchQueryCorrection | null;
   acronymRewrite: ResearchSearchAcronymRewrite | null;
+  topicRewrite: ResearchSearchTopicRewrite | null;
   fewCloseMatches: ResearchSearchFewCloseMatches | null;
 }
 
@@ -280,6 +283,7 @@ interface ResearchEntitySearchOptions {
   suggestionProbe?: boolean;
   exactSpelling?: boolean;
   literalAcronym?: boolean;
+  literalTopic?: boolean;
   exactFilterValues?: boolean;
 }
 
@@ -318,6 +322,7 @@ const searchResearchEntities = async (
       ...(options.suggestionProbe ? { suggestionProbe: true } : {}),
       ...(options.exactSpelling ? { correctSpelling: false } : {}),
       ...(options.literalAcronym ? { rewriteAcronym: false } : {}),
+      ...(options.literalTopic ? { extractSentenceTopic: false } : {}),
       ...(options.exactFilterValues ? { resolveFilterValues: false } : {}),
     },
     { signal },
@@ -333,6 +338,7 @@ const searchResearchEntities = async (
     degraded: normalized.degraded === true,
     queryCorrection: normalized.queryCorrection,
     acronymRewrite: normalized.acronymRewrite,
+    topicRewrite: normalized.topicRewrite,
     fewCloseMatches: normalized.fewCloseMatches,
     appliedFilters: normalized.appliedFilters,
     moreTopicResults: normalized.moreTopicResults,
@@ -626,6 +632,9 @@ const Research = () => {
   const [acronymRewrite, setAcronymRewrite] = useState<ResearchSearchAcronymRewrite | null>(
     () => restoredSnapshot?.acronymRewrite ?? null,
   );
+  const [topicRewrite, setTopicRewrite] = useState<ResearchSearchTopicRewrite | null>(
+    () => restoredSnapshot?.topicRewrite ?? null,
+  );
   const [fewCloseMatches, setFewCloseMatches] = useState<ResearchSearchFewCloseMatches | null>(
     () => restoredSnapshot?.fewCloseMatches ?? null,
   );
@@ -835,6 +844,7 @@ const Research = () => {
       preserveDraftQuery?: boolean;
       exactSpelling?: boolean;
       literalAcronym?: boolean;
+      literalTopic?: boolean;
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
@@ -861,6 +871,7 @@ const Research = () => {
       sort: currentSortRequestOptions(),
       exactSpelling: options.exactSpelling === true,
       literalAcronym: options.literalAcronym === true,
+      literalTopic: options.literalTopic === true,
     });
     if (activeSearchKeyRef.current === requestKey) return;
     activeSearchKeyRef.current = requestKey;
@@ -891,6 +902,7 @@ const Research = () => {
         ...currentSortRequestOptions(),
         ...(options.exactSpelling ? { exactSpelling: true } : {}),
         ...(options.literalAcronym ? { literalAcronym: true } : {}),
+        ...(options.literalTopic ? { literalTopic: true } : {}),
         ...(options.departmentSearch ? { exactFilterValues: true } : {}),
       },
     });
@@ -947,6 +959,7 @@ const Research = () => {
           ...currentSortRequestOptions(),
           ...(options.exactSpelling ? { exactSpelling: true } : {}),
           ...(options.literalAcronym ? { literalAcronym: true } : {}),
+          ...(options.literalTopic ? { literalTopic: true } : {}),
           ...(options.departmentSearch ? { exactFilterValues: true } : {}),
         },
       );
@@ -1018,6 +1031,7 @@ const Research = () => {
       setSearchDegraded(researchEntitiesPage.degraded === true);
       setQueryCorrection(researchEntitiesPage.queryCorrection ?? null);
       setAcronymRewrite(researchEntitiesPage.acronymRewrite ?? null);
+      setTopicRewrite(researchEntitiesPage.topicRewrite ?? null);
       setFewCloseMatches(researchEntitiesPage.fewCloseMatches ?? null);
       setSearchResultSetId(requestId);
       setSearchResultResearchEntities(researchEntities);
@@ -1192,6 +1206,10 @@ const Research = () => {
   const activeSearchKeepsLiteralAcronym = (text: string): boolean =>
     activeSearchRequest?.submittedText === text &&
     activeSearchRequest.options?.literalAcronym === true;
+
+  const activeSearchKeepsLiteralTopic = (text: string): boolean =>
+    activeSearchRequest?.submittedText === text &&
+    activeSearchRequest.options?.literalTopic === true;
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1544,6 +1562,7 @@ const Research = () => {
       defaultSearchDegraded,
       queryCorrection,
       acronymRewrite,
+      topicRewrite,
       fewCloseMatches,
     };
   }, [
@@ -1585,6 +1604,7 @@ const Research = () => {
     defaultSearchDegraded,
     queryCorrection,
     acronymRewrite,
+    topicRewrite,
     fewCloseMatches,
   ]);
 
@@ -1809,6 +1829,7 @@ const Research = () => {
       preserveResults: true,
       exactSpelling: activeSearchKeepsTypedSpelling(textQuery),
       literalAcronym: activeSearchKeepsLiteralAcronym(textQuery),
+      literalTopic: activeSearchKeepsLiteralTopic(textQuery),
     });
   };
   const clearSearchText = () => {
@@ -1851,6 +1872,7 @@ const Research = () => {
       syncUrl: false,
       exactSpelling: activeSearchRequest.options?.exactSpelling === true,
       literalAcronym: activeSearchRequest.options?.literalAcronym === true,
+      literalTopic: activeSearchRequest.options?.literalTopic === true,
     });
   };
   const reloadDefaultResearchHomes = () => {
@@ -2012,6 +2034,17 @@ const Research = () => {
     });
   };
 
+  const searchLiteralTopic = () => {
+    if (!topicRewrite) return;
+    focusResultSummary();
+    const filters = studentSearchFilters();
+    void runSearch(topicRewrite.originalQuery, {
+      filters,
+      hasFilterSelections: hasStructuredFilters(filters),
+      literalTopic: true,
+    });
+  };
+
   const searchLiteralAcronym = () => {
     if (!acronymRewrite) return;
     focusResultSummary();
@@ -2141,7 +2174,10 @@ const Research = () => {
     >
       {resultSummary(
         activeResults,
-        queryCorrection?.correctedQuery ?? acronymRewrite?.rewrittenQuery ?? submittedQuery,
+        queryCorrection?.correctedQuery ??
+          acronymRewrite?.rewrittenQuery ??
+          topicRewrite?.topicQuery ??
+          submittedQuery,
         searchLoading,
         departmentSearch?.label,
         searchTotal,
@@ -2161,6 +2197,13 @@ const Research = () => {
       correctedQuery={acronymRewrite.rewrittenQuery}
       searchedLabel="Searching for"
       onSearchOriginal={searchLiteralAcronym}
+    />
+  ) : topicRewrite ? (
+    <SearchSpellingNotice
+      originalQuery={topicRewrite.originalQuery}
+      correctedQuery={topicRewrite.topicQuery}
+      searchedLabel="Searching for the topic"
+      onSearchOriginal={searchLiteralTopic}
     />
   ) : null;
 

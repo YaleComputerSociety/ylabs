@@ -171,6 +171,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
     qualityFilters?: unknown;
     correctSpelling?: boolean;
     rewriteAcronym?: boolean;
+    extractSentenceTopic?: boolean;
     resolveFilterValues?: boolean;
   };
 
@@ -250,6 +251,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
     embeddingSpendKey: getPeerIpKey(request),
     correctSpelling: body.correctSpelling !== false,
     rewriteAcronym: body.rewriteAcronym !== false,
+    extractSentenceTopic: body.extractSentenceTopic !== false,
     resolveFilterValues: body.resolveFilterValues !== false,
     rerankLiveMissClient: {
       ipKey: getPeerIpKey(request),
