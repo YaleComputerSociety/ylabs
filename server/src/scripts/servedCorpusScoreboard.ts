@@ -63,6 +63,7 @@ import {
   type ServedResearchEntityRow,
 } from './servedCorpusScoreboardCore';
 import { connectScriptMongo } from '../db/connections';
+import { loadServedSustainedRefusalReadings } from './servedSustainedRefusalReadings';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -136,27 +137,21 @@ async function scoreboardForEnvironment(
 
     const collection = db.collection(RESEARCH_ENTITIES_COLLECTION);
     const slugs = baseline.map((entry) => entry.slug);
-    const [researchEntities, studentReadyNotArchived, docs] = await Promise.all([
+    const servedFilter = {
+      studentVisibilityTier: SERVED_CORPUS_SCOREBOARD_SERVED_TIER,
+      archived: { $ne: true },
+    };
+    const [researchEntities, studentReadyNotArchived, docs, sustainedRefusal] = await Promise.all([
       collection.countDocuments({}),
-      collection.countDocuments({
-        studentVisibilityTier: SERVED_CORPUS_SCOREBOARD_SERVED_TIER,
-        archived: { $ne: true },
-      }),
+      collection.countDocuments(servedFilter),
       collection.find({ slug: { $in: slugs } }).toArray(),
+      loadServedSustainedRefusalReadings(db, servedFilter),
     ]);
 
     const tierAdmittedSlugs = options.corpusReachability
-      ? (
-          await collection
-            .find(
-              {
-                studentVisibilityTier: SERVED_CORPUS_SCOREBOARD_SERVED_TIER,
-                archived: { $ne: true },
-              },
-              { projection: { slug: 1 } },
-            )
-            .toArray()
-        ).map((doc) => String((doc as any).slug || ''))
+      ? (await collection.find(servedFilter, { projection: { slug: 1 } }).toArray()).map((doc) =>
+          String((doc as any).slug || ''),
+        )
       : [];
 
     await connectScriptMongo(mongoUrl);
@@ -199,6 +194,7 @@ async function scoreboardForEnvironment(
       },
       baseline,
       rows,
+      sustainedRefusal,
     });
     assertServedCorpusScoreboardConsistent(scoreboard);
     return scoreboard;
