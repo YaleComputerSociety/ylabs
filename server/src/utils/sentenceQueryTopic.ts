@@ -22,7 +22,7 @@ const ONE_GOAL_VERB_OPENING = new RegExp(
 );
 
 const FIXED_TOPIC_PHRASE_OPENING = new RegExp(
-  `^(?:stop[\\s-]+motion|make[\\s-]*up|get\\s+out\\s+the\\s+vote)${WORD_END}`,
+  `^(?:stop[\\s-]+motion(?!\\s+sickness${WORD_END})|make[\\s-]*up|get\\s+out\\s+the\\s+vote)${WORD_END}`,
   'u',
 );
 

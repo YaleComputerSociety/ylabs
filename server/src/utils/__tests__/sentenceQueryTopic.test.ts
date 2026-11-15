@@ -45,6 +45,7 @@ describe('extracting the research topic from a sentence-shaped query (#6223)', (
     ['I want to make stop motion films', 'stop motion films'],
     ['I want to help get out the vote in local elections', 'get out the vote local elections'],
     ['learn make up artistry for theater', 'make up artistry theater'],
+    ['I want to stop motion sickness in astronauts', 'motion sickness astronauts'],
   ])('keeps the topic phrase whole in %s', (query, topic) => expect(topicOf(query)).toBe(topic));
 
   it('never rewrites a query of fewer than four words', () => {
