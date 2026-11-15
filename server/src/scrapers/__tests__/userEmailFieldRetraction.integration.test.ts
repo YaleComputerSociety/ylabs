@@ -188,7 +188,7 @@ describe('a dropped email retires by attested omission (#5711)', () => {
     expect(retired?.rollback?.reason).toBe(USER_FIELD_RETRACTION_ROLLBACK_REASON);
 
     const again = await reconcileUserFieldRetractions({ sourceName: PI_SOURCE, rederive });
-    expect(again).toMatchObject({ outcome: 'no-candidates', retiredObservations: 0 });
+    expect(again).toMatchObject({ retiredObservations: 0, retractions: [] });
     expect(rederive).toHaveBeenCalledTimes(1);
   });
 

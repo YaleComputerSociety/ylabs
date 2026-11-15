@@ -1861,17 +1861,25 @@ export const USER_FIELD_RETRACTION_ROLLBACK_REASON =
 export const USER_ORCID_FIELD_RETRACTION_ROLLBACK_REASON =
   'field retraction: the same lane re-read this page for this person and stated it carries no ORCID (#5991)';
 
+export const USER_TITLE_FIELD_RETRACTION_ROLLBACK_REASON =
+  'field retraction: the same lane re-read this page for this person and found no admissible title on it (#6233)';
+
 const USER_FIELD_RETRACTION_ROLLBACK_REASONS: Readonly<Record<string, string>> = {
   email: USER_FIELD_RETRACTION_ROLLBACK_REASON,
   orcid: USER_ORCID_FIELD_RETRACTION_ROLLBACK_REASON,
+  title: USER_TITLE_FIELD_RETRACTION_ROLLBACK_REASON,
 };
 
 /**
  * The user fields a lane may claim absent from a page it read in full. `orcid` joined
  * `email` in #5991: a lane states `assertsNoValueFor: ['orcid']` only when the subject node
  * of the person's own page states no ORCID link and nothing labelled ORCID.
+ *
+ * `title` joined in #6233, for `official-profile-pi-backfill` only: a lane states
+ * `assertsNoValueFor: ['title']` only when the person's own, identity-confirmed page leaves no
+ * admissible title after the extractor's rules.
  */
-const PAGE_SCOPED_USER_ABSENCE_FIELDS: ReadonlySet<string> = new Set(['email', 'orcid']);
+const PAGE_SCOPED_USER_ABSENCE_FIELDS: ReadonlySet<string> = new Set(['email', 'orcid', 'title']);
 
 export interface UserFieldRetractionContract {
   retractableFields: readonly string[];
@@ -1880,9 +1888,9 @@ export interface UserFieldRetractionContract {
 
 export const userFieldRetractionContracts: Readonly<Record<string, UserFieldRetractionContract>> = {
   'official-profile-pi-backfill': {
-    retractableFields: ['email', 'orcid'],
+    retractableFields: ['email', 'orcid', 'title'],
     notes:
-      'States assertsNoValueFor: [email] on every identity row of a full read only when the profile yielded no person-specific address and the page states no address of any kind, in a link, text, script or attribute, plain or obfuscated. An address its person-specific filter refused is still on the page, so it claims nothing. States assertsNoValueFor: [orcid] on every row of a read that emits profile enrichment, the only reads that emit an orcid, only when the page body states no ORCID link and nothing labelled ORCID (#6003); a page whose ORCID the reader refused, as several namesakes or as an implausible labelled iD, still states one, so it claims nothing.',
+      'States assertsNoValueFor: [email] on every identity row of a full read only when the profile yielded no person-specific address and the page states no address of any kind, in a link, text, script or attribute, plain or obfuscated. An address its person-specific filter refused is still on the page, so it claims nothing. States assertsNoValueFor: [orcid] on every row of a read that emits profile enrichment, the only reads that emit an orcid, only when the page body states no ORCID link and nothing labelled ORCID (#6003); a page whose ORCID the reader refused, as several namesakes or as an implausible labelled iD, still states one, so it claims nothing. States assertsNoValueFor: [title] on every row of a read that emits profile enrichment only when the page passed every identity check for this person and no admissible title remains after the extractor rules (#6233); a page with no title that also states no address of the person yields no identity, and a refused, mismatched or failed read yields no rows, so neither claims anything.',
   },
   'dept-faculty-roster': {
     retractableFields: ['email', 'orcid'],
@@ -1890,6 +1898,9 @@ export const userFieldRetractionContracts: Readonly<Record<string, UserFieldRetr
       "States assertsNoValueFor: [email] on the profileUrls row, filed under the profile page its email rows use, only when the person's own profile was read and named them, that page states no address of any kind, and the roster card yielded none. A shared roster address it withheld records refused, and an unread or refused profile claims nothing. States assertsNoValueFor: [orcid] on the same row only when that read page's subject node states no ORCID link and nothing labelled ORCID (#5991); a page whose ORCID the reader refused still states one, so it claims nothing.",
   },
 };
+
+const listedFields = (fields: readonly string[]): string =>
+  fields.length > 1 ? `${fields.slice(0, -1).join(', ')} and ${fields.at(-1)}` : (fields[0] ?? '');
 
 export function assertUserFieldRetractionContractsAreDeclarable(
   contracts: Readonly<Record<string, UserFieldRetractionContract>> = userFieldRetractionContracts,
@@ -1901,7 +1912,7 @@ export function assertUserFieldRetractionContractsAreDeclarable(
     for (const field of contract.retractableFields) {
       if (!PAGE_SCOPED_USER_ABSENCE_FIELDS.has(field)) {
         throw new Error(
-          `${sourceName} declares user field ${JSON.stringify(field)}; only ${[...PAGE_SCOPED_USER_ABSENCE_FIELDS].join(' and ')} have a page-scoped absence claim.`,
+          `${sourceName} declares user field ${JSON.stringify(field)}; only ${listedFields([...PAGE_SCOPED_USER_ABSENCE_FIELDS])} have a page-scoped absence claim.`,
         );
       }
       assertDeclarableRetractionField(field, 'retractable');
