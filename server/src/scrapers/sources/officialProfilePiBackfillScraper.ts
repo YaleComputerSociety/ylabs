@@ -203,6 +203,11 @@ export interface OfficialProfileIdentity {
   statesNoEmailAddress?: boolean;
   /** The page states no ORCID link and nothing labelled ORCID, so the lane may attest none (#6003). */
   statesNoOrcid?: boolean;
+  /**
+   * The person's own, identity-confirmed page leaves no admissible title after the extractor's
+   * rules, so the lane may attest none (#6233).
+   */
+  statesNoTitle?: boolean;
   inMemoriam?: boolean;
   appointmentEndedOn?: string;
 }
@@ -3968,6 +3973,7 @@ export function extractOfficialProfileIdentity(
             email,
             profileNetidSlug,
           ),
+          statesNoTitle: true,
           ...profileDepartureEvidence(html, profiles, new Date(), displayName),
         }
       : null;
@@ -3999,6 +4005,7 @@ export function extractOfficialProfileIdentity(
     ...(!orcid && pageStatesNoOrcid($) ? { statesNoOrcid: true } : {}),
     ...(bio ? {} : hasSuppressedProfileBioText($) ? { suppressDerivedBio: true } : {}),
     ...(!email && pageStatesNoEmailAddress($) ? { statesNoEmailAddress: true } : {}),
+    ...(title ? {} : { statesNoTitle: true }),
     ...profileDepartureEvidence(html, profiles, new Date(), displayName),
   };
 }
@@ -4135,19 +4142,27 @@ export function identityToUserObservations(
         options.directoryNetidsByAddress,
         options.pageOrcidWitnessedForNetid,
       );
+  const attestsNoTitle =
+    (options.includeProfileEnrichment ?? true) &&
+    !identity.title &&
+    identity.statesNoTitle === true;
   if (identity.emailOnly) {
-    return emailTiedToNetid && (options.includeEmail ?? options.includeIdentityEnrichment ?? true)
-      ? [
-          {
-            entityType: 'user',
-            entityKey: `netid:${netid}`,
-            field: 'email',
-            value: identity.email,
-            sourceUrl: identity.canonicalUrl,
-            confidenceOverride: 0.95,
-          },
-        ]
-      : [];
+    const emailRows: ObservationInput[] =
+      emailTiedToNetid && (options.includeEmail ?? options.includeIdentityEnrichment ?? true)
+        ? [
+            {
+              entityType: 'user',
+              entityKey: `netid:${netid}`,
+              field: 'email',
+              value: identity.email,
+              sourceUrl: identity.canonicalUrl,
+              confidenceOverride: 0.95,
+            },
+          ]
+        : [];
+    return attestsNoTitle
+      ? emailRows.map((observation) => withAbsenceClaim(observation, 'title'))
+      : emailRows;
   }
   const includeProfileEnrichment = options.includeProfileEnrichment ?? true;
   const includeIdentityEnrichment = options.includeIdentityEnrichment ?? true;
@@ -4236,9 +4251,8 @@ export function identityToUserObservations(
     }
   }
   const attestsNoOrcid = includeProfileEnrichment && !identity.orcid && identity.statesNoOrcid;
-  return attestsNoOrcid
-    ? observations.map((observation) => withAbsenceClaim(observation, 'orcid'))
-    : observations;
+  const absentFields = [...(attestsNoOrcid ? ['orcid'] : []), ...(attestsNoTitle ? ['title'] : [])];
+  return observations.map((observation) => absentFields.reduce(withAbsenceClaim, observation));
 }
 
 function withAbsenceClaim(observation: ObservationInput, field: string): ObservationInput {

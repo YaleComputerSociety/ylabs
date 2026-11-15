@@ -54,9 +54,9 @@ describe('user email field retraction planning (#5711)', () => {
     expect(() => assertUserFieldRetractionContractsAreDeclarable()).not.toThrow();
     expect(() =>
       assertUserFieldRetractionContractsAreDeclarable({
-        lane: { retractableFields: ['title'], notes: '' },
+        lane: { retractableFields: ['imageUrl'], notes: '' },
       }),
-    ).toThrow(/only email/);
+    ).toThrow(/only email, orcid and title/);
   });
 
   it('retracts once two later reads of the same page attest it states no address', () => {

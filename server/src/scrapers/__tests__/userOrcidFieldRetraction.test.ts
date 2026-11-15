@@ -39,7 +39,7 @@ describe('dept-faculty-roster may retract an ORCID its own page no longer states
     expect(contract.retractableFields).toEqual(['email', 'orcid']);
     expect(
       userFieldRetractionContractFor('official-profile-pi-backfill')?.retractableFields,
-    ).toEqual(['email', 'orcid']);
+    ).toEqual(['email', 'orcid', 'title']);
     expect(USER_ORCID_FIELD_RETRACTION_ROLLBACK_REASON).toMatch(/ORCID/);
   });
 
