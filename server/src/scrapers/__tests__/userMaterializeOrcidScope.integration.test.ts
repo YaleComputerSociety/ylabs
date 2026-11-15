@@ -131,14 +131,14 @@ describe('a user materialize scoped to identifiers.orcid (#5711, #5991)', () => 
       { dryRun, ...(onlyFields ? { userWriteOnlyFields: onlyFields } : {}) },
     );
 
-  it('plans only the ORCID and its link, and drops the profile paths an unscoped run would write', async () => {
+  it('plans only the ORCID and its link, and leaves out of scope the profile paths an unscoped run would write', async () => {
     const id = await seed();
     const before = await stored(id);
 
     const planned = await resolve(['orcid'], true);
 
     expect(planned.plannedPaths).toEqual(ORCID_PATHS);
-    expect(planned.droppedPaths).toEqual(
+    expect(planned.outOfScopePaths).toEqual(
       expect.arrayContaining(['displayName', 'profile.imageUrl', 'profile.primaryDepartment']),
     );
     expect(await stored(id)).toEqual(before);

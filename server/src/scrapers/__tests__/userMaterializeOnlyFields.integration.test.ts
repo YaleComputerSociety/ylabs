@@ -135,7 +135,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
       { dryRun, ...(onlyFields ? { userWriteOnlyFields: onlyFields } : {}) },
     );
 
-  it('drops and reports every planned path outside the scope on a dry run', async () => {
+  it('reports every planned path outside the scope as out of scope on a dry run', async () => {
     const researcher = await seedResearcher();
     await seedProfileEvidence(KEY);
     const before = await stored(researcher._id);
@@ -146,7 +146,9 @@ describe('a user materialize scoped to named fields writes only that scope (#581
       'profile.primaryDepartment',
       'profileFieldWriters.primaryDepartment',
     ]);
-    expect(result.droppedPaths).toEqual(expect.arrayContaining(['displayName', 'profile.title']));
+    expect(result.outOfScopePaths).toEqual(
+      expect.arrayContaining(['displayName', 'profile.title']),
+    );
     expect(result.fieldsWritten).toBe(2);
     expect(await stored(researcher._id)).toEqual(before);
   });
@@ -176,6 +178,43 @@ describe('a user materialize scoped to named fields writes only that scope (#581
     expect(second.fieldsWritten).toBe(0);
   });
 
+  it('keeps out-of-scope writer records on apply and reports them as out of scope (#6276)', async () => {
+    const otherWriter = { userKey: 'user:fixture6276-other', joinRank: 2, confidence: 0.4 };
+    const researcher = await seedResearcher({
+      profile: {
+        imageUrl: 'https://fixture6276.example.edu/photos/stored.jpg',
+        primaryDepartment: 'Stored Studies',
+      },
+      profileFieldWriters: { imageUrl: otherWriter, primaryDepartment: otherWriter },
+    });
+    await seedProfileEvidence(KEY);
+    const before = await stored(researcher._id);
+    const scope = ['displayName', 'profile.title'];
+
+    const planned = await resolve(KEY, scope, true);
+    expect(planned.outOfScopePaths).toEqual(
+      expect.arrayContaining([
+        'profileFieldWriters.imageUrl',
+        'profileFieldWriters.primaryDepartment',
+      ]),
+    );
+    expect(planned).not.toHaveProperty('droppedPaths');
+
+    const applied = await resolve(KEY, scope);
+    const after = await stored(researcher._id);
+
+    expect(applied.outOfScopePaths).toEqual(planned.outOfScopePaths);
+    expect(after.profileFieldWriters.imageUrl).toEqual(before.profileFieldWriters.imageUrl);
+    expect(after.profileFieldWriters.primaryDepartment).toEqual(
+      before.profileFieldWriters.primaryDepartment,
+    );
+    expect(after.profile.imageUrl).toBe(before.profile.imageUrl);
+    expect(after.profile.primaryDepartment).toBe(before.profile.primaryDepartment);
+    expect(withoutPaths(after, applied.plannedPaths ?? [])).toEqual(
+      withoutPaths(before, applied.plannedPaths ?? []),
+    );
+  });
+
   it('plans exactly the display values and their writer records for a display-field scope', async () => {
     const researcher = await seedResearcher();
     await seedProfileEvidence(KEY);
@@ -194,7 +233,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
 
     const planned = await resolve(KEY, scope, true);
     expect(planned.plannedPaths).toEqual(expected);
-    expect(planned.droppedPaths).toEqual(['profile.title']);
+    expect(planned.outOfScopePaths).toEqual(['profile.title']);
 
     const applied = await resolve(KEY, scope);
     expect(applied.plannedPaths).toEqual(expected);
@@ -224,7 +263,9 @@ describe('a user materialize scoped to named fields writes only that scope (#581
       true,
     );
     expect(planned.plannedPaths).toContain('profileFieldWriters.title');
-    expect(planned.droppedPaths).toEqual(expect.arrayContaining(['profile.title', 'displayName']));
+    expect(planned.outOfScopePaths).toEqual(
+      expect.arrayContaining(['profile.title', 'displayName']),
+    );
 
     await resolve(KEY, ['profileFieldWriters']);
     const after = await stored(researcher._id);
@@ -242,7 +283,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
     expect(second.fieldsWritten).toBe(0);
   });
 
-  it('still derives the email inside an email scope and drops the profile around it', async () => {
+  it('still derives the email inside an email scope and leaves the profile around it out of scope', async () => {
     const researcher = await Researcher.create({
       displayName: 'Avery Synthetic',
       identifiers: { netid: EMAIL_NETID },
@@ -276,7 +317,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
 
     const planned = await resolve(EMAIL_KEY, ['email'], true);
     expect(planned.plannedPaths).toEqual(['identifiers.email', 'identifiers.emailSupport']);
-    expect(planned.droppedPaths).toEqual(expect.arrayContaining(['profile.title']));
+    expect(planned.outOfScopePaths).toEqual(expect.arrayContaining(['profile.title']));
 
     await resolve(EMAIL_KEY, ['identifiers.email']);
     const after = await stored(researcher._id);
@@ -302,7 +343,9 @@ describe('a user materialize scoped to named fields writes only that scope (#581
     await observation({ entityKey: KEY, field: 'email', value: PAGE_EMAIL });
 
     const outsideScope = await resolve(KEY, ['title']);
-    expect(outsideScope.droppedPaths).toEqual(expect.arrayContaining(['identifiers.emailSupport']));
+    expect(outsideScope.outOfScopePaths).toEqual(
+      expect.arrayContaining(['identifiers.emailSupport']),
+    );
     expect((await stored(researcher._id)).identifiers.emailSupport).toBeUndefined();
 
     const before = await stored(researcher._id);
@@ -423,7 +466,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
 
     const applied = await resolveAt(['websiteUrl']);
 
-    expect(applied.droppedPaths).toContain('profile.title');
+    expect(applied.outOfScopePaths).toContain('profile.title');
     expect(applied.plannedPaths).not.toContain('profile.title');
     const after = await stored(researcher._id);
     expect(after.profile.title).toBe(STORED_TITLE);
@@ -438,7 +481,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
 
     const planned = await resolveAt(['profile.title'], true);
     expect(planned.plannedPaths).toEqual(['profile.title']);
-    expect(planned.droppedPaths).toEqual(
+    expect(planned.outOfScopePaths).toEqual(
       expect.arrayContaining(['displayName', 'profile.primaryDepartment']),
     );
 
@@ -460,7 +503,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
 
     const result = await resolve(KEY);
 
-    expect(result.droppedPaths).toBeUndefined();
+    expect(result.outOfScopePaths).toBeUndefined();
     const after = await stored(researcher._id);
     expect(after.profile.title).toBe('Professor of Fixture Studies');
     expect(after.profile.primaryDepartment).toBe('Fixture Studies');

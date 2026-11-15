@@ -1124,7 +1124,7 @@ New outbound HTTP outside axios must carry all three bounds itself.
   Only the browse-rank recompute and the search-index sync still follow a scoped write, because both are caches of the stored row.
   A new post-projection step that writes anything must take the same decision, since the rematerialize report compares fields and cannot see an edge or a signal.
   - The `user` materializer has its own scope, `userWriteOnlyFields`, reached by `--only-fields` on `observations:rematerialize-user-keys` and `scrape materialize --run` (#5816).
-  It diffs the planned researcher against the stored one, writes only in-scope paths and reports the rest as `droppedPaths`, never mints, and on a run skips every non-`user` row, every run reconciliation and the visibility gate.
+  It diffs the planned researcher against the stored one, writes only in-scope paths and reports the rest as `outOfScopePaths`, never mints, and on a run skips every non-`user` row, every run reconciliation and the visibility gate.
   `identifiers.orcid` always travels with `profileLinks.ORCID`, a pseudo-path that rewrites only the ORCID entries of `profileLinks`, and both `observations:reconcile-field-retractions` and the end-of-run sweep in `materializeFromRun` re-derive a retracted person through this scope, limited to the retracted fields (`userRederiveOnlyFields`, #6009); `docs/research-data-pipeline.md` owns the fail-closed rule.
   A new write on the user arm is scoped automatically if it lands on the researcher document; a write anywhere else must check `userWriteScope` itself, as the screened-page withdrawal does.
   See "A user materialize scoped to named researcher fields" in `docs/research-data-pipeline.md`.

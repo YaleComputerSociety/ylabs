@@ -641,7 +641,9 @@ A change to the ORCID entries is reported as `profileLinks.ORCID` and a change t
 
 The resolve runs unchanged, then the planned document is compared with the stored one path by path (`changedResearcherPaths`).
 A changed path inside the scope is reported under `plannedPaths` and written with one `$set`/`$unset` of exactly those paths, after the stored document with only those paths applied passes the schema validators.
-A changed path outside the scope is reported under `droppedPaths` and never written, on a dry run and an apply alike.
+A changed path outside the scope is reported under `outOfScopePaths` and never written, on a dry run and an apply alike.
+It is left exactly as stored: an out-of-scope path is neither written nor deleted, so a writer record listed there survives the apply (#6276).
+The field was named `droppedPaths` (and `droppedPathSet`) before #6276, which read as a provenance deletion; reports written before then use the old names.
 An email derived inside the scope reads the stored netid and display name rather than ones the same resolve planned outside it.
 The screened-page withdrawal, which writes a researcher directly, is scoped the same way.
 
@@ -649,7 +651,7 @@ A scoped resolve never mints a researcher: a key no existing researcher joins re
 A scoped `scrape materialize` materializes only the run's `user` rows, serially, and skips every other entity type (counted in `rowsOutsideUserSkipped`), every run-level reconciliation (roster, center, director and departure retirements, field retractions), the `ScrapeRun` counter update and the visibility gate, so it writes no edge, no access signal and no stored tier.
 Run `student-visibility:gate` separately if the scoped write changes what a row may serve.
 
-The check that nothing escaped the scope is mechanical: every pass summary carries `scope`, `plannedPathSet` and `droppedPathSet`, and `plannedPathSet` must be a subset of `scope`.
+The check that nothing escaped the scope is mechanical: every pass summary carries `scope`, `plannedPathSet` and `outOfScopePathSet`, and `plannedPathSet` must be a subset of `scope`.
 Per-key rows name `user` keys, so they go only to the `--output` report under the temp directory, and stdout carries the summary.
 
 ### Stored-versus-projected divergence is four classes, and only one of them is safe

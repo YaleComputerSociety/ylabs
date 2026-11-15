@@ -239,11 +239,11 @@ export function withoutRepeatedParentPaths(paths: readonly string[]): string[] {
 export function partitionPlannedPaths(
   paths: readonly string[],
   scope: readonly string[],
-): { kept: string[]; dropped: string[] } {
+): { kept: string[]; outOfScope: string[] } {
   const kept: string[] = [];
-  const dropped: string[] = [];
-  for (const path of paths) (userScopeAdmits(scope, path) ? kept : dropped).push(path);
-  return { kept: kept.sort(), dropped: dropped.sort() };
+  const outOfScope: string[] = [];
+  for (const path of paths) (userScopeAdmits(scope, path) ? kept : outOfScope).push(path);
+  return { kept: kept.sort(), outOfScope: outOfScope.sort() };
 }
 
 export function valueAtPath(document: Record<string, unknown>, path: string): unknown {

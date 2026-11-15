@@ -129,14 +129,14 @@ export interface ScopedUserRederiveRow {
   onlyFields: string[];
   fieldsWritten: number;
   plannedPaths: string[];
-  droppedPaths: string[];
+  outOfScopePaths: string[];
 }
 
 export function scopedUserRederiver(
   materialize: (
     entityKey: string,
     onlyFields: readonly string[],
-  ) => Promise<{ fieldsWritten?: number; plannedPaths?: string[]; droppedPaths?: string[] }>,
+  ) => Promise<{ fieldsWritten?: number; plannedPaths?: string[]; outOfScopePaths?: string[] }>,
   rows: ScopedUserRederiveRow[],
 ): UserSubjectRederiver {
   return async ({ entityKey }, retractedFields) => {
@@ -147,7 +147,7 @@ export function scopedUserRederiver(
       onlyFields,
       fieldsWritten: Number(result?.fieldsWritten ?? 0),
       plannedPaths: result?.plannedPaths ?? [],
-      droppedPaths: result?.droppedPaths ?? [],
+      outOfScopePaths: result?.outOfScopePaths ?? [],
     });
     return result;
   };

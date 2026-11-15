@@ -1328,7 +1328,7 @@ interface MaterializeResult {
   plannedWriteSkip?: 'no-scoped-fields' | 'unchanged';
   changedPaths?: string[];
   plannedPaths?: string[];
-  droppedPaths?: string[];
+  outOfScopePaths?: string[];
   identityJoin?: UserIdentityJoin;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   /** Fellowship fields this pass cleared because their only source states they have none. */
@@ -10120,14 +10120,14 @@ function withScreenedWithdrawalPaths(
   return {
     ...result,
     plannedPaths: unionSorted(result.plannedPaths, withdrawal.plannedPaths),
-    droppedPaths: unionSorted(result.droppedPaths, withdrawal.droppedPaths),
+    outOfScopePaths: unionSorted(result.outOfScopePaths, withdrawal.outOfScopePaths),
   };
 }
 
 interface ScreenedPageWithdrawalOutcome {
   written: number;
   plannedPaths: string[];
-  droppedPaths: string[];
+  outOfScopePaths: string[];
   changedPaths: string[];
 }
 
@@ -10142,8 +10142,8 @@ function screenedPageWithdrawalPaths(plan: ScreenedPageWithdrawal): string[] {
 function scopeScreenedPageWithdrawal(
   plan: ScreenedPageWithdrawal,
   scope: readonly string[],
-): { plan: ScreenedPageWithdrawal; plannedPaths: string[]; droppedPaths: string[] } {
-  const { kept, dropped } = partitionPlannedPaths(screenedPageWithdrawalPaths(plan), scope);
+): { plan: ScreenedPageWithdrawal; plannedPaths: string[]; outOfScopePaths: string[] } {
+  const { kept, outOfScope } = partitionPlannedPaths(screenedPageWithdrawalPaths(plan), scope);
   return {
     plan: {
       researcherId: plan.researcherId,
@@ -10155,7 +10155,7 @@ function scopeScreenedPageWithdrawal(
       ...(plan.imageUrl && kept.includes('profile.imageUrl') ? { imageUrl: plan.imageUrl } : {}),
     },
     plannedPaths: kept,
-    droppedPaths: dropped,
+    outOfScopePaths: outOfScope,
   };
 }
 
@@ -10167,7 +10167,7 @@ async function withdrawScreenedOfficialProfileLinks(
   const none: ScreenedPageWithdrawalOutcome = {
     written: 0,
     plannedPaths: [],
-    droppedPaths: [],
+    outOfScopePaths: [],
     changedPaths: [],
   };
   const plannedPlan = await planScreenedPageWithdrawal(entityKey, screenedPageUrls);
@@ -10177,7 +10177,7 @@ async function withdrawScreenedOfficialProfileLinks(
   const plan = scoped?.plan ?? plannedPlan;
   const paths = {
     plannedPaths: scoped?.plannedPaths ?? [],
-    droppedPaths: scoped?.droppedPaths ?? [],
+    outOfScopePaths: scoped?.outOfScopePaths ?? [],
   };
   if (scoped && scoped.plannedPaths.length === 0) return { ...none, ...paths };
   const changedPaths = unionSorted(
@@ -10305,7 +10305,7 @@ async function writeScopedResearcherPlan(input: {
   dryRun: boolean;
 }): Promise<MaterializeResult> {
   const planned = researcherSnapshot(input.researcher);
-  const { kept, dropped } = partitionPlannedPaths(
+  const { kept, outOfScope } = partitionPlannedPaths(
     changedResearcherPaths(input.storedResearcher, planned),
     input.scope,
   );
@@ -10318,7 +10318,7 @@ async function writeScopedResearcherPlan(input: {
     created: false,
     resolved: input.resolved,
     plannedPaths: kept,
-    droppedPaths: dropped,
+    outOfScopePaths: outOfScope,
     ...(kept.length === 0 ? { plannedWriteSkip: 'unchanged' as const } : { changedPaths: kept }),
     ...(input.identityJoin ? { identityJoin: input.identityJoin } : {}),
   });
@@ -14599,7 +14599,7 @@ async function materializeEntityUnderRemovalGuard(
         skipped: 'directory-contradicts-profile-netid',
         ...(withdrawal.changedPaths.length > 0 ? { changedPaths: withdrawal.changedPaths } : {}),
         ...(scoped
-          ? { plannedPaths: withdrawal.plannedPaths, droppedPaths: withdrawal.droppedPaths }
+          ? { plannedPaths: withdrawal.plannedPaths, outOfScopePaths: withdrawal.outOfScopePaths }
           : {}),
       };
     }
@@ -16496,7 +16496,7 @@ export interface UserFieldScopeRow {
   entityId?: string;
   fieldsWritten: number;
   plannedPaths: string[];
-  droppedPaths: string[];
+  outOfScopePaths: string[];
   skipped?: string;
   error?: string;
 }
@@ -16507,7 +16507,7 @@ export interface UserFieldScopeSummary {
   keys: number;
   keysWriting: number;
   plannedPathSet: string[];
-  droppedPathSet: string[];
+  outOfScopePathSet: string[];
   skipped: Record<string, number>;
   errors: number;
 }
@@ -16527,7 +16527,7 @@ export function userFieldScopeRow(
       ...identifier,
       fieldsWritten: 0,
       plannedPaths: [],
-      droppedPaths: [],
+      outOfScopePaths: [],
       error: sanitizeLogValue((outcome.error as Error)?.message ?? String(outcome.error)),
     };
   }
@@ -16536,7 +16536,7 @@ export function userFieldScopeRow(
     ...identifier,
     fieldsWritten: result.fieldsWritten,
     plannedPaths: result.plannedPaths ?? [],
-    droppedPaths: result.droppedPaths ?? [],
+    outOfScopePaths: result.outOfScopePaths ?? [],
     ...(result.skipped ? { skipped: result.skipped } : {}),
   };
 }
@@ -16553,7 +16553,7 @@ export function summarizeUserFieldScopeRows(
     keys: rows.length,
     keysWriting: rows.filter((row) => row.fieldsWritten > 0).length,
     plannedPathSet: unionSorted(...rows.map((row) => row.plannedPaths)),
-    droppedPathSet: unionSorted(...rows.map((row) => row.droppedPaths)),
+    outOfScopePathSet: unionSorted(...rows.map((row) => row.outOfScopePaths)),
     skipped,
     errors: rows.filter((row) => row.error).length,
   };
