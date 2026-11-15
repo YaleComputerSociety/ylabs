@@ -80,6 +80,14 @@ describe('a faculty research row folds into its lead’s own lab only on a witne
     expect(folds.map((fold) => fold.witness)).toEqual(['lab-page-names-pi']);
   });
 
+  it('reads the served page from the legacy website field the way the served page does', () => {
+    const { folds } = selectWitnessedFraLabFolds({
+      entities: entities(facultyRow, lab({ mergeFields: { website: LAB_SITE } })),
+      edges: [edge('ada', 'faculty-row'), edge('ada', 'own-lab')],
+    });
+    expect(folds.map((fold) => fold.witness)).toEqual(['lab-page-names-pi']);
+  });
+
   it('never folds into a co-director’s separate lab', () => {
     const separateLab = lab({
       id: 'colleague-lab',

@@ -113,6 +113,7 @@ function labPageNamesPersonAsPi(lab: WitnessedFoldEntity, personId: string): boo
     !leadVerificationReadsServedPage({
       leadVerification: verification,
       websiteUrl: lab.mergeFields?.websiteUrl,
+      website: lab.mergeFields?.website,
     })
   ) {
     return false;
@@ -304,7 +305,7 @@ export async function loadWitnessedFoldContext(input: {
   const entityIds = [...new Set([...edges.map((edge) => edge.entityId), ...pairRowIds])];
   const docs = (await ResearchEntity.find({ _id: { $in: objectIds(entityIds) } })
     .select(
-      '_id slug name kind entityType archived leadVerification websiteUrl fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies fieldProvenance.slug.sourceUrl',
+      '_id slug name kind entityType archived leadVerification websiteUrl website fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies fieldProvenance.slug.sourceUrl',
     )
     .lean()) as Array<Record<string, any>>;
   return {
@@ -321,6 +322,7 @@ export async function loadWitnessedFoldContext(input: {
           leadVerification: doc.leadVerification ?? null,
           mergeFields: {
             websiteUrl: doc.websiteUrl,
+            website: doc.website,
             fullDescription: doc.fullDescription,
             shortDescription: doc.shortDescription,
             sourceUrls: doc.sourceUrls,
