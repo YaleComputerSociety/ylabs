@@ -397,6 +397,7 @@ It replaces the convention of announcing each write to the session that sequence
 
 - An apply-class script takes the `__dev-apply__` lease before its first write, and a second apply is **refused** with a nonzero exit that names the holder, its command and its heartbeat age.
   Nothing was written when that refusal prints.
+  A refusal at connect closes the connection that connect path opened before it rethrows, so an entry point that only sets `process.exitCode` still exits rather than holding the slot open (#6286, `devWriteGuard.test.ts`).
 - The hook is `assertScriptApplyAllowed`: with `--apply` it records an apply intent, and the shared connect paths in `db/connections.ts` take the lease only for a process that recorded one.
   The API server, the Render web service and request-path code never record an intent, so they never read or wait on a lease; `devWriteLease.test.ts` connects through `initializeConnections` to a Development-named database and asserts no lease document appears.
 - Record the intent before connecting.
