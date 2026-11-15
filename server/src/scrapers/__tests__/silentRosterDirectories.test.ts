@@ -13,7 +13,11 @@ import {
   rosterDepartmentVocabulary,
 } from '../sources/departmentRosterScraper';
 import { rosterHomeDepartmentStatement } from '../rosterHomeDepartmentStatement';
-import { configForReading } from '../../scripts/auditSilentRosterDirectories';
+import {
+  configForReading,
+  membershipIsTitled,
+  titledScopes,
+} from '../../scripts/auditSilentRosterDirectories';
 import { ROSTER_DEPT_NAMES_WITHHOLDING_HOME_DEPARTMENT } from '../rosterHomeDepartmentScreen';
 import {
   SILENT_DIRECTORY_AUDIT_COMMAND,
@@ -149,6 +153,45 @@ describe('the audit attributes each roster reading to its config (#6299)', () =>
     expect(configForReading('https://fixture.example.edu/people/staff', [broad, narrow])).toBe(
       broad,
     );
+  });
+
+  it('counts a person as titled only on the roster whose own reading carries the title', () => {
+    const titledRoster = fixtureConfig({
+      deptKey: 'fixture-titled',
+      url: 'https://titled.example.edu/people',
+    });
+    const silentRoster = fixtureConfig({
+      deptKey: 'fixture-silent',
+      url: 'https://silent.example.edu/people',
+    });
+    const configs = [titledRoster, silentRoster];
+    const person = { entityKey: 'netid:zz999', scrapeRunId: 'run-1' };
+    const scopes = titledScopes(
+      [
+        { ...person, sourceUrl: 'https://titled.example.edu/people', value: 'Professor' },
+        {
+          ...person,
+          sourceUrl: 'https://titled.example.edu/profile/zz999',
+          value: 'Professor',
+          extraction: { source: 'profileTitleBlock' },
+        },
+      ],
+      configs,
+    );
+    expect(
+      membershipIsTitled(
+        { ...person, sourceUrl: 'https://titled.example.edu/people' },
+        titledRoster,
+        scopes,
+      ),
+    ).toBe(true);
+    expect(
+      membershipIsTitled(
+        { ...person, sourceUrl: 'https://silent.example.edu/people' },
+        silentRoster,
+        scopes,
+      ),
+    ).toBe(false);
   });
 });
 

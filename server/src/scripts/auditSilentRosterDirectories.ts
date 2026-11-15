@@ -74,6 +74,50 @@ export function configForReading(
     .sort((a, b) => matchLength(b) - matchLength(a))[0];
 }
 
+type RunReading = { entityKey: string; scrapeRunId?: unknown; sourceUrl: string };
+type TitleReading = RunReading & { value?: unknown; extraction?: { source?: string } };
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).host.toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
+const runKey = (reading: RunReading): string =>
+  `${reading.entityKey}|${String(reading.scrapeRunId)}`;
+
+const profileScope = (reading: RunReading): string =>
+  `${runKey(reading)}|host:${hostOf(reading.sourceUrl)}`;
+
+export function titledScopes(
+  titles: readonly TitleReading[],
+  configs: readonly DeptConfig[] = DEFAULT_DEPT_CONFIGS,
+): Set<string> {
+  const scopes = new Set<string>();
+  for (const title of titles) {
+    if (!String(title.value ?? '').trim()) continue;
+    if (title.extraction?.source === 'profileTitleBlock') {
+      scopes.add(profileScope(title));
+      continue;
+    }
+    const config = configForReading(title.sourceUrl, configs);
+    if (config) scopes.add(`${runKey(title)}|${config.deptKey}`);
+  }
+  return scopes;
+}
+
+export function membershipIsTitled(
+  membership: RunReading,
+  config: DeptConfig,
+  scopes: ReadonlySet<string>,
+): boolean {
+  return (
+    scopes.has(`${runKey(membership)}|${config.deptKey}`) || scopes.has(profileScope(membership))
+  );
+}
+
 async function joinKeys(keys: string[]): Promise<Map<string, string | undefined>> {
   const joined = new Map<string, string | undefined>();
   let next = 0;
@@ -100,15 +144,15 @@ export async function auditSilentRosterDirectories(): Promise<{
     superseded: false,
   })
     .select('entityKey sourceUrl scrapeRunId')
-    .lean()) as Array<{ entityKey: string; sourceUrl: string; scrapeRunId?: unknown }>;
+    .lean()) as RunReading[];
   const titles = (await Observation.find({
     sourceName: DEPT_FACULTY_ROSTER_SOURCE,
     entityType: 'user',
     field: 'title',
     superseded: false,
   })
-    .select('entityKey scrapeRunId value')
-    .lean()) as Array<{ entityKey: string; scrapeRunId?: unknown; value?: unknown }>;
+    .select('entityKey scrapeRunId sourceUrl value extraction.source')
+    .lean()) as TitleReading[];
   const firstHand = (await Observation.find({
     entityType: 'user',
     field: 'primaryDepartment',
@@ -118,11 +162,7 @@ export async function auditSilentRosterDirectories(): Promise<{
     .select('entityKey value')
     .lean()) as Array<{ entityKey: string; value?: unknown }>;
 
-  const titled = new Set(
-    titles
-      .filter((title) => String(title.value ?? '').trim())
-      .map((title) => `${title.entityKey}|${String(title.scrapeRunId)}`),
-  );
+  const titled = titledScopes(titles);
   const joined = await joinKeys([
     ...new Set([...memberships, ...firstHand].map((reading) => reading.entityKey)),
   ]);
@@ -158,7 +198,7 @@ export async function auditSilentRosterDirectories(): Promise<{
       disagree: 0,
     };
     tally.entries += 1;
-    if (!titled.has(`${membership.entityKey}|${String(membership.scrapeRunId)}`)) {
+    if (!membershipIsTitled(membership, config, titled)) {
       tally.untitled += 1;
     }
     const researcherId = joined.get(membership.entityKey);
