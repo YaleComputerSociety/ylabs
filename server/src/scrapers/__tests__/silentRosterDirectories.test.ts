@@ -10,7 +10,10 @@ import {
   DepartmentRosterScraper,
   type DeptConfig,
   type FacultyEntry,
+  rosterDepartmentVocabulary,
 } from '../sources/departmentRosterScraper';
+import { rosterHomeDepartmentStatement } from '../rosterHomeDepartmentStatement';
+import { configForReading } from '../../scripts/auditSilentRosterDirectories';
 import { ROSTER_DEPT_NAMES_WITHHOLDING_HOME_DEPARTMENT } from '../rosterHomeDepartmentScreen';
 import {
   SILENT_DIRECTORY_AUDIT_COMMAND,
@@ -93,6 +96,59 @@ describe('the three title-less programme rosters withhold the home department (#
     for (const config of configs) {
       expect(ROSTER_DEPT_NAMES_WITHHOLDING_HOME_DEPARTMENT.has(config.deptName)).toBe(true);
     }
+  });
+
+  it.each(PROGRAMME_ROSTERS)(
+    'keeps %s a department another roster title can name first',
+    (deptKey) => {
+      const programme = DEFAULT_DEPT_CONFIGS.find((config) => config.deptKey === deptKey)!;
+      const statement = rosterHomeDepartmentStatement({
+        deptName: 'Fixture Letters',
+        title: `Professor of ${programme.deptName} and of Fixture Letters`,
+        departmentNames: rosterDepartmentVocabulary([]),
+      });
+      expect(statement).toEqual({ kind: 'withhold', reason: 'another-department-first' });
+    },
+  );
+
+  it('keeps a withheld centre name out of the title vocabulary', () => {
+    const centres = DEFAULT_DEPT_CONFIGS.filter(
+      (config) => config.withholdsHomeDepartment && !config.namesCatalogDepartment,
+    );
+    expect(centres.length).toBeGreaterThan(0);
+    const vocabulary = rosterDepartmentVocabulary([]);
+    for (const centre of centres) expect(vocabulary.has(centre.deptName)).toBe(false);
+  });
+});
+
+describe('the audit attributes each roster reading to its config (#6299)', () => {
+  const fixtureConfig = (overrides: Partial<DeptConfig>): DeptConfig => ({
+    deptKey: 'fixture-page',
+    deptName: 'Fixture Page',
+    schoolName: 'Fixture School',
+    url: 'https://fixture.example.edu/people',
+    extractor: () => [],
+    ...overrides,
+  });
+
+  it('maps a reading stored under the config data endpoint', () => {
+    const config = fixtureConfig({ dataUrl: 'https://data.fixture.example.edu/load/7' });
+    expect(configForReading('https://data.fixture.example.edu/load/7', [config])).toBe(config);
+    expect(configForReading('https://other.example.edu/people', [config])).toBeUndefined();
+  });
+
+  it('prefers the config whose page path matches most closely', () => {
+    const broad = fixtureConfig({ deptKey: 'fixture-broad' });
+    const narrow = fixtureConfig({
+      deptKey: 'fixture-narrow',
+      url: 'https://fixture.example.edu/people/faculty',
+    });
+    expect(configForReading('https://fixture.example.edu/people/faculty/', [broad, narrow])).toBe(
+      narrow,
+    );
+    expect(configForReading('https://fixture.example.edu/people/staff', [broad, narrow])).toBe(
+      broad,
+    );
   });
 });
 

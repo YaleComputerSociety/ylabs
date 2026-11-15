@@ -27,7 +27,11 @@ import {
   silentDirectoryWarnings,
   type RosterDisagreementTally,
 } from '../scrapers/silentRosterDirectories';
-import { DEFAULT_DEPT_CONFIGS, type DeptConfig } from '../scrapers/sources/departmentRosterScraper';
+import {
+  DEFAULT_DEPT_CONFIGS,
+  assertsHomeDepartment,
+  type DeptConfig,
+} from '../scrapers/sources/departmentRosterScraper';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
@@ -51,18 +55,23 @@ const pageKey = (url: string): string => {
   }
 };
 
-const assertsHomeDepartment = (config: DeptConfig): boolean =>
-  !config.affiliatesOnly &&
-  !config.schoolWideDirectory &&
-  !config.crossListedProgramme &&
-  !config.withholdsHomeDepartment;
-
-function configForReading(sourceUrl: string): DeptConfig | undefined {
+export function configForReading(
+  sourceUrl: string,
+  configs: readonly DeptConfig[] = DEFAULT_DEPT_CONFIGS,
+): DeptConfig | undefined {
   const page = pageKey(sourceUrl);
-  return DEFAULT_DEPT_CONFIGS.filter((config) => {
-    const root = pageKey(config.url);
-    return page === root || page.startsWith(`${root}/`);
-  }).sort((a, b) => b.url.length - a.url.length)[0];
+  const matchLength = (config: DeptConfig): number =>
+    Math.max(
+      ...[config.url, config.dataUrl]
+        .filter((url): url is string => Boolean(url))
+        .map(pageKey)
+        .filter((root) => page === root || page.startsWith(`${root}/`))
+        .map((root) => root.length),
+      -1,
+    );
+  return configs
+    .filter((config) => matchLength(config) >= 0)
+    .sort((a, b) => matchLength(b) - matchLength(a))[0];
 }
 
 async function joinKeys(keys: string[]): Promise<Map<string, string | undefined>> {
@@ -82,6 +91,7 @@ async function joinKeys(keys: string[]): Promise<Map<string, string | undefined>
 export async function auditSilentRosterDirectories(): Promise<{
   tallies: Array<RosterDisagreementTally & { class: string }>;
   warnings: string[];
+  unmappedReadings: number;
 }> {
   const memberships = (await Observation.find({
     sourceName: DEPT_FACULTY_ROSTER_SOURCE,
@@ -132,9 +142,13 @@ export async function auditSilentRosterDirectories(): Promise<{
   };
 
   const tallies = new Map<string, RosterDisagreementTally>();
+  let unmappedReadings = 0;
   for (const membership of memberships) {
     const config = configForReading(membership.sourceUrl);
-    if (!config) continue;
+    if (!config) {
+      unmappedReadings += 1;
+      continue;
+    }
     const tally = tallies.get(config.deptKey) ?? {
       deptKey: config.deptKey,
       assertsHomeDepartment: assertsHomeDepartment(config),
@@ -168,7 +182,7 @@ export async function auditSilentRosterDirectories(): Promise<{
     ...tally,
     class: classifySilentDirectory(tally),
   }));
-  return { tallies: rows, warnings: silentDirectoryWarnings(rows) };
+  return { tallies: rows, warnings: silentDirectoryWarnings(rows), unmappedReadings };
 }
 
 async function main(): Promise<void> {
@@ -184,7 +198,16 @@ async function main(): Promise<void> {
   const byClass: Record<string, number> = {};
   for (const tally of result.tallies) byClass[tally.class] = (byClass[tally.class] ?? 0) + 1;
   console.log(
-    JSON.stringify({ configs: result.tallies.length, byClass, warnings: result.warnings }, null, 2),
+    JSON.stringify(
+      {
+        configs: result.tallies.length,
+        byClass,
+        unmappedReadings: result.unmappedReadings,
+        warnings: result.warnings,
+      },
+      null,
+      2,
+    ),
   );
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });

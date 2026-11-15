@@ -466,7 +466,8 @@ export interface DeptConfig {
   affiliatesOnly?: boolean;
   /**
    * When true, `deptName` names a center or program the catalog does not hold as a department
-   * (Stem Cell Center, West Campus Institutes, the Physician Associate Program), so the person's
+   * (Stem Cell Center, West Campus Institutes, the Physician Associate Program), or a catalog
+   * department whose page states no one's appointment (`namesCatalogDepartment`), so the person's
    * `primaryDepartment` is withheld and nothing else changes: membership, the `departments`
    * label, the roster-health snapshot, withdrawn keys and roster-bio minting read the lane
    * exactly as before (#6071). Narrower than `affiliatesOnly`, which also withholds the label
@@ -474,6 +475,13 @@ export interface DeptConfig {
    * publishes no snapshot.
    */
   withholdsHomeDepartment?: boolean;
+  /**
+   * Set beside `withholdsHomeDepartment` when `deptName` is a catalog department whose page
+   * withholds only because it states no one's appointment (#6299). The name stays in the title
+   * vocabulary, so a title on another roster that names it first still withholds that roster's
+   * department.
+   */
+  namesCatalogDepartment?: boolean;
   /**
    * When true, this page is a school's own whole-faculty directory rather than a
    * department roster, so `deptName` names the school and there is no department
@@ -2228,6 +2236,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: viewsTableRowExtractor,
     withholdsHomeDepartment: true,
+    namesCatalogDepartment: true,
   },
   {
     deptKey: 'spanish-portuguese',
@@ -2936,6 +2945,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: viewsTableRowExtractor,
     withholdsHomeDepartment: true,
+    namesCatalogDepartment: true,
   },
   {
     deptKey: 'history-science-medicine-public-health',
@@ -2945,6 +2955,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: viewsTableRowExtractor,
     withholdsHomeDepartment: true,
+    namesCatalogDepartment: true,
   },
   {
     deptKey: 'judaic-studies',
@@ -4417,7 +4428,7 @@ export function rosterAbsenceClaims(entry: FacultyEntry): string[] {
   ];
 }
 
-const assertsHomeDepartment = (dept: DeptConfig): boolean =>
+export const assertsHomeDepartment = (dept: DeptConfig): boolean =>
   !dept.affiliatesOnly &&
   !dept.schoolWideDirectory &&
   !dept.crossListedProgramme &&
@@ -4427,7 +4438,9 @@ const assertsHomeDepartment = (dept: DeptConfig): boolean =>
 export function rosterDepartmentVocabulary(configs: Iterable<DeptConfig>): Set<string> {
   const names = new Set<string>();
   for (const config of [...DEFAULT_DEPT_CONFIGS, ...configs]) {
-    if (assertsHomeDepartment(config)) names.add(config.deptName);
+    if (assertsHomeDepartment(config) || config.namesCatalogDepartment) {
+      names.add(config.deptName);
+    }
   }
   return names;
 }
