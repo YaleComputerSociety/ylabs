@@ -4608,6 +4608,7 @@ describe('Research sentence topic rewrite notice (#6223)', () => {
   it('searches the topic again when the URL goes back to the rewritten search', async () => {
     const searchRequests: Array<Record<string, unknown>> = [];
     serveSentenceSearch(searchRequests);
+    const rewrittenSearchUrl = `/research?q=${encodeURIComponent(SENTENCE)}`;
 
     render(
       <MemoryRouter initialEntries={[`/research?q=${encodeURIComponent(SENTENCE)}&literal=topic`]}>
@@ -4620,10 +4621,7 @@ describe('Research sentence topic rewrite notice (#6223)', () => {
             departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
           }}
         >
-          <NavigateToResearchUrl
-            to={`/research?q=${encodeURIComponent(SENTENCE)}`}
-            label="Open the rewritten search"
-          />
+          <NavigateToResearchUrl to={rewrittenSearchUrl} label="Open the rewritten search" />
           <Research />
         </ConfigContext.Provider>
       </MemoryRouter>,
