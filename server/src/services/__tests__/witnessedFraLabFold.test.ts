@@ -12,13 +12,16 @@ const facultyRow: WitnessedFoldEntity = {
   name: 'Ada Alpha Faculty Research',
   entityType: 'FACULTY_RESEARCH_AREA',
 };
+const LAB_SITE = 'https://sediment-lab.example.edu/';
 const lab = (overrides: Partial<WitnessedFoldEntity> = {}): WitnessedFoldEntity => ({
   id: 'own-lab',
   slug: 'synthetic-sediment-lab',
   name: 'Coastal Sediment Lab',
   entityType: 'LAB',
+  mergeFields: { websiteUrl: LAB_SITE },
   leadVerification: {
     state: 'verified',
+    checkedUrl: LAB_SITE,
     leads: [{ personId: 'ada', role: 'PI', verdict: 'CONFIRMED', matchedBy: 'NAMED_ON_PAGE' }],
   },
   ...overrides,
@@ -50,6 +53,39 @@ describe('a faculty research row folds into its lead’s own lab only on a witne
         witness: 'lab-page-names-pi',
       },
     ]);
+  });
+
+  it('does not fold on a verdict read from a page the lab no longer serves (#6281)', () => {
+    for (const mergeFields of [
+      {},
+      { websiteUrl: '' },
+      { websiteUrl: 'https://another-site.example.edu/' },
+    ]) {
+      const { folds } = selectWitnessedFraLabFolds({
+        entities: entities(facultyRow, lab({ mergeFields })),
+        edges: [edge('ada', 'faculty-row'), edge('ada', 'own-lab')],
+      });
+      expect(folds).toEqual([]);
+    }
+  });
+
+  it('still folds when the lab serves the verified page under a trailing slash or www', () => {
+    const { folds } = selectWitnessedFraLabFolds({
+      entities: entities(
+        facultyRow,
+        lab({ mergeFields: { websiteUrl: 'https://www.sediment-lab.example.edu' } }),
+      ),
+      edges: [edge('ada', 'faculty-row'), edge('ada', 'own-lab')],
+    });
+    expect(folds.map((fold) => fold.witness)).toEqual(['lab-page-names-pi']);
+  });
+
+  it('reads the served page from the legacy website field the way the served page does', () => {
+    const { folds } = selectWitnessedFraLabFolds({
+      entities: entities(facultyRow, lab({ mergeFields: { website: LAB_SITE } })),
+      edges: [edge('ada', 'faculty-row'), edge('ada', 'own-lab')],
+    });
+    expect(folds.map((fold) => fold.witness)).toEqual(['lab-page-names-pi']);
   });
 
   it('never folds into a co-director’s separate lab', () => {
@@ -214,6 +250,7 @@ describe('a faculty research row folds into its lead’s own lab only on a witne
         lab({
           leadVerification: {
             state: 'verified',
+            checkedUrl: LAB_SITE,
             leads: [
               {
                 personId: 'ada',

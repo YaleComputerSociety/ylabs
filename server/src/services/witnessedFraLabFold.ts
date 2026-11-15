@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
+import { leadVerificationReadsServedPage } from '../utils/leadContradictedByNamesake';
 import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 import { isOrganizationalHomeEntity } from '../utils/profileAreaDuplicateRisk';
 
@@ -34,6 +35,8 @@ export interface WitnessedFoldEntity {
   archived?: boolean;
   leadVerification?: {
     state?: string;
+    checkedUrl?: string;
+    requestedUrl?: string;
     leads?: Array<{
       personId?: unknown;
       role?: string;
@@ -106,6 +109,15 @@ const pageNamesTheLead = (lead: { matchedBy?: string; namedOnPage?: boolean }) =
 function labPageNamesPersonAsPi(lab: WitnessedFoldEntity, personId: string): boolean {
   const verification = lab.leadVerification;
   if (!verification || verification.state === 'contradicted') return false;
+  if (
+    !leadVerificationReadsServedPage({
+      leadVerification: verification,
+      websiteUrl: lab.mergeFields?.websiteUrl,
+      website: lab.mergeFields?.website,
+    })
+  ) {
+    return false;
+  }
   return (verification.leads || []).some(
     (lead) =>
       String(lead.personId) === personId &&
@@ -293,7 +305,7 @@ export async function loadWitnessedFoldContext(input: {
   const entityIds = [...new Set([...edges.map((edge) => edge.entityId), ...pairRowIds])];
   const docs = (await ResearchEntity.find({ _id: { $in: objectIds(entityIds) } })
     .select(
-      '_id slug name kind entityType archived leadVerification websiteUrl fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies fieldProvenance.slug.sourceUrl',
+      '_id slug name kind entityType archived leadVerification websiteUrl website fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies fieldProvenance.slug.sourceUrl',
     )
     .lean()) as Array<Record<string, any>>;
   return {
@@ -310,6 +322,7 @@ export async function loadWitnessedFoldContext(input: {
           leadVerification: doc.leadVerification ?? null,
           mergeFields: {
             websiteUrl: doc.websiteUrl,
+            website: doc.website,
             fullDescription: doc.fullDescription,
             shortDescription: doc.shortDescription,
             sourceUrls: doc.sourceUrls,
