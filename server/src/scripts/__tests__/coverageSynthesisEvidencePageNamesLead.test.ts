@@ -173,6 +173,13 @@ describe("a page is the person's own only by role, name or subject, never by pre
     expect(texts([researchPage('https://law.yale.edu/varnadore')], PERSON_ROW)).toEqual([]);
   });
 
+  it("admits a research subpage of the person's own name-domain site", () => {
+    const shortSurnameRow = { ...PERSON_ROW, leadNames: ['Mira Oto'] };
+    expect(texts([researchPage('https://miraoto.com/research')], shortSurnameRow)).toEqual([
+      RESEARCH,
+    ]);
+  });
+
   it("admits the person's own name-domain site", () => {
     expect(texts([researchPage('https://quillonvarnadore.com/research')], PERSON_ROW)).toEqual([
       RESEARCH,

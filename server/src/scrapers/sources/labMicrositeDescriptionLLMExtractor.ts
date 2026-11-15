@@ -1212,6 +1212,14 @@ function pageNamesPersonInLeadRole(pageText: string, personName: string): boolea
  * school homepage stored as a person's website passed all three. Only the writer judges pages
  * this way; the lane gate and topic derivation keep `descriptionPageNamesRowLead`.
  */
+function siteOrigin(pageUrl: string): string {
+  try {
+    return `${new URL(pageUrl).origin}/`;
+  } catch {
+    return '';
+  }
+}
+
 function leafNamesPersonInFull(pageUrl: string, personName: string): boolean {
   const tokens = comparableName(personName)
     .split(' ')
@@ -1247,7 +1255,7 @@ export function descriptionPageIsRowLeadsOwn(
   if (!surname) return true;
   if (!rowIsScopedToLead(input, surname)) return true;
   if (urlCarriesPersonSurname(hostAndLabSegment(input.pageUrl), personName)) return true;
-  if (isPersonalNameDomainWebsite(input.pageUrl, personName)) return true;
+  if (isPersonalNameDomainWebsite(siteOrigin(input.pageUrl), personName)) return true;
   if (
     isLikelyOfficialPersonProfileUrl(input.pageUrl) &&
     urlCarriesPersonSurname(profileLeaf(input.pageUrl), personName)
