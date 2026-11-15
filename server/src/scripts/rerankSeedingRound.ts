@@ -5,9 +5,9 @@
  *
  * `collect` reads distinct search queries since `--since`, aggregated with no user or
  * session field, from `PRODUCTION_READONLY_MONGODBURL` (refused unless the credential
- * cannot write), or from `--aggregates=<file>`. It keeps only queries the Development
- * cache does not seed and the Development route would rerank, so name queries are
- * dropped before anything is written. It prints counts only, and writes the round and
+ * holds only read actions), or from `--aggregates=<file>`. It keeps only queries that are
+ * not name-shaped, that the Development cache does not seed, and that the Development
+ * route would rerank, so name queries are dropped before anything is written. It prints counts only, and writes the round and
  * its scoring batch only with `--out`, outside the repository, mode 0600.
  *
  * `judge-packet` and `gate` read only files: the packet is the blind union of each
