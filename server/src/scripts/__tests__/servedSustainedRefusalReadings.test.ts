@@ -107,6 +107,7 @@ describe('loadServedSustainedRefusalReadings against a synthetic flagged host', 
   const servedFilter = { studentVisibilityTier: 'student_ready', archived: { $ne: true } };
   const servedId = new ObjectId();
   const archivedId = new ObjectId();
+  const supersededOnlyId = new ObjectId();
 
   beforeAll(async () => {
     server = await MongoMemoryServer.create();
@@ -124,6 +125,11 @@ describe('loadServedSustainedRefusalReadings against a synthetic flagged host', 
     await db.dropDatabase();
     await db.collection('research_entities').insertMany([
       { _id: servedId, slug: 'synthetic-served-lab', studentVisibilityTier: 'student_ready' },
+      {
+        _id: supersededOnlyId,
+        slug: 'synthetic-superseded-reading-lab',
+        studentVisibilityTier: 'student_ready',
+      },
       {
         _id: archivedId,
         slug: 'synthetic-archived-lab',
@@ -145,7 +151,7 @@ describe('loadServedSustainedRefusalReadings against a synthetic flagged host', 
       .insertMany([
         pageReading(servedId),
         pageReading(archivedId),
-        pageReading(new ObjectId(), true),
+        pageReading(supersededOnlyId, true),
       ]);
   });
 
