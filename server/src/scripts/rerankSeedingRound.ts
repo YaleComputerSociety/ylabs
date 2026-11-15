@@ -27,6 +27,8 @@ import { searchResearchGroupsForRerankCandidates } from '../services/researchGro
 import { SEARCH_RERANK_WINDOW } from '../services/searchRerankCache';
 import { searchRerankPromptExcerpts } from '../services/searchRerankCandidateText';
 import { searchRerankCandidatesWithServedText } from '../services/searchRerankLiveMissJob';
+import { isEnglishDictionaryWord } from '../services/englishDictionaryWords';
+import { warmResearchSearchSpellingVocabulary } from '../services/researchSearchSpellingVocabulary';
 import {
   ROUND_SCRIPT_NAME,
   ROUND_SOURCE_URL_ENV,
@@ -39,12 +41,14 @@ import {
   judgePacket,
   ndcgOutcomes,
   parseJudgeGrades,
+  parseQueryAggregates,
   parseRoundArgs,
   parseRoundFile,
   scoringBatch,
   searchEventQueryAggregation,
   seedInputFromRound,
   slugScoresFromScorerOutput,
+  topicVocabularyFrom,
   writePrivateRoundFile,
 } from './rerankSeedingRoundCore';
 
@@ -74,11 +78,7 @@ async function readProductionQueryAggregates(since: Date): Promise<SearchQueryAg
       .collection('analytics_events')
       .aggregate(searchEventQueryAggregation(since), { allowDiskUse: false })
       .toArray();
-    return rows.flatMap((row) =>
-      typeof row.query === 'string' && typeof row.searchCount === 'number'
-        ? [{ query: row.query, searchCount: row.searchCount }]
-        : [],
-    );
+    return parseQueryAggregates(rows);
   } finally {
     await client.close();
   }
@@ -110,7 +110,7 @@ async function developmentServedCandidates(query: string): Promise<ServedCandida
 async function collect(args: RoundArgs): Promise<void> {
   const aggregatesFile = args.aggregates;
   const aggregates = aggregatesFile
-    ? (readJson(aggregatesFile) as SearchQueryAggregate[])
+    ? parseQueryAggregates(readJson(aggregatesFile))
     : await readProductionQueryAggregates(args.since!);
 
   const developmentUrl = process.env.MONGODBURL?.trim();
@@ -124,9 +124,14 @@ async function collect(args: RoundArgs): Promise<void> {
     const existingEntries = await SearchRerankCache.find({})
       .select('queryKey indexVersion source')
       .lean<Array<{ queryKey: string; indexVersion?: unknown; source?: unknown }>>();
+    const vocabulary = await warmResearchSearchSpellingVocabulary();
+    if (!vocabulary) {
+      throw new Error(`${ROUND_SCRIPT_NAME} collect needs the Development search vocabulary`);
+    }
     const { queries, report } = await collectRoundQueries({
       aggregates,
       existingEntries,
+      topicVocabulary: topicVocabularyFrom(vocabulary, isEnglishDictionaryWord),
       searchCandidates: developmentServedCandidates,
     });
     const written = args.out

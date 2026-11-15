@@ -13,6 +13,9 @@ import {
   judgePacket,
   ndcgOutcomes,
   parseJudgeGrades,
+  parseQueryAggregates,
+  queryIsNameShaped,
+  topicVocabularyFrom,
   parseRoundArgs,
   queryNamesATopic,
   rerankedTop,
@@ -84,19 +87,58 @@ describe('assertReadOnlySourcePrivileges', () => {
     expect(() => assertReadOnlySourcePrivileges(status(['find', 'listCollections']))).not.toThrow();
   });
 
+  it('accepts every action the built-in read role grants', () => {
+    expect(() =>
+      assertReadOnlySourcePrivileges(
+        status([
+          'changeStream',
+          'collStats',
+          'dbHash',
+          'dbStats',
+          'find',
+          'killCursors',
+          'listCollections',
+          'listIndexes',
+          'listSearchIndexes',
+          'planCacheRead',
+        ]),
+      ),
+    ).not.toThrow();
+  });
+
   it('refuses a credential whose only writes are role, password or search index changes', () => {
     expect(() =>
       assertReadOnlySourcePrivileges(status(['find', 'createRole', 'changePassword'])),
-    ).toThrow(/can write \(changePassword, createRole\)/);
+    ).toThrow(/beyond reading \(changePassword, createRole\)/);
     expect(() => assertReadOnlySourcePrivileges(status(['find', 'updateSearchIndex']))).toThrow(
-      /can write \(updateSearchIndex\)/,
+      /beyond reading \(updateSearchIndex\)/,
     );
   });
 
   it('refuses a credential that can write', () => {
     expect(() => assertReadOnlySourcePrivileges(status(['find', 'insert', 'update']))).toThrow(
-      /can write \(insert, update\)/,
+      /beyond reading \(insert, update\)/,
     );
+  });
+
+  it('refuses a broad or unknown grant, not only a named write', () => {
+    expect(() => assertReadOnlySourcePrivileges(status(['anyAction']))).toThrow(
+      /beyond reading \(anyAction\)/,
+    );
+    expect(() => assertReadOnlySourcePrivileges(status(['find', 'internal']))).toThrow(
+      /beyond reading \(internal\)/,
+    );
+    expect(() => assertReadOnlySourcePrivileges(status(['find', 'someFutureAction']))).toThrow(
+      /beyond reading \(someFutureAction\)/,
+    );
+    expect(() =>
+      assertReadOnlySourcePrivileges({
+        authInfo: {
+          authenticatedUsers: [{ user: 'reader', db: 'admin' }],
+          authenticatedUserPrivileges: [{ resource: { anyResource: true } }],
+        },
+      }),
+    ).toThrow(/beyond reading \(<unlisted>\)/);
   });
 
   it('fails closed when the connection is unauthenticated or lists no privileges', () => {
@@ -107,6 +149,11 @@ describe('assertReadOnlySourcePrivileges', () => {
       assertReadOnlySourcePrivileges({ authInfo: { authenticatedUsers: [{ user: 'x' }] } }),
     ).toThrow(/read-only credential/);
     expect(() => assertReadOnlySourcePrivileges(null)).toThrow(/read-only credential/);
+    expect(() =>
+      assertReadOnlySourcePrivileges({
+        authInfo: { authenticatedUsers: [{ user: 'x' }], authenticatedUserPrivileges: [] },
+      }),
+    ).toThrow(/read-only credential/);
   });
 });
 
@@ -130,6 +177,78 @@ describe('aggregatesByQueryKey', () => {
   });
 });
 
+const TOPIC_WORDS = new Set([
+  'coastal',
+  'ecology',
+  'marine',
+  'biology',
+  'soil',
+  'chemistry',
+  'synthetic',
+  'person',
+  'name',
+  'word',
+  'x',
+]);
+const topicVocabulary = { isTopicTerm: (word: string) => TOPIC_WORDS.has(word) };
+
+describe('queryIsNameShaped', () => {
+  it('drops a short letters-only query with no topic term', () => {
+    expect(queryIsNameShaped('Tqxa Vrnbe', topicVocabulary)).toBe(true);
+    expect(queryIsNameShaped("Tqxa O'Vrnbe-Plok", topicVocabulary)).toBe(true);
+    expect(queryIsNameShaped('Tqxa', topicVocabulary)).toBe(true);
+  });
+
+  it('keeps a query with a topic term, a digit, or more than four words', () => {
+    expect(queryIsNameShaped('Tqxa marine biology', topicVocabulary)).toBe(false);
+    expect(queryIsNameShaped('Tqxa Vrnbe 2026', topicVocabulary)).toBe(false);
+    expect(queryIsNameShaped('tqxa vrnbe plok zemv quor', topicVocabulary)).toBe(false);
+  });
+});
+
+describe('topicVocabularyFrom', () => {
+  const vocabulary = topicVocabularyFrom(
+    {
+      documentFrequency: new Map([
+        ['proteomics', 4],
+        ['tqxa', 9],
+        ['rarebody', 2],
+      ]),
+      personNameWords: ['tqxa', 'rose'],
+    },
+    (word) => word === 'rose' || word === 'garden',
+  );
+
+  it('counts a dictionary word or a body term in at least three documents as a topic term', () => {
+    expect(vocabulary.isTopicTerm('garden')).toBe(true);
+    expect(vocabulary.isTopicTerm('Proteomics')).toBe(true);
+    expect(vocabulary.isTopicTerm('rarebody')).toBe(false);
+  });
+
+  it('never counts a word that is part of a person name, even a dictionary word', () => {
+    expect(vocabulary.isTopicTerm('rose')).toBe(false);
+    expect(vocabulary.isTopicTerm('tqxa')).toBe(false);
+  });
+});
+
+describe('parseQueryAggregates', () => {
+  it('accepts positive integer counts and refuses anything else', () => {
+    expect(parseQueryAggregates([{ query: 'coastal ecology', searchCount: 2 }])).toEqual([
+      { query: 'coastal ecology', searchCount: 2 },
+    ]);
+    expect(() => parseQueryAggregates([{ query: 'coastal ecology', searchCount: 1.5 }])).toThrow(
+      /positive integer/,
+    );
+    expect(() => parseQueryAggregates([{ query: 'coastal ecology', searchCount: '2' }])).toThrow(
+      /positive integer/,
+    );
+    expect(() => parseQueryAggregates([{ query: 'coastal ecology', searchCount: 0 }])).toThrow(
+      /positive integer/,
+    );
+    expect(() => parseQueryAggregates({ query: 'coastal ecology' })).toThrow(/list/);
+  });
+});
+
 describe('collectRoundQueries', () => {
   it('drops filter phrases, seeded keys, name queries and ineligible queries before collecting', async () => {
     const seededKey = searchRerankCacheQueryKey('marine biology', {});
@@ -142,6 +261,7 @@ describe('collectRoundQueries', () => {
         { query: 'soil chemistry', searchCount: 1 },
         { query: 'has hosted undergrad', searchCount: 6 },
         { query: 'synthetic person name', searchCount: 3 },
+        { query: 'Tqxa Vrnbe', searchCount: 2 },
         { query: 'x', searchCount: 1 },
         { query: 'word '.repeat(40), searchCount: 1 },
       ],
@@ -149,6 +269,7 @@ describe('collectRoundQueries', () => {
         { queryKey: seededKey, indexVersion: 'full-v4-2026-11-13' },
         { queryKey: liveMissKey, source: 'live-miss', indexVersion: 'live-miss' },
       ],
+      topicVocabulary,
       searchCandidates: async (query) => {
         asked.push(query);
         return servedFor({ 'synthetic person name': 'name-query', x: 'too-short' })(query);
@@ -157,6 +278,7 @@ describe('collectRoundQueries', () => {
 
     expect(asked).not.toContain('marine biology');
     expect(asked).not.toContain('has hosted undergrad');
+    expect(asked).not.toContain('Tqxa Vrnbe');
     expect(queries.map((query) => query.query)).toEqual(['coastal ecology', 'soil chemistry']);
     expect(queries[0]).toMatchObject({
       row: 'R1',
@@ -164,13 +286,14 @@ describe('collectRoundQueries', () => {
     });
     expect(queries[0].candidates[2]).toMatchObject({ i: 2, slug: 'row-2' });
     expect(report).toMatchObject({
-      distinctQueries: 7,
-      searches: 18,
+      distinctQueries: 8,
+      searches: 20,
       collected: 2,
       collectedByWordCount: { '2': 2 },
       excluded: {
         'too-long': 1,
         'filter-phrase': 1,
+        'name-shaped': 1,
         'already-seeded': 1,
         'name-query': 1,
         'not-rerank-eligible': 1,
@@ -183,6 +306,7 @@ describe('collectRoundQueries', () => {
     const { queries, report } = await collectRoundQueries({
       aggregates: [{ query: 'coastal ecology', searchCount: 1 }],
       existingEntries: [],
+      topicVocabulary,
       searchCandidates: servedFor({}, 1),
     });
     expect(queries).toEqual([]);
@@ -388,6 +512,13 @@ describe('writePrivateRoundFile', () => {
 });
 
 describe('xorshiftRandom', () => {
+  it('is the standard 32-bit xorshift sequence', () => {
+    const next = xorshiftRandom(1);
+    expect([next(), next(), next()].map((draw) => draw * 0x100000000)).toEqual([
+      270369, 67634689, 2647435461,
+    ]);
+  });
+
   it('draws evenly over [0, 1) with no repeating short cycle', () => {
     const next = xorshiftRandom(1);
     const draws = Array.from({ length: 20000 }, next);

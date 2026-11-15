@@ -8,6 +8,11 @@ import {
   searchRerankEntryKind,
 } from '../services/searchRerankCache';
 import { searchRerankLiveMissQueryFits } from '../services/searchRerankLiveMiss';
+import {
+  SPELLING_CANDIDATE_MIN_DOCUMENTS,
+  type SearchSpellingVocabulary,
+} from '../services/searchQuerySpellingCorrection';
+import { foldLatinDiacritics } from '../utils/latinDiacritics';
 
 export const ROUND_SCRIPT_NAME = 'research-search:rerank-seeding-round';
 export const ROUND_SOURCE_URL_ENV = 'PRODUCTION_READONLY_MONGODBURL';
@@ -119,34 +124,17 @@ export function searchEventQueryAggregation(since: Date): Record<string, unknown
   ];
 }
 
-const SOURCE_WRITE_ACTIONS: ReadonlySet<string> = new Set([
-  'insert',
-  'update',
-  'remove',
-  'createCollection',
-  'createIndex',
-  'dropCollection',
-  'dropDatabase',
-  'dropIndex',
-  'renameCollectionSameDB',
-  'collMod',
-  'convertToCapped',
-  'bypassDocumentValidation',
-  'createUser',
-  'dropUser',
-  'grantRole',
-  'revokeRole',
-  'createRole',
-  'dropRole',
-  'changePassword',
-  'changeCustomData',
-  'setAuthenticationRestriction',
-  'createSearchIndexes',
-  'updateSearchIndex',
-  'dropSearchIndex',
-  'compact',
-  'reIndex',
-  'applyOps',
+const SOURCE_READ_ACTIONS: ReadonlySet<string> = new Set([
+  'changeStream',
+  'collStats',
+  'dbHash',
+  'dbStats',
+  'find',
+  'killCursors',
+  'listCollections',
+  'listIndexes',
+  'listSearchIndexes',
+  'planCacheRead',
 ]);
 
 interface ConnectionStatusPrivilege {
@@ -154,28 +142,41 @@ interface ConnectionStatusPrivilege {
 }
 
 /**
- * The query read must run on a credential that cannot write, so a mistyped variable
- * cannot hand this script an operator credential. An unauthenticated connection or one
- * whose privileges are not listed fails closed.
+ * The query read must run on a credential that can only read, so a mistyped variable
+ * cannot hand this script an operator credential. Every listed action must be a known
+ * read action, so a broad grant such as `anyAction` is refused too, and an
+ * unauthenticated connection or one whose privileges are not listed fails closed.
  */
 export function assertReadOnlySourcePrivileges(connectionStatus: unknown): void {
   const authInfo = (connectionStatus as { authInfo?: Record<string, unknown> } | null)?.authInfo;
   const users = authInfo?.authenticatedUsers;
   const privileges = authInfo?.authenticatedUserPrivileges;
-  if (!Array.isArray(users) || users.length === 0 || !Array.isArray(privileges)) {
+  if (
+    !Array.isArray(users) ||
+    users.length === 0 ||
+    !Array.isArray(privileges) ||
+    privileges.length === 0
+  ) {
     throw new Error(
       `${ROUND_SOURCE_URL_ENV} must be an authenticated read-only credential whose privileges can be listed`,
     );
   }
-  const writes = new Set<string>();
+  const refused = new Set<string>();
   for (const privilege of privileges as ConnectionStatusPrivilege[]) {
-    for (const action of Array.isArray(privilege.actions) ? privilege.actions : []) {
-      if (typeof action === 'string' && SOURCE_WRITE_ACTIONS.has(action)) writes.add(action);
+    const actions = Array.isArray(privilege?.actions) ? privilege.actions : null;
+    if (!actions) {
+      refused.add('<unlisted>');
+      continue;
+    }
+    for (const action of actions) {
+      if (typeof action !== 'string' || !SOURCE_READ_ACTIONS.has(action)) {
+        refused.add(String(action));
+      }
     }
   }
-  if (writes.size > 0) {
+  if (refused.size > 0) {
     throw new Error(
-      `${ROUND_SOURCE_URL_ENV} can write (${[...writes].sort().join(', ')}); use a read-only credential`,
+      `${ROUND_SOURCE_URL_ENV} holds actions beyond reading (${[...refused].sort().join(', ')}); use a read-only credential`,
     );
   }
 }
@@ -238,6 +239,47 @@ const queryWords = (query: string): string[] =>
 export const queryNamesATopic = (query: string): boolean =>
   queryWords(query).some((word) => !ACCESS_FILTER_WORDS.has(word));
 
+export const NAME_SHAPED_MAX_WORDS = 4;
+
+export interface TopicVocabulary {
+  isTopicTerm: (word: string) => boolean;
+}
+
+export function topicVocabularyFrom(
+  vocabulary: Pick<SearchSpellingVocabulary, 'documentFrequency' | 'personNameWords'>,
+  isDictionaryWord: (word: string) => boolean,
+): TopicVocabulary {
+  const personNameWords = new Set(vocabulary.personNameWords);
+  return {
+    isTopicTerm: (word) => {
+      const folded = foldLatinDiacritics(word.toLowerCase());
+      if (personNameWords.has(folded)) return false;
+      return (
+        isDictionaryWord(folded) ||
+        (vocabulary.documentFrequency.get(folded) ?? 0) >= SPELLING_CANDIDATE_MIN_DOCUMENTS
+      );
+    },
+  };
+}
+
+/**
+ * Development's search recognises only the people its corpus carries, so a classmate's
+ * name it does not know would pass the name-query gate. A short query of letters only is
+ * therefore kept only when some word is a topic term, and a word that is also part of a
+ * person's name never counts as one; in doubt the query is dropped.
+ */
+export function queryIsNameShaped(query: string, vocabulary: TopicVocabulary): boolean {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0 || tokens.length > NAME_SHAPED_MAX_WORDS) return false;
+  if (!tokens.every((token) => /^[\p{L}'.-]+$/u.test(token))) return false;
+  return !tokens.some((token) =>
+    token
+      .split(/['.-]+/)
+      .filter(Boolean)
+      .some((word) => vocabulary.isTopicTerm(word)),
+  );
+}
+
 export interface SearchQueryAggregate {
   query: string;
   searchCount: number;
@@ -246,6 +288,7 @@ export interface SearchQueryAggregate {
 export type RoundExclusion =
   | 'too-long'
   | 'filter-phrase'
+  | 'name-shaped'
   | 'already-seeded'
   | 'name-query'
   | 'not-rerank-eligible'
@@ -319,6 +362,22 @@ export function aggregatesByQueryKey(
   );
 }
 
+export function parseQueryAggregates(raw: unknown): SearchQueryAggregate[] {
+  if (!Array.isArray(raw)) throw new Error('Query aggregates must be a list');
+  return raw.map((item, index) => {
+    const { query, searchCount } = (item ?? {}) as { query?: unknown; searchCount?: unknown };
+    if (
+      typeof query !== 'string' ||
+      typeof searchCount !== 'number' ||
+      !Number.isInteger(searchCount) ||
+      searchCount < 1
+    ) {
+      throw new Error(`Query aggregate ${index} needs a query and a positive integer searchCount`);
+    }
+    return { query, searchCount };
+  });
+}
+
 /**
  * A query enters a round only when search would use a cache entry for it: it keys an
  * entry the cache does not already seed, names a topic rather than an access filter, and
@@ -327,6 +386,7 @@ export function aggregatesByQueryKey(
 export async function collectRoundQueries(options: {
   aggregates: readonly SearchQueryAggregate[];
   existingEntries: ReadonlyArray<{ queryKey: string; indexVersion?: unknown; source?: unknown }>;
+  topicVocabulary: TopicVocabulary;
   searchCandidates: (query: string) => Promise<ServedCandidates>;
 }): Promise<{ queries: RoundQuery[]; report: CollectRoundReport }> {
   const seededKeys = new Set(
@@ -339,6 +399,7 @@ export async function collectRoundQueries(options: {
   const excluded: Record<RoundExclusion, number> = {
     'too-long': 0,
     'filter-phrase': 0,
+    'name-shaped': 0,
     'already-seeded': 0,
     'name-query': 0,
     'not-rerank-eligible': 0,
@@ -352,7 +413,9 @@ export async function collectRoundQueries(options: {
   for (const [key, aggregate] of ordered) {
     if (!searchRerankLiveMissQueryFits(aggregate.query)) excluded['too-long'] += 1;
     else if (!queryNamesATopic(aggregate.query)) excluded['filter-phrase'] += 1;
-    else if (seededKeys.has(key)) excluded['already-seeded'] += 1;
+    else if (queryIsNameShaped(aggregate.query, options.topicVocabulary)) {
+      excluded['name-shaped'] += 1;
+    } else if (seededKeys.has(key)) excluded['already-seeded'] += 1;
     else {
       const served = await options.searchCandidates(aggregate.query);
       if (served.gate === 'name-query') excluded['name-query'] += 1;

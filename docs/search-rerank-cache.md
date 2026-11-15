@@ -87,10 +87,13 @@ A fixed seed covers only the queries it was scored on, so a recurring offline ro
 Run each command through the machine's heavy-command slot.
 
 1. `collect --since=<date of the last round> [--out=<round.json>]` reads the distinct `searchQuery` values of `search` events since that date, grouped by text alone, so no user, session or event field is read.
-   The source is `PRODUCTION_READONLY_MONGODBURL`, which must name the `Prod` database, and the command refuses a credential that can write, or one whose privileges it cannot list.
-   `--aggregates=<file>` reads `[{ "query", "searchCount" }]` from a file instead, which is how the command is tried without touching Production.
+   The source is `PRODUCTION_READONLY_MONGODBURL`, which must name the `Prod` database, and the command refuses a credential holding any action outside the built-in read role's (`find`, `listCollections`, `collStats` and the like), so `anyAction` and unknown grants are refused too, as is one whose privileges it cannot list.
+   `--aggregates=<file>` reads `[{ "query", "searchCount" }]` from a file instead, which is how the command is tried without touching Production; every count must be a positive integer.
    Spellings that share a cache key are counted together.
-   A query is kept only when it is short enough for the cache, names a topic rather than only access-filter words (such as "has hosted undergrad"), keys no seeded entry on Development, and passes the same Development gate the live-miss job uses, which refuses name queries; the served top 30 of each kept query is read there too.
+   A query is kept only when it is short enough for the cache, names a topic rather than only access-filter words (such as "has hosted undergrad"), is not name-shaped, keys no seeded entry on Development, and passes the same Development gate the live-miss job uses, which refuses name queries; the served top 30 of each kept query is read there too.
+   Name-shaped means one to four words of letters only, none of them a topic term, because Development's gate recognises only the people its corpus carries and a classmate's name would pass it.
+   A topic term is an English dictionary word or a word in at least three served rows' searchable text, and never a word of any person's name in the corpus, so a query is dropped when in doubt.
+   The command loads Development's search vocabulary first, so the served lists it reads are spelling-corrected as the route's are.
    Without `--out` it prints counts only (exclusions by reason, and kept queries by word count) and writes nothing.
    With `--out` it writes the round and a scoring batch beside it (`<round>.scoring-batch.json`), each outside the repository with mode 0600, so a dropped name query is never written to disk.
 2. Score the batch with local Claude under the rerank-session guide, one scoring session at a time, writing `[{ "row", "scores": { "<index>": <0-3> } }]`.

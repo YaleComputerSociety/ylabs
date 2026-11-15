@@ -171,7 +171,7 @@ These live in the operator's own `server/.env` or shell, never in Render and nev
 | -------- | ------- | ------ |
 | `MONGODBURL` | Development work and `yarn promote:beta` | Yes |
 | `DEVELOPMENT_MONGODBURL`, `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `ATLAS_DEVELOPMENT_MONGODBURL` | The copy pairs: `database:verify-names --pair <pair>`, the two mirrors, and `production:promote-beta-copy` | Yes |
-| `PRODUCTION_READONLY_MONGODBURL` | `research-search:rerank-seeding-round collect`, which refuses it unless it names the `Prod` database and lists no write privilege (`docs/search-rerank-cache.md`, "Seeding rounds") | Yes |
+| `PRODUCTION_READONLY_MONGODBURL` | `research-search:rerank-seeding-round collect`, which refuses it unless it names the `Prod` database and lists only read-role actions (`docs/search-rerank-cache.md`, "Seeding rounds") | Yes |
 | `RENDER_API_KEY` | `yarn promote:beta` and `yarn promote:production`, which read the operator services and start their jobs, and `yarn ops:sweep`, which falls back to the render CLI's `~/.render/cli.yaml` login when it is unset | Yes |
 | `RENDER_BETA_OPERATOR_SERVICE_ID`, `RENDER_PRODUCTION_OPERATOR_SERVICE_ID` | The same | No |
 | `OPENAI_API_KEY`, `YALIES_API_KEY` | Laptop sweeps and `yarn development:search:sync` or `:rebuild` | Yes |
