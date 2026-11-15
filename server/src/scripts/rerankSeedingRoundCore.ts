@@ -269,13 +269,17 @@ export function topicVocabularyFrom(
  * person's name never counts as one; in doubt the query is dropped.
  */
 export function queryIsNameShaped(query: string, vocabulary: TopicVocabulary): boolean {
-  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const tokens = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((token) => token && !ACCESS_FILTER_WORDS.has(token));
   if (tokens.length === 0 || tokens.length > NAME_SHAPED_MAX_WORDS) return false;
   if (!tokens.every((token) => /^[\p{L}'.-]+$/u.test(token))) return false;
   return !tokens.some((token) =>
     token
       .split(/['.-]+/)
-      .filter(Boolean)
+      .filter((word) => word && !ACCESS_FILTER_WORDS.has(word))
       .some((word) => vocabulary.isTopicTerm(word)),
   );
 }

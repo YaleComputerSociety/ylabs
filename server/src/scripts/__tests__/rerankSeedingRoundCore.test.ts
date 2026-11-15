@@ -204,6 +204,18 @@ describe('queryIsNameShaped', () => {
     expect(queryIsNameShaped('Tqxa Vrnbe 2026', topicVocabulary)).toBe(false);
     expect(queryIsNameShaped('tqxa vrnbe plok zemv quor', topicVocabulary)).toBe(false);
   });
+
+  it('drops a name padded with access-filter words that a real vocabulary knows', () => {
+    const vocabularyKnowingFilterWords = {
+      isTopicTerm: (word: string) =>
+        TOPIC_WORDS.has(word) || ['research', 'labs', 'mentor', 'yale'].includes(word),
+    };
+    expect(queryIsNameShaped('research Tqxa Vrnbe', vocabularyKnowingFilterWords)).toBe(true);
+    expect(
+      queryIsNameShaped('yale labs mentor Tqxa Vrnbe Plok', vocabularyKnowingFilterWords),
+    ).toBe(true);
+    expect(queryIsNameShaped('research Tqxa marine', vocabularyKnowingFilterWords)).toBe(false);
+  });
 });
 
 describe('topicVocabularyFrom', () => {
