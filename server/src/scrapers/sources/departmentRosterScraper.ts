@@ -319,7 +319,6 @@ const ROSTER_SYNTHESIZED_DESCRIPTION_CONFIDENCE = 0.5;
 const ROSTER_PROFILE_DESCRIPTION_CONFIDENCE = 0.55;
 const STATED_LAB_NAME_CONFIDENCE = 0.8;
 
-/** Minimal structured row produced by every per-department extractor. */
 export const ROSTER_LAB_WEBSITE_CLASSIFIER = 'dept-faculty-roster-lab-website';
 // Bump when a change to the profile lab-link rules refuses links an earlier version admitted, so
 // field retraction can tell this read's refusal from the older read that asserted the link (#5803).
@@ -341,6 +340,7 @@ export interface LabUrlRefusal {
   reason: LabUrlRefusalReason;
 }
 
+/** Minimal structured row produced by every per-department extractor. */
 export interface FacultyEntry {
   name: string;
   /**
