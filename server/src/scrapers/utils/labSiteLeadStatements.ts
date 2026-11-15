@@ -591,8 +591,9 @@ function isNotAboutCurrentLeads($: cheerio.CheerioAPI, pageUrl: string): boolean
  * Every row-anchored lead statement and non-lead listing on the pages the lane read.
  * A page is the row's own when the landing page's title, an `<h1>` or `og:site_name`
  * names the row (every followed subpage then inherits it), or when its own title or
- * `<h1>` does. `header` is kept on purpose, because CMS person cards put the name and
- * title inside one.
+ * `<h1>` does, or when the caller passes `landingIsOwn` because the row adopted the
+ * site as its own (a faculty research profile). `header` is kept on purpose, because
+ * CMS person cards put the name and title inside one.
  */
 export function rowLeadEvidence(
   pages: readonly LabSitePage[],

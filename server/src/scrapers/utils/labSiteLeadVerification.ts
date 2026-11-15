@@ -296,7 +296,8 @@ export function siteNamesInitialAndSurname(html: string, displayName: unknown): 
  * (`roelab.yale.edu`, `roe-lab.org`). Deliberately the hostname only, never a
  * path segment, as a presence signal; `surnameInLabPath` is the one exception, and
  * only names a person row's site for a subject already present on it with no
- * same-surname candidate, linked person, or stated lead beside them. A dedicated domain is the lab asserting whose lab it is, but
+ * same-surname candidate, linked person, or stated lead beside them. A dedicated
+ * domain is the lab asserting whose lab it is, but
  * `medicine.yale.edu/lab/roe/` is one slug on a multi-lab CMS and every namesake
  * matches it equally well. Treating a path segment as confirmation would make
  * this signal certify exactly the surname-only attachment `surnameOnlyMatch`
