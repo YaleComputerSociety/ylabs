@@ -2084,6 +2084,12 @@ A person listed under a past or emeritus section read to its end, in two admitte
 A person a contract read lists in no section, or only under an unfinished section, is omitted, and omission is never evidence about the person (#2647): an omitted member key, edge or relationship key retires only when `personPageDeparture.ts` reads a departure on the person's own page, and is otherwise counted as `omittedUnwitnessed*`.
 A role or profile-URL change of a person still listed keeps the two-read rule above, and the freeze guards count departed, witnessed-omitted and changed claims together.
 
+**A center's last lead edge (#6308).**
+A lead edge (`PI`, `DIRECTOR` or `CO_DIRECTOR`) ends only on departure evidence, a `departed` or `witnessed-omitted` verdict.
+When a role change or an absence would end a lead edge and leave the center with no current lead, counting another lead edge of this source the pass keeps and a lead role another source's live `inferredDirector*` observations name for the center, the edge is kept in `protectedLeadEdges` together with its member-key and role-claim observations.
+`counts.protectedLeadEdges` counts it, and both `[center-roster-retirement]` log lines report it as a last lead edge kept for operator review.
+A lead with another lead beside it still ends on a role change, so the demoted lead below still gets its current role edge.
+
 The pass freezes a center, retiring nothing and warning, when the retiring share of its member keys, edges or relationship keys exceeds `CENTER_ROSTER_MAX_ABSENT_FRACTION` (0.5), or when the latest read lists fewer than `CENTER_ROSTER_DISCOVERY_RETENTION_MIN_FRACTION` (0.75) of the largest admitted read on record.
 There is no population floor, so a small center that genuinely halves stays frozen until the larger read ages out of observation retention, which keeps the last three runs per source.
 

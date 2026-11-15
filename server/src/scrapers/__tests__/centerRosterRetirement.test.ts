@@ -185,7 +185,11 @@ describe('planCenterRosterRetirement', () => {
     expect(plan.counts.edgesAwaitingSecondRead).toBe(1);
   });
 
+  // The center keeps bravo as its director, so alpha's stale lead may end; a center's LAST
+  // lead survives a role change instead (#6308 decision, see the tests below).
   it('ends a stale lead edge and its role claim when two reads list the person under another role', () => {
+    const roleOf = (slug: string) => (slug === 'bravo' ? 'director' : 'core-faculty');
+    const listedWithDirector = SLUGS.map((slug) => readMember(slug, roleOf(slug)));
     const plan = planCenterRosterRetirement({
       entityKey: CENTER,
       memberObservations: [
@@ -193,17 +197,101 @@ describe('planCenterRosterRetirement', () => {
           ...row,
           superseded: true,
         })),
+        ...memberObservations(SLUGS, 2, roleOf),
+      ],
+      relationshipObservations: relationshipObservations(SLUGS, 2),
+      edges: [
+        ...edges(['alpha'], 1, 'DIRECTOR', 'director'),
+        ...edges(['bravo'], 2, 'DIRECTOR', 'director'),
+        ...edges(
+          SLUGS.filter((slug) => slug !== 'bravo'),
+          2,
+        ),
+      ],
+      reads: [read('run-3', 3, listedWithDirector), read('run-4', 4, listedWithDirector)],
+    });
+    expect(plan.verdict).toBe('retire');
+    expect(plan.retiredEdges.map((edge) => edge.edgeId)).toEqual(['edge-alpha-DIRECTOR']);
+    expect(plan.counts.retiredLeadEdges).toBe(1);
+    expect(plan.protectedLeadEdges).toEqual([]);
+    expect(plan.retiredRoleClaims).toEqual([`${CENTER}:alpha|director`]);
+    expect(plan.retiredMemberKeys).toEqual([]);
+  });
+
+  it("keeps a center's last lead edge, and its role claim, when two reads list the person under another role", () => {
+    const plan = planCenterRosterRetirement({
+      entityKey: CENTER,
+      memberObservations: [
+        ...memberObservations(['alpha'], 1, () => 'director'),
         ...memberObservations(SLUGS, 2),
       ],
       relationshipObservations: relationshipObservations(SLUGS, 2),
       edges: [...edges(['alpha'], 1, 'DIRECTOR', 'director'), ...edges(SLUGS, 2)],
       reads: [read('run-3', 3, listed(SLUGS)), read('run-4', 4, listed(SLUGS))],
     });
-    expect(plan.verdict).toBe('retire');
-    expect(plan.retiredEdges.map((edge) => edge.role)).toEqual(['DIRECTOR']);
-    expect(plan.counts.retiredLeadEdges).toBe(1);
+    expect(plan.retiredEdges).toEqual([]);
+    expect(plan.protectedLeadEdges.map((edge) => edge.edgeId)).toEqual(['edge-alpha-DIRECTOR']);
+    expect(plan.counts.protectedLeadEdges).toBe(1);
+    expect(plan.counts.retiredLeadEdges).toBe(0);
+    expect(plan.retiredRoleClaims).toEqual([]);
+    expect(plan.observationIds).not.toContain('alpha-role-1');
+  });
+
+  it("ends this roster's last lead edge on a role change when another source asserts a lead for the center", () => {
+    const plan = planCenterRosterRetirement({
+      entityKey: CENTER,
+      memberObservations: [
+        ...memberObservations(['alpha'], 1, () => 'director'),
+        ...memberObservations(SLUGS, 2),
+      ],
+      relationshipObservations: relationshipObservations(SLUGS, 2),
+      edges: [...edges(['alpha'], 1, 'DIRECTOR', 'director'), ...edges(SLUGS, 2)],
+      reads: [read('run-3', 3, listed(SLUGS)), read('run-4', 4, listed(SLUGS))],
+      protectedPersonRoles: new Set(['person-successor|DIRECTOR']),
+    });
+    expect(plan.retiredEdges.map((edge) => edge.edgeId)).toEqual(['edge-alpha-DIRECTOR']);
+    expect(plan.protectedLeadEdges).toEqual([]);
+    expect(plan.counts.protectedLeadEdges).toBe(0);
     expect(plan.retiredRoleClaims).toEqual([`${CENTER}:alpha|director`]);
+  });
+
+  it("keeps a center's last lead edge, and the member's observations, when two reads stop listing the person", () => {
+    const plan = planCenterRosterRetirement({
+      entityKey: CENTER,
+      memberObservations: [
+        ...memberObservations(['alpha'], 1, () => 'director'),
+        ...memberObservations(SLUGS.slice(1), 1),
+      ],
+      relationshipObservations: relationshipObservations(SLUGS, 1),
+      edges: [...edges(['alpha'], 1, 'DIRECTOR', 'director'), ...edges(SLUGS.slice(1), 1)],
+      reads: [read('run-2', 2, listed(SLUGS.slice(1))), read('run-3', 3, listed(SLUGS.slice(1)))],
+    });
+    expect(plan.retiredEdges).toEqual([]);
+    expect(plan.protectedLeadEdges.map((edge) => [edge.edgeId, edge.verdict])).toEqual([
+      ['edge-alpha-DIRECTOR', 'absent'],
+    ]);
     expect(plan.retiredMemberKeys).toEqual([]);
+    expect(plan.observationIds).not.toContain('alpha-role-1');
+    expect(plan.observationIds).not.toContain('alpha-profileUrl-1');
+  });
+
+  it('still ends a non-lead edge whose person two reads stop listing beside a kept last lead', () => {
+    const plan = planCenterRosterRetirement({
+      entityKey: CENTER,
+      memberObservations: [
+        ...memberObservations(['alpha'], 1, () => 'director'),
+        ...memberObservations(SLUGS.slice(1), 1),
+      ],
+      relationshipObservations: relationshipObservations(SLUGS, 1),
+      edges: [...edges(['alpha'], 1, 'DIRECTOR', 'director'), ...edges(SLUGS.slice(1), 1)],
+      reads: [
+        read('run-2', 2, listed(SLUGS.slice(1, -1))),
+        read('run-3', 3, listed(SLUGS.slice(1, -1))),
+      ],
+    });
+    expect(plan.protectedLeadEdges.map((edge) => edge.edgeId)).toEqual(['edge-alpha-DIRECTOR']);
+    expect(plan.retiredEdges.map((edge) => edge.edgeId)).toEqual(['edge-foxtrot-CORE_FACULTY']);
+    expect(plan.retiredMemberKeys).toEqual([`${CENTER}:foxtrot`]);
   });
 
   it('retires a stale profile URL claim of a member two reads list under another URL', () => {

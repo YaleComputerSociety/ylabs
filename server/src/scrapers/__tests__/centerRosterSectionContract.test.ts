@@ -410,6 +410,28 @@ describe('departed versus omitted under the section contract', () => {
     expect(result.retiredMemberKeys).toEqual([]);
   });
 
+  it("ends a center's last lead edge when two reads list the person under a past section", () => {
+    const leadEdges = edges(SLUGS, 1).map((edge) =>
+      edge.edgeId === 'edge-foxtrot' ? { ...edge, role: 'DIRECTOR' } : edge,
+    );
+    const result = planCenterRosterRetirement({
+      entityKey: CENTER,
+      reads: [
+        contractRead('run-2', 2, withFoxtrotUnder(ALUMNI_SECTION)),
+        contractRead('run-3', 3, withFoxtrotUnder(ALUMNI_SECTION)),
+      ],
+      memberObservations: memberObservations(SLUGS, 1),
+      relationshipObservations: [],
+      edges: leadEdges,
+      witnessedPersonIds: new Set<string>(),
+    });
+    expect(result.retiredEdges.map((edge) => [edge.edgeId, edge.verdict])).toEqual([
+      ['edge-foxtrot', 'departed'],
+    ]);
+    expect(result.counts.retiredLeadEdges).toBe(1);
+    expect(result.protectedLeadEdges).toEqual([]);
+  });
+
   it('does not count the same run twice', () => {
     const result = plan([
       contractRead('run-2', 2, withFoxtrotUnder(ALUMNI_SECTION)),
