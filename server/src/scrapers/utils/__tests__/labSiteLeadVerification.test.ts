@@ -808,6 +808,19 @@ describe('a person row adopting a site it appears on (#6313)', () => {
     expect(judged.verdict).toBe('CONFIRMED');
   });
 
+  it('still confirms a site whose host carries the person surname and names them', () => {
+    const eponymHost = 'https://quilllab.example.org/';
+    const html = '<p>Robin Quill</p><p>Graduate Student</p>';
+    const judged = buildLabSiteLeadVerification(
+      [lead()],
+      { website: eponymHost, visitedUrls: [eponymHost], html, pages: [{ url: eponymHost, html }] },
+      observedAt,
+      'FACULTY_RESEARCH_AREA',
+      'Robin Quill Faculty Research',
+    ).leads[0];
+    expect(judged.verdict).toBe('CONFIRMED');
+  });
+
   it('keeps presence confirming the lead of a lab row', () => {
     const labPage = '<p><a href="/profile/robin-quill/">Robin Quill</a></p>';
     const judged = buildLabSiteLeadVerification(

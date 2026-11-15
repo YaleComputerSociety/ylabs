@@ -638,11 +638,12 @@ export function surnameInLabPath(website: unknown, displayName: unknown): boolea
 }
 
 const siteIsNamedForLead = (
-  presence: PresenceConfirmation,
   reading: LabSiteReading,
   lead: LabSiteLeadCandidate,
+  contestedSurnames: ReadonlySet<string>,
 ) =>
-  presence.matchedBy === 'SURNAME_IN_SITE_URL' ||
+  (!contestedSurnames.has(surnameCore(lead.displayName)) &&
+    surnameInSiteUrl(reading.website, lead.displayName)) ||
   surnameInLabPath(reading.website, lead.displayName);
 
 /**
@@ -703,7 +704,7 @@ export function judgeLeadAgainstSite(
     presence &&
     leadIsTheRecordSubject &&
     !statedAsSiteLead &&
-    !siteIsNamedForLead(presence, reading, lead)
+    !siteIsNamedForLead(reading, lead, contestedSurnames)
   ) {
     return {
       ...base,
