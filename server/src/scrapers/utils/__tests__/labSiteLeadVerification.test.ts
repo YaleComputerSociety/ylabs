@@ -784,6 +784,17 @@ describe('a person row adopting a site it appears on (#6313)', () => {
     expect(personRow(leadPage).verdict).toBe('CONFIRMED');
   });
 
+  it.each(['Associate Director, Imaging Core', 'Postdoctoral Associate; Head of Microscopy'])(
+    'leaves a person titled %s by the site unconfirmed',
+    (title) => {
+      const staffPage =
+        '<html><head><title>Tidal Imaging Center</title></head><body>' +
+        `<div class="person"><h3><a href="/profile/robin-quill/">Robin Quill, PhD</a></h3><p>${title}</p></div>` +
+        '</body></html>';
+      expect(personRow(staffPage).verdict).toBe('UNSTATED');
+    },
+  );
+
   it('still confirms a site whose lab path carries the person surname', () => {
     const eponymSite = 'https://medicine.yale.edu/lab/quill/';
     const html = '<p>Robin Quill</p><p>Postdoctoral Fellow</p>';

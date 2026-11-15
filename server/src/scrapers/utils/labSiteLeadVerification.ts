@@ -650,14 +650,9 @@ const siteIsNamedForLead = (
  * grade found the people such a page names or links were trainees and staff as often as
  * leads (#6313). Only a lead title or a sentence about the site naming them does.
  */
-function siteStatesLead(
-  lead: LabSiteLeadCandidate,
-  evidence: RowLeadEvidence,
-  landingUrl: string,
-): string {
+function siteStatesLead(lead: LabSiteLeadCandidate, evidence: RowLeadEvidence): string {
   const statement = evidence.statements.find((one) => statementNamesLead(one.personName, lead));
-  if (statement) return statement.pageUrl;
-  return evidence.leadTitledNames.some((name) => statementNamesLead(name, lead)) ? landingUrl : '';
+  return statement?.pageUrl ?? '';
 }
 
 /**
@@ -703,11 +698,7 @@ export function judgeLeadAgainstSite(
     evidenceUrl,
     contradictedBy: shape,
   });
-  const statedAsSiteLead = siteStatesLead(
-    lead,
-    rowEvidence,
-    reading.visitedUrls[0] || reading.website,
-  );
+  const statedAsSiteLead = siteStatesLead(lead, rowEvidence);
   if (
     presence &&
     leadIsTheRecordSubject &&
