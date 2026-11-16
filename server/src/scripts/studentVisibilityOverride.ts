@@ -44,6 +44,7 @@ interface OverrideCollectionAccess {
   projection: string;
   identity: (row: any) => Record<string, unknown>;
   clearUnset: Record<string, ''>;
+  updateOptions: mongoose.MongooseUpdateQueryOptions;
   searchIndexEntityType: string | null;
   servedNow: (row: any) => Promise<boolean>;
   backingObservations: {
@@ -70,6 +71,7 @@ const OVERRIDE_COLLECTION_ACCESS: Record<
     projection: `_id slug name manuallyLockedFields ${OVERRIDE_STATE_FIELDS}`,
     identity: (row) => ({ slug: row.slug }),
     clearUnset: {},
+    updateOptions: {},
     searchIndexEntityType: 'researchEntity',
     servedNow: async (row) => Boolean(await getResearchGroupDetail(row.slug)),
     backingObservations: null,
@@ -79,6 +81,8 @@ const OVERRIDE_COLLECTION_ACCESS: Record<
     projection: `_id title sourceKey ${OVERRIDE_STATE_FIELDS}`,
     identity: (row) => ({ collection: 'programs', title: row.title }),
     clearUnset: { 'fieldProvenance.studentVisibilityOverrideTier': '' },
+    // The Fellowship schema declares no fieldProvenance path, so strict mode would drop this unset.
+    updateOptions: { strict: false },
     searchIndexEntityType: null,
     servedNow: programIsServed,
     backingObservations: {
@@ -149,7 +153,7 @@ export async function runStudentVisibilityOverride(
       ...(args.action.kind === 'clear' ? access.clearUnset : {}),
     };
     if (Object.keys(unset).length > 0) update.$unset = unset;
-    await access.model.updateOne({ _id: entity._id }, update);
+    await access.model.updateOne({ _id: entity._id }, update, access.updateOptions);
     if (retiresBackingObservations) {
       backingObservationsRetired = await access.backingObservations!.retire(entity, args.reason);
     }
