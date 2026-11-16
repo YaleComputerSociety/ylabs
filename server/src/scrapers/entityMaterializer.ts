@@ -1352,7 +1352,7 @@ interface MaterializeResult {
   outOfScopePaths?: string[];
   identityJoin?: UserIdentityJoin;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
-  /** The citation-removing paths withheld because they would leave a served row citing nothing (#6320). */
+  /** The citation-removing paths withheld because they would leave the row citing nothing (#6320). */
   lastCitationRemovalsWithheld?: string[];
   /** Fellowship fields this pass cleared because their only source states they have none. */
   fellowshipAbsenceClears?: FellowshipAbsenceClear[];
