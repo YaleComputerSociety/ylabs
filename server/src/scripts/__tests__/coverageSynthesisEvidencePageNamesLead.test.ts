@@ -211,6 +211,10 @@ describe("a page is the person's own only by role, name or subject, never by pre
     ]);
     expect(texts([researchPage('https://fds.yale.edu/people/qv421/')], withNetid)).toEqual([]);
     expect(texts([researchPage('https://fds.example.org/people/qv42/')], withNetid)).toEqual([]);
+    expect(texts([researchPage('https://medicine.yale.edu/profile/qv42/')], withNetid)).toEqual([
+      RESEARCH,
+    ]);
+    expect(texts([researchPage('https://medicine.yale.edu/profile/qv4/')], withNetid)).toEqual([]);
   });
 
   it('carries the shared-name flag through a captured evidence file', () => {

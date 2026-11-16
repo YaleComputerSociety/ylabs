@@ -1336,15 +1336,19 @@ function pathNamesPersonInFull(pageUrl: string, personName: string): boolean {
   return pathSegmentsOf(pageUrl).some((segment) => segmentNamesPersonInFull(segment, tokens));
 }
 
-/** A Yale `/people/<netid>` page whose netid is exactly one of the row's leads' (#6316). */
+const NETID_PAGE_PARENTS = new Set(['people', 'profile']);
+
+/** A Yale `/people/<netid>` or `/profile/<netid>` page whose netid is exactly a lead's (#6316). */
 function isYalePeoplePageForNetid(pageUrl: string, leadNetids: readonly string[]): boolean {
   if (leadNetids.length === 0) return false;
   try {
     const url = new URL(pageUrl);
     if (!isYaleHostedPage(pageUrl)) return false;
     const segments = url.pathname.toLowerCase().split('/').filter(Boolean);
-    const at = segments.indexOf('people');
-    return at >= 0 && leadNetids.includes(segments[at + 1] ?? '');
+    return segments.some(
+      (segment, index) =>
+        NETID_PAGE_PARENTS.has(segment) && leadNetids.includes(segments[index + 1] ?? ''),
+    );
   } catch {
     return false;
   }
