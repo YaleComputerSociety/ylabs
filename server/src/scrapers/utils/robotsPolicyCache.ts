@@ -1,4 +1,5 @@
 import { normalizeExcludedHost } from '../../utils/excludedHosts';
+import { isRefusedBeforeSending } from './httpFetch';
 import { ALLOW_ALL_ROBOTS_POLICY, parseRobotsTxt, type RobotsPolicy } from './robotsTxt';
 
 export const ROBOTS_POLICY_TTL_MS = 24 * 60 * 60_000;
@@ -63,10 +64,11 @@ export async function robotsPolicyFor(
   const read = (async () => {
     let outcome: RobotsTxtFetchOutcome;
     try {
-      outcome = await fetchRobotsTxt(key);
+      outcome = await fetchRobotsTxt(host);
     } catch (error) {
       outcome = { error };
     }
+    if ('error' in outcome && isRefusedBeforeSending(outcome.error)) throw outcome.error;
     const { policy, ttlMs } = policyFromOutcome(outcome);
     cache.set(key, { policy, expiresAt: now() + ttlMs });
     return policy;

@@ -8,6 +8,7 @@ import {
   type RobotsTxtFetcher,
 } from '../robotsPolicyCache';
 import { robotsAllows } from '../robotsTxt';
+import { HostPausedError } from '../hostPausedError';
 
 afterEach(() => resetRobotsPolicyCacheForTests());
 
@@ -23,6 +24,7 @@ describe('robotsPolicyFor', () => {
     at += ROBOTS_POLICY_TTL_MS - 1;
     await robotsPolicyFor('dept.example.edu', fetchRobots, () => at);
     expect(fetchRobots).toHaveBeenCalledTimes(1);
+    expect(fetchRobots).toHaveBeenCalledWith('www.dept.example.edu');
     expect(robotsAllows(first, '/private/x')).toBe(false);
 
     at += 1;
@@ -82,5 +84,19 @@ describe('robotsPolicyFor', () => {
     await expect(robotsPolicyFor('dept.example.edu', fetchRobots)).resolves.toMatchObject({
       unavailable: true,
     });
+  });
+
+  it('rethrows a refusal from our own hooks and caches nothing, since robots.txt was never asked', async () => {
+    const paused = new HostPausedError({ host: 'dept.example.edu', until: new Date(60_000) });
+    const fetchRobots = vi
+      .fn<RobotsTxtFetcher>()
+      .mockResolvedValueOnce({ error: paused })
+      .mockResolvedValueOnce({ status: 200, body: 'User-agent: *\nDisallow: /private/\n' });
+
+    await expect(robotsPolicyFor('dept.example.edu', fetchRobots)).rejects.toBe(paused);
+    const policy = await robotsPolicyFor('dept.example.edu', fetchRobots);
+
+    expect(fetchRobots).toHaveBeenCalledTimes(2);
+    expect(robotsAllows(policy, '/private/x')).toBe(false);
   });
 });

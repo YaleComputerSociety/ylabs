@@ -39,7 +39,7 @@ export const fetchRobotsTxtOverAxios: RobotsTxtFetcher = async (host) => {
 
 function requestPath(config: InternalAxiosRequestConfig): string {
   try {
-    const url = new URL(String(config.url ?? ''), config.baseURL);
+    const url = new URL(axios.getUri(config));
     return `${url.pathname}${url.search}`;
   } catch {
     return '/';
