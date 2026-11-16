@@ -259,4 +259,22 @@ describe('dept-faculty-roster holds titles to the end of the run (#5801), live',
     await scrape([physics]);
     expect(await liveTitles()).toEqual(['Associate Professor of Chemistry']);
   });
+
+  it('leaves the stored title standing when a later run reads only disagreeing listings', async () => {
+    firstListing.title = 'Professor of Chemistry';
+    await scrape([chemistry]);
+    expect(await liveTitles()).toEqual(['Professor of Chemistry']);
+
+    firstListing.title = 'Professor of Chemistry and Biochemistry';
+    secondListing.title = 'Professor of Physics';
+    await scrape([chemistry, physics]);
+    expect(await liveTitles()).toEqual(['Professor of Chemistry']);
+    expect(
+      await Observation.countDocuments({
+        sourceName: SOURCE_NAME,
+        entityKey: PERSON_KEY,
+        assertsNoValueFor: 'title',
+      }),
+    ).toBe(0);
+  });
 });
