@@ -6,6 +6,9 @@
  * A dry run by default, which reports the engine's own planned paths per key. With `--apply`
  * it writes serially (several keys can join one researcher, and two saves of one document
  * race), and `--passes=2` re-runs the same keys so a settled set shows 0 writes on pass 2.
+ * Because the materializer never recomputes a tier, an apply re-gates the research rows a live
+ * role edge links to each person a visit wrote, and reports the merged `regate` summary and any
+ * `regateError` (#6374).
  * The report names keys, so it is written only under the temp directory.
  *
  *   yarn --cwd server observations:rematerialize-user-keys --keys-file=<keys.json> \
