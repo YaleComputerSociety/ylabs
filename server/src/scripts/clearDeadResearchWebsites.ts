@@ -16,7 +16,7 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import {
   countWebsiteUrlOwnerRows,
   planDeadResearchWebsiteClears,
-  planDeadWebsiteClearWrite,
+  planDeadWebsiteClearUpdate,
   planDeadWebsiteRefusalWithdrawals,
   planDeadWebsiteRefusalWithdrawalWrite,
   reportDeadWebsiteRefusals,
@@ -113,7 +113,7 @@ async function main(): Promise<void> {
 
   const all = (await ResearchEntity.find({ archived: { $ne: true } })
     .select(
-      'slug name displayName entityType websiteUrl website sourceLinkHealth sourceUrls studentVisibilityTier manuallyLockedFields fieldValueRefusals',
+      'slug name displayName entityType websiteUrl website sourceLinkHealth sourceUrls studentVisibilityTier manuallyLockedFields fieldValueRefusals fieldProvenance',
     )
     .lean()) as unknown as Array<Record<string, any>>;
 
@@ -159,6 +159,16 @@ async function main(): Promise<void> {
       stoppedAfter,
       servedRowsScanned: served.length,
       plannedClears: outcome.plans.length,
+      plannedStampUnsets: slugs.reduce((total, slug) => {
+        const row = served.find((candidate) => text(candidate.slug) === slug);
+        const own = outcome.plans.filter((plan) => plan.slug === slug);
+        return row
+          ? total +
+              Object.keys(
+                planDeadWebsiteClearUpdate(row as DeadWebsiteRow, own, new Date()).$unset ?? {},
+              ).length
+          : total;
+      }, 0),
       plannedRefusalWithdrawals: withdrawals.length,
       ...reportDeadWebsiteRefusals(outcome.refused),
       cleared,
@@ -217,7 +227,7 @@ async function main(): Promise<void> {
           : row;
         const result = await ResearchEntity.updateOne(
           { slug },
-          { $set: planDeadWebsiteClearWrite(current, own, new Date()) },
+          planDeadWebsiteClearUpdate(current, own, new Date()),
         );
         if (result.modifiedCount) cleared += own.length;
         stoppedAfter = 'clearing';

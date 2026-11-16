@@ -76,6 +76,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'a one-time backfill of the person keys a lane re-keyed before it retired them at write time; the lanes now retire a re-keyed key in the run that re-keys it, so no later run re-derives the stored backlog (#5817)',
   'observations:retire-directory-export-departments':
     'a one-time backfill for the frozen 2026-05-15 directory CSV export, which never runs again; the resolver now decodes its department codes on every resolve, so the sweep has nothing to re-derive (#5796)',
+  'research-entity:clear-stale-refusal-provenance':
+    'a one-time backfill of the provenance unset research-entity:refuse-field-value now makes in the same write as each refusal, for stamps refusals left before it; it derives every target from the stored refusal records, so no lane or sweep stage re-derives it (#6318)',
   'observations:nonfetching-lane-gone-pages':
     'a one-time backfill for lanes that never run again or read no page, so no lane or sweep stage can re-derive it (#4862)',
   'directory-removal:record':

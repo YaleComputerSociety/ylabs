@@ -14,6 +14,7 @@ import {
   planDeadResearchWebsiteClears,
   summarizeDeadWebsiteRefusals,
   type DeadWebsiteRow,
+  planDeadWebsiteClearUpdate,
 } from '../clearDeadResearchWebsitesCore';
 
 const DEAD = 'https://gonelab.example.edu/';
@@ -227,5 +228,37 @@ describe('the dead-website clear records a refusal the next resolve honours (#37
     const write = planDeadWebsiteRefusalWithdrawalWrite(healthy, withdrawals, NOW);
     const [withdrawn] = write['fieldValueRefusals.websiteUrl'] as Array<Record<string, unknown>>;
     expect(withdrawn.withdrawnAt).toEqual(NOW);
+  });
+});
+
+describe('planDeadWebsiteClearUpdate drops the stamp of the website it clears (#6318)', () => {
+  const plan = {
+    slug: 'synthetic-dead-row',
+    field: 'websiteUrl' as const,
+    url: 'https://example.edu/synthetic-dead/',
+    liveCitationsRemaining: 1,
+  };
+
+  it('unsets the provenance stamp that cited the dead website', () => {
+    const update = planDeadWebsiteClearUpdate(
+      {
+        slug: 'synthetic-dead-row',
+        websiteUrl: plan.url,
+        fieldProvenance: { websiteUrl: { sourceName: 'synthetic-lane', sourceUrl: plan.url } },
+      } as never,
+      [plan],
+      new Date('2026-11-16T00:00:00Z'),
+    );
+    expect(update.$set.websiteUrl).toBe('');
+    expect(update.$unset).toEqual({ 'fieldProvenance.websiteUrl': '' });
+  });
+
+  it('writes no unset when the cleared website carried no stamp', () => {
+    const update = planDeadWebsiteClearUpdate(
+      { slug: 'synthetic-dead-row', websiteUrl: plan.url } as never,
+      [plan],
+      new Date('2026-11-16T00:00:00Z'),
+    );
+    expect(update.$unset).toBeUndefined();
   });
 });

@@ -61,6 +61,7 @@ import {
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { fieldProvenancePath, provenanceNoLongerDescribesValue } from './refusedFieldProvenance';
 import {
   planRefusalClosureRederivation,
   type RefusalClosureRederivation,
@@ -171,6 +172,7 @@ export interface RefuseFieldValueWritePlan {
   refusedKey: string;
   clearsStoredValue: boolean;
   closureRederivation: RefusalClosureRederivation;
+  staleProvenance: string[];
   write: { $set: Record<string, unknown>; $unset?: Record<string, ''> };
   regates: boolean;
 }
@@ -215,13 +217,30 @@ export async function planRefuseFieldValueWrite(
       });
   const rederivedClosure =
     closureRederivation.outcome === 'rederived' ? closureRederivation.set : {};
+  const valueAfterWrite = (field: string) =>
+    Object.prototype.hasOwnProperty.call(rederivedClosure, field)
+      ? rederivedClosure[field]
+      : field === args.field && clearsStoredValue
+        ? undefined
+        : row[field];
+  const staleProvenance: string[] = [];
+  for (const field of new Set([args.field, ...Object.keys(rederivedClosure)])) {
+    if (await provenanceNoLongerDescribesValue(row, field, valueAfterWrite(field))) {
+      staleProvenance.push(fieldProvenancePath(field));
+    }
+  }
+  const unset: Record<string, ''> = {
+    ...(clearsStoredValue ? { [args.field]: '' as const } : {}),
+    ...Object.fromEntries(staleProvenance.map((path) => [path, '' as const])),
+  };
   return {
     refusedKey,
     clearsStoredValue,
     closureRederivation,
+    staleProvenance,
     write: {
       $set: { ...record, ...rederivedClosure },
-      ...(clearsStoredValue ? { $unset: { [args.field]: '' as const } } : {}),
+      ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
     },
     regates: clearsStoredValue || Object.keys(rederivedClosure).length > 0,
   };
@@ -240,7 +259,7 @@ async function main(): Promise<void> {
     const row = await ResearchEntity.findOne({ slug: args.slug }).lean<Record<string, unknown>>();
     if (!row) throw new Error(`no research entity for the named slug`);
 
-    const { refusedKey, clearsStoredValue, closureRederivation, write, regates } =
+    const { refusedKey, clearsStoredValue, closureRederivation, staleProvenance, write, regates } =
       await planRefuseFieldValueWrite(row, args);
     const listEntryRemoval = args.withdraw
       ? undefined
@@ -272,6 +291,7 @@ async function main(): Promise<void> {
           rule: args.withdraw ? undefined : args.rule,
           refusedKey,
           storedValueIsTheRefusedValue: clearsStoredValue,
+          staleProvenanceUnset: staleProvenance,
           ...(listEntryRemoval ? { listEntryRemoval } : {}),
           closureRederivation,
           liveRefusalsBefore: liveFieldValueRefusals(row.fieldValueRefusals, args.field).length,
