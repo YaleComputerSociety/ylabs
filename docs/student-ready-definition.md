@@ -136,7 +136,7 @@ A row with no citation at all is silence rather than death, so `hasLiveSourceCit
 That makes the last citation load-bearing: a writer that unset the only `fieldProvenance.<field>` stamp of a served row whose only citation was dead would turn a held row into a served one.
 So every writer that unsets a provenance stamp or empties `sourceUrls` on a research entity goes through `withholdLastCitationRemovals` in `server/src/services/lastCitationGuard.ts`, which keeps the stamp and still clears the field value when the write would leave a served row citing nothing (#6320).
 A kept dead stamp keeps the row held, and a kept live stamp keeps the row citing what it cited before.
-Each writer reports what it kept, as `lastCitationStampsKept`, `lastCitationRemovalsWithheld`, or `lastCitationsKept`, and `lastCitationGuardSourceScan.test.ts` fails when a new unset site skips the rule.
+Each writer reports what it kept, as `lastCitationStampsKept`, `lastCitationRemovalsWithheld`, or `lastCitationsKept`, and `lastCitationGuardSourceScan.test.ts` fails when a new site that unsets a stamp or removes a `sourceUrls` entry skips the rule.
 
 ### Who counts as an attached lead
 
