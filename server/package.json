@@ -66,6 +66,7 @@
     "research-entity:refuse-dead-website-values": "tsx src/scripts/refuseDeadWebsiteValues.ts",
     "research-entity:refuse-unasserted-descriptions": "tsx src/scripts/refuseUnassertedDescriptions.ts",
     "research-entity:refuse-field-value": "tsx src/scripts/refuseResearchEntityFieldValue.ts",
+    "research-entity:clear-stale-refusal-provenance": "tsx src/scripts/clearStaleRefusalProvenance.ts",
     "research-entity:audit-field-locks": "tsx src/scripts/auditFieldLockOrigin.ts",
     "research-entity:release-field-locks": "tsx src/scripts/releaseRevisitableFieldLocks.ts",
     "research-entity:audit-frozen-descriptions": "tsx src/scripts/auditFrozenDescriptions.ts",
