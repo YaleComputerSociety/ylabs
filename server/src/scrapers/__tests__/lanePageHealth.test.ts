@@ -71,9 +71,18 @@ describe('withoutGoneLanePageObservations', () => {
     expect(result.observations).toEqual([borrowed]);
   });
 
-  it('keeps a page-borrowing lane value read after the gone verdict', () => {
+  it('withdraws a page-borrowing lane value written after the gone verdict, since a borrower never reads the page (#6238)', () => {
     const borrowed = read('fullDescription', 'A synthesis.', 9, 'coverage-synthesis-llm');
     const result = withoutGoneLanePageObservations([borrowed, verdict('UNAVAILABLE', 404, 5)], ROW);
+    expect(result.observations).toEqual([]);
+  });
+
+  it('keeps a page-borrowing lane value once a later read finds the page live', () => {
+    const borrowed = read('fullDescription', 'A synthesis.', 9, 'coverage-synthesis-llm');
+    const result = withoutGoneLanePageObservations(
+      [borrowed, verdict('UNAVAILABLE', 404, 5), verdict('HEALTHY', 200, 7)],
+      ROW,
+    );
     expect(result.observations).toEqual([borrowed]);
   });
 
@@ -288,6 +297,30 @@ describe('planGoneLanePageFieldClears', () => {
     expect(planGoneLanePageFieldClears({ ...base, lockedFields: ['fullDescription'] })).toEqual([]);
     expect(
       planGoneLanePageFieldClears({ ...base, stored: { fullDescription: 'Another reading.' } }),
+    ).toEqual([]);
+  });
+
+  it('clears methods and research areas only the gone page backed (#6238)', () => {
+    const evidence = {
+      ...base,
+      stored: { methods: ['synthetic assay'], researchAreas: ['Synthetic Biology'] },
+      withdrawnValuesByField: new Map<string, unknown[]>([
+        ['methods', [['synthetic assay']]],
+        ['researchAreas', [['Synthetic Biology']]],
+      ]),
+    };
+    expect(planGoneLanePageFieldClears(evidence)).toEqual(['methods', 'researchAreas']);
+    expect(
+      planGoneLanePageFieldClears({
+        ...evidence,
+        fieldsWithLiveObservation: new Set(['methods', 'researchAreas']),
+      }),
+    ).toEqual([]);
+    expect(
+      planGoneLanePageFieldClears({
+        ...evidence,
+        stored: { methods: ['another assay'], researchAreas: ['Another Area'] },
+      }),
     ).toEqual([]);
   });
 
