@@ -1373,6 +1373,17 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(rowAccepting('Applications open in early September.')).toBe(false);
   });
 
+  it('reads a closure with a cycle, quantifier or abbreviation in its subject', () => {
+    for (const rowText of [
+      'Summer 2026 applications are closed. Applications are reviewed on a rolling basis.',
+      'All applications are now closed. We review on a rolling basis.',
+      'Applications for the U.S. Student Program are closed. Rolling review applies.',
+      'Applications are closed. Applications open for juniors next fall.',
+    ]) {
+      expect(rowAccepting(rowText)).toBe(false);
+    }
+  });
+
   it('does not read past-tense rolling review as accepting', () => {
     expect(rowAccepting('Applications were accepted on a rolling basis last spring.')).toBe(false);
   });
