@@ -5,6 +5,34 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-16: An Empty Topic Reading Keeps Only Lane Topics The Served Description States (#6360)
+
+Decision (the backlog agent's GO on the manager's behalf, 2026-11-16, option (ii)+): when the stored page-topic reading for a row's CURRENT input hash is empty, a `researchAreas` observation counts as evidence only if it comes from the description lane (`lab-microsite-description-llm`) and the row's stored served description states it.
+"States" means every content word of the topic appears, by stem and in any order, inside one prose sentence of the stored short or full description, so an inverted heading such as "Carcinoma, Hepatocellular" matches prose that says "hepatocellular carcinoma".
+A line carrying two or more semicolons is a list and is never read, so a topic named only in a list is dropped.
+Other lanes' topic observations are not evidence on such a row, and the prose-derived fallback does not run, so a row with no grounded topic serves none.
+A row whose text has no reading yet keeps today's fallback unchanged.
+
+The narrowing runs on every resolve and writes no field, so it is derivation under the 2026-09-24 contract rather than repair.
+It reads the stored description, never the one this pass derives, so topics and description cannot chase each other across resolves.
+It sits in the materializer beside `withLabSiteDescriptionsNarrowedToResearch` rather than in `partitionResearchAreas`, because only the materializer sees the reading, the observation sources and the description.
+
+A re-read is not the fix: re-reading 19 empty rows returned 18 empty again, and three blind graders judged 17 of those 18 correctly empty.
+
+Three versions were blind-graded on 20 rows and 120 topics by three graders reading stored evidence only, then re-graded in full after the first round's single-line packet was found to truncate long evidence (5 of 120 topic verdicts moved, the ruling did not).
+
+| Version | What it serves on an empty reading | Precision | Recall | Passing rows left with no real topic |
+| --- | --- | --- | --- | --- |
+| (i) | every description-lane topic | 0.50 | 1.00 | 0 of 10 |
+| (ii) | topics derived from the description prose | 0.29 | 0.03 | 9 of 10 |
+| (ii)+ | description-lane topics the description states | 0.65 | 0.86 | 1 of 10 |
+
+Literal (ii) was rejected because the canonical phrase index matches almost nothing a real description says, so it strips nearly every real topic while keeping mostly generic ones.
+(i) keeps every real topic but serves as many wrong ones, the noise the empty reading was flagging.
+(ii)+ keeps most of (i)'s recall and cuts its noise by a third.
+Of the 263 served rows in scope, 96 serve no topic under (ii)+.
+No visibility tier moves for them, because all 96 have a current lead attached and missing topics are a soft signal.
+
 ## 2026-11-16: An Official Center's Emeritus Section Marks A Lead Emeritus (#6162)
 
 This extends the 2026-11-11 #5835 entry to the Emeritus section of an official Yale center roster, and answers Q4 that the 2026-11-13 #6084 entry left open.

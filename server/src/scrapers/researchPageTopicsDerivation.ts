@@ -200,6 +200,7 @@ export interface ResearchPageTopicsState {
   candidate?: DerivedResearchAreaCandidate;
   /** The candidate is the stored list's own reading, re-judged against the current text. */
   revalidatesStoredList?: true;
+  readingIsEmpty?: true;
 }
 
 /**
@@ -231,6 +232,9 @@ export async function researchPageTopicsStateFor(
   const ownOrgUnitLabels = ownOrgUnitLabelsFromObservations(observations);
   const derivation = await lookup(inputHash);
   if (derivation && derivation.inputHash === inputHash) {
+    if ((derivation.extractedTopics ?? []).length === 0) {
+      return { currentTextHash, readingIsEmpty: true };
+    }
     const candidate = quotedCandidateFrom(derivation, pages, current, ownOrgUnitLabels, {
       derivationInputHash: inputHash,
       derivationTextHash: currentTextHash,
