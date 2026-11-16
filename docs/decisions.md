@@ -31,7 +31,8 @@ Literal (ii) was rejected because the canonical phrase index matches almost noth
 (i) keeps every real topic but serves as many wrong ones, the noise the empty reading was flagging.
 (ii)+ keeps most of (i)'s recall and cuts its noise by a third.
 Of the 263 served rows in scope, 96 serve no topic under (ii)+.
-No visibility tier moves for them, because all 96 have a current lead attached and missing topics are a soft signal.
+Simulated read-only on Development by computing each row's visibility twice, once with its stored topics and once with its (ii)+ topics, 4 of the 263 move from `student_ready` to `operator_review`, all faculty research profiles whose card or body the gate judges against their topic list (`missing_card_description` and `public_description_invariant_failed`); the other 94 rows that gain a reason gain only the soft `missing_facet_signal`.
+The apply runs after a scoped gate dry run confirms that count.
 
 ## 2026-11-16: An Official Center's Emeritus Section Marks A Lead Emeritus (#6162)
 
