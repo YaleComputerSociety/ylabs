@@ -2014,6 +2014,23 @@ export function absenceMayRetract(
   );
 }
 
+function completeReadsByPage(
+  reads: readonly UserPageRead[],
+): Map<string, FieldRetractionCompleteRead[]> {
+  const readsByPage = new Map<string, FieldRetractionCompleteRead[]>();
+  for (const read of reads) {
+    const group = readsByPage.get(read.sourceUrl) ?? [];
+    group.push({
+      entityKey: read.entityKey,
+      scrapeRunId: read.scrapeRunId,
+      observedAt: read.observedAt,
+      assertsNoValueFor: read.assertsNoValueFor,
+    });
+    readsByPage.set(read.sourceUrl, group);
+  }
+  return readsByPage;
+}
+
 export function planUserFieldRetractions(input: {
   sourceName: string;
   contract: UserFieldRetractionContract;
@@ -2026,17 +2043,7 @@ export function planUserFieldRetractions(input: {
   ownedElsewhere?: ReadonlySet<string>;
 }): UserFieldRetractionPlan {
   const retractableFields = new Set(input.contract.retractableFields);
-  const readsByPage = new Map<string, FieldRetractionCompleteRead[]>();
-  for (const read of input.reads) {
-    const group = readsByPage.get(read.sourceUrl) ?? [];
-    group.push({
-      entityKey: read.entityKey,
-      scrapeRunId: read.scrapeRunId,
-      observedAt: read.observedAt,
-      assertsNoValueFor: read.assertsNoValueFor,
-    });
-    readsByPage.set(read.sourceUrl, group);
-  }
+  const readsByPage = completeReadsByPage(input.reads);
 
   const counts = emptyUserCounts();
   const assertingPagesByField = new Map<string, Set<string>>();
@@ -2324,10 +2331,17 @@ export async function reconcileUserFieldRetractions(options: {
   const reads = await loadUserPageReads(options.sourceName, [
     ...new Set(activeObservations.map((observation) => observation.sourceUrl)),
   ]);
+  const readsByPage = completeReadsByPage(reads);
   const ownedElsewhere = await orcidObservationsOwnedElsewhere({
     sourceName: options.sourceName,
     contract,
-    observations: activeObservations,
+    observations: activeObservations.filter(
+      (observation) =>
+        classifyFieldRetraction({
+          observation,
+          completeReads: readsByPage.get(observation.sourceUrl) ?? [],
+        }) === 'retract',
+    ),
     joinUserKey: options.joinUserKey,
   });
   const plan = planUserFieldRetractions({
