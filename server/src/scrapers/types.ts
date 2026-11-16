@@ -218,6 +218,11 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
     string,
     { firstRefusedAt: string; confirmingRefusalAt: string; runs: number; rowsUnconfirmed: number }
   >;
+  /**
+   * A keyed run's `user` keys whose page it read and stated a `title` for, so the title
+   * resolver can count those reads as fresh (#6197). Keys only, never names.
+   */
+  titleCoveredKeys?: string[];
   removedByRequest?: number;
   rekeyedPersonKeys?: RekeyedPersonKeyRunSummary;
   descriptionSlotAttestation?: {

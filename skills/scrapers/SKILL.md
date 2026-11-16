@@ -66,6 +66,10 @@ Three call sites, two of which do not use the helper and say why:
 
 - A researcher's stored title is resolved over every `user` key that joins it, and the newest fresh first-hand read of the researcher's own official page wins outright (`userTitleEvidence`, `FIRST_HAND_USER_TITLE_SOURCES`, #5578).
   A read is fresh only when it comes from its lane's latest full-coverage run (`isFullCoverageRun` in `scrapers/latestFullCoverageRun.ts`).
+  A read is also fresh for one person's key when it comes from a keyed run of that lane that started after the lane's latest full-coverage run and recorded the key in `metrics.titleCoveredKeys` (#6197).
+  Only a completed keyed run counts: `isCoveringKeyedRun` refuses an interrupted, failed, partial, invalidated or dry run, whatever its metrics say.
+  A lane records a key there only for a keyed run, and only when it read that person's page and emitted a `title` for the key (`TitleCoverageRecorder`), so a failed or refused fetch covers no one; `official-profile-pi-backfill` records nothing until a keyed mode of it emits a title.
+  Freshness never retires: it only chooses which emitted first-hand read counts, the full run's read stays fresh beside a newer covering read, and a fresh read that states no title changes nothing; retiring a title goes through the field-retraction contract instead.
   Without one, a servable stored title is never rewritten, and only an empty or unservable title is filled from the fallback; rewriting the rest is #5801.
   A roster title counts as first-hand only when it carries `extraction.source: 'profileTitleBlock'`, which the lane sets on a profile-enrichment title; see `docs/glossary.md`.
   An `official-profile-pi-backfill` title counts as first-hand only with the same marker, which the lane sets only when the emitted title is the contact-information field's appointment (`titleFromVerifiedTemplate`, #6177), and a keyed `visible-profile-bio-backfill` run emits that title while an unkeyed one emits none (#6197).

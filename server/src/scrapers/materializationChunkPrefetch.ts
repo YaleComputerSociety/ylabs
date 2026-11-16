@@ -92,6 +92,7 @@ export class UserIdentityJoinCache {
   private readonly joinsByKey = new Map<string, UserKeyJoinEvidence>();
   private readonly soleClaimedPagesByResearcher = new Map<string, ReadonlySet<string>>();
   private latestFullRunIds: ReadonlyMap<string, string> | undefined;
+  private coveringKeyedRunIds: ReadonlyMap<string, ReadonlyMap<string, string>> | undefined;
 
   candidatesFor(researcherId: string): UserKeyReference[] | undefined {
     return this.candidatesByResearcher.get(researcherId);
@@ -123,6 +124,16 @@ export class UserIdentityJoinCache {
 
   rememberLatestFullRunIdByLane(byLane: ReadonlyMap<string, string>): void {
     this.latestFullRunIds = byLane;
+  }
+
+  coveringKeyedRunIdsByLaneAndKey(): ReadonlyMap<string, ReadonlyMap<string, string>> | undefined {
+    return this.coveringKeyedRunIds;
+  }
+
+  rememberCoveringKeyedRunIdsByLaneAndKey(
+    byLane: ReadonlyMap<string, ReadonlyMap<string, string>>,
+  ): void {
+    this.coveringKeyedRunIds = byLane;
   }
 
   forgetAll(): void {

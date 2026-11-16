@@ -24,6 +24,7 @@ import {
   subtreeMentionsOrcid,
 } from '../utils/statedOrcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
+import { TitleCoverageRecorder } from '../latestFullCoverageRun';
 import { researcherEmail, researcherNetid } from '../../utils/researcherIdentity';
 import { looksLikeYaleNetid } from '../../utils/yaleNetid';
 import {
@@ -5872,6 +5873,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     let personalSitesNotNamingTheLead = 0;
     const homesRefusedByReason: Record<string, number> = {};
     let fetchAttempts = 0;
+    const titleCoverage = new TitleCoverageRecorder({ isKeyedRun: targetKeys.length > 0 });
 
     let fetchTurn: Promise<void> = Promise.resolve();
     const awaitFetchTurn = (): Promise<void> => {
@@ -6229,6 +6231,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           await ctx.emit(observations);
           emitted += observations.length;
           observed += 1;
+          titleCoverage.recordEmitted(observations);
         } catch (err: any) {
           ctx.log('Profile fetch failed', {
             entityId: officialProfileDocumentId(entity._id),
@@ -6330,6 +6333,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     return {
       observationCount: emitted,
       entitiesObserved: observed,
+      ...titleCoverage.resultMetrics(),
       notes:
         `Processed ${entities.length} official profile records; ` +
         `adopted ${homesAdopted} profile-linked research homes` +
