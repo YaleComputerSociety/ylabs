@@ -7,7 +7,11 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import { buildSourceHealthRows, type SourceHealthRow } from '../services/sourceHealthService';
 import { isDirectScriptInvocation } from './directScriptInvocation';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
 
@@ -618,7 +622,7 @@ if (isDirectScriptInvocation(import.meta.url, 'sourceHealth')) {
 function readJsonIfExists(reportPath: string): unknown | undefined {
   let safeReportPath: string;
   try {
-    safeReportPath = resolveSafeJsonReportOutputPath(reportPath, 'report path');
+    safeReportPath = resolveSafeJsonReportPath(reportPath, 'report path');
   } catch {
     return undefined;
   }

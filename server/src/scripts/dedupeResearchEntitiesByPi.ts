@@ -58,7 +58,11 @@ import {
   type ArchivedEntityArtifactType,
   type ArchivedEntityDisposition,
 } from './repairArchivedEntityArtifactsCore';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import { isSweepStageEnabledByDefault } from './sweepStageFlags';
 import { deleteFromIndex } from '../services/meiliSyncService';
 import { loadRedirectLandingIdentityKeys } from '../services/websiteUrlRedirectLandings';
@@ -349,17 +353,14 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
       continue;
     }
     if (arg.startsWith('--accepted-decisions=')) {
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
+      args.acceptedDecisions = resolveSafeJsonReportPath(
         arg.slice('--accepted-decisions='.length),
         '--accepted-decisions',
       );
       continue;
     }
     if (arg === '--accepted-decisions') {
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
-        argv[index + 1],
-        '--accepted-decisions',
-      );
+      args.acceptedDecisions = resolveSafeJsonReportPath(argv[index + 1], '--accepted-decisions');
       index += 1;
       continue;
     }
@@ -702,7 +703,7 @@ export function readResearchEntityPiDedupeDecisions(
   inputPath: string,
   options: { allowEmpty?: boolean } = {},
 ): ResearchEntityPiDedupeDecision[] {
-  const safeInputPath = resolveSafeJsonReportOutputPath(inputPath, '--accepted-decisions');
+  const safeInputPath = resolveSafeJsonReportPath(inputPath, '--accepted-decisions');
   if (!fs.existsSync(safeInputPath) && options.allowEmpty) {
     return [];
   }

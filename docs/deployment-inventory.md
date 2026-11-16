@@ -180,6 +180,7 @@ These live in the operator's own `server/.env` or shell, never in Render and nev
 | `TAVILY_API_KEY`, `EXA_API_KEY`, `BRAVE_SEARCH_API_KEY`, `PARALLEL_API_KEY` | `server/src/scripts/findLabWebsites.ts`, the lab-site discovery script | Yes |
 | `YALIES_OLD_API_KEY`, `YALIES_NEW_API_KEY` | `yarn security:verify-yalies-rotation`, set only for that one command | Yes |
 | `SMOKE_COOKIE` | `yarn security:smoke:production` with a signed-in check; it is a live session cookie | Yes |
+| `YLABS_REPORT_ROOT` | Every script's `--output` report path, as one more approved root beside the temp directories, so a report outlives a temp sweep; an absolute directory outside the repository checkout (`skills/architecture/SKILL.md`, "Script report output") | No |
 
 ## Guard and Confirmation Variables
 

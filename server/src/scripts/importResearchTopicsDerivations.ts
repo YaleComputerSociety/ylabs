@@ -7,7 +7,6 @@
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -19,11 +18,9 @@ import {
   ownOrgUnitLabelsFromObservations,
   OWN_ORG_UNIT_LABEL_FIELDS,
 } from '../scrapers/utils/ownOrgUnitLabelTopics';
-import { containsAsciiControl } from '../utils/asciiControl';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { withoutModelCalls } from '../utils/modelClient';
-import { approvedTempRootFor } from '../utils/tempArtifactRoots';
 import { loadStoredPageTextRowsBySlug } from './deriveResearchTopics';
 import {
   assertImportResearchTopicsApplyAllowed,
@@ -115,29 +112,6 @@ async function scopedRows(slugs: string[], withLabels: boolean): Promise<ScopedP
   }));
 }
 
-export const EXPERIMENTS_ARTIFACT_ROOT = path.join(os.homedir(), 'Personal', 'ylabs-experiments');
-
-export function resolveImportArtifactPath(
-  value: string,
-  flag: string,
-  experimentsRoot: string = EXPERIMENTS_ARTIFACT_ROOT,
-): string {
-  try {
-    return resolveSafeJsonReportOutputPath(value, flag);
-  } catch (error) {
-    const resolved = path.resolve(value.trim());
-    const isJson = path.extname(resolved).toLowerCase() === '.json';
-    if (
-      isJson &&
-      !containsAsciiControl(resolved) &&
-      approvedTempRootFor(resolved, [experimentsRoot])
-    ) {
-      return resolved;
-    }
-    throw new Error(`${(error as Error).message}, or under ${experimentsRoot}`, { cause: error });
-  }
-}
-
 export function writePrivateJson(file: string, value: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
@@ -205,9 +179,9 @@ async function main() {
     mongoUrl: process.env.MONGODBURL,
   });
   assertImportResearchTopicsApplyAllowed(args, guard.dbLabel);
-  const output = args.output ? resolveImportArtifactPath(args.output, '--output') : undefined;
+  const output = args.output ? resolveSafeJsonReportOutputPath(args.output, '--output') : undefined;
   const sampleOutput = args.sampleOutput
-    ? resolveImportArtifactPath(args.sampleOutput, '--sample-output')
+    ? resolveSafeJsonReportOutputPath(args.sampleOutput, '--sample-output')
     : undefined;
   console.log(
     `Environment: ${guard.environment}; Mongo target: ${guard.dbLabel}; mode: ${args.mode}${args.mode === 'import' ? (args.apply ? ' apply' : ' dry-run') : ''}`,

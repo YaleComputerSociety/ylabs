@@ -1,3 +1,4 @@
+import { resolveSafeJsonReportOutputPath } from '../utils/reportOutputPath';
 import { researchEntityTypeNameContradiction } from '../utils/researchHomeNameIdentityAuthority';
 
 /**
@@ -164,8 +165,10 @@ export function parseDeclaredPageTypeRetypeArgs(
     else if (arg === '--confirm-declared-page-type-retype') args.confirmed = true;
     else if (arg.startsWith('--only-slugs='))
       args.onlySlugsFile = arg.slice('--only-slugs='.length).trim();
-    else if (arg.startsWith('--output=')) args.outputFile = arg.slice('--output='.length).trim();
-    else throw new Error(`Unknown research-entity:retype-from-declared-page-type argument: ${arg}`);
+    else if (arg.startsWith('--output=')) {
+      args.outputFile = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
+    } else
+      throw new Error(`Unknown research-entity:retype-from-declared-page-type argument: ${arg}`);
   }
   if (args.apply && dryRun) throw new Error('--apply and --dry-run cannot be combined');
   if (args.onlySlugsFile === '') throw new Error('--only-slugs needs a file path');

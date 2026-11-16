@@ -201,6 +201,17 @@ Selection timeouts, socket timeouts, a closed client, and a Mongoose buffering t
 On the client, `/research` renders every failed search as the limited-search notice with its retry action, whatever the status was, so an outage never renders as "no research matches" (#4266).
 A 503 needs no special case there, because a 500, a 429 and a dropped connection with no response at all are the same thing to a student: a search that did not answer.
 
+## Script report output (`--output`)
+
+Every script's `--output` report path goes through `resolveSafeJsonReportOutputPath` in `server/src/utils/reportOutputPath.ts`, re-exported from `server/src/scripts/scriptWriteGuards.ts` (#6366).
+It must end in `.json` and resolve, symlinks included, under the operating-system temp directory, the shared `/tmp`, `./tmp` from the working directory, or `YLABS_REPORT_ROOT` when that is set.
+Its directory must already exist and be writable, which the resolver proves by creating and removing a probe file, and a report under a temp root prints a one-line warning that the system may wipe it.
+`YLABS_REPORT_ROOT` must be an absolute path to an existing directory outside the repository checkout, symlinks resolved, and an `--output` that resolves into the checkout under it is refused.
+Resolve `--output` in the argument parser, before the script connects or writes, because an apply that finds its report path unusable only after its Development writes loses the per-row report and invites a re-run of an apply that already landed.
+`connectScriptMongo`, `createScriptMongoConnection` and the script path of `initializeConnections` also resolve the process's own `--output` before they connect, which catches a script that still resolves it only when it writes the report.
+The shared scraper writer, `writeJsonOutputFile` in `server/src/scrapers/scraperCliOutput.ts`, writes the report mode 0600.
+`server/src/scripts/__tests__/outputFlagGuard.test.ts` fails when a file under `scripts/` or `scrapers/` reads `--output` without the resolver.
+
 ## TypeScript
 
 Both projects are on TypeScript 6.0, and `tsc` only type-checks them: each `tsconfig.json` sets `noEmit`, and the bundlers own the output.

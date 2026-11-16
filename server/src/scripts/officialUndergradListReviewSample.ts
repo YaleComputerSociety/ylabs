@@ -9,7 +9,6 @@
 import dotenv from 'dotenv';
 import { createHash } from 'crypto';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -24,8 +23,7 @@ import {
   planMentorMatches,
   type MentorMatchPlan,
 } from '../scrapers/sources/officialUndergradListScraper';
-import { containsAsciiControl } from '../utils/asciiControl';
-import { hasPathPrefix, resolveRealPath } from '../utils/tempArtifactRoots';
+import { resolveSafeJsonReportOutputPath } from '../utils/reportOutputPath';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,40 +31,6 @@ export interface ReviewSampleOptions {
   output: string;
   perSource: number;
   only: string[];
-}
-
-/**
- * The sample names faculty, so it may only land in a private scratch root, never in the repo, a
- * CI artifact or a log.
- */
-export function reviewSampleOutputRoots(cwd = process.cwd(), home = os.homedir()): string[] {
-  return [
-    path.resolve(cwd, 'tmp'),
-    path.resolve('/tmp'),
-    path.resolve(home, 'Personal', 'ylabs-experiments'),
-  ];
-}
-
-export function resolveReviewSampleOutputPath(
-  value: string | undefined,
-  roots: string[] = reviewSampleOutputRoots(),
-): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-  if (containsAsciiControl(output)) throw new Error('--output path contains invalid characters');
-  const resolved = path.resolve(output);
-  if (path.extname(resolved).toLowerCase() !== '.json') {
-    throw new Error('--output must point to a .json report file');
-  }
-  const real = resolveRealPath(resolved);
-  const inside = roots.some(
-    (root) =>
-      hasPathPrefix(resolved, root) &&
-      resolved !== root &&
-      (hasPathPrefix(real, root) || hasPathPrefix(real, resolveRealPath(root))),
-  );
-  if (!inside) throw new Error(`--output must write under ${roots.join(' or ')}`);
-  return resolved;
 }
 
 export function parseReviewSampleArgs(argv: string[]): ReviewSampleOptions {
@@ -78,7 +42,7 @@ export function parseReviewSampleArgs(argv: string[]): ReviewSampleOptions {
     const value = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : argv[index + 1];
     const consumesNext = !arg.includes('=');
     if (arg.startsWith('--output')) {
-      output = resolveReviewSampleOutputPath(value);
+      output = resolveSafeJsonReportOutputPath(value);
     } else if (arg.startsWith('--per-source')) {
       perSource = Number.parseInt(value ?? '', 10);
       if (!Number.isSafeInteger(perSource) || perSource < 1) {

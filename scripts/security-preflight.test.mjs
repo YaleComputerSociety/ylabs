@@ -3108,10 +3108,34 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
     new URL('../server/src/scripts/scraperIntegrityDuplicateReview.ts', import.meta.url),
     'utf8',
   );
-  assert.match(guards, /export function resolveSafeJsonReportOutputPath/);
-  assert.match(guards, /path\.extname\(resolved\)\.toLowerCase\(\) !== '\.json'/);
-  assert.match(guards, /const tmpRoot = path\.resolve\(os\.tmpdir\(\)\)/);
-  assert.match(guards, /const projectTmpRoot = path\.resolve\(process\.cwd\(\), 'tmp'\)/);
+  const reportPath = fs.readFileSync(
+    new URL('../server/src/utils/reportOutputPath.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    guards,
+    /export \{[^}]*\bresolveSafeJsonReportOutputPath\b[^}]*\} from '\.\.\/utils\/reportOutputPath'/,
+  );
+  assert.match(reportPath, /export function resolveSafeJsonReportPath\(/);
+  assert.match(reportPath, /export function resolveSafeJsonReportOutputPath\(/);
+  assert.match(
+    reportPath,
+    /const resolved = resolveSafeJsonReportPath\(value, flag, options\);\s*assertParentWritable\(resolved, flag\);/,
+  );
+  assert.match(reportPath, /path\.extname\(resolved\)\.toLowerCase\(\) !== '\.json'/);
+  assert.match(
+    reportPath,
+    /const defaultTempRoots = \(\): string\[\] => \[path\.resolve\(os\.tmpdir\(\)\), SHARED_TEMP_ROOT\]/,
+  );
+  assert.match(
+    reportPath,
+    /const projectTmpRoot = path\.resolve\(options\.cwd \?\? process\.cwd\(\), 'tmp'\)/,
+  );
+  assert.match(reportPath, /if \(!path\.isAbsolute\(raw\)\) throw new Error/);
+  assert.match(
+    reportPath,
+    /if \(hasPathPrefix\(realRoot, resolveRealPath\(repositoryRoot\)\)\) \{/,
+  );
   assert.match(
     scraperCliOutput,
     /import \{ resolveSafeJsonReportOutputPath \} from '\.\.\/scripts\/scriptWriteGuards'/,
@@ -3125,8 +3149,8 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(outputValue\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(output\)/);
   assert.match(
-    guards,
-    /approvedTempRootFor\(resolved, \[tmpRoot, SHARED_TEMP_ROOT, projectTmpRoot\]\)/,
+    reportPath,
+    /approvedTempRootFor\(resolved, \[\s*\.\.\.tempRoots,\s*projectTmpRoot,\s*\.\.\.\(reportRoot \? \[reportRoot\] : \[\]\),\s*\]\)/,
   );
 });
 
@@ -3180,7 +3204,7 @@ test('operator board gate artifact reads are constrained to safe JSON artifact p
 
   assert.match(
     source,
-    /import \{ resolveSafeJsonReportOutputPath \} from '\.\.\/scripts\/scriptWriteGuards'/,
+    /import \{ resolveSafeJsonReportPath \} from '\.\.\/scripts\/scriptWriteGuards'/,
   );
   assert.match(source, /const UNSAFE_ARTIFACT_PATH = '\[unsafe artifact path\]'/);
   assert.match(source, /const MAX_GATE_ARTIFACT_BYTES = 2 \* 1024 \* 1024/);
@@ -3188,7 +3212,7 @@ test('operator board gate artifact reads are constrained to safe JSON artifact p
     source,
     /function resolveGateArtifactReadPath\(artifactPath: string\): string \| undefined/,
   );
-  assert.match(source, /resolveSafeJsonReportOutputPath\(artifactPath, 'artifact path'\)/);
+  assert.match(source, /resolveSafeJsonReportPath\(artifactPath, 'artifact path'\)/);
   assert.match(source, /function invalidArtifactPath\(\)/);
   assert.match(source, /function readGateArtifactJson\(safeArtifactPath: string\): any/);
   assert.match(source, /if \(!stat\.isFile\(\) \|\| stat\.size > MAX_GATE_ARTIFACT_BYTES\)/);
@@ -3250,11 +3274,11 @@ test('beta launch gate report paths are constrained to safe JSON artifact roots'
     new URL('../server/src/scripts/betaRepairQueue.ts', import.meta.url),
     'utf8',
   );
-  assert.match(betaRepairQueue, /resolveSafeJsonReportOutputPath\(next, '--apply-from'\)/);
-  assert.match(betaRepairQueue, /resolveSafeJsonReportOutputPath\(applyFrom, '--apply-from'\)/);
+  assert.match(betaRepairQueue, /resolveSafeJsonReportPath\(next, '--apply-from'\)/);
+  assert.match(betaRepairQueue, /resolveSafeJsonReportPath\(applyFrom, '--apply-from'\)/);
   assert.match(
     betaRepairQueue,
-    /const artifactPath = resolveSafeJsonReportOutputPath\(options\.applyFrom, '--apply-from'\)/,
+    /const artifactPath = resolveSafeJsonReportPath\(options\.applyFrom, '--apply-from'\)/,
   );
   assert.match(betaRepairQueue, /fs\.readFileSync\(artifactPath, 'utf8'\)/);
   assert.doesNotMatch(betaRepairQueue, /fs\.readFileSync\(options\.applyFrom, 'utf8'\)/);
@@ -3265,7 +3289,7 @@ test('beta launch gate report paths are constrained to safe JSON artifact roots'
   );
   assert.match(
     launchReviewExceptions,
-    /const safeInputPath = resolveSafeJsonReportOutputPath\(inputPath, '--accepted-decisions'\)/,
+    /const safeInputPath = resolveSafeJsonReportPath\(inputPath, '--accepted-decisions'\)/,
   );
   assert.match(launchReviewExceptions, /fs\.readFileSync\(safeInputPath, 'utf8'\)/);
   assert.doesNotMatch(launchReviewExceptions, /fs\.readFileSync\(inputPath, 'utf8'\)/);
@@ -3282,7 +3306,7 @@ test('beta launch gate report paths are constrained to safe JSON artifact roots'
   assert.match(betaDataQualityCore, /fs\.readFileSync\(safeOutputPath, 'utf8'\)/);
   assert.match(
     betaDataQualityCore,
-    /const safeReviewArtifactPath = resolveSafeJsonReportOutputPath\(\s*reviewArtifactPath,\s*'--review-artifact',\s*\)/,
+    /const safeReviewArtifactPath = resolveSafeJsonReportPath\(\s*reviewArtifactPath,\s*'--review-artifact',?\s*\)/,
   );
   assert.match(betaDataQualityCore, /fs\.existsSync\(safeReviewArtifactPath\)/);
   assert.match(betaDataQualityCore, /fs\.readFileSync\(safeReviewArtifactPath, 'utf8'\)/);
@@ -3751,7 +3775,7 @@ test('duplicate review decision artifacts are constrained to safe JSON roots', (
     );
     assert.match(
       source,
-      /const safeInputPath = resolveSafeJsonReportOutputPath\(inputPath, '--accepted-decisions'\)/,
+      /const safeInputPath = resolveSafeJsonReportPath\(inputPath, '--accepted-decisions'\)/,
       `${name} must resolve accepted decision reads before file access`,
     );
     assert.match(source, /fs\.readFileSync\(safeInputPath, 'utf8'\)/);
@@ -3801,7 +3825,7 @@ test('observation conflict decision artifacts are constrained to safe JSON roots
     );
     assert.match(
       source,
-      /const safeInputPath = resolveSafeJsonReportOutputPath\(inputPath, '--accepted-decisions'\)/,
+      /const safeInputPath = resolveSafeJsonReportPath\(inputPath, '--accepted-decisions'\)/,
     );
     assert.match(source, /fs\.readFileSync\(safeInputPath, 'utf8'\)/);
     assert.doesNotMatch(source, /fs\.readFileSync\(inputPath, 'utf8'\)/);
@@ -3816,7 +3840,7 @@ test('source health report artifacts are constrained to safe JSON roots', () => 
 
   assert.match(
     source,
-    /import \{ assertScriptApplyAllowed, resolveSafeJsonReportOutputPath \} from '\.\/scriptWriteGuards'/,
+    /import \{\s*assertScriptApplyAllowed,\s*resolveSafeJsonReportOutputPath,\s*resolveSafeJsonReportPath,?\s*\} from '\.\/scriptWriteGuards'/,
   );
   assert.match(
     source,
@@ -3824,10 +3848,7 @@ test('source health report artifacts are constrained to safe JSON roots', () => 
   );
   assert.match(source, /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/);
   assert.match(source, /function readJsonIfExists\(reportPath: string\): unknown \| undefined/);
-  assert.match(
-    source,
-    /safeReportPath = resolveSafeJsonReportOutputPath\(reportPath, 'report path'\)/,
-  );
+  assert.match(source, /safeReportPath = resolveSafeJsonReportPath\(reportPath, 'report path'\)/);
   assert.match(source, /fs\.existsSync\(safeReportPath\)/);
   assert.match(source, /fs\.readFileSync\(safeReportPath, 'utf8'\)/);
   assert.doesNotMatch(source, /fs\.readFileSync\(reportPath, 'utf8'\)/);

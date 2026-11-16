@@ -35,7 +35,11 @@ import {
   type OrphanReferenceOccurrence,
   type ValidatedOrphanReferenceDecision,
 } from './orphanedObservationReferenceRepairCore';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import { attributedArchiveSet } from '../models/entityArchival';
 
 const ORPHANED_REFERENCE_ARCHIVE_REASON = 'observations:repair-orphaned-references';
@@ -128,11 +132,11 @@ export function parseRepairOrphanedObservationReferencesArgs(argv: string[]): Cl
       index = parsed.next;
     } else if (arg === '--apply-from' || arg.startsWith('--apply-from=')) {
       const parsed = flagValue(argv, index, '--apply-from');
-      options.applyFrom = resolveSafeJsonReportOutputPath(parsed.value, '--apply-from');
+      options.applyFrom = resolveSafeJsonReportPath(parsed.value, '--apply-from');
       index = parsed.next;
     } else if (arg === '--decisions' || arg.startsWith('--decisions=')) {
       const parsed = flagValue(argv, index, '--decisions');
-      options.decisions = resolveSafeJsonReportOutputPath(parsed.value, '--decisions');
+      options.decisions = resolveSafeJsonReportPath(parsed.value, '--decisions');
       index = parsed.next;
     } else {
       throw new Error(`Unknown observations:repair-orphaned-references argument: ${arg}`);

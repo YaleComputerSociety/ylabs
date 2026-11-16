@@ -19,7 +19,7 @@ import {
   repairActionForStage,
   type VisibilityRepairPlan,
 } from './visibilityRepairQueueService';
-import { resolveSafeJsonReportOutputPath } from '../scripts/scriptWriteGuards';
+import { resolveSafeJsonReportPath } from '../scripts/scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
   AWARD_SUSPENDED_REASON,
@@ -85,7 +85,7 @@ function operatorBoardDocumentId(value: unknown): string {
 
 function resolveGateArtifactReadPath(artifactPath: string): string | undefined {
   try {
-    return resolveSafeJsonReportOutputPath(artifactPath, 'artifact path');
+    return resolveSafeJsonReportPath(artifactPath, 'artifact path');
   } catch {
     return undefined;
   }
