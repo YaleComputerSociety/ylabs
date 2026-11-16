@@ -611,6 +611,7 @@ import {
   reconcileCodeLaneDirectorRetirementsFromRun,
 } from './centerDirectorRetirement';
 import { CENTER_DIRECTOR_SOURCE_NAME } from './centerDirectorReadSnapshot';
+import { LEAD_LANE_ENTITY_TYPE_SCOPES, laneLeadCountsOnEntityType } from './leadLaneEntityScopes';
 import {
   OFFICIAL_PROFILE_DIRECTOR_LANE,
   reconcileOfficialProfileDirectorRetirementsFromRun,
@@ -4507,7 +4508,7 @@ async function contradictedPageLeadEdgesToEnd(
 }
 
 export type LeadEdgeEndReason =
-  'contradicted-page' | 'retired-evidence' | 'contradicted-sourceless';
+  'contradicted-page' | 'retired-evidence' | 'contradicted-sourceless' | 'lane-out-of-scope';
 
 export interface LeadEdgeToEnd {
   edgeId: string;
@@ -4683,6 +4684,40 @@ async function withoutProtectedLeads(
  * the step before it left, so an apply writes in the order the steps run, and a dry run reads
  * the stored edges without the assertions it would have made.
  */
+/**
+ * The live lead edges a director lane wrote on a row of a type that lane does not read (#6327):
+ * a co-director a center lane found while the row was a center stays attached after the row is
+ * retyped to a person row, and gives that person a second person row to lead. The edge ends on
+ * the next resolve and is not re-asserted, because the lane's observation is out of scope too.
+ */
+async function outOfScopeLaneLeadEdgesToEnd(researchEntityId: string): Promise<LeadEdgeToEnd[]> {
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  if (!entityObjectId) return [];
+  const edgeDocs = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': entityObjectId,
+    role: { $in: LEAD_ROLE_CANONICAL_VALUES },
+    'rosterProvenance.sourceName': { $in: Object.keys(LEAD_LANE_ENTITY_TYPE_SCOPES) },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('_id personId rosterProvenance')
+    .lean()) as Array<{
+    _id: unknown;
+    personId?: unknown;
+    rosterProvenance?: { sourceName?: string };
+  }>;
+  if (edgeDocs.length === 0) return [];
+  const entityType = await entityTypeOf(researchEntityId);
+  return edgeDocs
+    .filter((edge) => !laneLeadCountsOnEntityType(edge.rosterProvenance?.sourceName, entityType))
+    .map((edge) => ({
+      edgeId: String(edge._id),
+      personId: String(edge.personId ?? ''),
+      reason: 'lane-out-of-scope' as const,
+    }));
+}
+
 export async function resolveLeadEdges(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
@@ -4744,6 +4779,7 @@ export async function resolveLeadEdges(
   await end(
     await retiredEvidenceLeadEdgesToEnd(researchEntityId, observations, plannedLeadPersonIds),
   );
+  await end(await outOfScopeLaneLeadEdgesToEnd(researchEntityId));
   await end(
     await sourcelessLeadEdgesToEnd(
       researchEntityId,
@@ -4856,7 +4892,7 @@ async function sourcelessLeadEdgesToEnd(
     ? leadEdgesAfterPendingAssertions(storedEdges, dryRunOverlay)
     : storedEdges;
   if (!edges.some((edge) => !edge.hasRecordedSource)) return [];
-  const directorRead = await resolveInferredDirector(observations);
+  const directorRead = await resolveInferredDirector(observations, researchEntityId);
   const liveLeadPersonIds =
     'director' in directorRead
       ? new Set([...plannedLeadPersonIds, directorRead.director.researcherId])
@@ -5858,13 +5894,43 @@ function inferredDirectorIdentity(director: ResolvedInferredDirector): Canonical
   };
 }
 
+async function entityTypeOf(researchEntityId: string): Promise<string> {
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  if (!entityObjectId) return '';
+  const row = (await ResearchEntity.findById(entityObjectId).select('entityType').lean()) as {
+    entityType?: unknown;
+  } | null;
+  return textValue(row?.entityType);
+}
+
+/**
+ * Drops the director observations of a lane that does not read this row's type (#6327). A
+ * lane's assertion about a row it would never read today is left from before the row was
+ * retyped, so it is not evidence about the row as it is.
+ */
+async function directorObservationsInLaneScope(
+  researchEntityId: string,
+  observations: MaterializerObservationLike[],
+): Promise<MaterializerObservationLike[]> {
+  const isDirectorObservation = (obs: MaterializerObservationLike) =>
+    textValue(obs.field).startsWith('inferredDirector');
+  if (!observations.some(isDirectorObservation)) return observations;
+  const entityType = await entityTypeOf(researchEntityId);
+  return observations.filter(
+    (obs) => !isDirectorObservation(obs) || laneLeadCountsOnEntityType(obs.sourceName, entityType),
+  );
+}
+
 async function resolveInferredDirector(
   observations: MaterializerObservationLike[],
+  researchEntityId: string,
 ): Promise<
   | { director: ResolvedInferredDirector }
   | { skipped: 'no-observation' | 'unresolved-user' | 'name-mismatch' }
 > {
-  const directorObservations = preferredDirectorObservations(observations);
+  const directorObservations = preferredDirectorObservations(
+    await directorObservationsInLaneScope(researchEntityId, observations),
+  );
   const fieldObs = (field: string) => directorObservations.find((obs) => obs.field === field);
   const nameObs = fieldObs('inferredDirectorUserName');
   if (!nameObs || !nameObs.value) return { skipped: 'no-observation' };
@@ -5926,7 +5992,7 @@ export async function resolveDirectorLeadEdge(
 ): Promise<LeadEdgeResolution['asserted']> {
   const entityObjectId = toMaterializerObjectId(researchEntityId);
   if (!entityObjectId) return [];
-  const resolution = await resolveInferredDirector(observations);
+  const resolution = await resolveInferredDirector(observations, researchEntityId);
   if ('skipped' in resolution) return [];
   const { researcherId, role: legacyRole, profileUrl, roleSource } = resolution.director;
   const personId = toMaterializerObjectId(researcherId);
@@ -5980,7 +6046,7 @@ export async function materializeInferredDirectorMembership(
   };
   if (!normalizeMaterializerObjectId(researchEntityId)) return empty;
 
-  const resolution = await resolveInferredDirector(observations);
+  const resolution = await resolveInferredDirector(observations, researchEntityId);
   if ('skipped' in resolution) return { ...empty, skipped: resolution.skipped };
   const { researcherId, name, role, profileUrl, roleSource } = resolution.director;
   const observedAt = roleSource.observedAt || new Date();

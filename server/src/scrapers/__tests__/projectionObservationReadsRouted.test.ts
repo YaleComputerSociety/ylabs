@@ -148,6 +148,11 @@ const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string
       "Reads the row's own slug to widen the citation lookup to observations keyed by it. Reached only from `resolveLeadEdges`, which the projection calls inside `if (!options.dryRun)`, the reclaim stage calls directly, and the `leadEdges` rematerialize scope calls in a dry run too; the benchmark replays a full projection with `dryRun: true` and no such scope, so it never makes this read (#5979).",
   },
   {
+    fn: 'entityTypeOf',
+    reason:
+      "Reads the row's own type so a director lane's lead counts only on a row type that lane reads (#6327). Reached from `resolveLeadEdges`, `resolveDirectorLeadEdge` and `materializeInferredDirectorMembership`, which the projection calls inside `if (!options.dryRun)` or in the `leadEdges` rematerialize scope, and from the center-director backfill script; the benchmark replays a full projection with `dryRun: true` and no such scope, so it never makes this read.",
+  },
+  {
     fn: 'inheritSchoolFromLeadPi',
     reason:
       'Its live-row read is routed through `entityDocForId`. The read still listed here is a read-after-write: it re-reads the row to verify what this pass wrote and whether the index is in step, so frozen input would answer about the state before the write.',

@@ -26,6 +26,10 @@
  * only the single top director; co-directors and multi-leader rosters are out
  * of scope for this source.
  */
+import {
+  CENTER_DIRECTOR_LLM_SOURCE_NAME,
+  LEAD_LANE_ENTITY_TYPE_SCOPES,
+} from '../leadLaneEntityScopes';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
@@ -57,12 +61,11 @@ import {
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import { postChatCompletion } from '../../utils/modelClient';
 
-export const CENTER_DIRECTOR_LLM_SOURCE_NAME = 'center-director-llm';
+export { CENTER_DIRECTOR_LLM_SOURCE_NAME };
 const SOURCE_KEY = CENTER_DIRECTOR_LLM_SOURCE_NAME;
 const DEFAULT_MODEL = 'gpt-5-mini';
 const MAX_PROMPT_CHARS = 30_000;
 const MAX_LEADERSHIP_PAGES = 3;
-const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
 const CENTER_DIRECTOR_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeCenterDirectorObjectId(value: unknown): string | undefined {
@@ -386,7 +389,7 @@ async function defaultCallLLM(input: {
   };
 }
 
-async function defaultCenterFinder(
+export async function defaultCenterFinder(
   options: { only?: string[]; skipCentersLedByOtherSources?: boolean } = {},
 ): Promise<CandidateCenter[]> {
   const only = Array.from(
@@ -408,7 +411,7 @@ async function defaultCenterFinder(
   const docs = await ResearchEntity.find(
     {
       $and: [
-        { entityType: { $in: ORG_ENTITY_TYPES } },
+        { entityType: { $in: [...LEAD_LANE_ENTITY_TYPE_SCOPES[CENTER_DIRECTOR_LLM_SOURCE_NAME]] } },
         { archived: { $ne: true } },
         { websiteUrl: /^https?:\/\//i },
         identityFilter,
