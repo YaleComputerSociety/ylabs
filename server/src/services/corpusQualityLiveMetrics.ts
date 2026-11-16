@@ -24,9 +24,9 @@
  * assumption #3379 found broken.
  */
 import { ResearchEntity } from '../models/researchEntity';
+import { servedResearchEntityRowFilter } from '../models/studentVisibility';
 import type { CorpusQualityRatio } from './corpusQualityReportCore';
 
-const SERVED_TIER = 'student_ready';
 const GENERIC_FACULTY_RESEARCH_TITLE = /\sFaculty Research$/;
 
 export interface CorpusQualityLiveMetrics {
@@ -54,7 +54,7 @@ const countWhen = (condition: unknown) => ({ $sum: { $cond: [condition, 1, 0] } 
 export async function readCorpusQualityLiveMetrics(
   computedAt = new Date(),
 ): Promise<CorpusQualityLiveMetrics> {
-  const servedMatch = { studentVisibilityTier: SERVED_TIER, archived: { $ne: true } };
+  const servedMatch = servedResearchEntityRowFilter();
   const hasWebsite = { $or: [hasText('$websiteUrl'), hasText('$website')] };
 
   const [facet] = await ResearchEntity.aggregate([

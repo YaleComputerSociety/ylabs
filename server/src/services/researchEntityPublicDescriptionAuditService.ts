@@ -1,4 +1,5 @@
 import { ResearchEntity } from '../models/researchEntity';
+import { servedResearchEntityRowFilter } from '../models/studentVisibility';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
   buildResearchEntityPublicDescriptionRepresentation,
@@ -36,10 +37,7 @@ const id = (value: unknown): string => serializedDocumentId(value) || '';
 
 export const PUBLIC_DESCRIPTION_AUDIT_ENTITY_CHUNK_SIZE = 250;
 
-export const STUDENT_READY_PUBLIC_DESCRIPTION_AUDIT_FILTER = {
-  archived: { $ne: true },
-  studentVisibilityTier: 'student_ready',
-} as const;
+export const STUDENT_READY_PUBLIC_DESCRIPTION_AUDIT_FILTER = servedResearchEntityRowFilter();
 
 type PublicDescriptionViolation = PublicDescriptionAuditSample & { sortName: string };
 
