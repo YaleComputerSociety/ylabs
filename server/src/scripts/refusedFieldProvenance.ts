@@ -75,3 +75,17 @@ export async function staleRefusalProvenanceOf(
   }
   return stale;
 }
+
+/** The `$unset` of every stamp that stops describing its field once the row holds `valuesAfter`. */
+export async function staleProvenanceUnset(
+  row: Record<string, unknown>,
+  valuesAfter: Record<string, unknown>,
+): Promise<Record<string, ''>> {
+  const unset: Record<string, ''> = {};
+  for (const [field, value] of Object.entries(valuesAfter)) {
+    if (await provenanceNoLongerDescribesValue(row, field, value)) {
+      unset[fieldProvenancePath(field)] = '';
+    }
+  }
+  return unset;
+}

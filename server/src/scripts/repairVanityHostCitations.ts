@@ -31,7 +31,7 @@ import {
   planVanityRepairRow,
 } from './repairVanityHostCitationsCore';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
-import { fieldProvenancePath, provenanceNoLongerDescribesValue } from './refusedFieldProvenance';
+import { staleProvenanceUnset } from './refusedFieldProvenance';
 
 export interface VanityRepairOptions {
   apply: boolean;
@@ -87,6 +87,28 @@ export async function followHttpRedirects(
   return { hops: MAX_VANITY_REDIRECT_HOPS + 1 };
 }
 
+/**
+ * The write a vanity repoint makes: the rewritten citation fields and refusal, and the `$unset`
+ * of a rewritten field's provenance stamp unless the observation it cites asserts the new URL
+ * (#6318).
+ */
+export async function planVanityRepairWrite(
+  row: Record<string, unknown>,
+  change: NonNullable<ReturnType<typeof planVanityRepairRow>>,
+): Promise<{ $set: Record<string, unknown>; $unset?: Record<string, ''> }> {
+  const { changedFields: _changedFields, fieldValueRefusalUpdate, ...fields } = change;
+  const rewritten = Object.fromEntries(
+    (['websiteUrl', 'website'] as const)
+      .filter((field) => fields[field] !== undefined)
+      .map((field) => [field, fields[field]]),
+  );
+  const unset = await staleProvenanceUnset(row, rewritten);
+  return {
+    $set: { ...fields, ...(fieldValueRefusalUpdate ?? {}) },
+    ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
+  };
+}
+
 async function main() {
   installScraperFetchHooks({ validatorCache: false });
   const options = parseVanityRepairArgs(process.argv.slice(2));
@@ -121,6 +143,7 @@ async function main() {
     citationsProbed: 0,
     repointed: [] as Array<Record<string, unknown>>,
     refused: [] as Array<Record<string, unknown>>,
+    stampsToUnset: 0,
     errors: 0,
   };
 
@@ -169,32 +192,19 @@ async function main() {
         const change = planVanityRepairRow(row, vanityUrl, decision.destinationUrl);
         if (!change) continue;
 
+        const write = await planVanityRepairWrite(row, change);
         report.repointed.push({
           slug: row.slug,
           from: vanityUrl,
           to: decision.destinationUrl,
           changedFields: change.changedFields,
+          stampsToUnset: Object.keys(write.$unset ?? {}),
           served: !row.archived && row.studentVisibilityTier === 'student_ready',
         });
+        report.stampsToUnset += Object.keys(write.$unset ?? {}).length;
 
         if (options.apply) {
-          const { changedFields: _changedFields, fieldValueRefusalUpdate, ...fields } = change;
-          const staleProvenance: Record<string, ''> = {};
-          for (const field of ['websiteUrl', 'website'] as const) {
-            if (
-              fields[field] !== undefined &&
-              (await provenanceNoLongerDescribesValue(row, field, fields[field]))
-            ) {
-              staleProvenance[fieldProvenancePath(field)] = '';
-            }
-          }
-          await ResearchEntity.updateOne(
-            { _id: row._id },
-            {
-              $set: { ...fields, ...(fieldValueRefusalUpdate ?? {}) },
-              ...(Object.keys(staleProvenance).length > 0 ? { $unset: staleProvenance } : {}),
-            },
-          );
+          await ResearchEntity.updateOne({ _id: row._id }, write);
         }
       } catch (error) {
         report.errors += 1;

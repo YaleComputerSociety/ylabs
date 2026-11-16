@@ -186,6 +186,28 @@ function deadVerdictNote(storedHealth: unknown, url: string): string {
  * resolve from re-deriving the value from the observation that still asserts it, and
  * no field is locked, so a different website any lane asserts can still fill the slot.
  */
+/**
+ * The whole write a dead-website clear makes: the cleared fields with their refusals, and the
+ * `$unset` of each cleared field's provenance stamp, which named the dead URL and would otherwise
+ * describe a value the row no longer holds (#6318).
+ */
+export function planDeadWebsiteClearUpdate(
+  row: DeadWebsiteRow,
+  plans: readonly DeadWebsitePlan[],
+  now: Date,
+): { $set: Record<string, unknown>; $unset?: Record<string, ''> } {
+  const provenance = (row as { fieldProvenance?: Record<string, unknown> }).fieldProvenance ?? {};
+  const unset: Record<string, ''> = Object.fromEntries(
+    plans
+      .filter((plan) => provenance[plan.field] !== undefined)
+      .map((plan) => [`fieldProvenance.${plan.field}`, '' as const]),
+  );
+  return {
+    $set: planDeadWebsiteClearWrite(row, plans, now),
+    ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
+  };
+}
+
 export function planDeadWebsiteClearWrite(
   row: DeadWebsiteRow,
   plans: readonly DeadWebsitePlan[],
