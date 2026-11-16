@@ -1450,7 +1450,6 @@ export interface ResearcherAttributeUnionPlan {
   refusalsToCopy: Record<string, FieldValueRefusal[]>;
 }
 
-/** A shell's netid fills the canonical record's empty slot only when it is a Yale netid (#5740). */
 /**
  * What the union needs beyond the two records to carry a second official page (#6376): whether
  * their names agree, and which official pages a live record other than these two holds.
@@ -1480,6 +1479,7 @@ function carriesAnotherOfficialPage(
   );
 }
 
+/** A shell's netid fills the canonical record's empty slot only when it is a Yale netid (#5740). */
 export function planResearcherAttributeUnion(
   canonical: ResearcherAttributeSnapshot,
   shell: ResearcherAttributeSnapshot,

@@ -471,6 +471,70 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     expect(unscopedRun.onlyShellsNotPlanned).toBeUndefined();
   });
 
+  it("carries a folded record's unheld second official page onto its survivor only when named (#6376)", async () => {
+    const db = mongoose.connection.db!;
+    const survivor = new mongoose.Types.ObjectId();
+    const folded = new mongoose.Types.ObjectId();
+    const otherHolder = new mongoose.Types.ObjectId();
+    const officialPage = (department: string) => ({
+      kind: 'YALE_OFFICIAL',
+      url: `https://${department}-fixture.yale.edu/people/joint-fixture`,
+    });
+    const survivorPage = officialPage('history');
+    const unheldPage = officialPage('classics');
+    const pageHeldElsewhere = officialPage('music');
+    await db.collection('researchers').insertMany([
+      {
+        _id: survivor,
+        displayName: 'Joint Fixture',
+        archived: false,
+        identifiers: { email: 'directory.joint@example.test' },
+        profileLinks: [survivorPage],
+      },
+      {
+        _id: folded,
+        displayName: 'Joint Fixture',
+        archived: true,
+        dedupedIntoResearcherId: survivor,
+        profileLinks: [
+          survivorPage,
+          unheldPage,
+          pageHeldElsewhere,
+          { kind: 'LAB_WEBSITE', url: 'https://joint-lab.fixture.edu/' },
+        ],
+      },
+      {
+        _id: otherHolder,
+        displayName: 'Unrelated Fixture',
+        archived: false,
+        identifiers: { email: 'directory.unrelated@example.test' },
+        profileLinks: [pageHeldElsewhere],
+      },
+    ]);
+    const survivorUrls = async () =>
+      ((await db.collection('researchers').findOne({ _id: survivor }))!.profileLinks as any[]).map(
+        (link) => link.url,
+      );
+
+    const unscoped = await dedupeAccountlessResearcherShells({ apply: false });
+    expect(unscoped.foldedOfficialPagesCarried).toBe(0);
+
+    const scoped = await dedupeAccountlessResearcherShells({
+      apply: true,
+      onlyShellIds: [folded.toHexString()],
+    });
+    expect(scoped.foldedOfficialPagesCarried).toBe(1);
+    expect(scoped.shellsMerged).toBe(0);
+    expect(await survivorUrls()).toEqual([survivorPage.url, unheldPage.url]);
+
+    const rerun = await dedupeAccountlessResearcherShells({
+      apply: true,
+      onlyShellIds: [folded.toHexString()],
+    });
+    expect(rerun.foldedOfficialPagesCarried).toBe(0);
+    expect(await survivorUrls()).toEqual([survivorPage.url, unheldPage.url]);
+  });
+
   it('folds a name-only shell into a netid-backed accountless canonical (FRA lead)', async () => {
     const netidCanonical = new mongoose.Types.ObjectId();
     const nameOnlyShell = new mongoose.Types.ObjectId();
