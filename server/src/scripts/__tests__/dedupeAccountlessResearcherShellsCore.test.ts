@@ -8,6 +8,7 @@ import {
   decideShellMerge,
   normalizeResearcherName,
   planResearcherAttributeUnion,
+  yaleOfficialProfileKeys,
   researcherAttributeUnionIsEmpty,
   researcherIdentityTier,
   roleAssignmentEdgeKey,
@@ -231,6 +232,73 @@ describe('roleAssignmentEdgeKey', () => {
 });
 
 describe('planResearcherAttributeUnion', () => {
+  describe('a joint appointee with two official department pages (#6376)', () => {
+    const official = (host: string) => ({
+      kind: 'YALE_OFFICIAL',
+      purpose: 'PRIMARY_IDENTITY',
+      url: `https://${host}.yale.edu/people/sam-fixture`,
+      verifiedAt: new Date(),
+      healthStatus: 'HEALTHY',
+    });
+    const record = (links: unknown[]) => ({
+      profileLinks: links as any[],
+      identifiers: {},
+      profile: {},
+    });
+
+    it('keeps both department pages when the names agree and no other record holds the page', () => {
+      const plan = planResearcherAttributeUnion(
+        record([official('arthistory-fixture')]),
+        record([official('classics-fixture')]),
+        { namesAgree: true, officialPagesHeldElsewhere: new Set() },
+      );
+      expect(plan.profileLinksToAppend.map((link) => link.url)).toEqual([
+        'https://classics-fixture.yale.edu/people/sam-fixture',
+      ]);
+    });
+
+    it('refuses the page when another live record holds it, or the names disagree', () => {
+      const shellPage = official('classics-fixture');
+      const [heldKey] = yaleOfficialProfileKeys([shellPage]);
+      expect(
+        planResearcherAttributeUnion(
+          record([official('arthistory-fixture')]),
+          record([shellPage]),
+          {
+            namesAgree: true,
+            officialPagesHeldElsewhere: new Set([heldKey]),
+          },
+        ).profileLinksToAppend,
+      ).toEqual([]);
+      expect(
+        planResearcherAttributeUnion(
+          record([official('arthistory-fixture')]),
+          record([shellPage]),
+          {
+            namesAgree: false,
+            officialPagesHeldElsewhere: new Set(),
+          },
+        ).profileLinksToAppend,
+      ).toEqual([]);
+    });
+
+    it('keeps one link per kind for every other kind, and adds nothing without a context', () => {
+      const lab = (n: number) => ({ kind: 'LAB_WEBSITE', url: `https://lab${n}.fixture.edu/` });
+      expect(
+        planResearcherAttributeUnion(record([lab(1)]), record([lab(2)]), {
+          namesAgree: true,
+          officialPagesHeldElsewhere: new Set(),
+        }).profileLinksToAppend,
+      ).toEqual([]);
+      expect(
+        planResearcherAttributeUnion(
+          record([official('arthistory-fixture')]),
+          record([official('classics-fixture')]),
+        ).profileLinksToAppend,
+      ).toEqual([]);
+    });
+  });
+
   it('never copies an email alias stored as a netid into the empty slot, but copies a netid (#5740)', () => {
     const empty = { profileLinks: [], identifiers: {}, profile: {} };
     const shellWith = (netid: string) => ({
