@@ -5662,7 +5662,7 @@ export interface LeadPiSchoolInheritanceResult {
 type LeadPiInheritanceScope = 'school-and-department' | 'department-only';
 
 export function leadPiSchoolInheritanceGate(input: {
-  manuallyLockedFields?: string[];
+  manuallyLockedFields?: readonly string[];
   school?: unknown;
   schools?: unknown;
   kind?: unknown;
@@ -5848,7 +5848,7 @@ export async function departmentsWithLeadFirstHandSection(
   } = {},
 ): Promise<string[] | undefined> {
   const gate = leadPiSchoolInheritanceGate({
-    manuallyLockedFields: [...row.manuallyLockedFields],
+    manuallyLockedFields: row.manuallyLockedFields,
     kind: row.kind,
   });
   if (gate === 'locked' || gate === 'multi-pi-kind') return undefined;
