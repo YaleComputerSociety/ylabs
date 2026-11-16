@@ -1451,9 +1451,39 @@ export interface ResearcherAttributeUnionPlan {
 }
 
 /** A shell's netid fills the canonical record's empty slot only when it is a Yale netid (#5740). */
+/**
+ * What the union needs beyond the two records to carry a second official page (#6376): whether
+ * their names agree, and which official pages a live record other than these two holds.
+ */
+export interface ResearcherAttributeUnionContext {
+  namesAgree?: boolean;
+  officialPagesHeldElsewhere?: ReadonlySet<string>;
+}
+
+/**
+ * A person with a joint appointment has one official profile page per department, so a second
+ * `YALE_OFFICIAL` link is carried when it is a distinct verified page that no live record other
+ * than the two being merged holds and their names agree (#6376). Every other kind keeps one
+ * link per kind.
+ */
+function carriesAnotherOfficialPage(
+  link: ResearcherProfileLinkLike,
+  canonicalOfficialPages: ReadonlySet<string>,
+  context: ResearcherAttributeUnionContext,
+): boolean {
+  if (!context.namesAgree) return false;
+  const [page] = yaleOfficialProfileKeys([link]);
+  return (
+    Boolean(page) &&
+    !canonicalOfficialPages.has(page) &&
+    !(context.officialPagesHeldElsewhere?.has(page) ?? false)
+  );
+}
+
 export function planResearcherAttributeUnion(
   canonical: ResearcherAttributeSnapshot,
   shell: ResearcherAttributeSnapshot,
+  context: ResearcherAttributeUnionContext = {},
 ): ResearcherAttributeUnionPlan {
   const claimedKinds = new Set<string>();
   for (const link of canonical.profileLinks ?? []) {
@@ -1482,9 +1512,17 @@ export function planResearcherAttributeUnion(
     researcherRefusesValue(canonical.fieldValueRefusals, field, value) ||
     researcherRefusesValue(shell.fieldValueRefusals, field, value);
   const profileLinksToAppend: ResearcherProfileLinkLike[] = [];
+  const canonicalOfficialPages = new Set(yaleOfficialProfileKeys(canonical.profileLinks));
   for (const link of shell.profileLinks ?? []) {
     const kind = profileLinkKind(link);
-    if (!kind || claimedKinds.has(kind)) continue;
+    if (!kind) continue;
+    if (claimedKinds.has(kind)) {
+      if (!carriesAnotherOfficialPage(link, canonicalOfficialPages, context)) continue;
+      if (refusedByEither('profileLink', link.url)) continue;
+      canonicalOfficialPages.add(yaleOfficialProfileKeys([link])[0]);
+      profileLinksToAppend.push(link);
+      continue;
+    }
     if (refusedByEither('profileLink', link.url) || refusedByEither('orcid', link.url)) continue;
     if (kind === 'ORCID' && !orcidLinkAgreesWith(link, mergedOrcid)) continue;
     claimedKinds.add(kind);
