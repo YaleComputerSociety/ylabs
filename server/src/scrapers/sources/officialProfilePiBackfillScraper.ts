@@ -208,6 +208,11 @@ export interface OfficialProfileIdentity {
    * rules, so the lane may attest none (#6233).
    */
   statesNoTitle?: boolean;
+  /**
+   * The emitted title is the appointment in the contact-information field, the template verified
+   * in #6177, so its read is marked as taken from the profile's title block.
+   */
+  titleFromVerifiedTemplate?: boolean;
   inMemoriam?: boolean;
   appointmentEndedOn?: string;
 }
@@ -238,6 +243,7 @@ interface IdentityToUserObservationOptions {
   includeProfileEnrichment?: boolean;
   includeIdentityEnrichment?: boolean;
   includeEmail?: boolean;
+  includeTitle?: boolean;
   directoryNetidsByAddress?: DirectoryNetidsByAddress;
   pageOrcidWitnessedForNetid?: boolean;
   canonicalDepartment?: CanonicalDepartment | null;
@@ -1324,12 +1330,18 @@ function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
 function officialProfileTitles(
   $: cheerio.CheerioAPI,
   profiles: Array<Record<string, any>>,
-): { stated: string[]; emitted: string } {
+): { stated: string[]; emitted: string; fromVerifiedTemplate: boolean } {
   const stated = uniqueStrings([
     firstJsonLdText(profiles, ['jobTitle']),
     ...admissibleProfileTitles($),
   ]).filter(isAdmissibleOfficialProfileTitle);
-  return { stated, emitted: stated.map((value) => sanitizePersonTitle(value)).find(Boolean) ?? '' };
+  const emitted = stated.map((value) => sanitizePersonTitle(value)).find(Boolean) ?? '';
+  const contactAppointment = sanitizePersonTitle(contactFieldAppointment($));
+  return {
+    stated,
+    emitted,
+    fromVerifiedTemplate: Boolean(emitted) && emitted === contactAppointment,
+  };
 }
 
 function isUsefulOfficialProfileBioText(value: string): boolean {
@@ -3958,7 +3970,11 @@ export function extractOfficialProfileIdentity(
     }
   }
 
-  const { stated: statedTitles, emitted: title } = officialProfileTitles($, profiles);
+  const {
+    stated: statedTitles,
+    emitted: title,
+    fromVerifiedTemplate: titleFromVerifiedTemplate,
+  } = officialProfileTitles($, profiles);
   if (statedTitles.length === 0) {
     const subjectStatedEmail =
       email &&
@@ -3996,6 +4012,7 @@ export function extractOfficialProfileIdentity(
     displayName,
     email,
     title,
+    ...(titleFromVerifiedTemplate ? { titleFromVerifiedTemplate: true } : {}),
     ...(imageUrl ? { imageUrl } : {}),
     departments: extractDepartments($),
     ...(bio ? { bio } : {}),
@@ -4185,7 +4202,11 @@ export function identityToUserObservations(
   const includeEmail = options.includeEmail ?? includeIdentityEnrichment;
   const emittedIdentityObservations = includeIdentityEnrichment
     ? identityObservations
-    : identityObservations.filter(([field]) => includeEmail && field === 'email');
+    : identityObservations.filter(
+        ([field]) =>
+          (includeEmail && field === 'email') ||
+          (options.includeTitle === true && field === 'title'),
+      );
   const attestsNoEmail = includeEmail && !identity.email && identity.statesNoEmailAddress === true;
   const observations: ObservationInput[] = emittedIdentityObservations.map(([field, value]) => ({
     entityType: 'user',
@@ -4195,6 +4216,9 @@ export function identityToUserObservations(
     sourceUrl: identity.canonicalUrl,
     confidenceOverride: 0.95,
     ...(attestsNoEmail ? { assertsNoValueFor: ['email'] } : {}),
+    ...(field === 'title' && identity.titleFromVerifiedTemplate
+      ? { extraction: { source: 'profileTitleBlock' as const } }
+      : {}),
   }));
 
   const departureBase = {
@@ -5987,6 +6011,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     includeProfileEnrichment: runVisibleProfileBioBackfill,
                     includeIdentityEnrichment: !runVisibleProfileBioBackfill,
                     includeEmail: true,
+                    includeTitle: runVisibleProfileBioBackfill && targetKeys.length > 0,
                     directoryNetidsByAddress:
                       directoryNetidsByAddress ?? (await loadDirectoryNetidsByAddress()),
                     pageOrcidWitnessedForNetid,

@@ -662,7 +662,7 @@ describe('the first-hand title screen (#5578)', () => {
     }
   });
 
-  it('requires the profile title block marker of a roster read only', () => {
+  it('requires the profile title block marker of a roster or official-profile backfill read', () => {
     expect(isFirstHandUserTitleRead({ sourceName: 'ysm-faculty-directory' })).toBe(true);
     expect(isFirstHandUserTitleRead({ sourceName: 'dept-faculty-roster' })).toBe(false);
     expect(
@@ -674,6 +674,16 @@ describe('the first-hand title screen (#5578)', () => {
     expect(
       isFirstHandUserTitleRead({
         sourceName: 'official-profile-pi-backfill',
+        extraction: { source: 'profileTitleBlock' },
+      }),
+    ).toBe(true);
+    expect(isFirstHandUserTitleRead({ sourceName: 'official-profile-pi-backfill' })).toBe(false);
+    expect(
+      isFirstHandUserTitleRead({ sourceName: 'official-profile-pi-backfill', extraction: null }),
+    ).toBe(false);
+    expect(
+      isFirstHandUserTitleRead({
+        sourceName: 'ysm-atoz-index',
         extraction: { source: 'profileTitleBlock' },
       }),
     ).toBe(false);

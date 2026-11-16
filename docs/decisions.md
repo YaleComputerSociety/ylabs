@@ -74,6 +74,15 @@ Three served rows would have taken a twin's link label ("Lab Website") as their 
 Twin name evidence for this field is mostly noise, and each guard added to separate a real lab name from it uncovered another class, so no derivation is reliable enough to own the field.
 The handful of rows whose twin does state a better name are operator-judgement candidates, recorded by predicate on #6325, not lane work.
 
+## 2026-11-16: A Marked Official-Profile Backfill Title Read Counts As First-Hand (#6197)
+
+Decision (manager, 2026-11-16).
+This extends the #5578 rule that the newest fresh first-hand read of a researcher's own official page decides their title.
+An `official-profile-pi-backfill` title read counts as first-hand when the lane emits it for an identity-confirmed user and it carries `extraction.source: 'profileTitleBlock'`.
+The lane sets that marker only when the emitted title is the appointment in the contact-information field, the template verified in #6177.
+An unmarked read, from any other element, a JSON-LD `jobTitle` or a meta description, stays non-first-hand, because the lane cannot say which element it read.
+A keyed `visible-profile-bio-backfill` run now emits the page's title, while an unkeyed run emits exactly what it did before: no title and no new absence claim.
+
 ## 2026-11-13: A Lead's Person Row Folds Into Their Lab Only When It Is The Same Research (#6206)
 
 Decision (owner, 2026-11-13).

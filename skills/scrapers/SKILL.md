@@ -68,6 +68,7 @@ Three call sites, two of which do not use the helper and say why:
   A read is fresh only when it comes from its lane's latest full-coverage run (`isFullCoverageRun` in `scrapers/latestFullCoverageRun.ts`).
   Without one, a servable stored title is never rewritten, and only an empty or unservable title is filled from the fallback; rewriting the rest is #5801.
   A roster title counts as first-hand only when it carries `extraction.source: 'profileTitleBlock'`, which the lane sets on a profile-enrichment title; see `docs/glossary.md`.
+  An `official-profile-pi-backfill` title counts as first-hand only with the same marker, which the lane sets only when the emitted title is the contact-information field's appointment (`titleFromVerifiedTemplate`, #6177), and a keyed `visible-profile-bio-backfill` run emits that title while an unkeyed one emits none (#6197).
 
 `bbs-research-track` no longer mints at all (#3561): a PI with no existing row, or several, is counted by reason and skipped, so it needs none of the three screens.
 Its track listings come in two shapes and the parser must match both: most render the roster as `link-items-list__item` anchors with the name as "Last, First", while at least one renders a plain two-column table with no `link-items-list` wrapper, no `hyperlink` class, and the name as "First Last".
