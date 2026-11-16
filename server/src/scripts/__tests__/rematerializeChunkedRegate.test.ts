@@ -58,6 +58,20 @@ describe('createChunkedRegater (#6370)', () => {
     expect(error).toBeUndefined();
   });
 
+  it('re-gates a row written again after its chunk already flushed', async () => {
+    const regated: string[][] = [];
+    const regater = createChunkedRegater(async (ids: string[]) => {
+      regated.push(ids);
+      return ids.length;
+    }, 1);
+
+    await regater.add(['survivor']);
+    await regater.add(['survivor']);
+    await regater.finish();
+
+    expect(regated).toEqual([['survivor'], ['survivor']]);
+  });
+
   it('records the first re-gate failure and stops re-gating instead of attributing it to a row', async () => {
     let calls = 0;
     const regater = createChunkedRegater(async () => {
@@ -72,6 +86,7 @@ describe('createChunkedRegater (#6370)', () => {
     expect(calls).toBe(1);
     expect(summaries).toEqual([]);
     expect(error).toContain('gate unavailable');
+    expect(error).toContain('2 written row(s) left un-regated');
   });
 
   it('keeps per-row failures out of the re-gate', async () => {

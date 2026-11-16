@@ -811,42 +811,53 @@ export function createChunkedRegater<Summary>(
   regate: (entityIds: string[]) => Promise<Summary>,
   chunkSize: number = REMATERIALIZE_REGATE_CHUNK_SIZE,
 ): ChunkedRegater<Summary> {
-  const seen = new Set<string>();
   const summaries: Summary[] = [];
   let pending: string[] = [];
+  const pendingIds = new Set<string>();
   let error: string | undefined;
+  let leftUnregated = 0;
   let queue: Promise<void> = Promise.resolve();
 
   const flush = (entityIds: string[]) => {
     queue = queue.then(async () => {
-      if (error || entityIds.length === 0) return;
+      if (entityIds.length === 0) return;
+      if (error) {
+        leftUnregated += entityIds.length;
+        return;
+      }
       try {
         summaries.push(await regate(entityIds));
       } catch (failure) {
         error = rematerializeFailureMessage(failure);
+        leftUnregated += entityIds.length;
       }
     });
     return queue;
   };
 
+  const takeChunk = (size: number) => {
+    const chunk = pending.slice(0, size);
+    pending = pending.slice(size);
+    for (const entityId of chunk) pendingIds.delete(entityId);
+    return chunk;
+  };
+
   return {
     async add(entityIds) {
       for (const entityId of entityIds) {
-        if (seen.has(entityId)) continue;
-        seen.add(entityId);
+        if (pendingIds.has(entityId)) continue;
+        pendingIds.add(entityId);
         pending.push(entityId);
       }
-      while (pending.length >= chunkSize) {
-        const chunk = pending.slice(0, chunkSize);
-        pending = pending.slice(chunkSize);
-        await flush(chunk);
-      }
+      while (pending.length >= chunkSize) await flush(takeChunk(chunkSize));
     },
     async finish() {
-      const rest = pending;
-      pending = [];
-      await flush(rest);
-      return { summaries, ...(error ? { error } : {}) };
+      await flush(takeChunk(pending.length));
+      if (!error) return { summaries };
+      return {
+        summaries,
+        error: `${error} (${leftUnregated} written row(s) left un-regated)`,
+      };
     },
   };
 }
