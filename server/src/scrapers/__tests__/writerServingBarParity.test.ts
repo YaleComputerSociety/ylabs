@@ -100,3 +100,40 @@ describe("the card import applies the materializer's written-body card acceptanc
     expect(report.rows[0]).toMatchObject({ outcome: 'refused', refusalReason: 'no-serving-row' });
   });
 });
+
+describe('the card import refuses a card the serve-time grader would surrender (#5982)', () => {
+  const BODY =
+    'The lab studies how coral reefs recover after marine heatwaves, combining diver surveys of reef colonies across the Caribbean with models of bleaching.';
+  const ROW = { slug: 'reef-row', name: 'Reef Row', entityType: 'LAB', kind: 'lab' };
+  const importReef = (card: string) =>
+    runCardImport({
+      requests: [
+        {
+          slug: 'reef-row',
+          entityName: 'Reef Row',
+          fullDescription: BODY,
+          evidenceTexts: [],
+          researchAreas: [],
+          servingRow: { entity: ROW, leadPersonName: '' },
+        },
+      ],
+      drafts: [{ slug: 'reef-row', writer: 'claude-agent:1', card }],
+      store: store(),
+      validateOnly: true,
+    });
+
+  it('refuses a card grounded only through word-stem matches', async () => {
+    const report = await importReef(
+      'Studies recovering coral reefs after heatwaves through surveyed colonies.',
+    );
+    expect(report.rows[0]).toMatchObject({
+      outcome: 'refused',
+      refusalReason: 'serve-time-ungrounded',
+    });
+  });
+
+  it('accepts a card the serve-time grader grounds', async () => {
+    const report = await importReef('Studies how coral reefs recover after marine heatwaves.');
+    expect(report.rows[0]).toMatchObject({ outcome: 'accepted' });
+  });
+});

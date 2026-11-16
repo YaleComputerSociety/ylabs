@@ -16,6 +16,7 @@ import {
   type CardSynthesisDerivationStore,
 } from '../scrapers/cardSynthesisDerivation';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
+import { isUngroundedSynthesizedCard } from '../utils/groundedCardSynthesis';
 
 export interface CardRequest {
   slug: string;
@@ -162,7 +163,8 @@ export type CardImportRefusalReason =
   | 'card-synthesis-checks'
   | 'written-body-card-bar'
   | 'no-serving-row'
-  | 'written-body-card-acceptance';
+  | 'written-body-card-acceptance'
+  | 'serve-time-ungrounded';
 
 /**
  * The materializer's own judgement on a synthesized card beside a written body, so a card
@@ -193,7 +195,10 @@ export function writtenBodyCardImportRefusal(
     requireGrounding: false,
     evidenceTexts: request.evidenceTexts,
   });
-  return accepted ? null : 'written-body-card-acceptance';
+  if (!accepted) return 'written-body-card-acceptance';
+  return isUngroundedSynthesizedCard({ card, body: request.fullDescription })
+    ? 'serve-time-ungrounded'
+    : null;
 }
 
 export interface CardImportRow {
