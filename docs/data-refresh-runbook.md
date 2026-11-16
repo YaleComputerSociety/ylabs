@@ -795,7 +795,7 @@ yarn scrape:development:write run \
 ### Center Roster Sources Owe A Center Plan (#6348)
 
 Seven sources write `centerRosterHealth` reads: `centers-institutes-index`, `center-affiliation-llm`, `center-affiliation-roster`, `center-director`, `center-director-llm`, `bbs-research-track` and `official-profile-pi-backfill` (`CENTER_ROSTER_HEALTH_SOURCE_NAMES` in `server/src/scrapers/centerPlanGuard.ts`).
-A Development apply of such a run must be held to the plan its dry run approved, so `materialize --apply` without `--expect-center-plan` is refused, and so is `run --apply --auto-materialize` of one of these sources, which makes the repair command above observations-only for them.
+A Development apply of such a run must be held to the plan its dry run approved, so `materialize --apply` without `--expect-center-plan` is refused, and so is `run --apply --auto-materialize` of one of these sources, so drop `--auto-materialize` from the repair command above and run it observations-only for them.
 The sweep runs these sources observations-only and lists each as `centerPlanOwed`, with its source and run id, in `summary.json` and the printed summary, so the sweep stays green while the apply waits.
 For each owed run, apply it in four steps:
 
