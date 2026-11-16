@@ -20,6 +20,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
   return { ...actual, recomputeBrowseRankForEntities: vi.fn().mockResolvedValue(undefined) };
 });
 
+import { Account } from '../../models/account';
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -483,6 +484,34 @@ describe('a user materialize scoped to named fields writes only that scope (#581
     expect(listed.created).toBe(true);
     expect(await Researcher.countDocuments({})).toBe(1);
     expect((await Researcher.findOne({}).lean<any>())?.displayName).toBe('Avery Synthetic');
+  });
+
+  it('writes nothing to existing records when a listed key mints (#5875)', async () => {
+    await seedLeadAttributedMintKey(true);
+    const existing = await seedResearcher({ displayName: 'Blake Unrelated' });
+    const account = await Account.create({
+      netid: NETID,
+      email: PAGE_EMAIL,
+      status: 'UNKNOWN',
+      archived: false,
+    });
+    const researcherBefore = await Researcher.findById(existing._id).lean();
+    const accountBefore = await Account.findById(account._id).lean();
+    const entityBefore = await ResearchEntity.findOne({ slug: NAMING_SLUG }).lean();
+    const edgesBefore = await RoleAssignment.countDocuments({});
+
+    const listed = await materializeEntity(
+      'user',
+      { entityKey: MINT_KEY },
+      { userWriteOnlyFields: ['displayName'], mintListedUserKeys: new Set([MINT_KEY]) },
+    );
+
+    expect(listed.created).toBe(true);
+    expect(await Researcher.countDocuments({})).toBe(2);
+    expect(await Researcher.findById(existing._id).lean()).toEqual(researcherBefore);
+    expect(await Account.findById(account._id).lean()).toEqual(accountBefore);
+    expect(await ResearchEntity.findOne({ slug: NAMING_SLUG }).lean()).toEqual(entityBefore);
+    expect(await RoleAssignment.countDocuments({})).toBe(edgesBefore);
   });
 
   it('keeps the full-run mint refusal for a listed key the corpus never names as a lead (#5875)', async () => {
