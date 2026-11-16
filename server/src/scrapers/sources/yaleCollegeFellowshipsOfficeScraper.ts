@@ -805,12 +805,12 @@ function extractEmail(text: string): string | undefined {
 }
 
 const ACTIVE_APPLICATION_LANGUAGE =
-  /\bapplications?\s+(?:are\s+)?(?:now\s+)?open\b|\bcurrently accepting applications\b|\brolling\b|\breview(?:ed|ing)?\s+applications?\s+as\s+(?:we|they)\s+(?:are\s+)?receiv|\bapplications?\s+(?:are\s+)?accepted\s+(?:on\s+a\s+)?(?:rolling|continuous|year[-\s]?round)\b|\bno\s+(?:fixed|set)\s+deadline\b/i;
+  /\bapplications?\s+(?:are\s+)?(?:now\s+)?open\b|(?<!\b(?:not|no\s+longer)\s+)\bcurrently accepting applications\b|\brolling\b|\breview(?:ed|ing)?\s+applications?\s+as\s+(?:we|they)\s+(?:are\s+)?receiv|\bapplications?\s+(?:are\s+)?accepted\s+(?:on\s+a\s+)?(?:rolling|continuous|year[-\s]?round)\b|\bno\s+(?:fixed|set)\s+deadline\b/i;
 
 const APPLICATIONS_FOR_A_CYCLE = String.raw`(?:\s+for\s+[^;]{1,60}?)?`;
 
 const STATED_OPEN_WINDOW = new RegExp(
-  String.raw`\bapplications?${APPLICATIONS_FOR_A_CYCLE}\s+(?:are\s+)?(?:now\s+)?open\b|\bcurrently accepting applications\b`,
+  String.raw`\bapplications?(?:\s+(?:are\s+)?|\s+for\s+[^;]{1,60}?\s+(?:are|is)\s+)(?:now\s+)?open\b|(?<!\b(?:not|no\s+longer)\s+)\bcurrently accepting applications\b`,
   'i',
 );
 
@@ -844,9 +844,8 @@ const SENTENCE_BREAK =
 const withoutFutureOpening = (sentence: string): string => {
   const opening = OPENING_STATEMENT.exec(sentence);
   if (!opening) return sentence;
-  return FUTURE_OPENING.test(sentence.slice(opening.index))
-    ? sentence.slice(0, opening.index)
-    : sentence;
+  const futureOpening = FUTURE_OPENING.exec(sentence.slice(opening.index));
+  return futureOpening ? sentence.slice(0, opening.index + futureOpening.index) : sentence;
 };
 
 const statesClosure = (sentence: string): boolean =>

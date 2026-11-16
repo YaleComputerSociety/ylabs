@@ -1379,6 +1379,8 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
       'All applications are now closed. We review on a rolling basis.',
       'Applications for the U.S. Student Program are closed. Rolling review applies.',
       'Applications are closed. Applications open for juniors next fall.',
+      'Applications for the Open Study Award are now closed. Rolling review applies.',
+      'We are not currently accepting applications. Applications are closed. We review on a rolling basis.',
     ]) {
       expect(rowAccepting(rowText)).toBe(false);
     }
@@ -1389,6 +1391,14 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
       true,
     );
     expect(rowAccepting('Applications for the summer are open through May 1.')).toBe(true);
+  });
+
+  it('keeps an open window open when a later clause opens another round in the future', () => {
+    expect(
+      rowAccepting(
+        'Applications for the summer grant are now open, and applications for the fall grant will open in October.',
+      ),
+    ).toBe(true);
   });
 
   it('does not read past-tense rolling review as accepting', () => {
