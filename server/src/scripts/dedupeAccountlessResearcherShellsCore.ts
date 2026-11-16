@@ -205,6 +205,26 @@ export const SHELL_FOLD_IDENTITIES = [
 ] as const;
 export type ShellFoldIdentity = (typeof SHELL_FOLD_IDENTITIES)[number];
 
+export const PLANNED_MERGE_ARMS = [
+  ...SHELL_FOLD_IDENTITIES,
+  'alias-twin',
+  'accountless-cluster',
+] as const;
+export type PlannedMergeArm = (typeof PLANNED_MERGE_ARMS)[number];
+
+export function plannedMergeArm(
+  shellId: string,
+  matchedIdentityByShellId: ReadonlyMap<string, ShellFoldIdentity>,
+  aliasTwinIds: ReadonlySet<string>,
+  accountlessClusterFoldIds: ReadonlySet<string>,
+): PlannedMergeArm {
+  const matched = matchedIdentityByShellId.get(shellId);
+  if (matched) return matched;
+  if (accountlessClusterFoldIds.has(shellId)) return 'accountless-cluster';
+  if (aliasTwinIds.has(shellId)) return 'alias-twin';
+  throw new Error(`planned merge for ${shellId} has no planning arm`);
+}
+
 export interface ShellMergeDecision {
   merge: boolean;
   canonicalId?: string;

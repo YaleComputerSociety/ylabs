@@ -32,6 +32,8 @@ import {
   yaleOfficialProfileKeys,
   yaleOfficialPageWitnessKeys,
   decideShellMerge,
+  plannedMergeArm,
+  type PlannedMergeArm,
   type DirectoryEmailCandidate,
   emaillessLocalPartTwinAliases,
   type FoldPlanEdge,
@@ -218,6 +220,7 @@ export interface DedupeAccountlessResearcherShellsResult {
   merges: Array<{
     shellId: string;
     canonicalId: string;
+    arm: PlannedMergeArm;
     repointed: string[];
     archivedRedundant: string[];
     profileLinksAppended: number;
@@ -1520,7 +1523,9 @@ export async function dedupeAccountlessResearcherShells(options: {
     matchedIdentityByShellId.set(shellId, 'cited-official-page');
   }
   const aliasTwinPlan = await planAliasTwinFoldsFor(researcherIdentities, loginNetids);
+  const aliasTwinIds = new Set<string>();
   for (const [twinId, realId] of aliasTwinPlan.targetByTwinResearcherId) {
+    aliasTwinIds.add(twinId);
     decidedTargetByShellId.set(twinId, realId);
     matchedIdentityByShellId.delete(twinId);
   }
@@ -1585,7 +1590,9 @@ export async function dedupeAccountlessResearcherShells(options: {
     researcherIdentities.filter((entry) => !clusterCandidateIds.has(entry.id)),
     citedOfficialPageRouting.equalTierJoins,
   );
+  const accountlessClusterFoldIds = new Set<string>();
   for (const [shellId, survivorId] of clusterPlan.foldTargetById) {
+    accountlessClusterFoldIds.add(shellId);
     mergeTargetByShellId.set(shellId, survivorId);
     if (clusterPlan.sharedOfficialProfileFoldIds.has(shellId)) {
       matchedIdentityByShellId.set(shellId, 'shared-official-profile');
@@ -1860,6 +1867,12 @@ export async function dedupeAccountlessResearcherShells(options: {
     merges.push({
       shellId,
       canonicalId,
+      arm: plannedMergeArm(
+        shellId,
+        matchedIdentityByShellId,
+        aliasTwinIds,
+        accountlessClusterFoldIds,
+      ),
       repointed: edges.repointed,
       archivedRedundant: edges.archivedRedundant,
       profileLinksAppended: plan.profileLinksToAppend.length,
