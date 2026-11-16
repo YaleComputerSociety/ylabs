@@ -3933,6 +3933,26 @@ describe('officialProfilePiBackfillScraper', () => {
 
       expect(primaryDepartmentOf(html)).toBe('Psychiatry');
     });
+
+    it('reads no department nested inside the host site department line', () => {
+      const html = profileMetaPage().replace(
+        '<div class="profile-meta__department-line">Physics</div>',
+        '<div class="profile-meta__department-line"><a class="profile-meta__department-link" href="/"><span class="department-name">Physics</span></a></div>',
+      );
+
+      expect(identityOf(html).departments).toEqual([]);
+      expect(primaryDepartmentOf(html)).toBeUndefined();
+    });
+
+    it('reads no host department through a department-classed wrapper around the line', () => {
+      const html = profileMetaPage().replace(
+        '<div class="profile-meta__department-line">Physics</div>',
+        '<div class="profile-meta__departments"><div class="profile-meta__department-line">Physics</div></div>',
+      );
+
+      expect(identityOf(html).departments).toEqual([]);
+      expect(primaryDepartmentOf(html)).toBeUndefined();
+    });
   });
 
   describe('primary department from the Appointments block (#5800)', () => {

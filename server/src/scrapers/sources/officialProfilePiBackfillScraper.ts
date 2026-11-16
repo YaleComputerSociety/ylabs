@@ -3159,13 +3159,19 @@ function extractDepartments($: cheerio.CheerioAPI): string[] {
   if (appointmentCards.length > 0) return primaryAppointmentUnits($, appointmentCards);
   const values: string[] = [];
   $('[class*="department"]')
-    .not(HOST_SITE_DEPARTMENT_LINE)
+    .filter((_i, el) => $(el).closest(HOST_SITE_DEPARTMENT_LINE).length === 0)
     .each((_i, el) => {
-      const value = textValue($(el).text());
+      const value = textValue(textOutsideHostSiteDepartmentLine($, el));
       if (isDepartmentHeadingChrome(value)) return false;
       if (value && value.length < 160) values.push(value);
     });
   return uniqueStrings(values).slice(0, 5);
+}
+
+function textOutsideHostSiteDepartmentLine($: cheerio.CheerioAPI, el: any): string {
+  const copy = $(el).clone();
+  copy.find(HOST_SITE_DEPARTMENT_LINE).remove();
+  return copy.text();
 }
 
 // A YSM or YSPH profile states each appointment as a card naming its academic unit and whether
