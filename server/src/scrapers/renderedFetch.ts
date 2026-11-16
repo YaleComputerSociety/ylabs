@@ -478,17 +478,17 @@ function createLiveScraplingRenderedFetcher(
     options.timeoutMs || numberFromEnv(process.env.SCRAPLING_TIMEOUT_MS),
     DEFAULT_TIMEOUT_MS,
   );
-  const seedRedirectCheck = options.seedRedirectCheck || defaultRenderedSeedRedirectCheck;
+  const unloggedSeedRedirectCheck = options.seedRedirectCheck || defaultRenderedSeedRedirectCheck;
   const startForwardProxy =
     options.startForwardProxy ||
     ((pacing: RenderedFetchProxyPacing) => startSsrfGuardedForwardProxy(pacing));
   const requestLog =
     options.requestLog === undefined ? processScraperRequestLog() : options.requestLog;
 
-  const preflightSeed = async (seedUrl: URL, timeoutMs: number): Promise<boolean> => {
+  const seedRedirectCheck = async (seedUrl: URL, timeoutMs: number): Promise<boolean> => {
     const dispatchedAt = new Date();
     try {
-      const redirected = await seedRedirectCheck(seedUrl, timeoutMs);
+      const redirected = await unloggedSeedRedirectCheck(seedUrl, timeoutMs);
       requestLog?.record(seedUrl.toString(), dispatchedAt, Date.now() - dispatchedAt.getTime(), {});
       return redirected;
     } catch (error) {
@@ -538,7 +538,7 @@ function createLiveScraplingRenderedFetcher(
     const releaseHostSlot = await acquireHostSlotWithin(scraperHostSlotLimiter(), seedUrl.hostname);
     try {
       try {
-        if (await preflightSeed(seedUrl, timeoutMs)) {
+        if (await seedRedirectCheck(seedUrl, timeoutMs)) {
           return {
             url: seedUrl.toString(),
             html: '',
