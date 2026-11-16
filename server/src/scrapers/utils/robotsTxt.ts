@@ -1,4 +1,4 @@
-import { SCRAPER_USER_AGENT } from './httpFetch';
+import { SCRAPER_USER_AGENT } from './scraperUserAgent';
 
 /** RFC 9309 asks crawlers to read at least 500 KiB of a robots.txt; anything past it is ignored. */
 export const ROBOTS_TXT_MAX_BYTES = 500 * 1024;

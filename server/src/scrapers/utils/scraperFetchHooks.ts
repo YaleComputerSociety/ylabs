@@ -7,6 +7,8 @@ import {
   installScraperHttpValidatorCache,
   type HttpValidatorCacheHandle,
 } from './httpValidatorCache';
+import { installRobotsPolicyInterceptor } from './robotsFetchHook';
+import type { RobotsTxtFetcher } from './robotsPolicyCache';
 import { installScraperFetchDeadlines } from './scraperFetchDeadlines';
 import { scraperHostSlotLimiter } from './scraperHostSlotLimiter';
 import { SCRAPER_USER_AGENT } from './scraperUserAgent';
@@ -14,6 +16,7 @@ import { SCRAPER_USER_AGENT } from './scraperUserAgent';
 export interface ScraperFetchHookOptions {
   validatorCache?: boolean;
   hostSlotLimiter?: HostSlotLimiter;
+  robotsTxtFetcher?: RobotsTxtFetcher;
 }
 
 let installed = false;
@@ -46,5 +49,9 @@ export function installScraperFetchHooks(options: ScraperFetchHookOptions = {}):
   installScraperUserAgent();
   installScraperHostConcurrencyInterceptor(options.hostSlotLimiter ?? scraperHostSlotLimiter());
   if (!validatorCacheRefused) validatorCache = installScraperHttpValidatorCache();
+  // Registered after the host budget and the validator cache so it runs before both: a
+  // disallowed path is refused before it takes a slot, and the host's Crawl-delay is recorded
+  // before the budget spaces the request (#6213).
+  installRobotsPolicyInterceptor(options.robotsTxtFetcher);
   installScraperFetchDeadlines();
 }

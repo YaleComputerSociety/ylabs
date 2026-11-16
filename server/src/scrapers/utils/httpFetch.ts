@@ -18,6 +18,7 @@ import {
   resolveHostRetryBudget,
   type HostSlotLimiter,
 } from './hostConcurrencyLimiter';
+import { RobotsDisallowedError } from './robotsDisallowedError';
 import { HostBudgetUnavailableError } from './machineHostBudget';
 import { machineHostSlotsForDirectRequest } from './scraperHostSlotLimiter';
 import {
@@ -491,7 +492,8 @@ export function isRefusedBeforeSending(error: unknown): boolean {
       current instanceof SsrfBlockedError ||
       current instanceof HostPausedError ||
       current instanceof HostBudgetUnavailableError ||
-      current instanceof HostSlotWaitTimeoutError
+      current instanceof HostSlotWaitTimeoutError ||
+      current instanceof RobotsDisallowedError
     ) {
       return true;
     }

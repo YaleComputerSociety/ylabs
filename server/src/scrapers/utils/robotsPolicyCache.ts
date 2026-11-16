@@ -15,8 +15,9 @@ interface CachedPolicy {
 }
 
 /**
- * Each host's robots.txt policy, read at most once a day. Process-local; the wiring into the
- * shared per-host budget (#6168) and the single fetch-hook install point (#6193) comes later.
+ * Each host's robots.txt policy, read at most once a day. Process-local; `robotsFetchHook.ts`
+ * reads it from the single fetch-hook install point and records the Crawl-delay into the shared
+ * per-host budget (#6168, #6193, #6213).
  */
 const cache = new Map<string, CachedPolicy>();
 const pending = new Map<string, Promise<RobotsPolicy>>();

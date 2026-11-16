@@ -10,6 +10,7 @@ import {
   HOST_SLOT_WAIT_TIMEOUT_MS,
   HOST_THROTTLE_OVERRIDES,
   HostSlotWaitTimeoutError,
+  withHostCrawlDelay,
   YALE_HOST_DEFAULT_THROTTLE,
   type HostSlotLimiter,
   type HostSlotRelease,
@@ -100,11 +101,11 @@ export function machineHostBudgetFor(host: string): HostThrottle {
   const floor = isExcludedHostname(key, YALE_DOMAINS)
     ? YALE_HOST_DEFAULT_THROTTLE
     : MACHINE_DEFAULT_HOST_BUDGET;
-  if (!override) return floor;
-  return {
+  if (!override) return withHostCrawlDelay(key, floor);
+  return withHostCrawlDelay(key, {
     concurrency: Math.min(override.concurrency, floor.concurrency),
     minIntervalMs: Math.max(override.minIntervalMs, floor.minIntervalMs),
-  };
+  });
 }
 
 export function isProcessAlive(pid: number): boolean {
