@@ -195,12 +195,15 @@ export interface DedupeAccountlessResearcherShellsResult {
   aliasTwinFolds: { folded: number; refusals: Record<AliasTwinFoldRefusal, number> };
   /** Which identity decided each fold, so a netid fold cannot hide inside a name count. */
   foldsByMatchedIdentity: Record<ShellFoldIdentity, number>;
+  /** Folds whose only evidence is a matching name: listed for operator review, never applied. */
+  nameOnlyFoldCandidates: Array<{ shellId: string; canonicalId: string }>;
   /** Groups with no directory-backed member, folded into a survivor chosen among themselves. */
   accountlessClusters: {
     groups: number;
     foldedGroups: number;
     folds: number;
     refusedGroups: Record<AccountlessClusterRefusal, number>;
+    nameOnlyGroups: string[][];
   };
   citedOfficialPage: {
     witnessedPairs: number;
@@ -1440,7 +1443,10 @@ export async function dedupeAccountlessResearcherShells(options: {
     NO_IDENTITY_WITNESS: 0,
     VARIANT_SHAPE_NOT_ALLOWED: 0,
     STATED_MIDDLE_INITIAL_CONFLICT: 0,
+    NAME_ONLY_EVIDENCE: 0,
   };
+  const nameOnlyFoldCandidates: DedupeAccountlessResearcherShellsResult['nameOnlyFoldCandidates'] =
+    [];
 
   const rosterIdentityCandidatesByShellId = await loadRosterIdentityCandidates(
     RoleAssignment,
@@ -1502,6 +1508,9 @@ export async function dedupeAccountlessResearcherShells(options: {
       sharedOfficialProfileIndex,
     );
     byReason[decision.reason] += 1;
+    if (decision.reason === 'NAME_ONLY_EVIDENCE' && decision.canonicalId) {
+      nameOnlyFoldCandidates.push({ shellId: shell.id, canonicalId: decision.canonicalId });
+    }
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
       decidedTargetByShellId.set(shell.id, decision.canonicalId);
       if (decision.matchedOn) matchedIdentityByShellId.set(shell.id, decision.matchedOn);
@@ -2061,11 +2070,13 @@ export async function dedupeAccountlessResearcherShells(options: {
       refusals: aliasTwinPlan.refusals,
     },
     foldsByMatchedIdentity,
+    nameOnlyFoldCandidates,
     accountlessClusters: {
       groups: clusterPlan.groups,
       foldedGroups: clusterPlan.foldedGroups,
       folds: clusterPlan.foldTargetById.size,
       refusedGroups: clusterPlan.refusedGroups,
+      nameOnlyGroups: clusterPlan.nameOnlyGroups,
     },
     citedOfficialPage: {
       witnessedPairs: citedOfficialPageLoad.pairs.length,

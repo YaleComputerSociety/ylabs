@@ -188,7 +188,8 @@ export type ShellMergeReason =
   | 'EMAIL_CONFLICT'
   | 'NO_IDENTITY_WITNESS'
   | 'VARIANT_SHAPE_NOT_ALLOWED'
-  | 'STATED_MIDDLE_INITIAL_CONFLICT';
+  | 'STATED_MIDDLE_INITIAL_CONFLICT'
+  | 'NAME_ONLY_EVIDENCE';
 
 export const SHELL_FOLD_IDENTITIES = [
   'netid',
@@ -1333,7 +1334,12 @@ function decideExactNameFold(
     return { merge: false, reason: 'NETID_CONFLICT' };
   }
 
-  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'name' };
+  const identifierAgrees =
+    (Boolean(shellOrcid) && shellOrcid === target.orcid) ||
+    (Boolean(shellNetid) && shellNetid === target.netid);
+  return identifierAgrees
+    ? { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'name' }
+    : { merge: false, canonicalId: target.id, reason: 'NAME_ONLY_EVIDENCE', matchedOn: 'name' };
 }
 
 export function resolveFinalMergeTargets(
@@ -1625,7 +1631,8 @@ export type AccountlessClusterRefusal =
   | 'ORCID_CONFLICT'
   | 'TITLE_CONFLICT'
   | 'SURNAME_CONFLICT'
-  | 'MIDDLE_INITIAL_CONFLICT';
+  | 'MIDDLE_INITIAL_CONFLICT'
+  | 'NAME_ONLY_EVIDENCE';
 
 export interface AccountlessClusterPlan {
   /** Each folding member mapped to the survivor of its group. */
@@ -1635,6 +1642,8 @@ export interface AccountlessClusterPlan {
   groups: number;
   foldedGroups: number;
   refusedGroups: Record<AccountlessClusterRefusal, number>;
+  /** Groups held together only by a name, reported for operator review and never folded. */
+  nameOnlyGroups: string[][];
 }
 
 const departmentKey = (value: unknown): string =>
@@ -1645,6 +1654,22 @@ const departmentKey = (value: unknown): string =>
         .trim()
     : '';
 
+const PAGE_CLUSTER_KEY_PREFIX = 'page::';
+
+function disjointSets(ids: readonly string[]) {
+  const parent = new Map<string, string>(ids.map((id) => [id, id]));
+  const find = (id: string): string => {
+    let root = id;
+    while (parent.get(root) !== root) root = parent.get(root) as string;
+    parent.set(id, root);
+    return root;
+  };
+  const join = (left: string, right: string): void => {
+    parent.set(find(left), find(right));
+  };
+  return { find, join };
+}
+
 function clusterKeys(
   member: AccountlessClusterMember,
   heldElsewhere: { pages: ReadonlySet<string>; names: ReadonlySet<string> },
@@ -1652,7 +1677,7 @@ function clusterKeys(
 ): string[] {
   const pageKeys = confirmedPrimaryProfileKeys(member.profileLinks, healthyKeys)
     .filter((key) => !heldElsewhere.pages.has(key))
-    .map((key) => `page::${key}`);
+    .map((key) => `${PAGE_CLUSTER_KEY_PREFIX}${key}`);
   const name = normalizeResearcherName(member.displayName);
   if (!name || heldElsewhere.names.has(name)) return pageKeys;
   const department = departmentKey(member.primaryDepartment);
@@ -1788,7 +1813,11 @@ export function accountlessClusterSurvivor(
  * non-historical role on the same live research row. A whole group is refused on any netid, ORCID, title
  * rank or surname disagreement, because one wrong join merges two people for good. A page
  * or name that any record outside the group also holds joins nobody: the outranking arms
- * already found it unable to tell those records apart.
+ * already found it unable to tell those records apart. A name, with or without a department
+ * or a shared row, is not evidence of one person, so a group whose members are not all
+ * connected by a shared page, shared official profile, cited official page or an agreeing
+ * netid or ORCID is reported in
+ * `nameOnlyGroups` and never folded.
  */
 export function planAccountlessClusterFolds(
   members: ReadonlyArray<AccountlessClusterMember>,
@@ -1810,38 +1839,51 @@ export function planAccountlessClusterFolds(
         .filter((name): name is string => Boolean(name)),
     ),
   };
-  const parent = new Map<string, string>(members.map((member) => [member.id, member.id]));
-  const find = (id: string): string => {
-    let root = id;
-    while (parent.get(root) !== root) root = parent.get(root) as string;
-    parent.set(id, root);
-    return root;
-  };
+  const memberIdList = members.map((member) => member.id);
+  const { find, join } = disjointSets(memberIdList);
+  const evidence = disjointSets(memberIdList);
   const firstByKey = new Map<string, string>();
   for (const member of members) {
     for (const key of clusterKeys(member, heldElsewhere, healthyKeys)) {
       const first = firstByKey.get(key);
-      if (first) parent.set(find(member.id), find(first));
-      else firstByKey.set(key, member.id);
+      if (!first) {
+        firstByKey.set(key, member.id);
+        continue;
+      }
+      join(member.id, first);
+      if (key.startsWith(PAGE_CLUSTER_KEY_PREFIX)) evidence.join(member.id, first);
+    }
+  }
+  const firstByIdentifier = new Map<string, string>();
+  for (const member of members) {
+    const orcid = cleanOrcid(member.orcid);
+    const netid = bareNetid(member.netid);
+    for (const key of [orcid && `orcid::${orcid}`, netid && `netid::${netid}`]) {
+      if (!key) continue;
+      const first = firstByIdentifier.get(key);
+      if (first) evidence.join(member.id, first);
+      else firstByIdentifier.set(key, member.id);
     }
   }
   for (const [noisyId, cleanId] of noisySpellingJoins(members, heldElsewhere.names)) {
-    parent.set(find(noisyId), find(cleanId));
+    join(noisyId, cleanId);
   }
   const profileJoinedIds = new Set<string>();
   for (const [leftId, rightId] of sharedOfficialProfileJoins(members, nonMembers)) {
+    evidence.join(leftId, rightId);
     if (find(leftId) !== find(rightId)) {
       profileJoinedIds.add(leftId).add(rightId);
-      parent.set(find(leftId), find(rightId));
+      join(leftId, rightId);
     }
   }
   const memberIds = new Set(members.map((member) => member.id));
   const citedPageJoinedIds = new Set<string>();
   for (const [leftId, rightId] of citedOfficialPageJoins) {
     if (!memberIds.has(leftId) || !memberIds.has(rightId)) continue;
+    evidence.join(leftId, rightId);
     if (find(leftId) !== find(rightId)) {
       citedPageJoinedIds.add(leftId).add(rightId);
-      parent.set(find(leftId), find(rightId));
+      join(leftId, rightId);
     }
   }
 
@@ -1863,7 +1905,9 @@ export function planAccountlessClusterFolds(
       TITLE_CONFLICT: 0,
       SURNAME_CONFLICT: 0,
       MIDDLE_INITIAL_CONFLICT: 0,
+      NAME_ONLY_EVIDENCE: 0,
     },
+    nameOnlyGroups: [],
   };
   for (const group of groupsByRoot.values()) {
     if (group.length < 2) continue;
@@ -1871,6 +1915,11 @@ export function planAccountlessClusterFolds(
     const refusal = clusterRefusal(group);
     if (refusal) {
       plan.refusedGroups[refusal] += 1;
+      continue;
+    }
+    if (new Set(group.map((member) => evidence.find(member.id))).size > 1) {
+      plan.refusedGroups.NAME_ONLY_EVIDENCE += 1;
+      plan.nameOnlyGroups.push(group.map((member) => member.id));
       continue;
     }
     const survivor = accountlessClusterSurvivor(group);
