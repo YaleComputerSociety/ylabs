@@ -10,6 +10,11 @@ A rising student-ready count is the thing most easily mistaken for rising qualit
 
 Most of the panel is a single MongoDB aggregation on the request, so it says what is true now.
 
+A served row is one `servedResearchEntityRowFilter` returns: a served tier that no operator hold outranks, and not archived, the same rows the serve paths return (#6394).
+The by-tier breakdown groups by the effective tier, so a held row is listed under its hold.
+Before #6394 both counted the stored tier, which could count a held row as served when a writer raised its stored tier above the hold before a gate run.
+Snapshots do not record hold state, so an earlier snapshot cannot be re-read under the new definition; on Development no held row stored `student_ready` when the definition changed (2026-11-16), so the switch moved no count.
+
 | Rows | Source | Freshness |
 |---|---|---|
 | Coverage, by tier, by school | Live aggregation | Now |

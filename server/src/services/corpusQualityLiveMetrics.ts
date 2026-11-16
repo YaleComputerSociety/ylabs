@@ -24,7 +24,10 @@
  * assumption #3379 found broken.
  */
 import { ResearchEntity } from '../models/researchEntity';
-import { servedResearchEntityRowFilter } from '../models/studentVisibility';
+import {
+  effectiveStudentVisibilityTierExpression,
+  servedResearchEntityRowFilter,
+} from '../models/studentVisibility';
 import type { CorpusQualityRatio } from './corpusQualityReportCore';
 
 const GENERIC_FACULTY_RESEARCH_TITLE = /\sFaculty Research$/;
@@ -71,7 +74,7 @@ export async function readCorpusQualityLiveMetrics(
         ],
         byTier: [
           { $match: { archived: { $ne: true } } },
-          { $group: { _id: '$studentVisibilityTier', count: { $sum: 1 } } },
+          { $group: { _id: effectiveStudentVisibilityTierExpression(), count: { $sum: 1 } } },
           { $project: { _id: 0, tier: { $ifNull: ['$_id', 'unset'] }, count: 1 } },
           { $sort: { count: -1 } },
         ],

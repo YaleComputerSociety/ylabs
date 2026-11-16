@@ -1,7 +1,10 @@
 import { Observation } from '../models/observation';
 import { Researcher } from '../models/researcher';
 import { ResearchEntity } from '../models/researchEntity';
-import { servedResearchEntityRowFilter } from '../models/studentVisibility';
+import {
+  effectiveStudentVisibilityTierExpression,
+  servedResearchEntityRowFilter,
+} from '../models/studentVisibility';
 import {
   normalizedTitleReading,
   SITE_CHROME_TITLE_LANE,
@@ -118,7 +121,7 @@ export const readCorpusCoverageCounts = async (): Promise<CorpusQualityCorpusCou
     ResearchEntity.countDocuments(servedResearchEntityRowFilter()),
     ResearchEntity.aggregate<{ tier: string; count: number }>([
       { $match: { archived: { $ne: true } } },
-      { $group: { _id: '$studentVisibilityTier', count: { $sum: 1 } } },
+      { $group: { _id: effectiveStudentVisibilityTierExpression(), count: { $sum: 1 } } },
       { $project: { _id: 0, tier: { $ifNull: ['$_id', 'unset'] }, count: 1 } },
       { $sort: { count: -1 } },
     ]),
