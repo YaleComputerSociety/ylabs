@@ -162,6 +162,7 @@ A one-off job runs on the operator service's latest build with that service's cu
 The entrypoint sets `SWEEP_TARGET_SHA` to the `beta` HEAD it resolved and `SEARCH_INDEX_WRITES=deferred`, and unsets every `MEILISEARCH_*` variable, so none of those belong in the dashboard.
 The job refuses when `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `PROD_MONGODBURL`, or any other copy-pair URL is present, because it holds Development credentials only.
 Scope its database user to the `Development` database, because Render's outbound ranges are shared by every service in the region.
+Before re-enabling the cron, know that the seven center roster sources need a manual dry-run-then-expect apply after each sweep, one per run the sweep lists as `centerPlanOwed` (`docs/data-refresh-runbook.md`, "Center Roster Sources Owe A Center Plan").
 
 ## Operator Laptop Variables
 

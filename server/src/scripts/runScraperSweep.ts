@@ -22,6 +22,7 @@ import {
   type ScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
 import { c4LosslessIngestEnabled } from '../scrapers/observationStore';
+import { CENTER_ROSTER_HEALTH_SOURCE_NAMES } from '../scrapers/centerPlanGuard';
 import { readCodeSha } from '../scrapers/scrapeRunCodeIdentity';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import {
@@ -448,6 +449,34 @@ export interface ScraperSweepSummary {
     stages: Array<DevelopmentPostRunStage | FellowshipPostRunStage>;
   } & SweepStepTiming;
   searchIndex?: SweepSearchIndexOutcome;
+  /**
+   * Center roster runs the sweep wrote observations for but did not materialize, because a
+   * Development apply of one must be held to an approved plan (#6348). Each needs a manual
+   * dry run, then `scrape materialize --run <runId> --expect-center-plan <plan.json>`.
+   */
+  centerPlanOwed?: SweepCenterPlanOwed[];
+}
+
+export interface SweepCenterPlanOwed {
+  sourceName: string;
+  runId?: string;
+}
+
+/**
+ * A center roster source in an auto-materializing mode runs observations-only, so the sweep
+ * stays green while the run's apply waits for an approved center plan (#6348).
+ */
+export function sweepOwesCenterPlan(mode: ScraperSweepMode, sourceName: string): boolean {
+  return MODE_CONFIG[mode].autoMaterialize && CENTER_ROSTER_HEALTH_SOURCE_NAMES.has(sourceName);
+}
+
+export function sweepCenterPlanOwed(
+  mode: ScraperSweepMode,
+  rows: readonly ScraperSweepRunRow[],
+): SweepCenterPlanOwed[] {
+  return rows
+    .filter((row) => row.status === 'succeeded' && sweepOwesCenterPlan(mode, row.sourceName))
+    .map((row) => ({ sourceName: row.sourceName, ...(row.runId ? { runId: row.runId } : {}) }));
 }
 
 export const SEARCH_INDEX_CHECK_JOURNEY_CASES = [
@@ -924,7 +953,9 @@ export function buildScraperSweepChildArgs(
     '--source',
     sourceName,
     ...(MODE_CONFIG[mode].writes ? ['--apply'] : []),
-    ...MODE_CONFIG[mode].scraperFlags,
+    ...MODE_CONFIG[mode].scraperFlags.filter(
+      (flag) => flag !== '--auto-materialize' || !sweepOwesCenterPlan(mode, sourceName),
+    ),
     ...(options.forceLlm ? ['--force-llm'] : []),
     '--output',
     artifactPath,
@@ -2818,6 +2849,7 @@ export async function runScraperSweep(
     );
   }
   const producedNothingSources = sourcesThatProducedNothing(rows);
+  const centerPlanOwed = sweepCenterPlanOwed(options.mode, rows);
   const summary: ScraperSweepSummary = {
     mode: options.mode,
     environment: config.environment,
@@ -2839,6 +2871,7 @@ export async function runScraperSweep(
     ...(pageReuseSummary ? { pageReuse: pageReuseSummary } : {}),
     ...(postRun ? { postRun } : {}),
     searchIndex: sweepSearchIndexOutcome(),
+    ...(centerPlanOwed.length > 0 ? { centerPlanOwed } : {}),
   };
   const summaryPath = path.join(outputDirectory, 'summary.json');
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
@@ -2859,11 +2892,17 @@ export async function runScraperSweep(
           ? { producedNothingSources: summary.producedNothingSources }
           : {}),
         postRun: summary.postRun?.status,
+        ...(centerPlanOwed.length > 0 ? { centerPlanOwed } : {}),
       },
       null,
       2,
     ),
   );
+  for (const owed of centerPlanOwed) {
+    console.log(
+      `[center-plan] owed: ${owed.sourceName} run ${owed.runId ?? '(no run id)'} was not materialized; dry-run it, then "scrape materialize --run <runId> --apply --confirm-materialize --expect-center-plan <plan.json>" (#6348)`,
+    );
+  }
   return summary;
 }
 

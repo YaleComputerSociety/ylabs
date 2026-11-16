@@ -628,6 +628,13 @@ import {
   type CenterRosterRetirementResult,
 } from './centerRosterRetirement';
 import {
+  buildCenterPlanReport,
+  endRosterListingEdges,
+  type CenterPlanGuard,
+  type CenterPlanReport,
+  type RosterEdgeEndingContext,
+} from './centerPlanGuard';
+import {
   resolveResearcherIdForPersonName,
   type ResearcherPersonNameResolution,
 } from '../services/researcherPersonNameResolver';
@@ -759,6 +766,14 @@ interface MaterializeOptions {
    * whose roster read is known to miss listed members can still project its listings (#5897).
    */
   skipCenterRosterRetirement?: boolean;
+  /**
+   * Holds a center roster run to its approved plan (#6348). In `plan` mode, which only a dry run
+   * takes, the projection records every role edge it would end and the report carries each
+   * center's retirement digest. In `enforce` mode, which only an apply takes, the projection ends
+   * only the edges the plan listed and a center retires only when its post-projection digest is
+   * the approved one. Absent, every lane behaves as it always has.
+   */
+  centerPlanGuard?: CenterPlanGuard;
   /**
    * Ignore the named locks, each only if it is revisitable on this row, so the
    * projection reports what the engine would derive for them today. Off everywhere
@@ -3718,14 +3733,15 @@ const SOURCES_THAT_REFUSE_A_NAMESAKE_MINT: ReadonlySet<string> = new Set([
 async function endMisattributedProfileUrlHolderEdges(
   researchEntityId: string,
   plan: RosterMemberCanonicalPlan,
-  personId?: mongoose.Types.ObjectId,
+  personId: mongoose.Types.ObjectId | undefined,
+  endingContext: RosterEdgeEndingContext | undefined,
 ): Promise<number> {
   const entityObjectId = toMaterializerObjectId(researchEntityId);
   const provenance = plan.facts.rosterProvenance;
   const sourceName = textValue(provenance?.sourceName);
   const membershipKey = textValue(provenance?.membershipKey);
   if (!entityObjectId || !sourceName || !membershipKey) return 0;
-  const ended = await RoleAssignment.updateMany(
+  return endRosterListingEdges(
     {
       ...(personId ? { personId } : {}),
       'target.kind': 'RESEARCH_ENTITY',
@@ -3735,9 +3751,10 @@ async function endMisattributedProfileUrlHolderEdges(
       state: { $ne: 'HISTORICAL' },
       archived: { $ne: true },
     },
-    { $set: { state: 'HISTORICAL', endedAt: provenance?.observedAt ?? new Date() } },
+    { state: 'HISTORICAL', endedAt: provenance?.observedAt ?? new Date() },
+    personId ? 'misattributed-profile-url-holder' : 'listed-name-names-a-research-group',
+    endingContext,
   );
-  return ended.modifiedCount ?? 0;
 }
 
 /**
@@ -3756,6 +3773,7 @@ async function endSupersededListingHolderEdges(
   plan: RosterMemberCanonicalPlan,
   keptPersonId: mongoose.Types.ObjectId,
   scope: RosterListingScope,
+  endingContext: RosterEdgeEndingContext | undefined,
 ): Promise<number> {
   const entityObjectId = toMaterializerObjectId(researchEntityId);
   const provenance = plan.facts.rosterProvenance;
@@ -3764,7 +3782,7 @@ async function endSupersededListingHolderEdges(
   if (!entityObjectId || !sourceName || !membershipKey) return 0;
   const profileUrl = textValue(provenance?.profileUrl);
   if (profileUrl && (await listingsSharingProfileUrl(profileUrl, scope)).length > 1) return 0;
-  const ended = await RoleAssignment.updateMany(
+  return endRosterListingEdges(
     {
       personId: { $ne: keptPersonId },
       'target.kind': 'RESEARCH_ENTITY',
@@ -3775,9 +3793,10 @@ async function endSupersededListingHolderEdges(
       state: { $ne: 'HISTORICAL' },
       archived: { $ne: true },
     },
-    { $set: { state: 'HISTORICAL', endedAt: provenance?.observedAt ?? new Date() } },
+    { state: 'HISTORICAL', endedAt: provenance?.observedAt ?? new Date() },
+    'superseded-listing-holder',
+    endingContext,
   );
-  return ended.modifiedCount ?? 0;
 }
 
 /**
@@ -3791,6 +3810,7 @@ async function endListingEdgesUnderTheOtherScreenedRole(
   researchEntityId: string,
   plan: RosterMemberCanonicalPlan,
   personId: mongoose.Types.ObjectId,
+  endingContext: RosterEdgeEndingContext | undefined,
 ): Promise<number> {
   if (textValue(plan.resolved.membershipKey?.value)) return 0;
   const listedRole = normalizeMemberRole(plan.resolved.role?.value);
@@ -3802,7 +3822,7 @@ async function endListingEdgesUnderTheOtherScreenedRole(
   const otherKeys = [listedRole, 'staff']
     .filter((role) => role !== plan.role)
     .map((role) => rosterMembershipKey(plan.identityKey, role));
-  const ended = await RoleAssignment.updateMany(
+  return endRosterListingEdges(
     {
       personId,
       'target.kind': 'RESEARCH_ENTITY',
@@ -3813,9 +3833,10 @@ async function endListingEdgesUnderTheOtherScreenedRole(
       state: { $ne: 'HISTORICAL' },
       archived: { $ne: true },
     },
-    { $set: { state: 'HISTORICAL', endedAt: provenance?.observedAt ?? new Date() } },
+    { state: 'HISTORICAL', endedAt: provenance?.observedAt ?? new Date() },
+    'other-screened-role',
+    endingContext,
   );
-  return ended.modifiedCount ?? 0;
 }
 
 /**
@@ -4061,6 +4082,59 @@ async function adoptListedPersonUnprovenancedEdges(
   });
 }
 
+/**
+ * The endings an apply's write path would make after it writes the listing's edge, planned
+ * read-only for a dry run under a `plan` guard (#6348). It mirrors that path's conditions: no
+ * ending for a non-lead listing whose person already leads the row, the screened-role ending
+ * only for a resolved person, and the superseded-holder ending only for a listing resolved by
+ * name. A listing the plan resolves to nobody is resolved read-only the way the write path
+ * would find an existing person by name (`resolveCanonicalResearcherId`), so a steady name-only
+ * listing does not plan the end of its own edge; only when that finds nobody either, and the
+ * apply mints, is the superseded-holder ending planned against a kept person that matches nobody.
+ */
+async function planListingWriteEndings(
+  researchEntityId: string,
+  plan: RosterMemberCanonicalPlan,
+  identity: RosterMemberIdentity,
+  listingScope: RosterListingScope,
+  endingContext: RosterEdgeEndingContext,
+): Promise<void> {
+  const resolvedPersonId =
+    toMaterializerObjectId(plan.personReferenceId) ??
+    toMaterializerObjectId(identity.researcher?._id) ??
+    (await resolveCanonicalResearcherId({ displayName: plan.facts.displayName ?? '' }));
+  if (!LEAD_MEMBER_ROLES.has(plan.role)) {
+    const { roster, matches } = await findCanonicalRosterMatch(researchEntityId, {
+      researcherId: plan.personReferenceId,
+      name: plan.matchName,
+    });
+    if (
+      roster.some(
+        (entry) => entry.isCurrentMember && LEAD_MEMBER_ROLES.has(entry.role) && matches(entry),
+      )
+    ) {
+      return;
+    }
+  }
+  if (resolvedPersonId) {
+    await endListingEdgesUnderTheOtherScreenedRole(
+      researchEntityId,
+      plan,
+      resolvedPersonId,
+      endingContext,
+    );
+  }
+  if (!('basis' in identity)) {
+    await endSupersededListingHolderEdges(
+      researchEntityId,
+      plan,
+      resolvedPersonId ?? new mongoose.Types.ObjectId(),
+      listingScope,
+      endingContext,
+    );
+  }
+}
+
 async function materializeRosterMember(
   identifier: { entityId?: string; entityKey?: string },
   listingObservations: any[],
@@ -4154,8 +4228,15 @@ async function materializeRosterMember(
       skipped: 'missing-required-fields',
     };
   }
+  const endingContext: RosterEdgeEndingContext | undefined = options.centerPlanGuard
+    ? { guard: options.centerPlanGuard, centerEntityKey: researchGroupKey }
+    : undefined;
+  const planningEndings = options.dryRun === true && options.centerPlanGuard?.mode === 'plan';
+  const endsEdges = !options.dryRun || planningEndings;
   if (!researcher && namesAResearchGroupRatherThanAPerson(listedName)) {
-    if (!options.dryRun) await endMisattributedProfileUrlHolderEdges(researchEntityId, plan);
+    if (endsEdges) {
+      await endMisattributedProfileUrlHolderEdges(researchEntityId, plan, undefined, endingContext);
+    }
     return {
       entityType: 'researchGroupMember',
       entityId: materializerDocumentId(entity._id),
@@ -4167,19 +4248,25 @@ async function materializeRosterMember(
       skipped: 'listed-name-names-a-research-group',
     };
   }
-  if (identity.misattributedProfileUrlHolderId && !options.dryRun) {
+  if (identity.misattributedProfileUrlHolderId && endsEdges) {
     await endMisattributedProfileUrlHolderEdges(
       researchEntityId,
       plan,
       identity.misattributedProfileUrlHolderId,
+      endingContext,
     );
   }
   // An edge the lane gave a holder the listed name vetoed carries this listing's source and
   // membership key on this entity, and nothing else asserts it, so the read ends it rather
   // than leaving another person served under this listing (#5582).
-  if (!options.dryRun) {
+  if (endsEdges) {
     for (const vetoedHolderId of identity.vetoedProfileUrlHolderIds ?? []) {
-      await endMisattributedProfileUrlHolderEdges(researchEntityId, plan, vetoedHolderId);
+      await endMisattributedProfileUrlHolderEdges(
+        researchEntityId,
+        plan,
+        vetoedHolderId,
+        endingContext,
+      );
     }
   }
   if (listingWouldMintAnIdentityConflict(plan, identity)) {
@@ -4220,6 +4307,10 @@ async function materializeRosterMember(
   }
   if ('basis' in identity && plan.facts.rosterProvenance) {
     plan.facts.rosterProvenance.identityBasis = identity.basis;
+  }
+
+  if (planningEndings && endingContext) {
+    await planListingWriteEndings(researchEntityId, plan, identity, listingScope, endingContext);
   }
 
   if (options.dryRun) {
@@ -4284,9 +4375,17 @@ async function materializeRosterMember(
         : undefined,
   });
   await adoptListedPersonUnprovenancedEdges(researchEntityId, plan, personId);
-  if (personId) await endListingEdgesUnderTheOtherScreenedRole(researchEntityId, plan, personId);
+  if (personId) {
+    await endListingEdgesUnderTheOtherScreenedRole(researchEntityId, plan, personId, endingContext);
+  }
   if (personId && !('basis' in identity)) {
-    await endSupersededListingHolderEdges(researchEntityId, plan, personId, listingScope);
+    await endSupersededListingHolderEdges(
+      researchEntityId,
+      plan,
+      personId,
+      listingScope,
+      endingContext,
+    );
   }
   return {
     entityType: 'researchGroupMember',
@@ -16122,7 +16221,10 @@ function logCenterRosterRetirement(
   result: CenterRosterRetirementResult,
   lane: CenterRosterLane = CENTERS_INSTITUTES_ROSTER_LANE,
 ): void {
-  const acted = result.centers.filter((center) => center.verdict === 'retire');
+  const diverged = result.centers.filter((center) => center.planDiverged);
+  const acted = result.centers.filter(
+    (center) => center.verdict === 'retire' && !center.planDiverged,
+  );
   const frozen = result.centers.filter((center) => center.verdict === 'frozen');
   const notAdmitted = result.centers.filter((center) => !center.verdict);
   const sum = (key: 'retiredMemberKeys' | 'retiredEdges' | 'retiredLeadEdges') =>
@@ -16136,7 +16238,7 @@ function logCenterRosterRetirement(
     0,
   );
   console.info(
-    `[center-roster-retirement] ${lane.sourceName} ${result.dryRun ? 'planned' : 'reconciled'} ${result.centers.length} center read(s): ${acted.length} retiring (${sum('retiredMemberKeys')} member keys, ${sum('retiredEdges')} role edges of which ${sum('retiredLeadEdges')} leads), ${keptLeadEdges} last lead edge(s) kept for operator review, ${frozen.length} frozen, ${notAdmitted.length} read(s) not admitted, ${indexSyncFailures} center index sync failure(s)`,
+    `[center-roster-retirement] ${lane.sourceName} ${result.dryRun ? 'planned' : 'reconciled'} ${result.centers.length} center read(s): ${acted.length} retiring (${sum('retiredMemberKeys')} member keys, ${sum('retiredEdges')} role edges of which ${sum('retiredLeadEdges')} leads), ${keptLeadEdges} last lead edge(s) kept for operator review, ${frozen.length} frozen, ${diverged.length} plan-diverged and left untouched, ${notAdmitted.length} read(s) not admitted, ${indexSyncFailures} center index sync failure(s)`,
   );
 }
 
@@ -16541,6 +16643,7 @@ interface MaterializeFromRunCounts {
   postMaterializationMetrics: Required<ReportPostMaterializationMetrics>;
   changedPathsByEntityType?: Record<string, string[]>;
   userFieldScope?: UserFieldScopeReport;
+  centerPlan?: CenterPlanReport;
 }
 
 export type MaterializeRowOutcome = 'created' | 'updated' | 'skipped';
@@ -16700,6 +16803,12 @@ export async function materializeFromRun(
   scrapeRunId: string,
   options: MaterializeOptions = {},
 ): Promise<MaterializeFromRunCounts & { removedByRequest: number }> {
+  if (options.centerPlanGuard?.mode === 'plan' && options.dryRun !== true) {
+    throw new Error('materializeFromRun: a center plan guard in plan mode requires dryRun');
+  }
+  if (options.centerPlanGuard?.mode === 'enforce' && options.dryRun === true) {
+    throw new Error('materializeFromRun: a center plan guard in enforce mode is for an apply');
+  }
   const guard = await loadDirectoryRemovalMintGuard();
   const counts = await withDirectoryRemovalMintGuard(
     () => materializeFromRunUnderRemovalGuard(scrapeRunId, options),
@@ -16869,29 +16978,37 @@ async function materializeFromRunUnderRemovalGuard(
   const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);
   const centerRosterRetirementDryRun =
     options.dryRun === true || options.skipCenterRosterRetirement === true;
-  const centerRosterRetirement = await reconcileCenterRosterRetirementsFromRun(
-    scrapeRunId,
-    centerRosterRetirementDeps(options),
-    { dryRun: centerRosterRetirementDryRun },
-  );
-  if (centerRosterRetirement.outcome !== 'no-center-roster-read') {
-    logCenterRosterRetirement(centerRosterRetirement);
+  const centerPlanGuard = options.centerPlanGuard;
+  const centerRosterRetirements: Array<{ lane: string; result: CenterRosterRetirementResult }> = [];
+  for (const lane of [
+    CENTERS_INSTITUTES_ROSTER_LANE,
+    CENTER_AFFILIATION_ROSTER_LANE,
+    CENTER_AFFILIATION_CODE_ROSTER_LANE,
+  ]) {
+    const result = await reconcileCenterRosterRetirementsFromRun(
+      scrapeRunId,
+      centerRosterRetirementDeps(options, lane),
+      {
+        dryRun: centerRosterRetirementDryRun,
+        lane,
+        ...(centerPlanGuard?.mode === 'enforce'
+          ? {
+              approvedDigests:
+                centerPlanGuard.approvedRetirementDigests.get(lane.sourceName) ?? new Map(),
+            }
+          : {}),
+      },
+    );
+    if (result.outcome !== 'no-center-roster-read') logCenterRosterRetirement(result, lane);
+    centerRosterRetirements.push({ lane: lane.sourceName, result });
   }
-  const centerAffiliationRetirement = await reconcileCenterRosterRetirementsFromRun(
-    scrapeRunId,
-    centerRosterRetirementDeps(options, CENTER_AFFILIATION_ROSTER_LANE),
-    { dryRun: centerRosterRetirementDryRun, lane: CENTER_AFFILIATION_ROSTER_LANE },
-  );
-  if (centerAffiliationRetirement.outcome !== 'no-center-roster-read') {
-    logCenterRosterRetirement(centerAffiliationRetirement, CENTER_AFFILIATION_ROSTER_LANE);
-  }
-  const centerAffiliationCodeRetirement = await reconcileCenterRosterRetirementsFromRun(
-    scrapeRunId,
-    centerRosterRetirementDeps(options, CENTER_AFFILIATION_CODE_ROSTER_LANE),
-    { dryRun: centerRosterRetirementDryRun, lane: CENTER_AFFILIATION_CODE_ROSTER_LANE },
-  );
-  if (centerAffiliationCodeRetirement.outcome !== 'no-center-roster-read') {
-    logCenterRosterRetirement(centerAffiliationCodeRetirement, CENTER_AFFILIATION_CODE_ROSTER_LANE);
+  const centerPlan = centerPlanGuard
+    ? buildCenterPlanReport(scrapeRunId, centerPlanGuard, centerRosterRetirements)
+    : undefined;
+  if (centerPlanGuard?.mode === 'enforce' && centerPlanGuard.skippedProjectionEndings.length > 0) {
+    console.warn(
+      `[center-plan] ${centerPlanGuard.skippedProjectionEndings.length} projection ending(s) the approved plan does not list were skipped and their edges left live, ${centerPlanGuard.skippedProjectionEndings.filter((ending) => ending.lead).length} of them lead edges; see the centerPlan section`,
+    );
   }
   const centerAffiliationHandOff = await reconcileCenterAffiliationHandOffFromRun(
     scrapeRunId,
@@ -17076,5 +17193,6 @@ async function materializeFromRunUnderRemovalGuard(
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([entityType, paths]) => [entityType, [...paths].sort()]),
     ),
+    ...(centerPlan ? { centerPlan } : {}),
   };
 }

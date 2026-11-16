@@ -36,6 +36,14 @@ import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { installSweepPageReuse } from './utils/sweepPageReuse';
 import { installScraperFetchHooks } from './utils/scraperFetchHooks';
 import { materializeFromRun, withoutUserFieldScopeRows } from './entityMaterializer';
+import {
+  autoMaterializeCenterRosterRefusal,
+  CENTER_PLAN_HELD_BACK_EXIT_CODE,
+  centerPlanHeldBack,
+  resolveAutoMaterializeCenterRosterRefusal,
+  resolveMaterializeCenterPlanGuard,
+  runContainsCenterRosterHealth,
+} from './centerPlanGuard';
 import { ScrapeRun } from '../models/scrapeRun';
 import { getScrapeRunReport } from './runReport';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
@@ -243,7 +251,7 @@ ylabs scraper CLI
 
   list                                       List registered scrapers
   run --source <name> [--apply] [flags]      Run a scraper (a dry run without --apply)
-  materialize --run <runId> [--apply --confirm-materialize] [--output <path>] [--only-fields <paths>] [--skip-entity-types <types>] [--skip-center-roster-retirement]
+  materialize --run <runId> [--apply --confirm-materialize] [--output <path>] [--only-fields <paths>] [--skip-entity-types <types>] [--skip-center-roster-retirement] [--expect-center-plan <path>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
   prune-observations [flags]                 Prune old unreferenced superseded Observation rows
@@ -283,6 +291,11 @@ Materialize flags:
                        Comma-separated observed entity types the run materialize leaves untouched
   --skip-center-roster-retirement
                        Plan and report center roster retirement without applying it
+  --expect-center-plan <path>
+                       Hold the apply to the centerPlan section of this run's dry-run
+                       --output: the projection ends only the role edges it lists and a
+                       center retires only when its plan still matches. Required for a
+                       Development apply of a run with center roster reads (#6348).
   --only-fields <paths>
                        Write only these researcher paths on the run's user rows:
                        displayName, profile.title, profile.primaryDepartment,
@@ -375,6 +388,17 @@ Concurrency:
         `Running scraper "${sourceName}" with options:`,
         JSON.stringify(guard.options, null, 2),
       );
+      const autoMaterializeRefusal = resolveAutoMaterializeCenterRosterRefusal({
+        sourceName,
+        environment: guard.environment,
+        writes: guard.writes,
+        autoMaterialize: guard.autoMaterialize,
+      });
+      if (autoMaterializeRefusal) {
+        console.error(`ERROR: ${autoMaterializeRefusal}`);
+        process.exitCode = 1;
+        return;
+      }
       const performRun = async (lockOwnerId?: string): Promise<ScrapeCliLockedOutcome> => {
         const { runId, status, result, explainedObservations, explainTruncated } =
           await orchestrator.run(sourceName, guard.options, { lockOwnerId });
@@ -382,7 +406,15 @@ Concurrency:
         console.log(JSON.stringify(result, null, 2));
 
         let materializationErrors: number | undefined;
-        if (guard.autoMaterialize && !guard.options.dryRun) {
+        const autoMaterializesACenterRosterRun =
+          guard.autoMaterialize &&
+          !guard.options.dryRun &&
+          guard.environment === 'development' &&
+          (await runContainsCenterRosterHealth(runId));
+        if (autoMaterializesACenterRosterRun) {
+          console.error(`\nERROR: ${autoMaterializeCenterRosterRefusal(sourceName)}`);
+          process.exitCode = 1;
+        } else if (guard.autoMaterialize && !guard.options.dryRun) {
           console.log(`\nMaterializing observations from run ${runId}...`);
           const matResult = await materializeFromRun(runId, { dryRun: false });
           console.log(JSON.stringify(matResult, null, 2));
@@ -503,6 +535,7 @@ Concurrency:
         onlyFields,
         skipEntityTypes,
         skipCenterRosterRetirement,
+        expectCenterPlanPath,
         guard,
       } = materializePreflight;
       const fieldScoped = onlyFields.length > 0;
@@ -525,12 +558,32 @@ Concurrency:
       }
       for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
       console.log(`Scraper environment: ${guard.environment}; Mongo target: ${guard.dbLabel}`);
+      const centerPlanDecision = await resolveMaterializeCenterPlanGuard({
+        runId,
+        environment: guard.environment,
+        dryRun: Boolean(guard.options.dryRun),
+        writes: guard.writes,
+        fieldScoped,
+        ...(expectCenterPlanPath ? { expectCenterPlanPath } : {}),
+      });
+      if (centerPlanDecision.refusal !== undefined) {
+        console.error(`ERROR: ${centerPlanDecision.refusal}`);
+        process.exitCode = 1;
+        return;
+      }
+      const centerPlanGuard = centerPlanDecision.guard;
+      if (centerPlanGuard?.mode === 'enforce') {
+        console.log(
+          `Held to the approved center plan in ${expectCenterPlanPath}: only the role edges it lists are ended, and a center whose plan diverged is left untouched.`,
+        );
+      }
       const performMaterialize = async (): Promise<ScrapeCliLockedOutcome> => {
         const result = await materializeFromRun(runId, {
           dryRun: guard.options.dryRun,
           ...(fieldScoped ? { userWriteOnlyFields: onlyFields } : {}),
           ...(skipEntityTypes.length > 0 ? { skipEntityTypes } : {}),
           ...(skipCenterRosterRetirement ? { skipCenterRosterRetirement } : {}),
+          ...(centerPlanGuard ? { centerPlanGuard } : {}),
         });
         console.log(JSON.stringify(withoutUserFieldScopeRows(result), null, 2));
         const report = await getScrapeRunReport(runId);
@@ -560,6 +613,7 @@ Concurrency:
               materialization: result,
               report,
               visibilityGate,
+              ...(result.centerPlan ? { centerPlan: result.centerPlan } : {}),
             }),
             {
               command: 'materialize',
@@ -572,6 +626,7 @@ Concurrency:
                 ...(fieldScoped ? { onlyFields } : {}),
                 ...(skipEntityTypes.length > 0 ? { skipEntityTypes } : {}),
                 ...(skipCenterRosterRetirement ? { skipCenterRosterRetirement } : {}),
+                ...(expectCenterPlanPath ? { expectCenterPlanPath } : {}),
                 output: typeof flags.output === 'string' ? flags.output : undefined,
               },
             },
@@ -588,6 +643,13 @@ Concurrency:
           visibilityGateSkipped: !guard.options.dryRun && result.errors > 0,
         });
         reportScrapeCliCompletion(completion);
+        const heldBack = centerPlanHeldBack(result.centerPlan);
+        if (heldBack.divergedCenters > 0 || heldBack.skippedProjectionEndings > 0) {
+          console.error(
+            `\nERROR: the approved center plan held back ${heldBack.divergedCenters} plan-diverged center(s) and ${heldBack.skippedProjectionEndings} unapproved projection ending(s); the approved writes landed, the rest needs a fresh dry run and plan (#6348).`,
+          );
+          if (!process.exitCode) process.exitCode = CENTER_PLAN_HELD_BACK_EXIT_CODE;
+        }
         return { runId, failed: completion.exitCode !== 0 };
       };
 

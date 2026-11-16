@@ -29,6 +29,7 @@ export type ScraperCliPreflight =
       onlyFields: string[];
       skipEntityTypes: ObservedEntityType[];
       skipCenterRosterRetirement: boolean;
+      expectCenterPlanPath?: string;
       guard: ScraperCommandGuardResult;
     }
   | {
@@ -44,6 +45,7 @@ export type ScraperCliPreflight =
     };
 
 const VALUE_FLAGS = new Set([
+  'expect-center-plan',
   'explain-limit',
   'keep-runs',
   'limit',
@@ -272,21 +274,25 @@ export function buildMaterializeOutputPayload({
   materialization,
   report,
   visibilityGate,
+  centerPlan,
 }: {
   runId: string;
   materialization: unknown;
   report: unknown;
   visibilityGate?: unknown;
+  centerPlan?: unknown;
 }): {
   runId: string;
   materialization: unknown;
   visibilityGate?: unknown;
+  centerPlan?: unknown;
   report: unknown;
 } {
   return {
     runId,
     materialization,
     ...(visibilityGate !== undefined ? { visibilityGate } : {}),
+    ...(centerPlan !== undefined ? { centerPlan } : {}),
     report,
   };
 }
@@ -385,6 +391,9 @@ export function buildScraperCliPreflight(
       onlyFields,
       skipEntityTypes,
       skipCenterRosterRetirement: !!flags['skip-center-roster-retirement'],
+      ...(typeof flags['expect-center-plan'] === 'string'
+        ? { expectCenterPlanPath: flags['expect-center-plan'] }
+        : {}),
       guard,
     };
   }

@@ -792,6 +792,20 @@ yarn scrape:development:write run \
 
 `--write` grants the environment permission and `--apply` is the command line's own request to write; the scrape CLI needs both, and refuses `--write` without `--apply` before it connects (#5842).
 
+### Center Roster Sources Owe A Center Plan (#6348)
+
+Seven sources write `centerRosterHealth` reads: `centers-institutes-index`, `center-affiliation-llm`, `center-affiliation-roster`, `center-director`, `center-director-llm`, `bbs-research-track` and `official-profile-pi-backfill` (`CENTER_ROSTER_HEALTH_SOURCE_NAMES` in `server/src/scrapers/centerPlanGuard.ts`).
+A Development apply of such a run must be held to the plan its dry run approved, so `materialize --apply` without `--expect-center-plan` is refused, and so is `run --apply --auto-materialize` of one of these sources, which makes the repair command above observations-only for them.
+The sweep runs these sources observations-only and lists each as `centerPlanOwed`, with its source and run id, in `summary.json` and the printed summary, so the sweep stays green while the apply waits.
+For each owed run, apply it in four steps:
+
+1. Dry run: `yarn scrape:development:write materialize --run <runId> --dry-run --output /tmp/plan-1.json`, and review its `centerPlan` section.
+2. Project-only apply: `yarn scrape:development:write materialize --run <runId> --apply --confirm-materialize --skip-center-roster-retirement --expect-center-plan /tmp/plan-1.json`.
+3. Fresh dry run against the edges that apply wrote: `yarn scrape:development:write materialize --run <runId> --dry-run --output /tmp/plan-2.json`, and review it.
+4. Apply: `yarn scrape:development:write materialize --run <runId> --apply --confirm-materialize --expect-center-plan /tmp/plan-2.json`.
+
+An enforced apply exits 4 when it held anything back, a plan-diverged center or a projection ending the plan did not list; the approved writes landed, and the rest needs a fresh dry run and a new plan.
+
 Every post-run stage that ran writes one JSON artifact into the printed sweep directory, and `summary.json` records each stage's `artifactPath`, so read `summary.json` rather than a hand-kept filename list.
 [research-data-pipeline.md](research-data-pipeline.md) owns which stages run and which of them are flag-gated; the artifact name each one writes is declared beside its command in `DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `server/src/scripts/runScraperSweep.ts`.
 
