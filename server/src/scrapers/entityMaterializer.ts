@@ -17,6 +17,10 @@ import {
   withoutNamesakePersonPageDescriptions,
 } from './utils/namesakePersonPageDescriptions';
 import {
+  storedServedDescription,
+  withResearchAreasGroundedInStoredDescription,
+} from './utils/researchAreasGroundedInDescription';
+import {
   withoutRefusedNonYaleMicrositeDescriptions,
   withoutRefusedNonYaleMicrositePageFields,
 } from './utils/nonYaleMicrositeDescriptionScreen';
@@ -1787,6 +1791,11 @@ const DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEAR
 // entity's own name/short/full via the
 // curated canonical phrase index and seed `set` as if an observation had written them, so
 // the normal canonicalization pass still owns dedup and department-duplicate rejection.
+// A correctly empty page-topic reading already judged this row's own pages, so deriving
+// chips from its prose would re-admit what the reading refused: measured on 20 rows, the
+// prose derivation kept 4% of the real topics at 29% precision (#6360).
+async function deriveNoResearchAreasBesideAnEmptyReading(): Promise<void> {}
+
 async function applyDescriptionResearchAreaDerivation(
   set: Record<string, unknown>,
   entityDoc: Record<string, unknown> | null,
@@ -15409,6 +15418,19 @@ async function materializeEntityUnderRemovalGuard(
       )
     : {};
   const derivedResearchAreas = researchPageTopics.candidate;
+  const researchPageReadingIsEmpty = researchPageTopics.readingIsEmpty === true;
+  const groundedInStoredDescription = <
+    T extends { field: string; sourceName?: string; value: unknown },
+  >(
+    observations: T[],
+  ): T[] =>
+    researchPageReadingIsEmpty
+      ? withResearchAreasGroundedInStoredDescription(
+          observations,
+          storedServedDescription(entityDoc),
+        )
+      : observations;
+  researchAreaEvidenceObservations = groundedInStoredDescription(researchAreaEvidenceObservations);
   const storedDerivedResearchAreasStale = storedDerivedResearchAreasAreStale(
     storedResearchAreasProvenance(entityDoc),
     researchPageTopics,
@@ -15467,9 +15489,11 @@ async function materializeEntityUnderRemovalGuard(
   const rawRefusalScreen = refusedResolverObservations(resolverObs, entityDoc?.fieldValueRefusals);
   const refusalScreen = {
     ...rawRefusalScreen,
-    kept: isPersonResearchRow({ entityType: entityDoc?.entityType, kind: entityDoc?.kind })
-      ? withLabSiteDescriptionsNarrowedToResearch(rawRefusalScreen.kept)
-      : rawRefusalScreen.kept,
+    kept: groundedInStoredDescription(
+      isPersonResearchRow({ entityType: entityDoc?.entityType, kind: entityDoc?.kind })
+        ? withLabSiteDescriptionsNarrowedToResearch(rawRefusalScreen.kept)
+        : rawRefusalScreen.kept,
+    ),
   };
   if (refusalScreen.refused.length > 0) {
     console.log(
@@ -15586,7 +15610,8 @@ async function materializeEntityUnderRemovalGuard(
     }));
   const storedResearchAreasEvidenceRetired =
     researchAreasHaveNoLiveEvidence &&
-    (storedDerivedResearchAreasStale ||
+    (researchPageReadingIsEmpty ||
+      storedDerivedResearchAreasStale ||
       storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow(entityDoc) ||
       storedFieldIsCreditedToACoursePage(entityDoc, 'researchAreas') ||
       (await storedResearchAreasSourceRetiredItsClaim(entityDoc, mergedInRows)));
@@ -15611,6 +15636,9 @@ async function materializeEntityUnderRemovalGuard(
     resolverObs: refusalScreen.kept,
     derivedResearchAreas,
     storedDerivedResearchAreasStale,
+    ...(researchPageReadingIsEmpty
+      ? { applyDescriptionResearchAreaDerivation: deriveNoResearchAreasBesideAnEmptyReading }
+      : {}),
     fullDescriptionShellGated,
     undergradEvidenceQuoteWithdrawnBy,
     fellowshipFieldsAssertedAbsent: fellowshipAbsentByField,
