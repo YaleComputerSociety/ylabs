@@ -12,6 +12,7 @@ import {
   parseDedupeAccountlessResearcherShellsArgs,
 } from '../dedupeAccountlessResearcherShells';
 import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+import { PLANNED_MERGE_ARMS } from '../dedupeAccountlessResearcherShellsCore';
 
 const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
@@ -222,6 +223,19 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
     const result = await dedupeAccountlessResearcherShells({ apply: false });
     expect(result.mode).toBe('dry-run');
     expect(result.shellsMerged).toBe(1);
+
+    expect(result.merges).toHaveLength(1);
+    for (const merge of result.merges) {
+      expect(PLANNED_MERGE_ARMS).toContain(merge.arm);
+      expect(merge.matchedEvidence).not.toBe('unrecorded');
+    }
+    for (const [arm, count] of Object.entries(result.foldsByMatchedIdentity)) {
+      expect(result.merges.filter((merge) => merge.arm === arm)).toHaveLength(count);
+    }
+    expect(result.merges[0]).toMatchObject({
+      arm: 'netid',
+      matchedEvidence: expect.stringMatching(/^netid /),
+    });
 
     const db = mongoose.connection.db!;
     const shell = await db.collection('researchers').findOne({ _id: shellId });

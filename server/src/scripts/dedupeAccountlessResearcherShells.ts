@@ -224,6 +224,7 @@ export interface DedupeAccountlessResearcherShellsResult {
     shellId: string;
     canonicalId: string;
     arm: PlannedMergeArm;
+    matchedEvidence: string;
     repointed: string[];
     archivedRedundant: string[];
     profileLinksAppended: number;
@@ -416,6 +417,7 @@ async function loadSharedRowCandidates(
         orcid: typeof identity.orcid === 'string' ? identity.orcid.trim() || undefined : undefined,
         netid: bareNetid(netid),
         tier: researcherIdentityTier({ email: identity.email, netid }),
+        sharedRowId: target,
       });
     }
     candidatesByShellId.set(shellId, list);
@@ -626,6 +628,7 @@ async function loadNameVariantCandidates(
       );
       const existing = list.find((entry) => entry.id === personId);
       if (existing) {
+        if (witnessed && !existing.witnessed) existing.sharedRowId = target;
         existing.witnessed = existing.witnessed || witnessed;
         continue;
       }
@@ -637,6 +640,7 @@ async function loadNameVariantCandidates(
         netid: bareNetid(identity.netid),
         tier: researcherIdentityTier({ email: identity.email, netid: identity.netid }),
         witnessed,
+        sharedRowId: target,
       });
     }
     candidatesByShellId.set(shellId, list);
@@ -664,6 +668,7 @@ const PAIR_BLOCKING_REFUSALS: ReadonlySet<CitedOfficialPageRefusal> = new Set([
 
 interface CitedOfficialPageLoad {
   pairs: Array<[string, string]>;
+  citedPageByPairKey: Map<string, string>;
   refusals: Record<CitedOfficialPageRefusal, number>;
 }
 
@@ -722,7 +727,8 @@ async function loadCitedOfficialPagePairs(
       candidates.push({ edge, citerId, holderId, page });
     }
   }
-  if (candidates.length === 0) return { pairs: [], refusals };
+  const citedPageByPairKey = new Map<string, string>();
+  if (candidates.length === 0) return { pairs: [], citedPageByPairKey, refusals };
 
   const targetIds = [...new Set(candidates.map(({ edge }) => idKey(edge.target?.id)))];
   const liveTargets = new Set(
@@ -827,9 +833,12 @@ async function loadCitedOfficialPagePairs(
       continue;
     }
     accepted.set(pairKey, [citerId, holderId]);
+    if (!citedPageByPairKey.has(pairKey))
+      citedPageByPairKey.set(pairKey, String(provenance.profileUrl));
   }
   return {
     pairs: [...accepted].filter(([key]) => !blocked.has(key)).map(([, pair]) => pair),
+    citedPageByPairKey,
     refusals,
   };
 }
@@ -1490,6 +1499,7 @@ export async function dedupeAccountlessResearcherShells(options: {
 
   const decidedTargetByShellId = new Map<string, string>();
   const matchedIdentityByShellId = new Map<string, ShellFoldIdentity>();
+  const matchedEvidenceByShellId = new Map<string, string>();
   for (const shell of foldableShells) {
     const decision = decideShellMerge(
       { ...shell, statedNames: sharedRowLoad.statedNamesByShellId.get(shell.id) },
@@ -1514,6 +1524,8 @@ export async function dedupeAccountlessResearcherShells(options: {
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
       decidedTargetByShellId.set(shell.id, decision.canonicalId);
       if (decision.matchedOn) matchedIdentityByShellId.set(shell.id, decision.matchedOn);
+      if (decision.matchedEvidence)
+        matchedEvidenceByShellId.set(shell.id, decision.matchedEvidence);
     }
   }
   const citedOfficialPageLoad = await loadCitedOfficialPagePairs(
@@ -1530,6 +1542,10 @@ export async function dedupeAccountlessResearcherShells(options: {
     if (decidedTargetByShellId.has(shellId)) continue;
     decidedTargetByShellId.set(shellId, targetId);
     matchedIdentityByShellId.set(shellId, 'cited-official-page');
+    matchedEvidenceByShellId.set(
+      shellId,
+      `listing cites official page ${citedOfficialPageLoad.citedPageByPairKey.get(distinctPeoplePairKey(shellId, targetId)) ?? 'unrecorded'}`,
+    );
   }
   const aliasTwinPlan = await planAliasTwinFoldsFor(researcherIdentities, loginNetids);
   const aliasTwinIds = new Set<string>();
@@ -1537,6 +1553,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     aliasTwinIds.add(twinId);
     decidedTargetByShellId.set(twinId, realId);
     matchedIdentityByShellId.delete(twinId);
+    matchedEvidenceByShellId.set(twinId, 'netid alias of a login-holding record');
   }
   const directRefusal = withoutDistinctPeopleFolds(decidedTargetByShellId, distinctPeoplePairs);
   const mergeTargetByShellId = resolveFinalMergeTargets(directRefusal.kept);
@@ -1598,6 +1615,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     })),
     researcherIdentities.filter((entry) => !clusterCandidateIds.has(entry.id)),
     citedOfficialPageRouting.equalTierJoins,
+    citedOfficialPageLoad.citedPageByPairKey,
   );
   const accountlessClusterFoldIds = new Set<string>();
   for (const [shellId, survivorId] of clusterPlan.foldTargetById) {
@@ -1610,6 +1628,10 @@ export async function dedupeAccountlessResearcherShells(options: {
     } else {
       matchedIdentityByShellId.delete(shellId);
     }
+    matchedEvidenceByShellId.set(
+      shellId,
+      clusterPlan.evidenceById.get(shellId) ?? 'account-less cluster evidence join',
+    );
   }
   const finalRefusal = withoutDistinctPeopleFolds(mergeTargetByShellId, distinctPeoplePairs);
   for (const shellId of [...mergeTargetByShellId.keys()]) {
@@ -1882,6 +1904,7 @@ export async function dedupeAccountlessResearcherShells(options: {
         aliasTwinIds,
         accountlessClusterFoldIds,
       ),
+      matchedEvidence: matchedEvidenceByShellId.get(shellId) ?? 'unrecorded',
       repointed: edges.repointed,
       archivedRedundant: edges.archivedRedundant,
       profileLinksAppended: plan.profileLinksToAppend.length,

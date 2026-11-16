@@ -180,6 +180,7 @@ describe('decideShellMerge', () => {
       canonicalId: 'account-backed',
       reason: 'MERGEABLE',
       matchedOn: 'name',
+      matchedEvidence: 'name and ORCID 0000-0003-4000-5132',
     });
     expect(decideShellMerge({ id: 'name-only', displayName: 'Nina Netid' }, mixedIndex)).toEqual({
       merge: false,
@@ -205,6 +206,7 @@ describe('decideShellMerge', () => {
       canonicalId: 'account-backed',
       reason: 'MERGEABLE',
       matchedOn: 'name',
+      matchedEvidence: 'name and ORCID 0000-0003-4000-5132',
     });
     expect(
       decideShellMerge(
@@ -239,6 +241,7 @@ describe('decideShellMerge', () => {
       canonicalId: 'canonical-account-netid',
       reason: 'MERGEABLE',
       matchedOn: 'name',
+      matchedEvidence: 'name and netid nn42',
     });
   });
 
@@ -502,7 +505,13 @@ describe('decideShellMerge netid arm (#3166)', () => {
         emptyNameIndex,
         netidIndex,
       ),
-    ).toEqual({ merge: true, canonicalId: 'twin', reason: 'MERGEABLE', matchedOn: 'netid' });
+    ).toEqual({
+      merge: true,
+      canonicalId: 'twin',
+      reason: 'MERGEABLE',
+      matchedOn: 'netid',
+      matchedEvidence: 'netid ab12',
+    });
   });
 
   it('folds even when the shell has no usable name at all, which the name arm refuses', () => {
@@ -563,7 +572,13 @@ describe('decideShellMerge netid arm (#3166)', () => {
         nameIndex,
         netidIndex,
       ),
-    ).toEqual({ merge: true, canonicalId: 'canonical', reason: 'MERGEABLE', matchedOn: 'name' });
+    ).toEqual({
+      merge: true,
+      canonicalId: 'canonical',
+      reason: 'MERGEABLE',
+      matchedOn: 'name',
+      matchedEvidence: 'name and ORCID 0000-0003-4000-5140',
+    });
     expect(
       decideShellMerge({ id: 'shell', displayName: 'Jane Roe' }, nameIndex, netidIndex),
     ).toEqual({
@@ -616,6 +631,7 @@ describe('decideShellMerge verified-profile arm', () => {
       canonicalId: 'c'.repeat(24),
       reason: 'MERGEABLE',
       matchedOn: 'verified-profile',
+      matchedEvidence: 'verified profile dept.example.edu/p/1001',
     });
   });
 
@@ -629,6 +645,7 @@ describe('decideShellMerge verified-profile arm', () => {
       canonicalId: 'c'.repeat(24),
       reason: 'MERGEABLE',
       matchedOn: 'verified-profile',
+      matchedEvidence: 'verified profile dept.example.edu/p/1001',
     });
   });
 
@@ -705,6 +722,7 @@ describe('decideShellMerge verified-profile arm', () => {
       canonicalId: 'c'.repeat(24),
       reason: 'MERGEABLE',
       matchedOn: 'verified-profile',
+      matchedEvidence: 'verified profile dept.example.edu/p/1001',
     });
   });
 
@@ -1003,6 +1021,7 @@ describe('decideShellMerge shared-row fold (#4911)', () => {
       canonicalId: 'acct',
       reason: 'MERGEABLE',
       matchedOn: 'shared-row',
+      matchedEvidence: 'shared row unrecorded',
     });
   });
 
@@ -1042,6 +1061,7 @@ describe('decideShellMerge shared-row fold (#4911)', () => {
       canonicalId: 'acct',
       reason: 'MERGEABLE',
       matchedOn: 'shared-row',
+      matchedEvidence: 'shared row unrecorded',
     });
   });
 
@@ -1241,6 +1261,7 @@ describe('name-variant shared-row fold (#5592)', () => {
       canonicalId: '1'.padStart(24, '0'),
       reason: 'MERGEABLE',
       matchedOn: 'name-variant-shared-row',
+      matchedEvidence: 'shared row unrecorded with a witnessed person page',
     });
   });
 
@@ -1373,6 +1394,7 @@ describe('directory-email fold (#5811)', () => {
       canonicalId: '1',
       reason: 'MERGEABLE',
       matchedOn: 'directory-email',
+      matchedEvidence: 'listing address paired with netid fx901',
     });
   });
 
@@ -1470,6 +1492,7 @@ describe('directory-email fold (#5811)', () => {
       canonicalId: '3',
       reason: 'MERGEABLE',
       matchedOn: 'name',
+      matchedEvidence: 'name and ORCID 0000-0003-4000-5132',
     });
     expect(decideWith(new Map())).toEqual({
       merge: false,
@@ -1595,7 +1618,13 @@ describe('a matching name is never evidence of one person on its own (#6378)', (
         { id: 'shell', displayName: 'Synthetic Person', orcid: SYNTHETIC_ORCID_15 },
         index,
       ),
-    ).toEqual({ merge: true, canonicalId: 'canonical', reason: 'MERGEABLE', matchedOn: 'name' });
+    ).toEqual({
+      merge: true,
+      canonicalId: 'canonical',
+      reason: 'MERGEABLE',
+      matchedOn: 'name',
+      matchedEvidence: 'name and ORCID 0000-0003-4000-5140',
+    });
   });
 });
 

@@ -232,6 +232,8 @@ export interface ShellMergeDecision {
   reason: ShellMergeReason;
   /** Which identity decided the fold, so a netid fold cannot hide inside a name count. */
   matchedOn?: ShellFoldIdentity;
+  /** The identifier, page or row that matched, so a planned fold can be audited from the report. */
+  matchedEvidence?: string;
 }
 
 export interface ShellIdentity extends ResearcherIdentityLike {
@@ -344,7 +346,13 @@ function decideNetidFold(
   if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
     return { merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'netid' };
   }
-  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'netid' };
+  return {
+    merge: true,
+    canonicalId: target.id,
+    reason: 'MERGEABLE',
+    matchedOn: 'netid',
+    matchedEvidence: `netid ${shellNetid}`,
+  };
 }
 
 export interface RosterIdentityCandidate extends CanonicalCandidate {
@@ -355,6 +363,7 @@ export interface SharedRowCandidate extends CanonicalCandidate {
   displayName?: unknown;
   title?: unknown;
   statedNames?: readonly string[];
+  sharedRowId?: string;
 }
 
 export interface NameVariantCandidate extends SharedRowCandidate {
@@ -491,7 +500,13 @@ function decideRosterIdentityFold(
   if (shellNetid && target.netid && shellNetid !== target.netid) {
     return { merge: false, reason: 'NETID_CONFLICT', matchedOn: 'roster-identity' };
   }
-  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'roster-identity' };
+  return {
+    merge: true,
+    canonicalId: target.id,
+    reason: 'MERGEABLE',
+    matchedOn: 'roster-identity',
+    matchedEvidence: `roster listing name ${shellName}`,
+  };
 }
 
 /**
@@ -514,6 +529,7 @@ function decideVerifiedProfileFold(
   if (keys.length === 0) return undefined;
   const shellStrength = identityTierStrength(researcherIdentityTier(shell));
   const holders = new Map<string, VerifiedProfileCandidate>();
+  const verifiedKeyByHolderId = new Map<string, string>();
   for (const key of keys) {
     for (const candidate of verifiedProfileIndex.get(key) ?? []) {
       if (candidate.id === shell.id) continue;
@@ -522,6 +538,7 @@ function decideVerifiedProfileFold(
       if (!profileHolderSurnamesAgree(shell.displayName, candidate.displayName)) continue;
       if (titlesStateConflictingRanks(shell.title, candidate.title)) continue;
       holders.set(candidate.id, candidate);
+      verifiedKeyByHolderId.set(candidate.id, key);
     }
   }
   if (holders.size === 0) return undefined;
@@ -542,6 +559,7 @@ function decideVerifiedProfileFold(
     canonicalId: target.id,
     reason: 'MERGEABLE',
     matchedOn: 'verified-profile',
+    matchedEvidence: `verified profile ${verifiedKeyByHolderId.get(target.id)}`,
   };
 }
 
@@ -632,12 +650,14 @@ export function decideSharedOfficialProfileFold(
 ): ShellMergeDecision | undefined {
   const shellStrength = identityTierStrength(researcherIdentityTier(shell));
   const holders = new Map<string, SharedOfficialProfileCandidate>();
+  const profileKeyByHolderId = new Map<string, string>();
   for (const key of yaleOfficialProfileKeys(shell.profileLinks)) {
     for (const candidate of holdersByKey.get(key) ?? []) {
       if (candidate.id === shell.id) continue;
       if (identityTierStrength(candidate.tier) <= shellStrength) continue;
       if (!sharedOfficialProfileNamesAgree(shell.displayName, candidate.displayName)) continue;
       holders.set(candidate.id, candidate);
+      profileKeyByHolderId.set(candidate.id, key);
     }
   }
   if (holders.size === 0) return undefined;
@@ -654,7 +674,13 @@ export function decideSharedOfficialProfileFold(
   const [target] = strongest;
   const conflict = conflictingIdentifier(shell, target);
   if (conflict) return { merge: false, reason: CONFLICT_REASON[conflict], matchedOn };
-  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
+  return {
+    merge: true,
+    canonicalId: target.id,
+    reason: 'MERGEABLE',
+    matchedOn,
+    matchedEvidence: `official profile ${profileKeyByHolderId.get(target.id)}`,
+  };
 }
 
 export function citedOfficialPageKey(url: unknown): string {
@@ -952,7 +978,13 @@ function decideSharedRowFold(
   if (shellNetid && target.netid && shellNetid !== target.netid) {
     return { merge: false, reason: 'NETID_CONFLICT', matchedOn: 'shared-row' };
   }
-  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'shared-row' };
+  return {
+    merge: true,
+    canonicalId: target.id,
+    reason: 'MERGEABLE',
+    matchedOn: 'shared-row',
+    matchedEvidence: `shared row ${target.sharedRowId ?? 'unrecorded'}`,
+  };
 }
 
 /**
@@ -1003,7 +1035,13 @@ export function decideNameVariantSharedRowFold(
     return { merge: false, reason: 'NETID_CONFLICT', matchedOn };
   }
   if (!target.witnessed) return { merge: false, reason: 'NO_IDENTITY_WITNESS', matchedOn };
-  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
+  return {
+    merge: true,
+    canonicalId: target.id,
+    reason: 'MERGEABLE',
+    matchedOn,
+    matchedEvidence: `shared row ${target.sharedRowId ?? 'unrecorded'} with a witnessed person page`,
+  };
 }
 
 export interface DirectoryEmailCandidate extends CanonicalCandidate {
@@ -1050,7 +1088,13 @@ export function decideDirectoryEmailFold(
   if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
     return { merge: false, reason: 'ORCID_CONFLICT', matchedOn };
   }
-  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
+  return {
+    merge: true,
+    canonicalId: target.id,
+    reason: 'MERGEABLE',
+    matchedOn,
+    matchedEvidence: `listing address paired with netid ${netid}`,
+  };
 }
 
 const YSM_SITE_COPY_PROFILE =
@@ -1113,23 +1157,28 @@ export function decideOfficialPageWitnessFold(
 ): ShellMergeDecision | undefined {
   if (researcherIdentityTier(shell) !== 'NAME_ONLY') return undefined;
   const witnessed = new Map<string, OfficialPageCandidate>();
+  const witnessById = new Map<string, string>();
   const addHolders = (
+    witness: string,
     candidates: ReadonlyArray<OfficialPageCandidate> | undefined,
     admits: (candidate: OfficialPageCandidate) => boolean = () => true,
   ) => {
     for (const candidate of candidates ?? []) {
       if (candidate.id !== shell.id && candidate.tier === 'DIRECTORY' && admits(candidate)) {
         witnessed.set(candidate.id, candidate);
+        if (!witnessById.has(candidate.id)) witnessById.set(candidate.id, witness);
       }
     }
   };
   for (const statement of statements) {
     for (const email of statement.emails) {
-      addHolders(holders.byEmail.get(email.trim().toLowerCase()));
+      const address = email.trim().toLowerCase();
+      addHolders(`official page email ${address}`, holders.byEmail.get(address));
     }
     const orcids = new Set(statement.orcids.map(cleanOrcid).filter(Boolean) as string[]);
     if (orcids.size === 1) {
-      addHolders(holders.byOrcid.get([...orcids][0]), (candidate) =>
+      const [orcid] = orcids;
+      addHolders(`official page ORCID ${orcid}`, holders.byOrcid.get(orcid), (candidate) =>
         pageEmailsAdmitHolder(statement, candidate),
       );
     }
@@ -1145,7 +1194,13 @@ export function decideOfficialPageWitnessFold(
   if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
     return { merge: false, reason: 'ORCID_CONFLICT', matchedOn };
   }
-  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
+  return {
+    merge: true,
+    canonicalId: target.id,
+    reason: 'MERGEABLE',
+    matchedOn,
+    matchedEvidence: witnessById.get(target.id),
+  };
 }
 
 export interface OrcidOnlyHolder {
@@ -1213,7 +1268,13 @@ export function decideOrcidOnlyHolderFold(
   const [target] = holders;
   if (!profileHolderSurnamesAgree(shell.displayName, target.displayName)) return undefined;
   if (titlesStateConflictingRanks(shell.title, target.title)) return undefined;
-  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
+  return {
+    merge: true,
+    canonicalId: target.id,
+    reason: 'MERGEABLE',
+    matchedOn,
+    matchedEvidence: `listing subject ORCID ${[...orcids][0]}`,
+  };
 }
 
 /** The unordered key of a pair an operator recorded as two different people. */
@@ -1338,7 +1399,16 @@ function decideExactNameFold(
     (Boolean(shellOrcid) && shellOrcid === target.orcid) ||
     (Boolean(shellNetid) && shellNetid === target.netid);
   return identifierAgrees
-    ? { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'name' }
+    ? {
+        merge: true,
+        canonicalId: target.id,
+        reason: 'MERGEABLE',
+        matchedOn: 'name',
+        matchedEvidence:
+          shellOrcid && shellOrcid === target.orcid
+            ? `name and ORCID ${shellOrcid}`
+            : `name and netid ${shellNetid}`,
+      }
     : { merge: false, canonicalId: target.id, reason: 'NAME_ONLY_EVIDENCE', matchedOn: 'name' };
 }
 
@@ -1644,6 +1714,8 @@ export interface AccountlessClusterPlan {
   refusedGroups: Record<AccountlessClusterRefusal, number>;
   /** Groups held together only by a name, reported for operator review and never folded. */
   nameOnlyGroups: string[][];
+  /** The evidence join that connected each folding member, for the dry-run report. */
+  evidenceById: Map<string, string>;
 }
 
 const departmentKey = (value: unknown): string =>
@@ -1823,6 +1895,7 @@ export function planAccountlessClusterFolds(
   members: ReadonlyArray<AccountlessClusterMember>,
   nonMembers: ReadonlyArray<Pick<AccountlessClusterMember, 'displayName' | 'profileLinks'>>,
   citedOfficialPageJoins: ReadonlyArray<readonly [string, string]> = [],
+  citedPageByPairKey: ReadonlyMap<string, string> = new Map(),
 ): AccountlessClusterPlan {
   const healthyKeys = new Set(
     [...members, ...nonMembers].flatMap((record) =>
@@ -1842,6 +1915,12 @@ export function planAccountlessClusterFolds(
   const memberIdList = members.map((member) => member.id);
   const { find, join } = disjointSets(memberIdList);
   const evidence = disjointSets(memberIdList);
+  const evidenceLabelById = new Map<string, string>();
+  const joinOnEvidence = (left: string, right: string, label: string): void => {
+    evidence.join(left, right);
+    for (const id of [left, right])
+      if (!evidenceLabelById.has(id)) evidenceLabelById.set(id, label);
+  };
   const firstByKey = new Map<string, string>();
   for (const member of members) {
     for (const key of clusterKeys(member, heldElsewhere, healthyKeys)) {
@@ -1851,17 +1930,23 @@ export function planAccountlessClusterFolds(
         continue;
       }
       join(member.id, first);
-      if (key.startsWith(PAGE_CLUSTER_KEY_PREFIX)) evidence.join(member.id, first);
+      if (key.startsWith(PAGE_CLUSTER_KEY_PREFIX)) {
+        joinOnEvidence(
+          member.id,
+          first,
+          `verified page ${key.slice(PAGE_CLUSTER_KEY_PREFIX.length)}`,
+        );
+      }
     }
   }
   const firstByIdentifier = new Map<string, string>();
   for (const member of members) {
     const orcid = cleanOrcid(member.orcid);
     const netid = bareNetid(member.netid);
-    for (const key of [orcid && `orcid::${orcid}`, netid && `netid::${netid}`]) {
+    for (const key of [orcid && `ORCID ${orcid}`, netid && `netid ${netid}`]) {
       if (!key) continue;
       const first = firstByIdentifier.get(key);
-      if (first) evidence.join(member.id, first);
+      if (first) joinOnEvidence(member.id, first, `shared ${key}`);
       else firstByIdentifier.set(key, member.id);
     }
   }
@@ -1870,7 +1955,7 @@ export function planAccountlessClusterFolds(
   }
   const profileJoinedIds = new Set<string>();
   for (const [leftId, rightId] of sharedOfficialProfileJoins(members, nonMembers)) {
-    evidence.join(leftId, rightId);
+    joinOnEvidence(leftId, rightId, 'shared official profile');
     if (find(leftId) !== find(rightId)) {
       profileJoinedIds.add(leftId).add(rightId);
       join(leftId, rightId);
@@ -1880,7 +1965,12 @@ export function planAccountlessClusterFolds(
   const citedPageJoinedIds = new Set<string>();
   for (const [leftId, rightId] of citedOfficialPageJoins) {
     if (!memberIds.has(leftId) || !memberIds.has(rightId)) continue;
-    evidence.join(leftId, rightId);
+    const citedPage = citedPageByPairKey.get(distinctPeoplePairKey(leftId, rightId));
+    joinOnEvidence(
+      leftId,
+      rightId,
+      citedPage ? `listing cites official page ${citedPage}` : 'cited official page',
+    );
     if (find(leftId) !== find(rightId)) {
       citedPageJoinedIds.add(leftId).add(rightId);
       join(leftId, rightId);
@@ -1908,6 +1998,7 @@ export function planAccountlessClusterFolds(
       NAME_ONLY_EVIDENCE: 0,
     },
     nameOnlyGroups: [],
+    evidenceById: new Map(),
   };
   for (const group of groupsByRoot.values()) {
     if (group.length < 2) continue;
@@ -1928,6 +2019,8 @@ export function planAccountlessClusterFolds(
     for (const member of group) {
       if (member.id === survivor.id) continue;
       plan.foldTargetById.set(member.id, survivor.id);
+      const label = evidenceLabelById.get(member.id);
+      if (label) plan.evidenceById.set(member.id, label);
       if (joinedBySharedProfile) plan.sharedOfficialProfileFoldIds.add(member.id);
       else if (joinedByCitedPage) plan.citedOfficialPageFoldIds.add(member.id);
     }

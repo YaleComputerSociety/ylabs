@@ -178,6 +178,7 @@ describe('decideOfficialPageWitnessFold (#5606)', () => {
       canonicalId: 'holder',
       reason: 'MERGEABLE',
       matchedOn: 'official-page',
+      matchedEvidence: 'official page email fx901@yale.edu',
     });
   });
 

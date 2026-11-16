@@ -64,6 +64,7 @@ describe('the shared official profile fold into a stronger record (#5990, #6002)
       canonicalId: 'b'.repeat(24),
       reason: 'MERGEABLE',
       matchedOn: 'shared-official-profile',
+      matchedEvidence: 'official profile medicine.example.edu/profile/avery-synth',
     });
   });
 
