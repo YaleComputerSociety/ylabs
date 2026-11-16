@@ -1330,13 +1330,15 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
         'Applications were accepted on a rolling basis until February 20. Applications for Summer 2026 are now closed.',
       ),
     ).toBe(false);
-    expect(rowAccepting('Application Status: CLOSED. Applications are reviewed on a rolling basis.')).toBe(
-      false,
-    );
+    expect(
+      rowAccepting('Application Status: CLOSED. Applications are reviewed on a rolling basis.'),
+    ).toBe(false);
   });
 
   it('does not read a closure inside a subordinate clause as a stated closure', () => {
-    expect(rowAccepting('Applications are reviewed on a rolling basis until the program is closed.')).toBe(true);
+    expect(
+      rowAccepting('Applications are reviewed on a rolling basis until the program is closed.'),
+    ).toBe(true);
     expect(
       rowAccepting(
         'Applications are open. Applications submitted after the portal is closed will not be considered.',
