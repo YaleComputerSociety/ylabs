@@ -92,6 +92,11 @@ export interface UserKeyPassSummary {
   outOfScopePathSet: string[];
 }
 
+const DRY_RUN_WOULD_MINT_RESEARCHER = 'dry-run-would-mint-researcher';
+
+const isMintingRow = (row: UserKeyPassRow): boolean =>
+  row.created === true || row.skipped === DRY_RUN_WOULD_MINT_RESEARCHER;
+
 const pathSet = (lists: ReadonlyArray<readonly string[] | undefined>): string[] =>
   [...new Set(lists.flatMap((list) => list ?? []))].sort();
 
@@ -101,7 +106,7 @@ export function summarizeUserKeyPass(
 ): UserKeyPassSummary {
   const skipped: Record<string, number> = {};
   for (const row of rows) if (row.skipped) skipped[row.skipped] = (skipped[row.skipped] ?? 0) + 1;
-  const keysMinting = rows.filter((row) => row.created).length;
+  const keysMinting = rows.filter(isMintingRow).length;
   return {
     pass,
     keys: rows.length,

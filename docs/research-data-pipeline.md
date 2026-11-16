@@ -650,7 +650,7 @@ The screened-page withdrawal, which writes a researcher directly, is scoped the 
 A scoped resolve never mints a researcher: a key no existing researcher joins reports `skipped: field-scoped-run-mints-no-researcher`.
 The one exception is an explicit key list (#5875): `observations:rematerialize-user-keys --only-fields=<paths> --mint-listed-keys` lets a key from its keys file mint a researcher, and only where the full-run mint rules would mint it, so the identity-evidence refusals still refuse.
 The new record is written whole, because there is no stored record for the scope to protect; every key that joins an existing researcher stays inside the scope.
-Each pass summary then counts `keysMinting`, and `scrape materialize --only-fields` has no key list, so it still never mints.
+Each pass summary then counts `keysMinting`, which includes a dry run's would-mint keys, and `scrape materialize --only-fields` has no key list, so it still never mints.
 A scoped `scrape materialize` materializes only the run's `user` rows, serially, and skips every other entity type (counted in `rowsOutsideUserSkipped`), every run-level reconciliation (roster, center, director and departure retirements, field retractions), the `ScrapeRun` counter update and the visibility gate, so it writes no edge, no access signal and no stored tier.
 Run `student-visibility:gate` separately if the scoped write changes what a row may serve.
 
