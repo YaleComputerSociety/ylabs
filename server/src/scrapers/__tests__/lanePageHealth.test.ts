@@ -300,7 +300,7 @@ describe('planGoneLanePageFieldClears', () => {
     ).toEqual([]);
   });
 
-  it('clears methods and research areas only the gone page backed (#6238)', () => {
+  it('clears methods only the gone page backed, and never research areas while hold 3c stands (#6238)', () => {
     const evidence = {
       ...base,
       stored: { methods: ['synthetic assay'], researchAreas: ['Synthetic Biology'] },
@@ -309,7 +309,7 @@ describe('planGoneLanePageFieldClears', () => {
         ['researchAreas', [['Synthetic Biology']]],
       ]),
     };
-    expect(planGoneLanePageFieldClears(evidence)).toEqual(['methods', 'researchAreas']);
+    expect(planGoneLanePageFieldClears(evidence)).toEqual(['methods']);
     expect(
       planGoneLanePageFieldClears({
         ...evidence,

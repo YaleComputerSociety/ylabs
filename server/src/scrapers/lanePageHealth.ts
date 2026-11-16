@@ -290,7 +290,7 @@ function comparableValue(value: unknown): string {
 
 const GONE_PAGE_BODY_FIELDS = ['description', 'fullDescription'] as const;
 
-const GONE_PAGE_EVIDENCE_FIELDS = ['methods', 'researchAreas'] as const;
+const GONE_PAGE_EVIDENCE_FIELDS = ['methods'] as const;
 
 export function planGoneLanePageFieldClears(input: {
   stored: Record<string, unknown> | null | undefined;
