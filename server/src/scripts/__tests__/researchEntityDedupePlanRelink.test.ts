@@ -203,6 +203,44 @@ describe('applyResearchEntityDedupeMergeGroup field-merge carry', () => {
     expect(canonical?.websiteUrl ?? '').toBe('');
   });
 
+  it('derives the website from relinked evidence when the duplicates are deleted (#6323)', async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = new mongoose.Types.ObjectId();
+    const duplicateId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      { _id: canonicalId, slug: 'delete-mode-survivor', archived: false },
+      { _id: duplicateId, slug: 'delete-mode-twin', archived: false },
+    ]);
+    await db.collection('observations').insertOne({
+      entityType: 'researchEntity',
+      entityId: duplicateId,
+      field: 'websiteUrl',
+      value: 'https://delete-mode-lab.yale.edu/',
+      sourceId: oid(),
+      sourceName: 'research-center-index',
+      sourceUrl: 'https://example.edu/source/delete-mode-twin',
+      confidence: 0.9,
+      observedAt: new Date('2026-01-01T00:00:00Z'),
+      superseded: false,
+    });
+
+    await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+        canonicalWebsiteUrl: 'https://delete-mode-lab.yale.edu/',
+      } as any,
+      { deleteDuplicates: true, relinkReferences: true },
+    );
+
+    expect(await db.collection('research_entities').findOne({ _id: duplicateId })).toBeNull();
+    const canonical = await db.collection('research_entities').findOne({ _id: canonicalId });
+    expect(canonical?.websiteUrl).toBe('https://delete-mode-lab.yale.edu/');
+  });
+
   it("keeps a survivor's own lab-identity website over the twin's the plan carried (#6323)", async () => {
     const db = mongoose.connection.db!;
     const canonicalId = new mongoose.Types.ObjectId();
