@@ -1,6 +1,7 @@
 import { TaxonomyTerm } from '../models/taxonomyTerm';
 import { stripProfileRoleLabelSuffix } from '../utils/researchAreaLabelHygiene';
 import { slugify } from './utils/scraperHelpers';
+import { naturalOrderMeshHeading } from './meshNaturalOrder';
 
 export interface ResearchAreaResolverRow {
   name: string;
@@ -394,10 +395,16 @@ export function splitGluedRoleTrackLabels(raw: unknown): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Every raw value is read in MeSH natural order before it is resolved, deduped or filtered, so the
+ * stored value, the catalog match key and the #6361 non-subject check all see one form, and a row
+ * listing both "Carcinoma, Hepatocellular" and "Hepatocellular Carcinoma" keeps one topic (#6358).
+ */
 function expandRawResearchAreaEntries(raw: unknown): string[] {
   return toRawList(raw)
     .flatMap((entry) => stripResearchAreaSourceChrome(entry))
-    .flatMap((entry) => splitGluedRoleTrackLabels(entry));
+    .flatMap((entry) => splitGluedRoleTrackLabels(entry))
+    .map((entry) => naturalOrderMeshHeading(entry));
 }
 
 export function createResearchAreaCanonicalizer(

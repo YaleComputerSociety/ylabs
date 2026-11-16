@@ -620,6 +620,7 @@ import {
   OFFICIAL_PROFILE_DIRECTOR_LANE,
   reconcileOfficialProfileDirectorRetirementsFromRun,
 } from './officialProfileDirectorRetirement';
+import { naturalOrderMeshHeading } from './meshNaturalOrder';
 import {
   CENTER_AFFILIATION_CODE_ROSTER_LANE,
   CENTER_AFFILIATION_ROSTER_LANE,
@@ -2060,8 +2061,10 @@ export type UnbackedResearchAreaOutcome =
   | 'kept-stored-type-not-derived'
   | 'nothing-derived';
 
+// A stored list written before #6358 may still hold an inverted MeSH heading that the derived list
+// holds in natural order, so both are keyed on the natural form.
 function researchAreaMemberKey(area: unknown): unknown {
-  return typeof area === 'string' ? area.trim().toLowerCase() : area;
+  return typeof area === 'string' ? naturalOrderMeshHeading(area.trim()).toLowerCase() : area;
 }
 
 function sameResearchAreaList(left: unknown[], right: unknown[]): boolean {
