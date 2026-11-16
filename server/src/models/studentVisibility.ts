@@ -133,3 +133,29 @@ export const servedStudentVisibilityTierFilter = (
     ],
   };
 };
+
+/** The aggregation form of `effectiveStudentVisibilityTier`, for grouping rows by tier. */
+export const effectiveStudentVisibilityTierExpression = (): Record<string, unknown> => ({
+  $cond: [
+    {
+      $in: [
+        { $ifNull: ['$studentVisibilityOverrideTier', ''] },
+        [...holdingStudentVisibilityOverrideTiers],
+      ],
+    },
+    '$studentVisibilityOverrideTier',
+    '$studentVisibilityTier',
+  ],
+});
+
+/**
+ * The rows a student can be served: a served tier no operator hold outranks, not archived.
+ * Instruments that count served rows read this rather than the stored tier, so a held row
+ * is never counted as served.
+ */
+export const servedResearchEntityRowFilter = (
+  tiers: readonly StudentVisibilityTier[] = publicStudentVisibilityTiers,
+): Record<string, unknown> => ({
+  ...servedStudentVisibilityTierFilter(tiers),
+  archived: { $ne: true },
+});

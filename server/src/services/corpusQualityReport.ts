@@ -2,6 +2,10 @@ import { Observation } from '../models/observation';
 import { Researcher } from '../models/researcher';
 import { ResearchEntity } from '../models/researchEntity';
 import {
+  effectiveStudentVisibilityTierExpression,
+  servedResearchEntityRowFilter,
+} from '../models/studentVisibility';
+import {
   normalizedTitleReading,
   SITE_CHROME_TITLE_LANE,
   siteChromeTitleReadings,
@@ -36,7 +40,6 @@ import {
   type CorpusQualityServedRowFacts,
 } from './corpusQualityReportCore';
 
-const SERVED_TIER = 'student_ready';
 const ROSTER_BATCH_SIZE = 400;
 const GENERIC_FACULTY_RESEARCH_TITLE = /\sFaculty Research$/;
 
@@ -115,10 +118,10 @@ export const readCorpusCoverageCounts = async (): Promise<CorpusQualityCorpusCou
   const [entities, archived, studentReady, byTier] = await Promise.all([
     ResearchEntity.countDocuments({}),
     ResearchEntity.countDocuments({ archived: true }),
-    ResearchEntity.countDocuments({ studentVisibilityTier: SERVED_TIER, archived: { $ne: true } }),
+    ResearchEntity.countDocuments(servedResearchEntityRowFilter()),
     ResearchEntity.aggregate<{ tier: string; count: number }>([
       { $match: { archived: { $ne: true } } },
-      { $group: { _id: '$studentVisibilityTier', count: { $sum: 1 } } },
+      { $group: { _id: effectiveStudentVisibilityTierExpression(), count: { $sum: 1 } } },
       { $project: { _id: 0, tier: { $ifNull: ['$_id', 'unset'] }, count: 1 } },
       { $sort: { count: -1 } },
     ]),
@@ -202,10 +205,7 @@ export async function readCorpusQualityReport(
   siteChromePersonTitles?: SiteChromePersonTitles,
 ): Promise<CorpusQualityReport> {
   const corpus = await readCorpusCoverageCounts();
-  const servedRows = await ResearchEntity.find({
-    studentVisibilityTier: SERVED_TIER,
-    archived: { $ne: true },
-  }).lean();
+  const servedRows = await ResearchEntity.find(servedResearchEntityRowFilter()).lean();
 
   const facts: CorpusQualityServedRowFacts[] = [];
   for (let offset = 0; offset < servedRows.length; offset += ROSTER_BATCH_SIZE) {
