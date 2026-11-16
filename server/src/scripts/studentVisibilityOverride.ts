@@ -204,9 +204,10 @@ export async function runStudentVisibilityOverride(
     next:
       decision.action === 'skip' && liveBackingObservations
         ? `${liveBackingObservations} live override observation(s) still assert this field and the next materialization projects them back; lift the override through the admin editor to retire them.`
-        : args.action.kind === 'set' && holdingStudentVisibilityOverrideTiers.includes(args.action.tier)
-        ? `The hold is the stored tier now and every serve path reads it; run ${regate} to refresh the reasons.`
-        : `A release or a clear changes the served tier only when the gate re-decides the row: run ${regate}.`,
+        : args.action.kind === 'set' &&
+            holdingStudentVisibilityOverrideTiers.includes(args.action.tier)
+          ? `The hold is the stored tier now and every serve path reads it; run ${regate} to refresh the reasons.`
+          : `A release or a clear changes the served tier only when the gate re-decides the row: run ${regate}.`,
   };
 }
 

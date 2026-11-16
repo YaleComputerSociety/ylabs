@@ -113,17 +113,15 @@ describe('student-visibility:override on a program row (#6220)', () => {
   });
 
   it('retires a forced-serve override and its backing observation with an audit event, leaving the tier to the rules', async () => {
-    await mongoose.connection
-      .db!.collection('fellowships')
-      .updateOne(
-        { _id: FUND_ID },
-        {
-          $set: {
-            studentVisibilityOverrideTier: 'student_ready',
-            'fieldProvenance.studentVisibilityOverrideTier': { sourceName: 'manual-admin-edit' },
-          },
+    await mongoose.connection.db!.collection('fellowships').updateOne(
+      { _id: FUND_ID },
+      {
+        $set: {
+          studentVisibilityOverrideTier: 'student_ready',
+          'fieldProvenance.studentVisibilityOverrideTier': { sourceName: 'manual-admin-edit' },
         },
-      );
+      },
+    );
     await mongoose.connection.db!.collection('observations').insertOne({
       entityType: 'fellowship',
       entityKey: FUND_KEY,
