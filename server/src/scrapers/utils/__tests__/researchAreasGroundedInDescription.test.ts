@@ -27,6 +27,24 @@ describe('descriptionStatesResearchArea (#6360)', () => {
     expect(descriptionStatesResearchArea('Journal Club', description)).toBe(false);
   });
 
+  it('never reads a topic off a labelled or unpunctuated comma list line', () => {
+    expect(descriptionStatesResearchArea('Kelp Forests', 'Keywords: kelp forests, heatwaves')).toBe(
+      false,
+    );
+    expect(
+      descriptionStatesResearchArea('Kelp Forests', 'kelp forests, heatwaves, tides, storms'),
+    ).toBe(false);
+    expect(
+      descriptionStatesResearchArea(
+        'Kelp Forests',
+        'We study kelp forests, tides, storms, and surf.',
+      ),
+    ).toBe(true);
+    expect(
+      descriptionStatesResearchArea('Kelp Forests', 'Overview: the lab studies kelp forests.'),
+    ).toBe(true);
+  });
+
   it('needs the words in the same sentence', () => {
     expect(
       descriptionStatesResearchArea('Kelp Ecology', 'We study kelp. Ecology is taught elsewhere.'),

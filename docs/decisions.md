@@ -9,7 +9,7 @@ Track tactical work in GitHub issues and keep transient artifacts outside `docs/
 
 Decision (the backlog agent's GO on the manager's behalf, 2026-11-16, option (ii)+): when the stored page-topic reading for a row's CURRENT input hash is empty, a `researchAreas` observation counts as evidence only if it comes from the description lane (`lab-microsite-description-llm`) and the row's stored served description states it.
 "States" means every content word of the topic appears, by stem and in any order, inside one prose sentence of the stored short or full description, so an inverted heading such as "Carcinoma, Hepatocellular" matches prose that says "hepatocellular carcinoma".
-A line carrying two or more semicolons is a list and is never read, so a topic named only in a list is dropped.
+A list line is never read, so a topic named only in a list is dropped: a line with two or more semicolons, or a line that does not end like a sentence and either opens with a short label and a colon ("Keywords:") or carries three or more commas.
 Other lanes' topic observations are not evidence on such a row, and the prose-derived fallback does not run, so a row with no grounded topic serves none.
 A row whose text has no reading yet keeps today's fallback unchanged.
 

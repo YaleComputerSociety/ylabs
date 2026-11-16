@@ -7,11 +7,19 @@ const words = (text: string): string[] => text.toLowerCase().match(/[a-z]+/g) ??
 
 const stem = (word: string): string => word.slice(0, STEM_LENGTH);
 
+const count = (line: string, pattern: RegExp): number => (line.match(pattern) ?? []).length;
+
+const endsLikeASentence = (line: string): boolean => /[.!?]\s*$/.test(line.trim());
+
+const isListLine = (line: string): boolean =>
+  count(line, /;/g) >= 2 ||
+  (!endsLikeASentence(line) && (/^\s*[a-z][a-z ]{0,30}:\s/.test(line) || count(line, /,/g) >= 3));
+
 const proseSentences = (text: string): string[][] =>
   text
     .toLowerCase()
     .split(/\n+/)
-    .filter((line) => (line.match(/;/g) ?? []).length < 2)
+    .filter((line) => !isListLine(line))
     .flatMap((line) => line.split(/(?<=[.!?])\s+/))
     .map((sentence) => words(sentence).map(stem));
 
