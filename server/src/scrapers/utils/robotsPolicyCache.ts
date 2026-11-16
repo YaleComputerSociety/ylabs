@@ -1,3 +1,4 @@
+import { isSsrfGuardRefusal } from '../../utils/ssrfGuard';
 import { isRefusedBeforeSending } from './httpFetch';
 import { ALLOW_ALL_ROBOTS_POLICY, parseRobotsTxt, type RobotsPolicy } from './robotsTxt';
 
@@ -67,7 +68,16 @@ export async function robotsPolicyFor(
     } catch (error) {
       outcome = { error };
     }
-    if ('error' in outcome && isRefusedBeforeSending(outcome.error)) throw outcome.error;
+    // A pause, budget or slot refusal would refuse the page too, so the page takes it. An SSRF
+    // refusal of the robots.txt read only means robots.txt could not be read: the page's own SSRF
+    // guard still decides the page, so it falls back to default pacing like any unreadable file.
+    if (
+      'error' in outcome &&
+      isRefusedBeforeSending(outcome.error) &&
+      !isSsrfGuardRefusal(outcome.error)
+    ) {
+      throw outcome.error;
+    }
     const { policy, ttlMs } = policyFromOutcome(outcome);
     cache.set(key, { policy, expiresAt: now() + ttlMs });
     return policy;

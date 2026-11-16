@@ -1,8 +1,6 @@
 import axios, { type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SsrfBlockedError } from '../../../utils/ssrfGuard';
-
 const PRIVATE_HOSTS = new Set(['169.254.169.254', 'metadata.internal']);
 
 vi.mock('../../../utils/ssrfGuard', async (importOriginal) => {
@@ -137,11 +135,10 @@ describe('the robots.txt hook (#6213)', () => {
   });
 
   it('never sends a robots.txt request to a private address a redirect points at', async () => {
-    const failure = await axios.get('https://redirecting.example.edu/page').catch((e) => e);
+    await axios.get('https://redirecting.example.edu/page');
 
-    expect(sent).toEqual(['redirecting.example.edu/robots.txt']);
-    expect(failure).toBeInstanceOf(SsrfBlockedError);
-    expect(isNotObserved(failure)).toBe(true);
+    expect(sent).toEqual(['redirecting.example.edu/robots.txt', 'redirecting.example.edu/page']);
+    expect(sent.some((entry) => entry.startsWith('169.254.169.254'))).toBe(false);
   });
 
   it('never checks robots.txt for a machine API host', async () => {
