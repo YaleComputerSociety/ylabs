@@ -327,6 +327,7 @@ describe('stdoutReport', () => {
       inconclusive: 0,
       mode: 'dry-run',
       citationsRewritten: 0,
+      lastCitationsKept: 0,
       signalCitationsRepointed: 0,
       rows: [
         {

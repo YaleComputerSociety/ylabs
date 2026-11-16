@@ -244,6 +244,7 @@ describe('planDeadWebsiteClearUpdate drops the stamp of the website it clears (#
       {
         slug: 'synthetic-dead-row',
         websiteUrl: plan.url,
+        sourceUrls: ['https://example.edu/synthetic-other-citation/'],
         fieldProvenance: { websiteUrl: { sourceName: 'synthetic-lane', sourceUrl: plan.url } },
       } as never,
       [plan],

@@ -68,6 +68,7 @@ describe('a refusal leaves no stamp describing a value the row no longer holds (
       _id: new mongoose.Types.ObjectId(),
       slug: 'synthetic-row',
       websiteUrl: REFUSED_SITE,
+      sourceUrls: [OWN_SITE],
       fieldProvenance: { websiteUrl: stampFor(winner._id) },
     };
     const plan = await planRefuseFieldValueWrite(row, refuseArgs(REFUSED_SITE));
@@ -127,6 +128,7 @@ describe('a refusal leaves no stamp describing a value the row no longer holds (
       slug: 'synthetic-row',
       name: 'Synthetic Repair Research',
       entityType: 'LAB',
+      sourceUrls: [OWN_SITE],
       fieldProvenance: { websiteUrl: stampFor(winner._id) },
       fieldValueRefusals: refusals,
     });

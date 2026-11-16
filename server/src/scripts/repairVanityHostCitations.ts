@@ -96,7 +96,10 @@ export async function followHttpRedirects(
 export async function planVanityRepairWrite(
   row: Record<string, unknown>,
   change: NonNullable<ReturnType<typeof planVanityRepairRow>>,
-): Promise<{ $set: Record<string, unknown>; $unset?: Record<string, ''> }> {
+): Promise<{
+  write: { $set: Record<string, unknown>; $unset?: Record<string, ''> };
+  withheld: string[];
+}> {
   const { changedFields: _changedFields, fieldValueRefusalUpdate, ...fields } = change;
   const rewritten = Object.fromEntries(
     (['websiteUrl', 'website'] as const)
@@ -104,10 +107,10 @@ export async function planVanityRepairWrite(
       .map((field) => [field, fields[field]]),
   );
   const $set = { ...fields, ...(fieldValueRefusalUpdate ?? {}) };
-  const unset = await staleProvenanceUnset(row, rewritten, $set);
+  const { unset, withheld } = await staleProvenanceUnset(row, rewritten, $set);
   return {
-    $set,
-    ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
+    write: { $set, ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}) },
+    withheld,
   };
 }
 
@@ -195,7 +198,7 @@ async function main() {
         const change = planVanityRepairRow(row, vanityUrl, decision.destinationUrl);
         if (!change) continue;
 
-        const write = await planVanityRepairWrite(row, change);
+        const { write, withheld } = await planVanityRepairWrite(row, change);
         report.repointed.push({
           slug: row.slug,
           from: vanityUrl,
@@ -206,14 +209,10 @@ async function main() {
         });
         report.stampsToUnset += Object.keys(write.$unset ?? {}).length;
 
-        if (options.apply) {
-          const applied = await updateOneKeepingLastCitation(
-            ResearchEntity,
-            { _id: row._id },
-            write,
-          );
-          if (applied.withheld.length > 0) report.lastCitationStampsKept += 1;
-        }
+        const appliedWithheld = options.apply
+          ? (await updateOneKeepingLastCitation(ResearchEntity, { _id: row._id }, write)).withheld
+          : [];
+        if (withheld.length > 0 || appliedWithheld.length > 0) report.lastCitationStampsKept += 1;
       } catch (error) {
         report.errors += 1;
         console.error(

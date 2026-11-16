@@ -27,7 +27,7 @@ const SLUG = 'synthetic-last-citation-row';
 const ONLY_CITATION = 'https://example.edu/synthetic-gone-page/';
 const RETIRED_REPAIR = 'synthetic-retired-repair';
 
-describe('the materializer keeps a served row last citation stamp (#6320)', () => {
+describe('the materializer keeps a row last citation stamp (#6320)', () => {
   let replSet: MongoMemoryReplSet;
 
   beforeAll(async () => {
@@ -99,11 +99,11 @@ describe('the materializer keeps a served row last citation stamp (#6320)', () =
     expect((await stored()).fieldProvenance?.entityType?.sourceUrl).toBe(ONLY_CITATION);
   });
 
-  it('retires the same stamp on an unserved row', async () => {
+  it('withholds the same retirement on a held row, which the next gate run would otherwise promote', async () => {
     await seed('operator_review');
 
     const applied = await materializeEntity('researchEntity', { entityKey: SLUG });
-    expect(applied.lastCitationRemovalsWithheld).toBeUndefined();
-    expect((await stored()).fieldProvenance?.entityType).toBeUndefined();
+    expect(applied.lastCitationRemovalsWithheld).toEqual(['fieldProvenance.entityType']);
+    expect((await stored()).fieldProvenance?.entityType?.sourceUrl).toBe(ONLY_CITATION);
   });
 });

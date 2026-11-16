@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 /**
  * Every writer that unsets a `fieldProvenance.*` path, or removes or recomputes `sourceUrls`,
- * routes the write through the shared last-citation rule, so no writer can turn a served row
- * whose only citation is dead into a row with no citation at all (#6320). A new site fails
+ * routes the write through the shared last-citation rule, so no writer can turn a row whose
+ * only citation is dead into a row with no citation at all (#6320). A new site fails
  * here until it is listed.
  */
 const HERE = path.dirname(fileURLToPath(import.meta.url));

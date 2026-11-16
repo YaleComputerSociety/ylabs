@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
-import { storedCitationState, withholdLastCitationRemovals } from '../services/lastCitationGuard';
+import { withholdLastCitationRemovals } from '../services/lastCitationGuard';
 import {
   fieldValueRefusalKey,
   liveFieldValueRefusals,
@@ -79,19 +79,20 @@ export async function staleRefusalProvenanceOf(
 
 /**
  * The `$unset` of every stamp that stops describing its field once the row holds `valuesAfter`,
- * less any stamp that is the last citation of a served row once `plannedSet` lands (#6320).
+ * less any stamp that is the row's last citation once `plannedSet` lands (#6320), which is
+ * reported in `withheld`.
  */
 export async function staleProvenanceUnset(
   row: Record<string, unknown>,
   valuesAfter: Record<string, unknown>,
   plannedSet: Record<string, unknown> = valuesAfter,
-): Promise<Record<string, ''>> {
+): Promise<{ unset: Record<string, ''>; withheld: string[] }> {
   const unset: Record<string, ''> = {};
   for (const [field, value] of Object.entries(valuesAfter)) {
     if (await provenanceNoLongerDescribesValue(row, field, value)) {
       unset[fieldProvenancePath(field)] = '';
     }
   }
-  return withholdLastCitationRemovals(storedCitationState(row), { set: plannedSet, unset })
-    .unset as Record<string, ''>;
+  const guarded = withholdLastCitationRemovals(row, { set: plannedSet, unset });
+  return { unset: guarded.unset as Record<string, ''>, withheld: guarded.withheld };
 }

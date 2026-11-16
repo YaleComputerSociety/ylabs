@@ -25,7 +25,6 @@
  */
 import { findSourceLinkHealth, type DatedSourceLinkHealth } from '../services/sourceLinkHealth';
 import {
-  storedCitationState,
   withholdLastCitationRemovals,
   type CitationGuardedEntity,
 } from '../services/lastCitationGuard';
@@ -201,7 +200,7 @@ export function planDeadWebsiteClearUpdateKeepingLastCitation(
   withheld: string[];
 } {
   const provenance = (row as { fieldProvenance?: Record<string, unknown> }).fieldProvenance ?? {};
-  const guarded = withholdLastCitationRemovals(storedCitationState(row as CitationGuardedEntity), {
+  const guarded = withholdLastCitationRemovals(row as CitationGuardedEntity, {
     set: planDeadWebsiteClearWrite(row, plans, now),
     unset: Object.fromEntries(
       plans

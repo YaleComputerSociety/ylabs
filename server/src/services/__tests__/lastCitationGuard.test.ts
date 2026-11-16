@@ -24,23 +24,15 @@ describe('wouldRemoveLastCitation (#6320)', () => {
     expect(wouldRemoveLastCitation(servedRow(), unsetStamp)).toBe(true);
   });
 
-  it('does not fire on an unserved row', () => {
+  it('fires on a held row too, because the next gate run recomputes its stored tier', () => {
     expect(
       wouldRemoveLastCitation(servedRow({ studentVisibilityTier: 'operator_review' }), unsetStamp),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       wouldRemoveLastCitation(
         servedRow({ studentVisibilityOverrideTier: 'suppressed' }),
         unsetStamp,
       ),
-    ).toBe(false);
-  });
-
-  it('fires on a held row the same write releases', () => {
-    expect(
-      wouldRemoveLastCitation(servedRow({ studentVisibilityOverrideTier: 'suppressed' }), {
-        unset: { ...unsetStamp.unset, studentVisibilityOverrideTier: '' },
-      }),
     ).toBe(true);
   });
 
@@ -151,42 +143,6 @@ describe('withholdLastCitationRemovals (#6320)', () => {
       pull: {},
       withheld: [],
     });
-  });
-
-  it('fails closed on a partial read by withholding every provenance unset', () => {
-    const guarded = withholdLastCitationRemovals(
-      { fieldProvenance: { websiteUrl: { sourceUrl: LIVE } } },
-      unsetStamp,
-    );
-    expect(guarded.unset).toEqual({ websiteUrl: '' });
-    expect(guarded.withheld).toEqual(['fieldProvenance.websiteUrl']);
-    expect(withholdLastCitationRemovals(null, unsetStamp).withheld).toEqual([
-      'fieldProvenance.websiteUrl',
-    ]);
-  });
-
-  it('fails closed on a partial read by withholding every sourceUrls removal too', () => {
-    const removals = {
-      set: { sourceUrls: [], name: 'Synthetic Lab' },
-      unset: { 'sourceUrls.0': '' },
-      pull: { sourceUrls: LIVE },
-    };
-    for (const entity of [null, { fieldProvenance: {} }, { sourceUrls: [LIVE] }]) {
-      const guarded = withholdLastCitationRemovals(entity, removals);
-      expect(guarded.set).toEqual({ name: 'Synthetic Lab' });
-      expect(guarded.unset).toEqual({});
-      expect(guarded.pull).toEqual({});
-      expect(guarded.withheld.sort()).toEqual(['sourceUrls', 'sourceUrls', 'sourceUrls.0']);
-    }
-    expect(withholdLastCitationRemovals(null, { unset: { sourceUrls: '' } }).withheld).toEqual([
-      'sourceUrls',
-    ]);
-  });
-
-  it('lets a partial read still set a sourceUrls list that cites something', () => {
-    const guarded = withholdLastCitationRemovals(null, { set: { sourceUrls: [LIVE] } });
-    expect(guarded.set).toEqual({ sourceUrls: [LIVE] });
-    expect(guarded.withheld).toEqual([]);
   });
 
   it('rebuilds a Mongo update and passes other operators through', () => {

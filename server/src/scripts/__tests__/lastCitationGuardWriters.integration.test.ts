@@ -52,7 +52,7 @@ const stamp = (sourceUrl = ONLY_CITATION, extra: Record<string, unknown> = {}) =
   ...extra,
 });
 
-describe('writers keep a served row last citation stamp and still clear the value (#6320)', () => {
+describe('writers keep a row last citation stamp and still clear the value (#6320)', () => {
   let replSet: MongoMemoryReplSet;
 
   beforeAll(async () => {
@@ -168,14 +168,17 @@ describe('writers keep a served row last citation stamp and still clear the valu
       studentVisibilityTier: 'student_ready',
       fieldProvenance: { websiteUrl: stamp() },
     };
-    expect(await staleProvenanceUnset(row, { websiteUrl: LIVE_ELSEWHERE })).toEqual({});
+    expect(await staleProvenanceUnset(row, { websiteUrl: LIVE_ELSEWHERE })).toEqual({
+      unset: {},
+      withheld: ['fieldProvenance.websiteUrl'],
+    });
     expect(
       await staleProvenanceUnset(
         row,
         { websiteUrl: LIVE_ELSEWHERE },
         { sourceUrls: [LIVE_ELSEWHERE] },
       ),
-    ).toEqual({ 'fieldProvenance.websiteUrl': '' });
+    ).toEqual({ unset: { 'fieldProvenance.websiteUrl': '' }, withheld: [] });
   });
 
   it('dropSupersededDeadCitations keeps the stamp when its write would leave nothing cited', async () => {
@@ -479,7 +482,7 @@ describe('writers keep a served row last citation stamp and still clear the valu
     expect(after.fieldProvenance.websiteUrl).toBeUndefined();
   });
 
-  it('an unserved row still loses the stamp, so the guard is scoped to served rows', async () => {
+  it('a row held on its dead citation keeps the stamp, so the re-gate that follows still holds it', async () => {
     const _id = await seedRow({
       studentVisibilityTier: 'operator_review',
       websiteUrl: ONLY_CITATION,
@@ -488,8 +491,10 @@ describe('writers keep a served row last citation stamp and still clear the valu
 
     const result = await clearDeadLabHomes([{ entityId: String(_id) }]);
 
-    expect(result.lastCitationStampsKept).toBe(0);
-    expect((await stored()).fieldProvenance?.websiteUrl).toBeUndefined();
+    const after = await stored();
+    expect(result.lastCitationStampsKept).toBe(1);
+    expect(after.websiteUrl).toBeUndefined();
+    expect(after.fieldProvenance.websiteUrl.sourceUrl).toBe(ONLY_CITATION);
   });
 
   it('a row with another citation loses the stamp as before', async () => {

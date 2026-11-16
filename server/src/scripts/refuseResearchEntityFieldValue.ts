@@ -45,7 +45,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { storedCitationState, withholdLastCitationRemovals } from '../services/lastCitationGuard';
+import { withholdLastCitationRemovals } from '../services/lastCitationGuard';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   fieldValueRefusalKey,
@@ -231,7 +231,7 @@ export async function planRefuseFieldValueWrite(
       staleProvenance.push(fieldProvenancePath(field));
     }
   }
-  const guarded = withholdLastCitationRemovals(storedCitationState(row), {
+  const guarded = withholdLastCitationRemovals(row, {
     set: { ...record, ...rederivedClosure },
     unset: {
       ...(clearsStoredValue ? { [args.field]: '' as const } : {}),

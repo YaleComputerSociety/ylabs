@@ -6,7 +6,7 @@
  * entityKey, e.g. netid).
  */
 import { startLongRunProgress } from '../utils/longRunProgress';
-import { storedCitationState, withholdLastCitationRemovals } from '../services/lastCitationGuard';
+import { withholdLastCitationRemovals } from '../services/lastCitationGuard';
 import {
   isPersonResearchRow,
   narrowedLabSiteDescriptionValue,
@@ -15696,7 +15696,7 @@ async function materializeEntityUnderRemovalGuard(
   // `entityDoc` is an unprojected read, so a key it lacks is absent from the stored row.
   const lastCitationGuard =
     isResearchEntityObservationType(entityType) && entityDoc
-      ? withholdLastCitationRemovals(storedCitationState(entityDoc), {
+      ? withholdLastCitationRemovals(entityDoc, {
           set: projected.set,
           unset: projected.unset,
         })

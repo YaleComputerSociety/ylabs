@@ -133,8 +133,9 @@ Measured on Development on 2026-11-11 through full gate dry runs with #5858 appl
 - Citations: `all_citations_dead`, `citations_identify_no_person`. Maps to `citationIdentifiesSubject`: a row whose every citation is dead, or whose every citation is shared across person rows, has no live evidence about its own subject (#2464/#2635).
 Both block, because both are the same question; leaving the second unclassified made it read as non-blocking while the field it maps to still held the row.
 A row with no citation at all is silence rather than death, so `hasLiveSourceCitation` reads it as live and `all_citations_dead` cannot fire on it.
-That makes the last citation load-bearing: a writer that unset the only `fieldProvenance.<field>` stamp of a served row whose only citation was dead would turn a held row into a served one.
-So every writer that unsets a provenance stamp or empties `sourceUrls` on a research entity goes through `withholdLastCitationRemovals` in `server/src/services/lastCitationGuard.ts`, which keeps the stamp and still clears the field value when the write would leave a served row citing nothing (#6320).
+That makes the last citation load-bearing: a writer that unset the only `fieldProvenance.<field>` stamp of a row whose only citation was dead would turn a held row into a served one at the next gate run.
+So every writer that unsets a provenance stamp or empties `sourceUrls` on a research entity goes through `withholdLastCitationRemovals` in `server/src/services/lastCitationGuard.ts`, which keeps the stamp and still clears the field value when the write would leave the row citing nothing (#6320).
+The rule does not read the stored tier, because that tier is only the last verdict: a row held today on `all_citations_dead` is the one a write would release.
 A kept dead stamp keeps the row held, and a kept live stamp keeps the row citing what it cited before.
 Each writer reports what it kept, as `lastCitationStampsKept`, `lastCitationRemovalsWithheld`, or `lastCitationsKept`, and `lastCitationGuardSourceScan.test.ts` fails when a new site that unsets a stamp or removes a `sourceUrls` entry skips the rule.
 

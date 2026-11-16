@@ -1,5 +1,4 @@
 import type mongoose from 'mongoose';
-import { servesStudentVisibilityTier } from '../models/studentVisibility';
 import { citationUrlsOf } from './sourceCitations';
 
 /**
@@ -7,16 +6,16 @@ import { citationUrlsOf } from './sourceCitations';
  *
  * The gate reads a row with no citation at all as silence, which serves, and a row whose
  * every citation is dead as `all_citations_dead`, which holds. A writer that unsets the
- * last `fieldProvenance.<field>` stamp, or empties `sourceUrls`, on a served row turns the
- * second state into the first. So a writer keeps the citation-carrying part of its write
- * when that write would leave a served row with none, and still clears the field value: a
- * kept dead stamp keeps the row held, and a kept live stamp keeps what the row cited before.
+ * last `fieldProvenance.<field>` stamp, or empties `sourceUrls`, turns the second state into
+ * the first. The stored tier is only the last verdict and the next gate run recomputes it, so
+ * a row held today is promoted by that run, and the rule does not read the tier. A writer
+ * keeps the citation-carrying part of its write when that write would leave a row with none,
+ * and still clears the field value: a kept dead stamp keeps the row held, and a kept live
+ * stamp keeps what the row cited before.
  */
 export interface CitationGuardedEntity {
   sourceUrls?: unknown;
   fieldProvenance?: unknown;
-  studentVisibilityTier?: unknown;
-  studentVisibilityOverrideTier?: unknown;
 }
 
 export interface CitationChange {
@@ -32,12 +31,10 @@ export interface GuardedCitationChange {
   withheld: string[];
 }
 
-export const LAST_CITATION_GUARD_PROJECTION =
-  'sourceUrls fieldProvenance studentVisibilityTier studentVisibilityOverrideTier';
+export const LAST_CITATION_GUARD_PROJECTION = 'sourceUrls fieldProvenance';
 
 const PROVENANCE = 'fieldProvenance';
 const SOURCE_URLS = 'sourceUrls';
-const TIER_FIELDS = ['studentVisibilityTier', 'studentVisibilityOverrideTier'] as const;
 
 const isProvenancePath = (path: string): boolean =>
   path === PROVENANCE || path.startsWith(`${PROVENANCE}.`);
@@ -88,8 +85,6 @@ function normalized(entity: CitationGuardedEntity): CitationGuardedEntity {
     sourceUrls: entity.sourceUrls,
     fieldProvenance:
       entity.fieldProvenance === undefined ? undefined : plainRecord(entity.fieldProvenance),
-    studentVisibilityTier: entity.studentVisibilityTier,
-    studentVisibilityOverrideTier: entity.studentVisibilityOverrideTier,
   };
 }
 
@@ -120,38 +115,16 @@ export function citationStateAfter(
     provenanceTouched = true;
   }
   if (provenanceTouched || after.fieldProvenance !== undefined) after.fieldProvenance = provenance;
-  for (const field of TIER_FIELDS) {
-    if (has(unset, field)) after[field] = undefined;
-    if (has(set, field)) after[field] = set[field];
-  }
   return after;
 }
 
-/**
- * True only when the entity is served (before or after the write, so a write that also
- * releases a hold counts), cites something now, and would cite nothing once `change` lands.
- */
+/** True only when the entity cites something now and would cite nothing once `change` lands. */
 export function wouldRemoveLastCitation(
   entity: CitationGuardedEntity,
   change: CitationChange,
 ): boolean {
-  const after = citationStateAfter(entity, change);
-  const served =
-    servesStudentVisibilityTier(entity as Record<string, unknown>) ||
-    servesStudentVisibilityTier(after as Record<string, unknown>);
-  if (!served) return false;
   if (citationUrlsOf(normalized(entity)).length === 0) return false;
-  return citationUrlsOf(after).length === 0;
-}
-
-/**
- * Whether `entity` carries every field the rule reads. A projected or partial read cannot
- * say what the row cites, so the guard treats it as unverifiable rather than as citing nothing.
- */
-export function citationStateIsReadable(entity: unknown): entity is CitationGuardedEntity {
-  if (!entity || typeof entity !== 'object') return false;
-  const record = entity as Record<string, unknown>;
-  return has(record, SOURCE_URLS) && has(record, PROVENANCE) && has(record, TIER_FIELDS[0]);
+  return citationUrlsOf(citationStateAfter(entity, change)).length === 0;
 }
 
 const withoutPaths = (
@@ -167,32 +140,21 @@ const withoutPaths = (
     }),
   );
 
-const setLeavesSourceUrlsUncited = (path: string, value: unknown): boolean => {
-  if (path === SOURCE_URLS) return citationUrlsOf({ sourceUrls: value }).length === 0;
-  return isSourceUrlsPath(path) && !(typeof value === 'string' && value.trim() !== '');
-};
-
 /**
- * `change` with its citation-removing parts withheld when it would remove a served row's last
+ * `change` with its citation-removing parts withheld when it would remove the row's last
  * citation: the `fieldProvenance.*` unsets first, so the stamps stay; then, only if the row
  * would still cite nothing, the `sourceUrls` change; then any `fieldProvenance` set. Field
- * values are never withheld. An unreadable entity has every citation removal withheld outright:
- * its provenance unsets, its `sourceUrls` unsets and pulls, and any `sourceUrls` set that cites nothing.
+ * values are never withheld. `entity` is the stored row, read with at least
+ * `LAST_CITATION_GUARD_PROJECTION`, so a key it lacks is absent from the row rather than unread.
  */
 export function withholdLastCitationRemovals(
-  entity: unknown,
+  entity: CitationGuardedEntity,
   change: CitationChange,
 ): GuardedCitationChange {
   let set = { ...(change.set ?? {}) };
   let unset = { ...(change.unset ?? {}) };
   let pull = { ...(change.pull ?? {}) };
   const withheld: string[] = [];
-  if (!citationStateIsReadable(entity)) {
-    unset = withoutPaths(unset, (p) => isProvenancePath(p) || isSourceUrlsPath(p), withheld);
-    set = withoutPaths(set, setLeavesSourceUrlsUncited, withheld);
-    pull = withoutPaths(pull, isSourceUrlsPath, withheld);
-    return { set, unset, pull, withheld };
-  }
   const fires = () => wouldRemoveLastCitation(entity, { set, unset, pull });
   if (!fires()) return { set, unset, pull, withheld };
   unset = withoutPaths(unset, isProvenancePath, withheld);
@@ -213,7 +175,7 @@ export type MongoUpdate = Record<string, unknown> & {
 
 /** `withholdLastCitationRemovals` over a whole Mongo update document; other operators pass through. */
 export function withholdLastCitationRemovalsFromUpdate(
-  entity: unknown,
+  entity: CitationGuardedEntity,
   update: MongoUpdate,
 ): { update: MongoUpdate; withheld: string[] } {
   const { $set, $unset, $pull, ...rest } = update;
@@ -225,26 +187,8 @@ export function withholdLastCitationRemovalsFromUpdate(
   return { update: next, withheld: guarded.withheld };
 }
 
-/**
- * A fresh read that selected every guarded field is authoritative, so a key it lacks is
- * absent from the stored row rather than unread. No row at all stays unverifiable.
- */
-export const storedCitationState = (
-  row: CitationGuardedEntity | null | undefined,
-): CitationGuardedEntity | null =>
-  row
-    ? {
-        sourceUrls: row.sourceUrls,
-        fieldProvenance: row.fieldProvenance,
-        studentVisibilityTier: row.studentVisibilityTier,
-        studentVisibilityOverrideTier: row.studentVisibilityOverrideTier,
-      }
-    : null;
-
 const isCitationStatePath = (path: string): boolean =>
-  isProvenancePath(path) ||
-  isSourceUrlsPath(path) ||
-  (TIER_FIELDS as readonly string[]).includes(path);
+  isProvenancePath(path) || isSourceUrlsPath(path);
 
 const touchesCitationState = (update: MongoUpdate): boolean =>
   [update.$set, update.$unset, update.$pull].some((operator) =>
@@ -255,8 +199,7 @@ const matchAsRead = (value: unknown): unknown => (value === undefined ? { $exist
 
 /**
  * A filter that matches the row only while every citation-bearing value the guard decided on
- * is still as read: `sourceUrls` exactly, each `fieldProvenance.<field>.sourceUrl`, and both
- * tier fields. A stamp added since the read only adds a citation, so it is not pinned.
+ * is still as read: `sourceUrls` exactly and each `fieldProvenance.<field>.sourceUrl`. A stamp added since the read only adds a citation, so it is not pinned.
  */
 export function citationStateUnchangedFilter(
   row: CitationGuardedEntity & { _id?: unknown },
@@ -272,7 +215,6 @@ export function citationStateUnchangedFilter(
         : undefined;
     filter[`${PROVENANCE}.${field}.sourceUrl`] = matchAsRead(sourceUrl);
   }
-  for (const tierField of TIER_FIELDS) filter[tierField] = matchAsRead(row[tierField]);
   return filter;
 }
 
@@ -296,7 +238,7 @@ export async function updateOneKeepingLastCitation(
     .session(options.session ?? null)
     .lean<(CitationGuardedEntity & { _id?: unknown }) | null>();
   if (!current) return { modifiedCount: 0, withheld: [] };
-  const guarded = withholdLastCitationRemovalsFromUpdate(storedCitationState(current), update);
+  const guarded = withholdLastCitationRemovalsFromUpdate(current, update);
   if (Object.keys(guarded.update).length === 0) {
     return { modifiedCount: 0, withheld: guarded.withheld };
   }

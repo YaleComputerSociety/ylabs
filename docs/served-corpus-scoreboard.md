@@ -157,7 +157,7 @@ Measure it rather than quoting it.
 
 `cites nothing` counts the `student_ready` rows with no citation at all, neither in `sourceUrls` nor in any `fieldProvenance.*.sourceUrl` (#6320).
 The gate reads such a row as silence rather than as dead, so it is served even when everything it once cited is gone.
-It should read 0, because every writer that unsets a provenance stamp or trims `sourceUrls` keeps a served row's last citation.
+It should read 0, because every writer that unsets a provenance stamp or trims `sourceUrls` keeps a row's last citation.
 A non-zero reading means a writer removed a last citation outside the shared rule in `server/src/services/lastCitationGuard.ts`, or a row was served without ever citing a page.
 It is computed on every run from a projection of the served rows, so it costs no route calls.
 
