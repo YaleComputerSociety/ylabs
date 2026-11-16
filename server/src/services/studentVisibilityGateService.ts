@@ -72,7 +72,10 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 import { readIndexedFieldByDocumentId, syncEntities } from './meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
+import {
+  entityNameWordsWithoutKindNouns,
+  isConcreteResearchHomeEntity,
+} from '../utils/profileAreaDuplicateRisk';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import {
@@ -1029,7 +1032,7 @@ const isNamedOrganizationEntity = (entity: any): boolean =>
  * the page as its own home. Such organizations still contest the page among themselves,
  * and two person-scoped rows sharing it still contest it too.
  */
-const contestSetsOnUrl = (url: string, members: any[]): any[][] => {
+const directorPageContestSets = (url: string, members: any[]): any[][] => {
   if (!isPersonPageCitation(url)) return [members];
   if (!members.some((entity) => isPersonScopedResearchEntityType(entity?.entityType))) {
     return [members];
@@ -1041,6 +1044,74 @@ const contestSetsOnUrl = (url: string, members: any[]): any[][] => {
     members.filter(isOrganizationReadingThePage),
   ];
 };
+
+type LeadIdsByEntityId = ReadonlyMap<string, ReadonlySet<string>>;
+
+const leadIdsByEntityIdFrom = (leadRows: any[]): LeadIdsByEntityId => {
+  const leadIdsByEntityId = new Map<string, Set<string>>();
+  for (const row of leadRows) {
+    const entityId = studentVisibilityGateDocumentId(row.researchEntityId);
+    const userId = studentVisibilityGateDocumentId(row.userId);
+    if (!entityId || !userId) continue;
+    if (!leadIdsByEntityId.has(entityId)) leadIdsByEntityId.set(entityId, new Set());
+    leadIdsByEntityId.get(entityId)!.add(userId);
+  }
+  return leadIdsByEntityId;
+};
+
+const comparableEntityName = (entity: any): string =>
+  entityNameWordsWithoutKindNouns(String(entity?.name ?? '')).join(' ');
+
+/**
+ * On a page none of them publishes as its own home (a center, clinic, core or program
+ * page), rows led by different people and named differently are different research that
+ * happens to cite the same page, not one row stored twice (#6206). They still contest it
+ * when either has no lead, when they share a lead, or when their names agree, so a
+ * duplicate a missing lead edge or a renamed twin hides is still held.
+ */
+const independentlyLedContestSets = (
+  url: string,
+  members: any[],
+  leadIdsByEntityId: LeadIdsByEntityId,
+): any[][] => {
+  if (members.length < 2) return [members];
+  if (members.some((entity) => entityPublishesUrlAsItsOwnHome(entity, url))) return [members];
+  const leadsOf = (entity: any) =>
+    leadIdsByEntityId.get(studentVisibilityGateEntityIdKey(entity)) ?? new Set<string>();
+  const contests = (a: any, b: any): boolean => {
+    const aLeads = leadsOf(a);
+    const bLeads = leadsOf(b);
+    if (aLeads.size === 0 || bLeads.size === 0) return true;
+    if ([...aLeads].some((lead) => bLeads.has(lead))) return true;
+    const aName = comparableEntityName(a);
+    return Boolean(aName) && aName === comparableEntityName(b);
+  };
+  const setIndexOf = members.map((_, index) => index);
+  const rootOf = (index: number): number =>
+    setIndexOf[index] === index ? index : (setIndexOf[index] = rootOf(setIndexOf[index]));
+  for (let i = 0; i < members.length; i += 1) {
+    for (let j = i + 1; j < members.length; j += 1) {
+      if (contests(members[i], members[j])) setIndexOf[rootOf(j)] = rootOf(i);
+    }
+  }
+  const sets = new Map<number, any[]>();
+  members.forEach((entity, index) => {
+    const root = rootOf(index);
+    sets.set(root, [...(sets.get(root) ?? []), entity]);
+  });
+  return [...sets.values()];
+};
+
+const contestSetsOnUrl = (
+  url: string,
+  members: any[],
+  leadIdsByEntityId?: LeadIdsByEntityId,
+): any[][] =>
+  directorPageContestSets(url, members).flatMap((contestants) =>
+    leadIdsByEntityId
+      ? independentlyLedContestSets(url, contestants, leadIdsByEntityId)
+      : [contestants],
+  );
 
 /**
  * The members that actually contest ownership of a URL. Applied AFTER the group-size
@@ -1072,7 +1143,11 @@ const membersClaimingUrl = (url: string, members: any[]): any[] => {
  * builder was module-local a group-level claim could not be checked against the exported
  * surface: two independent proxy attempts produced a fake zero over 4,780 rows (#3272).
  */
-export const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
+export const exactDuplicateUrlGroups = (
+  entities: any[],
+  leadRows?: any[],
+): ExactDuplicateUrlGroup[] => {
+  const leadIdsByEntityId = leadRows ? leadIdsByEntityIdFrom(leadRows) : undefined;
   const entitiesByUrl = new Map<string, any[]>();
   for (const entity of entities) {
     for (const url of entityClaimedDuplicateUrls(entity)) {
@@ -1084,7 +1159,7 @@ export const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup
       ([, members]) => members.length > 1 && members.length <= EXACT_DUPLICATE_URL_GROUP_LIMIT,
     )
     .flatMap(([url, members]) =>
-      contestSetsOnUrl(url, members).map((contestants) => ({
+      contestSetsOnUrl(url, members, leadIdsByEntityId).map((contestants) => ({
         url,
         members: membersClaimingUrl(url, contestants),
       })),
@@ -1160,9 +1235,12 @@ type ExactDuplicateUrlIdGroup = {
   indexVouchedIds: string[];
 };
 
-const exactUrlDuplicateGroupEntityIds = (entities: any[]): ExactDuplicateUrlIdGroup[] => {
+const exactUrlDuplicateGroupEntityIds = (
+  entities: any[],
+  leadRows: any[],
+): ExactDuplicateUrlIdGroup[] => {
   const authority = indexUrlAuthorityOver(entities);
-  return exactDuplicateUrlGroups(entities)
+  return exactDuplicateUrlGroups(entities, leadRows)
     .map((group) => {
       const indexVouchesFor = indexVouchesForMemberInUrlContest(group, authority);
       const idsOf = (members: any[]) =>
@@ -1195,7 +1273,7 @@ export function selectExactUrlDuplicateRiskEntityIds(
   // release on the index-published member.
   const authority = indexUrlAuthorityOver(entities);
   const duplicateIds = new Set<string>();
-  for (const group of exactDuplicateUrlGroups(entities)) {
+  for (const group of exactDuplicateUrlGroups(entities, leadRows)) {
     const canonicalId = studentVisibilityGateEntityIdKey(
       exactDuplicateGroupByCanonicalPreference(group, leadCountsByEntityId, authority)[0],
     );
@@ -1307,7 +1385,7 @@ export function selectDuplicateGroupSurvivorEntityIds({
     if (id) entityById.set(id, entity);
   }
 
-  const urlGroups = exactUrlDuplicateGroupEntityIds(entities);
+  const urlGroups = exactUrlDuplicateGroupEntityIds(entities, leadRows);
   const rootById = duplicateClusterRootByEntityId([
     ...urlGroups.map(({ memberIds }) => memberIds),
     ...duplicateRelationGroups
