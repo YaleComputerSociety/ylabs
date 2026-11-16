@@ -774,21 +774,92 @@ export function rematerializeFailureMessage(error: unknown): string {
 export async function collectRematerializeEntityReports(
   slugs: string[],
   processSlug: (slug: string) => Promise<RematerializeEntityReport>,
+  afterReport?: (report: RematerializeEntityReport) => Promise<void>,
 ): Promise<RematerializeEntityReport[]> {
   const reports: RematerializeEntityReport[] = [];
   for (const slug of slugs) {
+    let report: RematerializeEntityReport;
     try {
-      reports.push(await processSlug(slug));
+      report = await processSlug(slug);
     } catch (error) {
-      reports.push({
+      report = {
         slug,
         found: false,
         changes: [],
         error: rematerializeFailureMessage(error),
-      });
+      };
     }
+    reports.push(report);
+    if (afterReport) await afterReport(report);
   }
   return reports;
+}
+
+export const REMATERIALIZE_REGATE_CHUNK_SIZE = 50;
+
+export interface ChunkedRegater<Summary> {
+  add(entityIds: readonly string[]): Promise<void>;
+  finish(): Promise<{ summaries: Summary[]; error?: string }>;
+}
+
+/**
+ * Re-gates written rows chunk by chunk as the run writes them (#6370). Re-gating once at the
+ * end left every row an interrupted run had already written on its old tier, and a rerun
+ * re-gates only the rows it changes itself, so nothing ever re-gated them.
+ */
+export function createChunkedRegater<Summary>(
+  regate: (entityIds: string[]) => Promise<Summary>,
+  chunkSize: number = REMATERIALIZE_REGATE_CHUNK_SIZE,
+): ChunkedRegater<Summary> {
+  const summaries: Summary[] = [];
+  let pending: string[] = [];
+  const pendingIds = new Set<string>();
+  let error: string | undefined;
+  let leftUnregated = 0;
+  let queue: Promise<void> = Promise.resolve();
+
+  const flush = (entityIds: string[]) => {
+    queue = queue.then(async () => {
+      if (entityIds.length === 0) return;
+      if (error) {
+        leftUnregated += entityIds.length;
+        return;
+      }
+      try {
+        summaries.push(await regate(entityIds));
+      } catch (failure) {
+        error = rematerializeFailureMessage(failure);
+        leftUnregated += entityIds.length;
+      }
+    });
+    return queue;
+  };
+
+  const takeChunk = (size: number) => {
+    const chunk = pending.slice(0, size);
+    pending = pending.slice(size);
+    for (const entityId of chunk) pendingIds.delete(entityId);
+    return chunk;
+  };
+
+  return {
+    async add(entityIds) {
+      for (const entityId of entityIds) {
+        if (pendingIds.has(entityId)) continue;
+        pendingIds.add(entityId);
+        pending.push(entityId);
+      }
+      while (pending.length >= chunkSize) await flush(takeChunk(chunkSize));
+    },
+    async finish() {
+      await flush(takeChunk(pending.length));
+      if (!error) return { summaries };
+      return {
+        summaries,
+        error: `${error} (${leftUnregated} written row(s) left un-regated)`,
+      };
+    },
+  };
 }
 
 export interface RematerializeRegateCandidate {

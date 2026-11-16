@@ -98,6 +98,7 @@ import {
   type WrittenDescriptionStep,
 } from './writtenDescriptionDerivationCore';
 import { regateRematerializedEntities } from './rematerializeResearchEntities';
+import { createChunkedRegater } from './rematerializeResearchEntitiesCore';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -283,7 +284,7 @@ async function rederiveWrittenBodyCards(
   dbLabel: string,
 ): Promise<void> {
   const reports: CardRederivationReport[] = [];
-  const materializedEntityIds: string[] = [];
+  const regater = createChunkedRegater(regateRematerializedEntities, REGATE_CHUNK);
   await mapWithConcurrency(entities, args.concurrency, async (entity) => {
     const report: CardRederivationReport = { slug: entity.slug };
     reports.push(report);
@@ -300,19 +301,16 @@ async function rederiveWrittenBodyCards(
         (await cardAfterMaterialize(materialized, entity.shortDescription, args.apply)) !==
         entity.shortDescription;
       if (args.apply && typeof materialized.entityId === 'string') {
-        materializedEntityIds.push(materialized.entityId);
+        await regater.add([materialized.entityId]);
       }
     } catch (error) {
       report.error = true;
       console.error(`[coverage-synthesis] ${entity.slug}: ${sanitizeLogValue(error)}`);
     }
   });
-  const regates = [];
-  for (let index = 0; index < materializedEntityIds.length; index += REGATE_CHUNK) {
-    regates.push(
-      await regateRematerializedEntities(materializedEntityIds.slice(index, index + REGATE_CHUNK)),
-    );
-  }
+  const regated = await regater.finish();
+  if (regated.error) throw new Error(`[coverage-synthesis] re-gate failed: ${regated.error}`);
+  const regates = regated.summaries;
   const errors = reports.filter((report) => report.error).length;
   const report = {
     generatedAt: new Date().toISOString(),
@@ -624,7 +622,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
 
   const reports: CoverageEntityReport[] = [];
   const cardRequests: CardRequest[] = [];
-  const materializedEntityIds: string[] = [];
+  const regater = createChunkedRegater(regateRematerializedEntities, REGATE_CHUNK);
   let written = 0;
   let observationDropped = 0;
   let adopted = 0;
@@ -705,7 +703,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
         }
         const materializedId = await materializeWrittenRow(entity);
         if (!materializedId) return;
-        materializedEntityIds.push(materializedId);
+        await regater.add([materializedId]);
         report.adopted = await servesWrittenBody(materializedId);
         if (report.adopted) adopted += 1;
       } catch (error) {
@@ -806,7 +804,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
       }
       const materializedId =
         changed && !materializeIsDeferred ? await materializeWrittenRow(entity) : undefined;
-      if (materializedId) materializedEntityIds.push(materializedId);
+      if (materializedId) await regater.add([materializedId]);
       if (writes.recordHash && derivationInputHash && derivationInputHash !== storedHash) {
         await appendObservations(
           [
@@ -828,12 +826,9 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     }
   });
 
-  const regates = [];
-  for (let index = 0; index < materializedEntityIds.length; index += REGATE_CHUNK) {
-    regates.push(
-      await regateRematerializedEntities(materializedEntityIds.slice(index, index + REGATE_CHUNK)),
-    );
-  }
+  const regated = await regater.finish();
+  if (regated.error) throw new Error(`[coverage-synthesis] re-gate failed: ${regated.error}`);
+  const regates = regated.summaries;
 
   const countBy = (step: string) => reports.filter((report) => report.step === step).length;
   const report = {
