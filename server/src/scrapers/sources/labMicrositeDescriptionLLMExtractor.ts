@@ -1220,22 +1220,55 @@ function siteOrigin(pageUrl: string): string {
   }
 }
 
-function leafNamesPersonInFull(pageUrl: string, personName: string): boolean {
-  const tokens = comparableName(personName)
-    .split(' ')
-    .filter((token) => token.length >= 2);
-  if (tokens.length < 2) return false;
-  let leaf = '';
-  try {
-    leaf = new URL(pageUrl).pathname.split('/').filter(Boolean).pop() ?? '';
-  } catch {
-    return false;
-  }
-  const parts = leaf
+const NAME_SLUG_PART = /^[a-z]{2,}$/;
+const NON_NAME_SEGMENT_WORDS = new Set([
+  'research',
+  'publications',
+  'projects',
+  'project',
+  'people',
+  'person',
+  'team',
+  'members',
+  'member',
+  'lab',
+  'labs',
+  'about',
+  'home',
+  'index',
+  'news',
+  'contact',
+  'bio',
+  'biography',
+  'profile',
+  'profiles',
+  'faculty',
+  'staff',
+  'students',
+  'site',
+  'view',
+  'page',
+  'pages',
+  'teaching',
+  'courses',
+  'cv',
+  'group',
+  'center',
+  'program',
+  'department',
+  'school',
+]);
+
+function segmentParts(segment: string): string[] {
+  return segment
     .toLowerCase()
     .split(/[-_.~+]+/)
     .map((part) => part.replace(/\d+$/, ''))
     .filter(Boolean);
+}
+
+function segmentNamesPersonInFull(segment: string, tokens: readonly string[]): boolean {
+  const parts = segmentParts(segment);
   const given = tokens[0];
   const surname = tokens[tokens.length - 1];
   const surnameJoined = tokens.slice(1).join('');
@@ -1247,13 +1280,88 @@ function leafNamesPersonInFull(pageUrl: string, personName: string): boolean {
   );
 }
 
+const looksLikePersonNameSlug = (segment: string): boolean => {
+  const parts = segmentParts(segment);
+  return (
+    parts.length >= 2 &&
+    parts.length <= 4 &&
+    parts.every((part) => NAME_SLUG_PART.test(part) && !NON_NAME_SEGMENT_WORDS.has(part))
+  );
+};
+
+/**
+ * Whether a path segment names the person in full (given name and surname, a trailing digit
+ * allowed), and no later segment names someone else, as on `/lab/<lead>/people/<member>`,
+ * where the page belongs to the member (#6316).
+ */
+function pathSegmentsOf(pageUrl: string): string[] {
+  try {
+    return new URL(pageUrl).pathname.split('/').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+const personTokensOf = (personName: string): string[] =>
+  comparableName(personName)
+    .split(' ')
+    .filter((token) => token.length >= 2);
+
+/**
+ * Whether a segment after the lead's own (their name, or `/lab/<lead>`) names someone else, as
+ * on `/lab/<lead>/people/<member>`: the page is the member's, not the lead's (#6316).
+ */
+function laterSegmentNamesSomeoneElse(pageUrl: string, personName: string): boolean {
+  const tokens = personTokensOf(personName);
+  if (tokens.length < 2) return false;
+  const segments = pathSegmentsOf(pageUrl);
+  const anchor = segments.findIndex(
+    (segment, index) =>
+      segmentNamesPersonInFull(segment, tokens) ||
+      (index > 0 && LEAD_SEGMENT_PARENTS.has(segments[index - 1].toLowerCase())),
+  );
+  if (anchor < 0) return false;
+  return segments
+    .slice(anchor + 1)
+    .some(
+      (segment) => looksLikePersonNameSlug(segment) && !segmentNamesPersonInFull(segment, tokens),
+    );
+}
+
+/** Whether a path segment names the person in full (given name and surname, a trailing digit allowed). */
+function pathNamesPersonInFull(pageUrl: string, personName: string): boolean {
+  const tokens = personTokensOf(personName);
+  if (tokens.length < 2) return false;
+  return pathSegmentsOf(pageUrl).some((segment) => segmentNamesPersonInFull(segment, tokens));
+}
+
+/** A Yale `/people/<netid>` page whose netid is exactly one of the row's leads' (#6316). */
+function isYalePeoplePageForNetid(pageUrl: string, leadNetids: readonly string[]): boolean {
+  if (leadNetids.length === 0) return false;
+  try {
+    const url = new URL(pageUrl);
+    if (!isYaleHostedPage(pageUrl)) return false;
+    const segments = url.pathname.toLowerCase().split('/').filter(Boolean);
+    const at = segments.indexOf('people');
+    return at >= 0 && leadNetids.includes(segments[at + 1] ?? '');
+  } catch {
+    return false;
+  }
+}
+
 export function descriptionPageIsRowLeadsOwn(
-  input: RowLead & { pageUrl: string; pageText: string; leadFullNameShared?: boolean },
+  input: RowLead & {
+    pageUrl: string;
+    pageText: string;
+    leadFullNameShared?: boolean;
+    leadNetids?: readonly string[];
+  },
 ): boolean {
   const personName = input.personName ?? '';
   const surname = leadSurname(personName);
   if (!surname) return true;
   if (!rowIsScopedToLead(input, surname)) return true;
+  if (laterSegmentNamesSomeoneElse(input.pageUrl, personName)) return false;
   if (urlCarriesPersonSurname(hostAndLabSegment(input.pageUrl), personName)) return true;
   if (isPersonalNameDomainWebsite(siteOrigin(input.pageUrl), personName)) return true;
   if (
@@ -1262,7 +1370,8 @@ export function descriptionPageIsRowLeadsOwn(
   ) {
     return true;
   }
-  if (!input.leadFullNameShared && leafNamesPersonInFull(input.pageUrl, personName)) return true;
+  if (!input.leadFullNameShared && pathNamesPersonInFull(input.pageUrl, personName)) return true;
+  if (isYalePeoplePageForNetid(input.pageUrl, input.leadNetids ?? [])) return true;
   return pageNamesPersonInLeadRole(input.pageText, personName);
 }
 

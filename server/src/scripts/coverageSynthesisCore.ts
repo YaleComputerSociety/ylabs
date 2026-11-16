@@ -571,6 +571,8 @@ export interface WriterEvidenceOptions {
   leadNames?: readonly (string | undefined | null)[];
   /** Another person in the corpus carries the lead's full name (#6316). */
   leadFullNameShared?: boolean;
+  /** The netids of the row's live leads, for a Yale `/people/<netid>` page (#6316). */
+  leadNetids?: readonly string[];
 }
 
 const namesakeScreenIdentity = (
@@ -617,6 +619,7 @@ export function writerEvidencePageNamesRowLead(
       descriptionPageIsRowLeadsOwn({
         personName,
         leadFullNameShared: options.leadFullNameShared,
+        leadNetids: options.leadNetids,
         websiteUrl: options.websiteUrl,
         rowName: options.identity?.name,
         kind,

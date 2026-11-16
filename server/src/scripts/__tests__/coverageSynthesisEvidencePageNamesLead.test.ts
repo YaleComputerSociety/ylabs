@@ -186,6 +186,33 @@ describe("a page is the person's own only by role, name or subject, never by pre
     ]);
   });
 
+  it('admits a page whose middle path segment names the person in full', () => {
+    expect(
+      texts(
+        [researchPage('https://sites.example-host.com/view/quillon-varnadore/research')],
+        PERSON_ROW,
+      ),
+    ).toEqual([RESEARCH]);
+  });
+
+  it('refuses a page whose later segment names a different person', () => {
+    expect(
+      texts(
+        [researchPage('https://geology.yale.edu/lab/quillon-varnadore/people/ines-okafor')],
+        PERSON_ROW,
+      ),
+    ).toEqual([]);
+  });
+
+  it("admits a Yale people page keyed by the lead's netid, exactly", () => {
+    const withNetid = { ...PERSON_ROW, leadNetids: ['qv42'] };
+    expect(texts([researchPage('https://fds.yale.edu/people/qv42/')], withNetid)).toEqual([
+      RESEARCH,
+    ]);
+    expect(texts([researchPage('https://fds.yale.edu/people/qv421/')], withNetid)).toEqual([]);
+    expect(texts([researchPage('https://fds.example.org/people/qv42/')], withNetid)).toEqual([]);
+  });
+
   it('carries the shared-name flag through a captured evidence file', () => {
     const row = {
       slug: 'estuary-fixture',

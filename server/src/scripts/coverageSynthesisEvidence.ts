@@ -10,6 +10,7 @@ import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEn
 import { containsAsciiControl } from '../utils/asciiControl';
 import {
   loadResearchEntityLeadPersonDisplayNames,
+  loadResearchEntityLeadPersonIds,
   loadResearchEntityLeadPersonName,
 } from '../utils/researchHomeNameIdentityRoster';
 import { withPublicDescriptionGateFields } from '../services/researchEntityPublicDescription';
@@ -57,6 +58,7 @@ export interface WriterRowEvidence {
   mergedInObservations: WriterObservation[];
   leadNames?: string[];
   leadFullNameShared?: boolean;
+  leadNetids?: string[];
 }
 
 export const WRITER_EVIDENCE_FILE_VERSION = 1;
@@ -156,9 +158,30 @@ export function writerServingRow(row: {
  */
 export async function writerLeadIdentity(
   entityId: unknown,
-): Promise<{ leadNames: string[]; leadFullNameShared: boolean }> {
+): Promise<{ leadNames: string[]; leadFullNameShared: boolean; leadNetids: string[] }> {
   const leadNames = await writerLeadNames(entityId);
-  return { leadNames, leadFullNameShared: await loadLeadFullNameShared(leadNames[0]) };
+  return {
+    leadNames,
+    leadFullNameShared: await loadLeadFullNameShared(leadNames[0]),
+    leadNetids: await loadLeadNetids(entityId),
+  };
+}
+
+export async function loadLeadNetids(entityId: unknown): Promise<string[]> {
+  const id = entityId === undefined || entityId === null ? '' : String(entityId);
+  if (!id) return [];
+  const personIds = (await loadResearchEntityLeadPersonIds([id])).get(id) ?? [];
+  if (personIds.length === 0) return [];
+  const people = (await Researcher.find({ _id: { $in: personIds } })
+    .select('identifiers.netid')
+    .lean()) as Array<{ identifiers?: { netid?: unknown } }>;
+  return people
+    .map((person) =>
+      String(person.identifiers?.netid ?? '')
+        .trim()
+        .toLowerCase(),
+    )
+    .filter(Boolean);
 }
 
 export async function writerLeadNames(entityId: unknown): Promise<string[]> {
@@ -202,6 +225,7 @@ export function snippetsFromRowEvidence(row: WriterRowEvidence, now: Date): Cove
     identity: row.entity,
     leadNames: row.leadNames,
     leadFullNameShared: row.leadFullNameShared === true,
+    leadNetids: row.leadNetids ?? [],
     now,
   };
   const own = buildWriterEvidenceSnippets(row.observations, row.entity.recentGrants, options);
@@ -249,6 +273,13 @@ export function parseWriterEvidenceFile(value: unknown): WriterEvidenceFile {
         ? { leadNames: row.leadNames.filter((name): name is string => typeof name === 'string') }
         : {}),
       ...(row.leadFullNameShared === true ? { leadFullNameShared: true } : {}),
+      ...(Array.isArray(row.leadNetids)
+        ? {
+            leadNetids: row.leadNetids.filter(
+              (netid): netid is string => typeof netid === 'string',
+            ),
+          }
+        : {}),
     })),
   };
 }

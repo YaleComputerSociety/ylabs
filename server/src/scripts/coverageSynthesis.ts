@@ -81,6 +81,7 @@ import {
   WRITER_ENTITY_READ_PROJECTION,
   writerEntityRowOf,
   loadLeadFullNameShared,
+  loadLeadNetids,
   loadWriterObservations,
   loadWriterRowEvidence,
   writerLeadNames,
@@ -773,6 +774,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
         identity: entity,
         leadNames,
         leadFullNameShared: await loadLeadFullNameShared(leadNames[0]),
+        leadNetids: await loadLeadNetids(entity._id),
       },
     );
     report.snippets = snippets.length;
