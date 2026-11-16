@@ -180,6 +180,21 @@ describe('defaultCenterEmeritusSectionLeadFinder (#6162)', () => {
     ]);
   });
 
+  it('ignores an emeritus status that was withdrawn and rolled back', async () => {
+    await person('morgan');
+    const entityKey = await centerListing('morgan');
+    await mongoose.connection
+      .db!.collection('observations')
+      .updateMany(
+        { entityKey, field: 'currentStatus' },
+        {
+          $set: { superseded: true, rollback: { rolledBackAt: new Date('2026-11-15T00:00:00Z') } },
+        },
+      );
+
+    await expect(defaultCenterEmeritusSectionLeadFinder()).resolves.toEqual([]);
+  });
+
   it('never mints: a listed person who leads no row is recorded nowhere', async () => {
     await person('gray', { leads: false });
     await centerListing('gray');
