@@ -1346,6 +1346,33 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     ).toBe(true);
   });
 
+  it('keeps a program accepting when the closure belongs to another cycle, clause or noun', () => {
+    for (const rowText of [
+      'Applications for Summer 2025 are closed. Applications for Summer 2026 are now open.',
+      'Applications are open; the portal is closed for maintenance on Sundays.',
+      'Applications are open for juniors; the program is closed to seniors.',
+      'Applications are open. Incomplete applications are closed without review.',
+      'Applications are open. Application Status: Closed for the fall round, open for spring.',
+    ]) {
+      expect(rowAccepting(rowText)).toBe(true);
+    }
+  });
+
+  it('does not let a future reopening outweigh a stated closure', () => {
+    expect(
+      rowAccepting(
+        'Applications for Summer 2026 are now closed. Applications open again in January.',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not read a dated future opening as an open window', () => {
+    expect(
+      rowAccepting('Application Status: CLOSED. Application open February 18 for the next cycle.'),
+    ).toBe(false);
+    expect(rowAccepting('Applications open in early September.')).toBe(false);
+  });
+
   it('does not read past-tense rolling review as accepting', () => {
     expect(rowAccepting('Applications were accepted on a rolling basis last spring.')).toBe(false);
   });

@@ -804,16 +804,48 @@ function extractEmail(text: string): string | undefined {
   return text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
 }
 
-const STATED_APPLICATION_CLOSURE =
-  /\bapplications?\b(?:(?!\b(?:after|until|once|when|before|if|unless|while|since)\b)[^.]){0,60}?\b(?:are|is)\s+(?:now\s+)?closed\b|\bapplication status:?\s*closed\b/i;
+const NOT_A_FUTURE_OPENING = String.raw`(?!\s+(?:again|in|on|next|from|starting|beginning|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*|\d)\b)`;
+
+const ACTIVE_APPLICATION_LANGUAGE = new RegExp(
+  String.raw`\bapplications?\s+(?:are\s+)?(?:now\s+)?open\b${NOT_A_FUTURE_OPENING}|` +
+    /\bcurrently accepting applications\b|\brolling\b|\breview(?:ed|ing)?\s+applications?\s+as\s+(?:we|they)\s+(?:are\s+)?receiv|\bapplications?\s+(?:are\s+)?accepted\s+(?:on\s+a\s+)?(?:rolling|continuous|year[-\s]?round)\b|\bno\s+(?:fixed|set)\s+deadline\b/
+      .source,
+  'i',
+);
+
+const APPLICATIONS_FOR_A_CYCLE = String.raw`(?:\s+for\s+(?:the\s+)?[\w'’ -]{1,40}?)?`;
+
+const STATED_OPEN_WINDOW = new RegExp(
+  String.raw`\bapplications?${APPLICATIONS_FOR_A_CYCLE}\s+(?:are\s+)?(?:now\s+)?open\b${NOT_A_FUTURE_OPENING}|\bcurrently accepting applications\b`,
+  'i',
+);
+
+const CLOSURE_CLAUSE = String.raw`${APPLICATIONS_FOR_A_CYCLE}\s+(?:are|is|ARE|IS)\s+(?:now\s+|NOW\s+)?(?:closed|Closed|CLOSED)\b`;
+
+const CLOSURE_SENTENCE = new RegExp(
+  String.raw`^(?:the\s+)?applications?${CLOSURE_CLAUSE}|\b(?:The\s+)?(?:Applications?|APPLICATIONS?)${CLOSURE_CLAUSE}`,
+  'u',
+);
+
+const CLOSED_STATUS_LINE = /\bapplication status:?\s*closed\b/i;
+
+const NAMES_ANOTHER_ROUND = /\bopen\b|\bround\b/i;
 
 const PAST_ROLLING_REVIEW = /\b(?:were|was)\s+(?:accepted|reviewed)\s+on\s+a\s+rolling\s+basis\b/gi;
 
+const statesClosure = (sentence: string): boolean =>
+  CLOSURE_SENTENCE.test(sentence) ||
+  (CLOSED_STATUS_LINE.test(sentence) && !NAMES_ANOTHER_ROUND.test(sentence));
+
 function hasExplicitActiveApplicationLanguage(text: string): boolean {
-  if (STATED_APPLICATION_CLOSURE.test(text)) return false;
-  return /\bapplications?\s+(are\s+)?(now\s+)?open\b|\bcurrently accepting applications\b|\brolling\b|\breview(?:ed|ing)?\s+applications?\s+as\s+(?:we|they)\s+(?:are\s+)?receiv|\bapplications?\s+(?:are\s+)?accepted\s+(?:on\s+a\s+)?(?:rolling|continuous|year[-\s]?round)\b|\bno\s+(?:fixed|set)\s+deadline\b/i.test(
-    text.replace(PAST_ROLLING_REVIEW, ''),
-  );
+  const sentences = text
+    .replace(PAST_ROLLING_REVIEW, '')
+    .split(/[.!?;]+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  if (sentences.some((sentence) => STATED_OPEN_WINDOW.test(sentence))) return true;
+  if (sentences.some(statesClosure)) return false;
+  return sentences.some((sentence) => ACTIVE_APPLICATION_LANGUAGE.test(sentence));
 }
 
 interface DateNearLabel {
