@@ -81,6 +81,10 @@ const PROVENANCE_UNSET_WRITERS: Record<string, Route> = {
   'scripts/retireOrganizationIdentityWebsiteGrafts.ts': {},
   'scripts/retireSharedRosterWebsites.ts': {},
   'scripts/retireStaleLaunchSuppressionOverrides.ts': {},
+  'scripts/studentVisibilityOverride.ts': {
+    exempt:
+      'only the programs collection unsets a provenance stamp, and a fellowship is not a research entity, so the research visibility gate never reads its citations',
+  },
   'services/fellowshipService.ts': {
     exempt:
       'lifts a fellowship visibility override; a fellowship is not a research entity, so the research visibility gate never reads its citations',
