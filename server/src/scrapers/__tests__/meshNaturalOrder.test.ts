@@ -76,6 +76,24 @@ describe('MeSH natural-order headings (#6358)', () => {
     expect(partition.dropped).toEqual(['Data Analysis']);
   });
 
+  it('matches an inverted catalog label from either spelling and resolves it to the natural order', () => {
+    const catalog = createResearchAreaCanonicalizer(
+      buildResearchAreaResolverIndex([
+        { name: 'Carcinoma, Hepatocellular', aliases: ['Liver Cell Carcinoma'] },
+      ]),
+    );
+
+    expect(
+      catalog.canonicalizeResearchAreas(['Carcinoma, Hepatocellular', 'Liver Cell Carcinoma']),
+    ).toEqual({ values: ['Hepatocellular Carcinoma'], unmatched: [], dropped: [] });
+    expect(catalog.matchCanonicalResearchAreas(['Hepatocellular Carcinoma'])).toEqual([
+      'Hepatocellular Carcinoma',
+    ]);
+    expect(catalog.deriveResearchAreasFromText('Studies hepatocellular carcinoma.')).toEqual([
+      'Hepatocellular Carcinoma',
+    ]);
+  });
+
   it('ships the 2026 map with NLM attribution and a descriptor UI per entry', () => {
     const data = meshNaturalOrderHeadings as {
       meshYear: number;

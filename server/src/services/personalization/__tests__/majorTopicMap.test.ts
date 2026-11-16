@@ -6,6 +6,7 @@ import {
   resolveMajorTopicMapping,
   YALIES_ABBREVIATED_MAJOR_NAMES,
 } from '../majorTopicMap';
+import { naturalOrderMeshHeading } from '../../../scrapers/meshNaturalOrder';
 import { buildServedFacetSnapshot } from '../servedFacetSnapshot';
 import snapshot from '../servedFacetValues.snapshot.json';
 import yaliesMajorStrings from './fixtures/yaliesMajorStrings.json';
@@ -19,6 +20,15 @@ const SAMPLE_SIZE = 15;
 
 const mappings = Object.entries(MAJOR_TOPIC_MAP);
 
+const servedResearchAreaRowFloors = (counts: Record<string, number>): Record<string, number> => {
+  const floors: Record<string, number> = {};
+  for (const [value, count] of Object.entries(counts)) {
+    const natural = naturalOrderMeshHeading(value);
+    floors[natural] = Math.max(floors[natural] ?? 0, count);
+  }
+  return floors;
+};
+
 const valuesBelowRowFloor = (
   field: 'researchAreas' | 'departments',
   counts: Record<string, number>,
@@ -31,7 +41,9 @@ const valuesBelowRowFloor = (
 
 describe('MAJOR_TOPIC_MAP', () => {
   it('maps only research areas the served snapshot holds with enough rows to survive corpus churn', () => {
-    expect(valuesBelowRowFloor('researchAreas', snapshot.researchAreas)).toEqual([]);
+    expect(
+      valuesBelowRowFloor('researchAreas', servedResearchAreaRowFloors(snapshot.researchAreas)),
+    ).toEqual([]);
   });
 
   it('maps only departments the served snapshot holds with enough rows to survive corpus churn', () => {
@@ -157,5 +169,18 @@ describe('buildServedFacetSnapshot', () => {
       researchAreas: { Ecology: 2 },
       departments: { Biology: 2, Physics: 1 },
     });
+  });
+
+  it('counts an inverted MeSH heading and its natural order as one research area per row', () => {
+    const built = buildServedFacetSnapshot(
+      [
+        { researchAreas: ['Carcinoma, Hepatocellular', 'Hepatocellular Carcinoma'] },
+        { researchAreas: ['Hepatocellular Carcinoma'] },
+        { researchAreas: ['Carcinoma, Hepatocellular'] },
+      ],
+      '2026-10-04',
+      1,
+    );
+    expect(built.researchAreas).toEqual({ 'Hepatocellular Carcinoma': 3 });
   });
 });

@@ -2061,10 +2061,8 @@ export type UnbackedResearchAreaOutcome =
   | 'kept-stored-type-not-derived'
   | 'nothing-derived';
 
-// A stored list written before #6358 may still hold an inverted MeSH heading that the derived list
-// holds in natural order, so both are keyed on the natural form.
 function researchAreaMemberKey(area: unknown): unknown {
-  return typeof area === 'string' ? naturalOrderMeshHeading(area.trim()).toLowerCase() : area;
+  return typeof area === 'string' ? area.trim().toLowerCase() : area;
 }
 
 function sameResearchAreaList(left: unknown[], right: unknown[]): boolean {
@@ -2096,7 +2094,7 @@ async function rederiveUnbackedResearchAreas(input: {
         : []
       : input.storedEvidenceRetired
         ? []
-        : stored;
+        : stored.map((area) => (typeof area === 'string' ? naturalOrderMeshHeading(area) : area));
   const trial: Record<string, unknown> = { ...set };
   delete trial.researchAreas;
   await input.derive(trial, { ...(entityDoc ?? {}), researchAreas: [] });

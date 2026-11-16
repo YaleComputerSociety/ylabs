@@ -300,18 +300,21 @@ export function buildResearchAreaResolverIndex(
   const exact = new Map<string, string>();
   const phrases: ResearchAreaPhrase[] = [];
   for (const row of rows) {
+    const canonical = naturalOrderMeshHeading(row.name);
     const aliases = [...(row.aliases || []), ...(RESEARCH_AREA_ALIASES[row.name] || [])];
     for (const value of [row.name, ...aliases]) {
-      const key = researchAreaMatchKey(value);
-      if (key && !exact.has(key)) exact.set(key, row.name);
+      for (const spelling of [value, naturalOrderMeshHeading(value)]) {
+        const key = researchAreaMatchKey(spelling);
+        if (key && !exact.has(key)) exact.set(key, canonical);
+      }
     }
     const nameAllowsSingleWord = !AMBIGUOUS_SINGLE_WORD_AREA_KEYS.has(
       researchAreaMatchKey(row.name),
     );
-    const namePhrase = phraseFromSlug(row.name, row.name, nameAllowsSingleWord);
+    const namePhrase = phraseFromSlug(canonical, canonical, nameAllowsSingleWord);
     if (namePhrase) phrases.push(namePhrase);
     for (const alias of aliases) {
-      const aliasPhrase = phraseFromSlug(row.name, alias, false);
+      const aliasPhrase = phraseFromSlug(canonical, alias, false);
       if (aliasPhrase) phrases.push(aliasPhrase);
     }
   }
