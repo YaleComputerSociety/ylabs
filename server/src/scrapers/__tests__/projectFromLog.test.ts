@@ -122,7 +122,7 @@ describe('projectFromLog', () => {
       expect(result.set.departments).toEqual(['Surgery']);
     });
 
-    it('projects no section on a center, whose departments are not one lead\'s', async () => {
+    it("projects no section on a center, whose departments are not one lead's", async () => {
       const result = await projectFromLog(
         'researchEntity',
         researchEntityInput({
