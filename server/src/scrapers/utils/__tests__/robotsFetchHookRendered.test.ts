@@ -8,6 +8,7 @@ vi.mock('node:child_process', () => ({ execFile: mocks.execFile }));
 
 import { createScraplingRenderedFetcher, type RenderedFetchProxyPacing } from '../../renderedFetch';
 import type { HostSlotLimiter } from '../hostConcurrencyLimiter';
+import { activeHostPause } from '../hostPause';
 import { resetHostPauseStateForTests } from '../hostPauseState';
 import { hostCrawlDelayMs, resetHostCrawlDelaysForTests } from '../hostThrottlePolicy';
 import { isNotObserved } from '../notObserved';
@@ -57,7 +58,7 @@ beforeEach(() => {
 });
 
 describe('the rendered fetch reads robots.txt for its seed (#6340)', () => {
-  const proxyStub = () => {
+  const proxyStub = (robotsRefusals: RobotsDisallowedError[] = []) => {
     const started: RenderedFetchProxyPacing[] = [];
     return {
       started,
@@ -67,7 +68,7 @@ describe('the rendered fetch reads robots.txt for its seed (#6340)', () => {
           url: 'http://127.0.0.1:18080',
           forwardedHosts: () => [SEED_HOST],
           pacingRefusals: () => [],
-          robotsRefusals: () => [],
+          robotsRefusals: () => robotsRefusals,
           close: async () => {},
         };
       }),
@@ -136,6 +137,31 @@ describe('the rendered fetch reads robots.txt for its seed (#6340)', () => {
     expect(delayWhenSlotTaken).toEqual([5_000]);
     expect(mocks.execFile).toHaveBeenCalledTimes(1);
     expect(proxy.started[0].robotsTxtFetcher).toBe(robots.fetcher);
+  });
+
+  it('treats a seed the browser redirected onto a disallowed path as not observed, not a host refusal', async () => {
+    const robots = robotsFetcherFor({ [SEED_HOST]: POLITE_ROBOTS });
+    const proxy = proxyStub([new RobotsDisallowedError(SEED_HOST, '/private/landing')]);
+    mocks.execFile.mockImplementationOnce((_command, _args, _options, callback) => {
+      callback(null, {
+        stdout: JSON.stringify({
+          url: `https://${SEED_HOST}/private/landing`,
+          statusCode: 403,
+          html: 'Disallowed by robots.txt',
+        }),
+        stderr: '',
+      });
+    });
+
+    const failure = await fetcherWith(
+      proxy,
+      robots.fetcher,
+      recordingSlots().limiter,
+    )({ url: `https://${SEED_HOST}/public` }).catch((e) => e);
+
+    expect(failure).toBeInstanceOf(RobotsDisallowedError);
+    expect(isNotObserved(failure)).toBe(true);
+    expect(activeHostPause(SEED_HOST)).toBeUndefined();
   });
 });
 
@@ -275,32 +301,72 @@ describe('the rendered fetch proxy reads robots.txt for subresources (#6340)', (
     expect(slots.taken).toEqual([]);
   });
 
-  it.each([
+  const VARIANTS = [
     { held: `www.${BARE_SEED_HOST}`, asset: BARE_SEED_HOST },
     { held: BARE_SEED_HOST, asset: `www.${BARE_SEED_HOST}` },
-  ])('reads robots.txt for $asset when the render holds $held', async ({ held, asset }) => {
-    const robots = robotsFetcherFor({ [asset]: POLITE_ROBOTS });
-    await startProxy(robots.fetcher, recordingSlots().limiter, held);
+  ];
+
+  const robotsReadThatWaitsOnTheHeldSlot = () => {
+    const asked: string[] = [];
+    const fetcher: RobotsTxtFetcher = (host) => {
+      asked.push(host);
+      return new Promise(() => undefined);
+    };
+    return { asked, fetcher };
+  };
+
+  it.each(VARIANTS)(
+    'reads only the seed policy for $asset while the render holds $held, never a robots.txt read',
+    async ({ held, asset }) => {
+      await robotsPolicyFor(held, robotsFetcherFor({ [held]: POLITE_ROBOTS }).fetcher);
+      const stalled = robotsReadThatWaitsOnTheHeldSlot();
+      const slots = recordingSlots();
+      await startProxy(stalled.fetcher, slots.limiter, held);
+
+      const refused = await getThroughProxy(asset, '/private/script.js');
+      const allowed = await getThroughProxy(asset, '/public/script.js');
+
+      expect([refused.status, allowed.status]).toEqual([403, 200]);
+      expect(hits).toEqual(['/public/script.js']);
+      expect(stalled.asked).toEqual([]);
+      expect(slots.taken).toEqual([]);
+      expect(proxy!.robotsRefusals()).toEqual([expect.any(RobotsDisallowedError)]);
+    },
+  );
+
+  it('prefers the variant host own cached policy over the seed policy', async () => {
+    const asset = `www.${BARE_SEED_HOST}`;
+    await robotsPolicyFor(
+      BARE_SEED_HOST,
+      robotsFetcherFor({ [BARE_SEED_HOST]: POLITE_ROBOTS }).fetcher,
+    );
+    await robotsPolicyFor(
+      asset,
+      robotsFetcherFor({ [asset]: 'User-agent: *\nAllow: /\n' }).fetcher,
+    );
+    await startProxy(
+      robotsReadThatWaitsOnTheHeldSlot().fetcher,
+      recordingSlots().limiter,
+      BARE_SEED_HOST,
+    );
 
     const response = await getThroughProxy(asset, '/private/script.js');
 
-    expect(response.status).toBe(403);
-    expect(hits).toEqual([]);
-    expect(robots.asked).toEqual([asset]);
-    expect(proxy!.robotsRefusals()).toEqual([expect.any(RobotsDisallowedError)]);
+    expect(response.status).toBe(200);
   });
 
-  it('records the Crawl-delay of a tunnel to the www variant of the held host', async () => {
-    const asset = `www.${BARE_SEED_HOST}`;
-    const robots = robotsFetcherFor({ [asset]: POLITE_ROBOTS });
-    await startProxy(robots.fetcher, recordingSlots().limiter, BARE_SEED_HOST);
+  it.each(VARIANTS)(
+    'opens a tunnel to $asset while the render holds $held without a robots.txt read',
+    async ({ held, asset }) => {
+      const stalled = robotsReadThatWaitsOnTheHeldSlot();
+      await startProxy(stalled.fetcher, recordingSlots().limiter, held);
 
-    const status = await openTunnel(`${asset}:${upstreamPort}`);
+      const status = await openTunnel(`${asset}:${upstreamPort}`);
 
-    expect(status).toContain(' 200 ');
-    expect(robots.asked).toEqual([asset]);
-    expect(hostCrawlDelayMs(asset)).toBe(5_000);
-  });
+      expect(status).toContain(' 200 ');
+      expect(stalled.asked).toEqual([]);
+    },
+  );
 
   it('records a tunnelled host Crawl-delay before the tunnel takes its slot', async () => {
     const robots = robotsFetcherFor({ [TUNNEL_HOST]: POLITE_ROBOTS });

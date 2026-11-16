@@ -20,7 +20,7 @@ import {
 import { getCached, setCached } from './snapshotCache';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { SCRAPER_USER_AGENT } from './utils/scraperUserAgent';
-import { enforceRobotsForPageRead } from './utils/robotsFetchHook';
+import { enforceRobotsForPageRead, type RobotsDisallowedError } from './utils/robotsFetchHook';
 import type { RobotsTxtFetcher } from './utils/robotsPolicyCache';
 import {
   acquireHostSlotWithin,
@@ -45,6 +45,7 @@ import {
   startSsrfGuardedForwardProxy,
   type SsrfGuardedForwardProxy,
 } from './utils/ssrfGuardedForwardProxy';
+import { normalizeExcludedHost } from '../utils/excludedHosts';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { withScrapeRunProgress } from './scrapeRunProgress';
 import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
@@ -211,7 +212,7 @@ export type RenderedFetchForwardProxy = Pick<
   SsrfGuardedForwardProxy,
   'url' | 'forwardedHosts' | 'close'
 > &
-  Partial<Pick<SsrfGuardedForwardProxy, 'pacingRefusals'>>;
+  Partial<Pick<SsrfGuardedForwardProxy, 'pacingRefusals' | 'robotsRefusals'>>;
 
 const HOST_REFUSAL_STATUSES: ReadonlySet<number> = new Set([403, 429, 503]);
 
@@ -559,6 +560,24 @@ function createLiveScraplingRenderedFetcher(
     return preflight.redirected;
   };
 
+  /**
+   * A same-origin redirect inside the browser can land the seed on a path robots.txt disallows.
+   * The proxy answered that page with its own 403, so it is not the host refusing us and must not
+   * reach `recordHostRefusal`: the render observed nothing, like a disallowed seed.
+   */
+  const robotsRefusalOfFinalPage = (
+    refusals: RobotsDisallowedError[],
+    finalUrl: string,
+  ): RobotsDisallowedError | undefined => {
+    const final = new URL(finalUrl);
+    const path = `${final.pathname}${final.search}`;
+    return refusals.find(
+      (refusal) =>
+        refusal.path === path &&
+        normalizeExcludedHost(refusal.host) === normalizeExcludedHost(final.hostname),
+    );
+  };
+
   const recordSeedOutcome = async (
     seedHost: string,
     result: RenderedFetchResult,
@@ -744,6 +763,10 @@ function createLiveScraplingRenderedFetcher(
       const pacingRefusal = forwardProxy.pacingRefusals?.()[0];
       if (pacingRefusal) throw pacingRefusal.error;
       const { answeredBySeed, ...result } = rendered;
+      const finalPageRefusal = answeredBySeed
+        ? robotsRefusalOfFinalPage(forwardProxy.robotsRefusals?.() ?? [], result.url)
+        : undefined;
+      if (finalPageRefusal) throw finalPageRefusal;
       if (answeredBySeed) await recordSeedOutcome(stripIpv6Brackets(seedUrl.hostname), result);
       return result;
     } finally {
