@@ -162,6 +162,10 @@ describe('queryNamesATopic', () => {
   it('treats a query made only of access-filter words as a filter phrase', () => {
     expect(queryNamesATopic('has hosted undergrad')).toBe(false);
     expect(queryNamesATopic('labs accepting undergraduates')).toBe(false);
+    expect(queryNamesATopic('first year')).toBe(false);
+    expect(queryNamesATopic('freshmen')).toBe(false);
+    expect(queryNamesATopic('research for sophomores')).toBe(false);
+    expect(queryNamesATopic('first year seminar in coastal ecology')).toBe(true);
     expect(queryNamesATopic('coastal ecology')).toBe(true);
     expect(queryNamesATopic('coastal ecology labs for undergrads')).toBe(true);
   });
@@ -461,6 +465,18 @@ describe('ndcgOutcomes and gateRound', () => {
       '95% interval does not exclude 0',
       'worse queries lose more than better ones gain',
     ]);
+  });
+
+  it('draws the same bootstrap interval for the same deltas every run', () => {
+    const deltas = [0.1, -0.05, 0.2, 0, 0.3, 0.15, -0.1, 0.05, 0.25, 0.1];
+    const outcomes = deltas.map((delta, index) => ({
+      row: `R${index + 1}`,
+      servedNdcg: 0.5,
+      rerankedNdcg: 0.5 + delta,
+      delta,
+      ungradedPairs: 0,
+    }));
+    expect(gateRound(outcomes).ci95).toEqual([0.02, 0.175]);
   });
 
   it('refuses an empty round', () => {
