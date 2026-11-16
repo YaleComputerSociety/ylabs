@@ -36,7 +36,8 @@ export type SameLeadMergeHold =
   | 'already-planned-by-the-url-identity-lane'
   | 'quarantined-by-the-conflation-guard'
   | 'shares-a-row-with-an-earlier-merge'
-  | 'no-ownership-evidence-on-either-side';
+  | 'no-ownership-evidence-on-either-side'
+  | 'would-demote-a-served-row';
 
 export type SameLeadCorroboration =
   'name-agrees' | 'shell-versus-concrete' | 'leadless-or-member-led-twin';
@@ -239,9 +240,44 @@ export function summarizeSameLeadMergeHolds(
     'quarantined-by-the-conflation-guard': 0,
     'shares-a-row-with-an-earlier-merge': 0,
     'no-ownership-evidence-on-either-side': 0,
+    'would-demote-a-served-row': 0,
   };
   for (const row of held) counts[row.reason] += 1;
   return counts;
+}
+
+export interface NonDemotingSurvivorVerdict {
+  defer: boolean;
+  canonicalId: unknown;
+}
+
+export type ResolveNonDemotingSurvivor = (
+  survivorId: string,
+  loserIds: readonly string[],
+) => Promise<NonDemotingSurvivorVerdict>;
+
+/**
+ * A merge archives its losers, so a survivor less student-visible than a loser drops a served
+ * row from student view (#2060). The planned survivor is kept only when the never-demote
+ * resolver accepts that same survivor; a deferral or a different survivor holds the merge
+ * rather than swapping, because this lane's survivor is the one its ownership evidence or
+ * twin anchor chose (#6272).
+ */
+export async function holdMergesThatWouldDemote(
+  merges: readonly SameLeadMergePlan[],
+  resolve: ResolveNonDemotingSurvivor,
+): Promise<{
+  kept: SameLeadMergePlan[];
+  held: Array<{ url: string; reason: SameLeadMergeHold }>;
+}> {
+  const kept: SameLeadMergePlan[] = [];
+  const held: Array<{ url: string; reason: SameLeadMergeHold }> = [];
+  for (const merge of merges) {
+    const verdict = await resolve(merge.survivorId, merge.loserIds);
+    if (!verdict.defer && String(verdict.canonicalId) === merge.survivorId) kept.push(merge);
+    else held.push({ url: merge.url, reason: 'would-demote-a-served-row' });
+  }
+  return { kept, held };
 }
 
 export const SAME_LEAD_MERGE_REQUIRED_URL_LANES: readonly UrlIdentityLaneName[] = [

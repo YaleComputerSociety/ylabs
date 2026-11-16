@@ -40,10 +40,15 @@ import {
   sameLeadUrlLaneHoldFlags,
   sameLeadUrlLaneHolds,
   sameLeadUrlLaneInputsReport,
+  holdMergesThatWouldDemote,
   summarizeSameLeadMergeHolds,
   type SameLeadMergeMember,
 } from './mergeSameLeadDuplicateGroupsCore';
-import { planUrlIdentityLaneVerdicts } from './dedupeResearchEntitiesByPi';
+import {
+  planUrlIdentityLaneVerdicts,
+  resolveNonDemotingMerge,
+  SURVIVOR_KEEPS_ITS_OWN_CARD,
+} from './dedupeResearchEntitiesByPi';
 import {
   MERGE_SURVIVOR_ONLY_FIELDS_FLAG,
   assertScopedSurvivorApply,
@@ -220,9 +225,19 @@ async function main(): Promise<void> {
       duplicateEntityIds: merge.loserIds,
     })),
   );
+  const nonDemoting = await holdMergesThatWouldDemote(
+    distinctPeople.kept.map(({ merge }) => merge),
+    (survivorId, loserIds) =>
+      resolveNonDemotingMerge(
+        new mongoose.Types.ObjectId(survivorId),
+        loserIds.map((id) => new mongoose.Types.ObjectId(id)),
+        SURVIVOR_KEEPS_ITS_OWN_CARD,
+      ),
+  );
   const outcome = {
     ...corroborated,
-    merges: distinctPeople.kept.map(({ merge }) => merge),
+    held: [...corroborated.held, ...nonDemoting.held],
+    merges: nonDemoting.kept,
     refusedAsDistinctPeople: distinctPeople.refused.map(({ group, joinedVerdictPairs }) => ({
       url: group.merge.url,
       joinedVerdictPairs,
