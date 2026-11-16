@@ -660,6 +660,8 @@ A new model provider host must be added to the list, or its calls queue behind t
 The rendered fetch is the documented exception: its headless browser runs in a Python child that no axios hook reaches, and it takes its own host slot before each render.
 Its pacing is its own, to the same rules (#6255, the owner's condition for keeping the browser User-Agent):
 - `renderOnce` refuses a paused seed host with `HostPausedError` before the preflight or the render, so the lane skips the row as not observed.
+- It checks the pause again once its seed slot comes free, because another process can record a pause during that wait; `fetchPageWithPolicy` re-checks each hop's host the same way just before sending (#6335).
+- A 403, 429 or 503 on the seed preflight is recorded through `recordHostRefusal` and stops the render before the browser starts: a pause throws `HostPausedError`, and any other refusal returns the refused page (`blockedReason: 'rendered-seed-refused'`) so the quick re-renders and `recordTierOneExhausted` apply as for a rendered refusal (#6335).
 - The seed page's answer is recorded in the shared backoff store: a 2xx as a success, and a 403, 429 or 503 through `recordHostRefusal` (a stated date pauses at once), then `recordTierOneExhausted` once the quick re-renders run out.
 - The SSRF forward proxy charges each request the browser sends to its receiving host's budget, and refuses a paused host, or a slot that never comes free within the render's timeout, before anything is sent.
 The slot is released once the host answers, so it spaces requests without being held for the life of a keep-alive connection, and an HTTPS tunnel is charged once per connection.
