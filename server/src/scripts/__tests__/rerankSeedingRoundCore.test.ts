@@ -173,6 +173,10 @@ describe('queryNamesATopic', () => {
     expect(queryNamesATopic('cpsc 201 math 225')).toBe(false);
     expect(queryNamesATopic('covid 19 vaccines')).toBe(true);
     expect(queryNamesATopic('5g networks')).toBe(true);
+    expect(queryNamesATopic('covid 19')).toBe(true);
+    expect(queryNamesATopic('covid19')).toBe(true);
+    expect(queryNamesATopic('cd19')).toBe(true);
+    expect(queryNamesATopic('tp53')).toBe(true);
     expect(queryNamesATopic('coastal ecology')).toBe(true);
     expect(queryNamesATopic('coastal ecology labs for undergrads')).toBe(true);
   });
@@ -210,6 +214,8 @@ describe('queryIsNameShaped', () => {
     expect(queryIsNameShaped('Tqxa2', topicVocabulary)).toBe(true);
     expect(queryIsNameShaped('2027 Tqxa Vrnbe', topicVocabulary)).toBe(true);
     expect(queryIsNameShaped('Tqxa Vrnbe 2027 2028', topicVocabulary)).toBe(true);
+    expect(queryIsNameShaped('Tqxa Vrnbe (2027)', topicVocabulary)).toBe(true);
+    expect(queryIsNameShaped('Tqxa Vrnbe #2027', topicVocabulary)).toBe(true);
     expect(queryIsNameShaped('marine biology 2027', topicVocabulary)).toBe(false);
     expect(queryIsNameShaped('soil2 chemistry', topicVocabulary)).toBe(false);
   });
@@ -224,7 +230,7 @@ describe('queryIsNameShaped', () => {
     expect(queryIsNameShaped('Tqxa', topicVocabulary)).toBe(true);
   });
 
-  it('keeps a query with a topic term, a digit, or more than four words', () => {
+  it('keeps a query with a topic term or more than four words', () => {
     expect(queryIsNameShaped('Tqxa marine biology', topicVocabulary)).toBe(false);
     expect(queryIsNameShaped('tqxa vrnbe plok zemv quor', topicVocabulary)).toBe(false);
   });

@@ -92,7 +92,7 @@ Run each command through the machine's heavy-command slot.
    Spellings that share a cache key are counted together.
    A query is kept only when it is short enough for the cache, names a topic rather than only access-filter or year-of-study words (such as "has hosted undergrad" or "first year"), is not name-shaped, keys no seeded entry on Development, and passes the same Development gate the live-miss job uses, which refuses name queries; the served top 30 of each kept query is read there too.
    Name-shaped means one to four words of letters only once access-filter words and digits are set aside, none of them a topic term, because Development's gate recognises only the people its corpus carries and a classmate's name would pass it; so a name typed with a year or a number beside or inside it is dropped too.
-   A query made only of numbers or course codes (a subject of two to five letters and a two- to four-character number, such as `cpsc 474`) names no topic and counts as a filter phrase.
+   A query made only of numbers or course codes (a subject of two to five letters and a three- to four-character number, such as `cpsc 474`) names no topic and counts as a filter phrase.
    A topic term is an English dictionary word or a word in at least three served rows' searchable text, and never a word of any person's name in the corpus, so a query is dropped when in doubt.
    The command loads Development's search vocabulary first, so the served lists it reads are spelling-corrected as the route's are.
    Without `--out` it prints counts only (exclusions by reason, and kept queries by word count) and writes nothing.
