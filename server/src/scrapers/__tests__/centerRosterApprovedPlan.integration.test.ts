@@ -32,6 +32,7 @@ import { RoleAssignment } from '../../models/roleAssignment';
 import { ScrapeRun } from '../../models/scrapeRun';
 import {
   approvalsFromCenterPlanReport,
+  endRosterListingEdges,
   newCenterPlanGuard,
   type CenterPlanGuard,
   type CenterPlanReport,
@@ -308,6 +309,140 @@ describe(
       }
       expect(await liveEdges(SHRINKING, 'Oakley')).toHaveLength(0);
       expect(await liveEdges(SHRINKING, 'Noel')).toHaveLength(1);
+    });
+
+    it('retires nothing for a center the approved plan does not name, and reports it plan-diverged', async () => {
+      await scrapeAndApply({ [SHRINKING]: shrinkingRosters[0] });
+      await scrapeAndApply({ [SHRINKING]: shrinkingRosters[1] });
+      const runId = await scrapeRun({ [SHRINKING]: shrinkingRosters[2] });
+      const plan = await dryRunPlan(runId);
+      expect(retirementOf(plan, SHRINKING)?.digest.verdict).toBe('retire');
+      const withoutTheCenter: CenterPlanReport = {
+        ...plan,
+        centers: plan.centers.filter((center) => center.entityKey !== `center-${SHRINKING}`),
+      };
+
+      const applied = await enforcedApply(
+        runId,
+        newCenterPlanGuard('enforce', approvalsFromCenterPlanReport(withoutTheCenter, runId)),
+      );
+
+      expect(retirementOf(applied.centerPlan, SHRINKING)?.planDiverged).toBe(true);
+      expect(await liveEdges(SHRINKING, 'Oakley')).toHaveLength(1);
+    });
+
+    it('ends only the approved edge when one ending filter matches an approved and an unapproved edge', async () => {
+      const target = new mongoose.Types.ObjectId();
+      const membershipKey = 'fixture-synthetic-identity|core-faculty';
+      const edge = (role: string) =>
+        RoleAssignment.create({
+          personId: new mongoose.Types.ObjectId(),
+          target: { kind: 'RESEARCH_ENTITY', id: target },
+          role,
+          state: 'CURRENT',
+          confidence: 0.8,
+          reviewStatus: 'UNREVIEWED',
+          schemaVersion: 1,
+          archived: false,
+          rosterProvenance: { sourceName: SOURCE_NAME, membershipKey },
+        });
+      const approvedEdge = await edge('CORE_FACULTY');
+      const unapprovedEdge = await edge('DIRECTOR');
+      const guard = newCenterPlanGuard('enforce', {
+        approvedProjectionEndings: new Map([
+          ['center-fixture', new Set([String(approvedEdge._id)])],
+        ]),
+        approvedRetirementDigests: new Map(),
+      });
+
+      const ended = await endRosterListingEdges(
+        {
+          'target.id': target,
+          'rosterProvenance.membershipKey': membershipKey,
+          state: { $ne: 'HISTORICAL' },
+        },
+        { state: 'HISTORICAL', endedAt: new Date() },
+        'superseded-listing-holder',
+        { guard, centerEntityKey: 'center-fixture' },
+      );
+
+      expect(ended).toBe(1);
+      expect(((await RoleAssignment.findById(approvedEdge._id).lean()) as any).state).toBe(
+        'HISTORICAL',
+      );
+      expect(((await RoleAssignment.findById(unapprovedEdge._id).lean()) as any).state).toBe(
+        'CURRENT',
+      );
+      expect(guard.skippedProjectionEndings.map((ending) => ending.edgeId)).toEqual([
+        String(unapprovedEdge._id),
+      ]);
+    });
+
+    describe('write-path endings a dry run plans', () => {
+      const plannedEdgeIds = (report: CenterPlanReport | undefined, key: string, reason: string) =>
+        (
+          report?.centers.find((center) => center.entityKey === `center-${key}`)
+            ?.projectionEndings ?? []
+        )
+          .filter((ending) => ending.reason === reason)
+          .map((ending) => ending.edgeId);
+
+      const stateOf = async (edgeId: unknown) =>
+        ((await RoleAssignment.findById(edgeId).lean()) as any).state;
+
+      it('plans the other-screened-role ending that the apply then ends under the plan', async () => {
+        const SCREENED = 'screened-synthetic';
+        await scrapeAndApply({ [SCREENED]: [member(SCREENED, 'Logan')] });
+        const [facultyEdge] = await liveEdges(SCREENED, 'Logan');
+        expect(facultyEdge.role).toBe('CORE_FACULTY');
+        const runId = await scrapeRun({
+          [SCREENED]: [{ ...member(SCREENED, 'Logan'), title: 'Program Coordinator' }],
+        });
+
+        const plan = await dryRunPlan(runId);
+        expect(plannedEdgeIds(plan, SCREENED, 'other-screened-role')).toEqual([
+          String(facultyEdge._id),
+        ]);
+        expect(await stateOf(facultyEdge._id)).not.toBe('HISTORICAL');
+
+        const applied = await enforcedApply(
+          runId,
+          newCenterPlanGuard('enforce', approvalsFromCenterPlanReport(plan, runId)),
+        );
+
+        expect(await stateOf(facultyEdge._id)).toBe('HISTORICAL');
+        expect(plannedEdgeIds(applied.centerPlan, SCREENED, 'other-screened-role')).toEqual([
+          String(facultyEdge._id),
+        ]);
+      });
+
+      it('plans the superseded-holder ending that the apply then ends after its resolved write', async () => {
+        const DRIFTED = 'drifted-synthetic';
+        await scrapeAndApply({ [DRIFTED]: [member(DRIFTED, 'Kai')] });
+        const [earlierEdge] = await liveEdges(DRIFTED, 'Kai');
+        await Researcher.updateOne(
+          { _id: earlierEdge.personId },
+          { $set: { displayName: 'Kai R. Synthetic' } },
+        );
+        const runId = await scrapeRun({ [DRIFTED]: [member(DRIFTED, 'Kai')] });
+
+        const plan = await dryRunPlan(runId);
+        expect(plannedEdgeIds(plan, DRIFTED, 'superseded-listing-holder')).toEqual([
+          String(earlierEdge._id),
+        ]);
+
+        const applied = await enforcedApply(
+          runId,
+          newCenterPlanGuard('enforce', approvalsFromCenterPlanReport(plan, runId)),
+        );
+
+        expect(await stateOf(earlierEdge._id)).toBe('HISTORICAL');
+        expect(plannedEdgeIds(applied.centerPlan, DRIFTED, 'superseded-listing-holder')).toEqual([
+          String(earlierEdge._id),
+        ]);
+        const [currentEdge] = await liveEdges(DRIFTED, 'Kai');
+        expect(String(currentEdge.personId)).not.toBe(String(earlierEdge.personId));
+      });
     });
 
     describe('projection endings', () => {

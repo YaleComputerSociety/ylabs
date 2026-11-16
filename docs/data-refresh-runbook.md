@@ -805,6 +805,8 @@ For each owed run, apply it in four steps:
 4. Apply: `yarn scrape:development:write materialize --run <runId> --apply --confirm-materialize --expect-center-plan /tmp/plan-2.json`.
 
 An enforced apply exits 4 when it held anything back, a plan-diverged center or a projection ending the plan did not list; the approved writes landed, and the rest needs a fresh dry run and a new plan.
+A plan-diverged center skips only retirement; its individually approved projection endings still apply, because the projection runs first, and the four-step procedure relies on that.
+A plan has no age bound, and its safety rests on the run id, the edge ids and the digests, so always take the final apply from a fresh dry run.
 
 Every post-run stage that ran writes one JSON artifact into the printed sweep directory, and `summary.json` records each stage's `artifactPath`, so read `summary.json` rather than a hand-kept filename list.
 [research-data-pipeline.md](research-data-pipeline.md) owns which stages run and which of them are flag-gated; the artifact name each one writes is declared beside its command in `DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `server/src/scripts/runScraperSweep.ts`.
