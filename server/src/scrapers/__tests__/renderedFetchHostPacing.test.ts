@@ -4,7 +4,12 @@ const mocks = vi.hoisted(() => ({ execFile: vi.fn() }));
 
 vi.mock('node:child_process', () => ({ execFile: mocks.execFile }));
 
-import { createScraplingRenderedFetcher, type RenderedFetchProxyPacing } from '../renderedFetch';
+import {
+  createScraplingRenderedFetcher,
+  type RenderedFetchProxyPacing,
+  type RenderedSeedPreflight,
+} from '../renderedFetch';
+import type { HostSlotLimiter } from '../utils/hostConcurrencyLimiter';
 import { activeHostPause, HostPausedError } from '../utils/hostPause';
 import {
   hostBackoffState,
@@ -44,13 +49,19 @@ const proxyStub = (pacingRefusals: Array<{ host: string; error: Error }> = []) =
 
 const fetcherWith = (
   proxy: ReturnType<typeof proxyStub>,
-  overrides: { maxRetries?: number; requestLog?: ScraperRequestLog | null } = {},
+  overrides: {
+    maxRetries?: number;
+    requestLog?: ScraperRequestLog | null;
+    seedRedirectCheck?: () => Promise<boolean | RenderedSeedPreflight>;
+    hostSlots?: HostSlotLimiter;
+  } = {},
 ) =>
   createScraplingRenderedFetcher({
     enabled: true,
     pythonCommand: 'python3',
     bridgePath: 'scraplingBridge.py',
-    seedRedirectCheck: async () => false,
+    seedRedirectCheck: overrides.seedRedirectCheck ?? (async () => false),
+    ...(overrides.hostSlots ? { hostSlots: overrides.hostSlots } : {}),
     startForwardProxy: proxy.start,
     retry: { ...noRetryWait, maxRetries: overrides.maxRetries ?? 0 },
     requestLog: overrides.requestLog ?? null,
@@ -185,5 +196,75 @@ describe('the rendered seed preflight reaches the request log (#6255)', () => {
 
     expect(record).toHaveBeenCalledTimes(1);
     expect(record.mock.calls[0][0]).toBe(SEED_URL);
+  });
+});
+
+describe('the rendered fetch re-checks the seed pause after its slot wait (#6335)', () => {
+  it('refuses a seed host paused while the render waited, releasing the slot and sending nothing', async () => {
+    const released = vi.fn();
+    const hostSlots: HostSlotLimiter = {
+      acquire: async (host) => {
+        await recordHostBackoff(host, { status: 429 });
+        return released;
+      },
+    };
+    const seedRedirectCheck = vi.fn(async () => false);
+    const proxy = proxyStub();
+
+    const error = await fetcherWith(proxy, { hostSlots, seedRedirectCheck })({
+      url: SEED_URL,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(HostPausedError);
+    expect(isNotObserved(error)).toBe(true);
+    expect(released).toHaveBeenCalledTimes(1);
+    expect(seedRedirectCheck).not.toHaveBeenCalled();
+    expect(proxy.start).not.toHaveBeenCalled();
+    expect(mocks.execFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('a refused rendered preflight is recorded and stops the render (#6335)', () => {
+  it('pauses the seed host for a preflight 429 asking to wait longer than the quick retries', async () => {
+    const proxy = proxyStub();
+
+    const error = await fetcherWith(proxy, {
+      seedRedirectCheck: async () => ({ redirected: false, status: 429, retryAfterMs: 3_600_000 }),
+    })({ url: SEED_URL }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(HostPausedError);
+    expect((error as HostPausedError).requestSent).toBe(true);
+    expect(activeHostPause(SEED_HOST)?.host).toBe(SEED_HOST);
+    expect(proxy.start).not.toHaveBeenCalled();
+    expect(mocks.execFile).not.toHaveBeenCalled();
+  });
+
+  it('returns a refused preflight as the refused page without starting the browser', async () => {
+    const proxy = proxyStub();
+
+    const page = await fetcherWith(proxy, {
+      seedRedirectCheck: async () => ({ redirected: false, status: 403 }),
+    })({ url: SEED_URL });
+
+    expect(page).toMatchObject({
+      statusCode: 403,
+      blocked: true,
+      blockedReason: 'rendered-seed-refused',
+      html: '',
+    });
+    expect(proxy.start).not.toHaveBeenCalled();
+    expect(mocks.execFile).not.toHaveBeenCalled();
+    expect(activeHostPause(SEED_HOST)?.host).toBe(SEED_HOST);
+  });
+
+  it('logs the preflight status', async () => {
+    const record = vi.fn();
+
+    await fetcherWith(proxyStub(), {
+      requestLog: { record },
+      seedRedirectCheck: async () => ({ redirected: false, status: 403 }),
+    })({ url: SEED_URL });
+
+    expect(record.mock.calls[0][3]).toEqual({ status: 403 });
   });
 });

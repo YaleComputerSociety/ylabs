@@ -20,7 +20,11 @@ import {
 import { getCached, setCached } from './snapshotCache';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { SCRAPER_USER_AGENT } from './utils/scraperUserAgent';
-import { acquireHostSlotWithin, hostnameForLimiter } from './utils/hostConcurrencyLimiter';
+import {
+  acquireHostSlotWithin,
+  hostnameForLimiter,
+  type HostSlotLimiter,
+} from './utils/hostConcurrencyLimiter';
 import {
   resolveRetryPolicy,
   retryOnRetryableResultStatus,
@@ -31,6 +35,7 @@ import {
   HostPausedError,
   recordHostRefusal,
   recordTierOneExhausted,
+  retryAfterMsFromHeaders,
 } from './utils/hostPause';
 import { recordHostSuccess } from './utils/hostPauseState';
 import { processScraperRequestLog, type ScraperRequestLog } from './utils/scraperRequestLog';
@@ -186,7 +191,8 @@ export interface ScraplingRenderedFetcherOptions {
   bridgePath?: string;
   mode?: 'dynamic' | 'stealthy';
   timeoutMs?: number;
-  seedRedirectCheck?: (url: URL, timeoutMs: number) => Promise<boolean>;
+  seedRedirectCheck?: (url: URL, timeoutMs: number) => Promise<boolean | RenderedSeedPreflight>;
+  hostSlots?: HostSlotLimiter;
   startForwardProxy?: (pacing: RenderedFetchProxyPacing) => Promise<RenderedFetchForwardProxy>;
   retry?: RetryPolicyOptions;
   requestLog?: ScraperRequestLog | null;
@@ -205,10 +211,26 @@ export type RenderedFetchForwardProxy = Pick<
 
 const HOST_REFUSAL_STATUSES: ReadonlySet<number> = new Set([403, 429, 503]);
 
+export interface RenderedSeedPreflight {
+  redirected: boolean;
+  status?: number;
+  retryAfterMs?: number;
+}
+
+class RenderedSeedRefusedError extends Error {
+  constructor(readonly status: number) {
+    super(`the rendered seed preflight was refused with ${status}`);
+    this.name = 'RenderedSeedRefusedError';
+  }
+}
+
 const isHttpRedirectStatus = (statusCode: number | undefined): boolean =>
   typeof statusCode === 'number' && statusCode >= 300 && statusCode < 400;
 
-const defaultRenderedSeedRedirectCheck = (url: URL, timeoutMs: number): Promise<boolean> =>
+const defaultRenderedSeedRedirectCheck = (
+  url: URL,
+  timeoutMs: number,
+): Promise<RenderedSeedPreflight> =>
   new Promise((resolvePromise, reject) => {
     const client = url.protocol === 'https:' ? https : http;
     const agents = ssrfSafeAgents();
@@ -226,7 +248,12 @@ const defaultRenderedSeedRedirectCheck = (url: URL, timeoutMs: number): Promise<
       },
       (response) => {
         response.destroy();
-        resolvePromise(isHttpRedirectStatus(response.statusCode));
+        const retryAfterMs = retryAfterMsFromHeaders(response.headers);
+        resolvePromise({
+          redirected: isHttpRedirectStatus(response.statusCode),
+          ...(response.statusCode !== undefined ? { status: response.statusCode } : {}),
+          ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+        });
       },
     );
 
@@ -485,12 +512,23 @@ function createLiveScraplingRenderedFetcher(
   const requestLog =
     options.requestLog === undefined ? processScraperRequestLog() : options.requestLog;
 
-  const seedRedirectCheck = async (seedUrl: URL, timeoutMs: number): Promise<boolean> => {
+  const hostSlots = options.hostSlots ?? scraperHostSlotLimiter();
+
+  const sendSeedPreflight = async (
+    seedUrl: URL,
+    timeoutMs: number,
+  ): Promise<RenderedSeedPreflight> => {
     const dispatchedAt = new Date();
     try {
-      const redirected = await unloggedSeedRedirectCheck(seedUrl, timeoutMs);
-      requestLog?.record(seedUrl.toString(), dispatchedAt, Date.now() - dispatchedAt.getTime(), {});
-      return redirected;
+      const answer = await unloggedSeedRedirectCheck(seedUrl, timeoutMs);
+      const preflight = typeof answer === 'boolean' ? { redirected: answer } : answer;
+      requestLog?.record(
+        seedUrl.toString(),
+        dispatchedAt,
+        Date.now() - dispatchedAt.getTime(),
+        preflight.status !== undefined ? { status: preflight.status } : {},
+      );
+      return preflight;
     } catch (error) {
       const code = (error as { code?: unknown } | undefined)?.code;
       requestLog?.record(seedUrl.toString(), dispatchedAt, Date.now() - dispatchedAt.getTime(), {
@@ -498,6 +536,23 @@ function createLiveScraplingRenderedFetcher(
       });
       throw error;
     }
+  };
+
+  const seedRedirectCheck = async (seedUrl: URL, timeoutMs: number): Promise<boolean> => {
+    const preflight = await sendSeedPreflight(seedUrl, timeoutMs);
+    const { status } = preflight;
+    if (status !== undefined && HOST_REFUSAL_STATUSES.has(status)) {
+      const seedHost = stripIpv6Brackets(seedUrl.hostname);
+      const pause = await recordHostRefusal({
+        host: seedHost,
+        status,
+        retryAfterMs: preflight.retryAfterMs,
+        quickRetryWaitMs: resolveRetryPolicy(options.retry ?? {}, seedHost).maxBackoffMs,
+      });
+      if (pause) throw new HostPausedError(pause, true);
+      throw new RenderedSeedRefusedError(status);
+    }
+    return preflight.redirected;
   };
 
   const recordSeedOutcome = async (
@@ -535,8 +590,10 @@ function createLiveScraplingRenderedFetcher(
     const timeoutMs = boundedRenderedFetchTimeout(request.timeoutMs, defaultTimeoutMs);
     const pausedSeed = activeHostPause(seedUrl.hostname);
     if (pausedSeed) throw new HostPausedError(pausedSeed);
-    const releaseHostSlot = await acquireHostSlotWithin(scraperHostSlotLimiter(), seedUrl.hostname);
+    const releaseHostSlot = await acquireHostSlotWithin(hostSlots, seedUrl.hostname);
     try {
+      const pausedWhileWaiting = activeHostPause(seedUrl.hostname);
+      if (pausedWhileWaiting) throw new HostPausedError(pausedWhileWaiting);
       try {
         if (await seedRedirectCheck(seedUrl, timeoutMs)) {
           return {
@@ -547,7 +604,18 @@ function createLiveScraplingRenderedFetcher(
             fetchMode: 'scrapling',
           };
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof HostPausedError) throw error;
+        if (error instanceof RenderedSeedRefusedError) {
+          return {
+            url: seedUrl.toString(),
+            html: '',
+            statusCode: error.status,
+            blocked: true,
+            blockedReason: 'rendered-seed-refused',
+            fetchMode: 'scrapling',
+          };
+        }
         return {
           url: seedUrl.toString(),
           html: '',
