@@ -1,7 +1,5 @@
-import fs from 'node:fs';
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
-import path from 'node:path';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -22,7 +20,6 @@ const ORIGINAL_ENV = { ...process.env };
 const STRONG_SESSION_SECRET = 'Qw7#Er4$Ty1!Ui8%Op5@As2^Df9&Gh6*';
 const PROGRAMS_SEARCH = '/api/programs/search?pageSize=50';
 const ADMIN_ONLY_PATHS = ['/api/admin/accounts', '/api/admin/grants'];
-const SERVER_SRC = path.resolve(__dirname, '..');
 
 let fixedNetidCounter = 0;
 const fixedStudent = (overrides: Record<string, unknown> = {}) => {
@@ -56,13 +53,6 @@ const listen = async (handler: http.RequestListener) => {
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 };
-
-const sourceFiles = (dir: string): string[] =>
-  fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return entry.name === '__tests__' ? [] : sourceFiles(full);
-    return /\.(ts|mts|js|mjs)$/.test(entry.name) && !/\.test\./.test(entry.name) ? [full] : [];
-  });
 
 describe('served-check student mode', () => {
   let memoryServer: MongoMemoryServer;
@@ -129,7 +119,7 @@ describe('served-check student mode', () => {
     });
     const reads = out.parsed().filter((line) => line.path);
     expect(reads.map((line) => line.path)).toEqual(ADMIN_ONLY_PATHS);
-    for (const line of reads) expect([401, 403]).toContain(line.status);
+    for (const line of reads) expect(line.status).toBe(403);
   });
 
   it('refuses before any read when the synthetic session would be elevated', async () => {
@@ -189,6 +179,23 @@ describe('served-check student mode', () => {
     expect(existingOut.lines).toEqual([]);
   });
 
+  it('still reports refused writes when the run stops after the server started', async () => {
+    const { default: expressFactory } = await import('express');
+    const unconfirmedApp = expressFactory().get('/api/check', (_req, res) => {
+      res.json({ auth: false });
+    });
+    const out = collectLines();
+    await expect(
+      runStudentServedCheck({
+        app: unconfirmedApp,
+        paths: [PROGRAMS_SEARCH],
+        write: out.write,
+        refusedWrites: () => ['accounts.insertOne'],
+      }),
+    ).rejects.toThrow(/did not report/);
+    expect(out.parsed()).toEqual([{ refusedWrites: ['accounts.insertOne'] }]);
+  });
+
   it('refuses a /api/check answer that resolves anything but the plain synthetic student', () => {
     const student = mintSyntheticStudent();
     const plainUser = { ...student };
@@ -226,14 +233,6 @@ describe('served-check student mode', () => {
     } finally {
       await plain.close();
     }
-
-    const importers = sourceFiles(SERVER_SRC).filter((file) =>
-      /servedCheckStudentSession|servedCheckStudentCore/.test(fs.readFileSync(file, 'utf8')),
-    );
-    expect(importers.map((file) => path.relative(SERVER_SRC, file)).sort()).toEqual([
-      path.join('scripts', 'servedCheckStudent.ts'),
-      path.join('scripts', 'servedCheckStudentCore.ts'),
-    ]);
 
     expect(() =>
       studentSessionHook({

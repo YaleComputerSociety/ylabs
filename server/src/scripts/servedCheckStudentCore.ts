@@ -149,7 +149,7 @@ export async function runStudentServedCheck({
     }
   } finally {
     await closeServer(server);
+    await new Promise((resolve) => setTimeout(resolve, settleWritesMs));
+    write(JSON.stringify({ refusedWrites: refusedWrites() }));
   }
-  await new Promise((resolve) => setTimeout(resolve, settleWritesMs));
-  write(JSON.stringify({ refusedWrites: refusedWrites() }));
 }
