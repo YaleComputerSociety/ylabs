@@ -5810,6 +5810,7 @@ export function departmentsWithLeadSection(
  */
 export async function leadFirstHandSectionForResearchEntity(
   researchEntityId: string,
+  prefetch?: MaterializationReadSource,
 ): Promise<LeadSection | undefined> {
   const leadResearcherId = await resolveSingleLeadResearcherId(researchEntityId);
   if (!leadResearcherId) return undefined;
@@ -5822,24 +5823,57 @@ export async function leadFirstHandSectionForResearchEntity(
   const parent = section ? canonicalizer.parentDepartmentsFor(section)[0] : undefined;
   if (!section || !parent) return undefined;
   const keys = await userKeysNamingResearcherIdentity(researcher);
-  const observations = [...(await liveObservationsOfUserKeys(keys)).values()].flat();
+  const observations = [...(await liveObservationsOfUserKeys(keys, prefetch)).values()].flat();
   return statesLeadSectionFirstHand(canonicalizer, observations, section)
     ? { section, parent }
     : undefined;
 }
 
-async function addLeadSectionBesideParent(
-  researchEntityId: string,
-  storedDepartments: unknown,
-  dryRun: boolean | undefined,
-): Promise<LeadPiSchoolInheritanceResult> {
-  const departments = departmentsWithLeadSection(
-    Array.isArray(storedDepartments) ? storedDepartments : [],
-    await leadFirstHandSectionForResearchEntity(researchEntityId),
+export interface LeadSectionRow {
+  researchEntityId: string;
+  kind: unknown;
+  manuallyLockedFields: readonly string[];
+  departments: readonly unknown[];
+}
+
+/**
+ * The one admission rule both the projection and the inheritance pass apply before adding
+ * a lead's section, so neither reaches a row the other would refuse (#6381).
+ */
+export async function departmentsWithLeadFirstHandSection(
+  row: LeadSectionRow,
+  options: {
+    leadSectionFor?: typeof leadFirstHandSectionForResearchEntity;
+    prefetch?: MaterializationReadSource;
+  } = {},
+): Promise<string[] | undefined> {
+  const gate = leadPiSchoolInheritanceGate({
+    manuallyLockedFields: [...row.manuallyLockedFields],
+    kind: row.kind,
+  });
+  if (gate === 'locked' || gate === 'multi-pi-kind') return undefined;
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  if (!row.departments.some((value) => canonicalizer.hasSubunits(textValue(value)))) {
+    return undefined;
+  }
+  const leadSectionFor = options.leadSectionFor ?? leadFirstHandSectionForResearchEntity;
+  return departmentsWithLeadSection(
+    row.departments,
+    await leadSectionFor(row.researchEntityId, options.prefetch),
   );
+}
+
+async function addLeadSectionBesideParent(
+  row: LeadSectionRow,
+  options: { dryRun?: boolean; prefetch?: MaterializationReadSource },
+): Promise<LeadPiSchoolInheritanceResult> {
+  const researchEntityId = row.researchEntityId;
+  const departments = await departmentsWithLeadFirstHandSection(row, {
+    prefetch: options.prefetch,
+  });
   if (!departments) return { inherited: false, skipped: 'has-school-and-department' };
   const addedSection = departments[departments.length - 1];
-  if (dryRun) return { inherited: true, departments, addedSection };
+  if (options.dryRun) return { inherited: true, departments, addedSection };
   await withResearchEntityWriteTransaction((session) =>
     ResearchEntity.updateOne({ _id: researchEntityId }, { $set: { departments } }, { session }),
   );
@@ -5905,7 +5939,15 @@ export async function inheritSchoolFromLeadPi(
   const inheritedFields = leadPiInheritedFields(entity.fieldProvenance);
   const refreshable = gate === 'has-school-and-department' && inheritedFields.size > 0;
   if (gate === 'has-school-and-department' && !refreshable) {
-    return addLeadSectionBesideParent(researchEntityId, entity.departments, options.dryRun);
+    return addLeadSectionBesideParent(
+      {
+        researchEntityId,
+        kind: entity.kind,
+        manuallyLockedFields: options.manuallyLockedFields ?? [],
+        departments: Array.isArray(entity.departments) ? entity.departments : [],
+      },
+      { dryRun: options.dryRun, prefetch: options.chunkPrefetch },
+    );
   }
   if (gate !== 'school-and-department' && gate !== 'department-only' && !refreshable) {
     return { inherited: false, skipped: gate };
@@ -13749,15 +13791,15 @@ export async function projectFromLog(
       (input.applyResearchEntityOrgUnitCanonicalization
         ? undefined
         : leadFirstHandSectionForResearchEntity);
-    if (
-      leadSectionFor &&
-      Array.isArray(set.departments) &&
-      !manuallyLockedFields.includes('departments') &&
-      entityDoc?._id
-    ) {
-      const withLeadSection = departmentsWithLeadSection(
-        set.departments,
-        await leadSectionFor(String(entityDoc._id)),
+    if (leadSectionFor && Array.isArray(set.departments) && entityDoc?._id) {
+      const withLeadSection = await departmentsWithLeadFirstHandSection(
+        {
+          researchEntityId: String(entityDoc._id),
+          kind: set.kind ?? derivedKind ?? entityDoc?.kind,
+          manuallyLockedFields,
+          departments: set.departments,
+        },
+        { leadSectionFor, prefetch: chunkPrefetch },
       );
       if (withLeadSection) set.departments = withLeadSection;
     }

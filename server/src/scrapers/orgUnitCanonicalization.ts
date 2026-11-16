@@ -23,6 +23,8 @@ export interface OrgUnitCanonicalizer {
    * school.
    */
   parentDepartmentsFor(canonicalDepartmentName: string): string[];
+  /** Whether some catalog unit names this canonical department as its nearest ancestor. */
+  hasSubunits(canonicalDepartmentName: string): boolean;
 }
 
 interface OrgUnitResolverRow {
@@ -289,12 +291,18 @@ export function createOrgUnitCanonicalizer(
     DEPARTMENT_KINDS.includes(unit.kind),
   );
   const hasSchoolCatalog = [...index.values()].some((unit) => SCHOOL_KINDS.includes(unit.kind));
+  const departmentsWithSubunits = new Set(
+    [...departmentAncestors.values()].map((ancestors) => ancestors[0]).filter(Boolean),
+  );
   return {
     schoolForDepartment(canonicalDepartmentName) {
       return departmentToSchool.get(canonicalDepartmentName) ?? null;
     },
     parentDepartmentsFor(canonicalDepartmentName) {
       return departmentAncestors.get(canonicalDepartmentName) ?? [];
+    },
+    hasSubunits(canonicalDepartmentName) {
+      return departmentsWithSubunits.has(canonicalDepartmentName);
     },
     canonicalizeSchool(raw) {
       if (typeof raw !== 'string') return { value: '', matched: false };

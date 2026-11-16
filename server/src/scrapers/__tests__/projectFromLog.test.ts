@@ -82,6 +82,8 @@ describe('projectFromLog', () => {
               kind: 'SECTION',
             },
           ]),
+          new Map(),
+          new Map([['Cardiovascular Medicine', ['Internal Medicine']]]),
         ),
       );
     });
@@ -118,6 +120,47 @@ describe('projectFromLog', () => {
         }),
       );
       expect(result.set.departments).toEqual(['Surgery']);
+    });
+
+    it('projects no section on a center, whose departments are not one lead\'s', async () => {
+      const result = await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Internal Medicine']) },
+          entityDoc: { _id: rowId, kind: 'center', departments: ['Internal Medicine'] },
+          leadFirstHandSectionForResearchEntity: cardiology,
+        }),
+      );
+      expect(result.set.departments).toEqual(['Internal Medicine']);
+    });
+
+    it('projects no section on a row whose school is locked', async () => {
+      const result = await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Internal Medicine']) },
+          entityDoc: { _id: rowId, departments: ['Internal Medicine'] },
+          manuallyLockedFields: ['school'],
+          leadFirstHandSectionForResearchEntity: cardiology,
+        }),
+      );
+      expect(result.set.departments).toEqual(['Internal Medicine']);
+    });
+
+    it('looks up no lead when no projected department has a section under it', async () => {
+      let lookups = 0;
+      await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Surgery']) },
+          entityDoc: { _id: rowId, departments: ['Surgery'] },
+          leadFirstHandSectionForResearchEntity: async () => {
+            lookups++;
+            return undefined;
+          },
+        }),
+      );
+      expect(lookups).toBe(0);
     });
   });
 
