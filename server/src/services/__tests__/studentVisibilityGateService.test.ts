@@ -885,6 +885,121 @@ describe('studentVisibilityGateService', () => {
     });
   });
 
+  describe('rows that only cite a shared center page (#6206 rule ii)', () => {
+    const sharedCenterUrl = 'https://fixturecenter.yale.edu/research/imaging-core/';
+    const labRow = (id: string, name: string, overrides: Record<string, unknown> = {}) => ({
+      _id: id,
+      slug: id,
+      name,
+      entityType: 'LAB',
+      studentVisibilityTier: 'student_ready',
+      fullDescription: `${name} studies a distinct question at Yale with its own team.`,
+      sourceUrls: [sharedCenterUrl],
+      ...overrides,
+    });
+    const leads = (pairs: Array<[string, string]>) =>
+      pairs.map(([researchEntityId, userId]) => ({ researchEntityId, userId }));
+
+    it('does not call rows with different leads and different names duplicates', () => {
+      const entities = [
+        labRow('lab-a', 'Fixture Imaging Lab'),
+        labRow('lab-b', 'Fixture Genomics Lab'),
+      ];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect([...selectExactUrlDuplicateRiskEntityIds(entities, leadRows)]).toEqual([]);
+    });
+
+    it('still calls rows that share a lead duplicates', () => {
+      const entities = [
+        labRow('lab-a', 'Fixture Imaging Lab'),
+        labRow('lab-b', 'Fixture Genomics Lab'),
+      ];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-a'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+
+    it('still holds a leadless row against a led one', () => {
+      const entities = [
+        labRow('lab-a', 'Fixture Imaging Lab'),
+        labRow('lab-b', 'Fixture Genomics Lab'),
+      ];
+
+      expect(
+        selectExactUrlDuplicateRiskEntityIds(entities, leads([['lab-a', 'user-a']])).size,
+      ).toBe(1);
+    });
+
+    it('still calls rows whose names agree duplicates, whatever their leads', () => {
+      const entities = [
+        labRow('lab-a', 'Fixture Imaging Lab'),
+        labRow('lab-b', 'The Fixture Imaging Laboratory'),
+      ];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+
+    it.each([
+      ['Fixture Imaging Lab', 'Fixture Imaging Labs'],
+      ['Center for Fixture Imaging', 'Fixture Imaging Center'],
+      ['Fixture Imaging Center', 'Fixture Imaging Centre'],
+      ['Fixture Imaging Centres', 'Fixture Imaging Centers'],
+      ['Fixture Imaging & Repair Lab', 'Fixture Imaging and Repair Lab'],
+    ])('still calls %s and %s duplicates whatever their leads', (aName, bName) => {
+      const entities = [labRow('lab-a', aName), labRow('lab-b', bName)];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+
+    it("leaves a person's own profile page to the usual contest", () => {
+      const profileUrl = 'https://medicine.yale.edu/profile/ana-fixture/';
+      const entities = [
+        labRow('lab-a', 'Ana Fixture Faculty Research', {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: [profileUrl],
+        }),
+        labRow('lab-b', 'Ben Placeholder Faculty Research', {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: [profileUrl],
+        }),
+      ];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+
+    it('leaves the contest to the usual rules when a row publishes the page as its own home', () => {
+      const entities = [
+        labRow('lab-a', 'Fixture Imaging Lab', { websiteUrl: sharedCenterUrl }),
+        labRow('lab-b', 'Fixture Genomics Lab'),
+      ];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+  });
+
   describe("a director's profile cited by an organization and by the director's own row (#5085)", () => {
     const directorProfileUrl = 'https://medicine.yale.edu/profile/a-fixture-director/';
     const personRow = (overrides: Record<string, unknown> = {}) => ({
