@@ -90,6 +90,32 @@ describe('researchPageTextEntriesForRowTopics on a person row (#6110)', () => {
     ).toEqual([LANDING]);
   });
 
+  it("keeps a Yale profile keyed by the lead's own netid, which never prints the name (#6389)", () => {
+    const netidProfile = {
+      url: 'https://medicine.yale.edu/profile/aq123/',
+      text: 'My main focus is the study of ischemic heart disease.',
+    };
+    expect(
+      urlsOf(
+        researchPageTextEntriesForRowTopics([netidProfile, landingPage], {
+          ...personRow,
+          leadNetids: ['AQ123'],
+        }),
+      ),
+    ).toEqual([netidProfile.url]);
+  });
+
+  it('refuses a netid profile that belongs to someone else, or a netid page off Yale', () => {
+    const otherProfile = { url: 'https://medicine.yale.edu/profile/zz999/', text: 'Cardiology.' };
+    const offYale = { url: 'https://example.org/people/aq123/', text: 'Cardiology.' };
+    expect(
+      researchPageTextEntriesForRowTopics([otherProfile, offYale], {
+        ...personRow,
+        leadNetids: ['aq123'],
+      }),
+    ).toEqual([]);
+  });
+
   it('keys the reading on the filtered pages, so derive and resolve agree', async () => {
     const asked: string[] = [];
     await researchPageTopicsStateFor(

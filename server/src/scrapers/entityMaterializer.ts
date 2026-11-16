@@ -225,6 +225,7 @@ import {
   loadKnownPersonSurnameRoster,
   loadLabRowRoster,
   loadResearchEntityLeadPersonDisplayNames,
+  loadResearchEntityLeadPersonNetids,
   loadResearchEntityLeadPersonIds,
   loadResearchEntityLeadPersonName,
   loadResearchEntitySoleLeadPersonId,
@@ -3086,7 +3087,14 @@ async function topicEvidenceRowFor(
   const leadNames = (await loadResearchEntityLeadPersonDisplayNames([entityIdString])).get(
     entityIdString,
   );
-  return { ...row, leadNames: leadNames ?? [] };
+  const leadNetids = (await loadResearchEntityLeadPersonNetids([entityIdString])).get(
+    entityIdString,
+  );
+  return {
+    ...row,
+    leadNames: leadNames ?? [],
+    ...(leadNetids?.length ? { leadNetids } : {}),
+  };
 }
 
 /**

@@ -164,6 +164,32 @@ export async function loadResearchEntityLeadPersonDisplayNames(
   );
 }
 
+/** Every live lead's netid for each of the given research entities, lower-cased and sorted. */
+export async function loadResearchEntityLeadPersonNetids(
+  researchEntityIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  const personIdsByEntityId = await loadResearchEntityLeadPersonIds(researchEntityIds);
+  const personIds = [...new Set([...personIdsByEntityId.values()].flat().filter(Boolean))];
+  const netidByPersonId = new Map<string, string>();
+  if (personIds.length > 0) {
+    for (const person of (await Researcher.find({ _id: { $in: personIds } })
+      .select('identifiers.netid')
+      .lean()) as Array<{ _id?: unknown; identifiers?: { netid?: unknown } }>) {
+      const personId = serializedDocumentId(person._id);
+      const netid = String(person.identifiers?.netid || '')
+        .trim()
+        .toLowerCase();
+      if (personId && netid) netidByPersonId.set(personId, netid);
+    }
+  }
+  return new Map(
+    [...personIdsByEntityId.entries()].map(([entityId, ids]) => [
+      entityId,
+      [...new Set(ids.flatMap((personId) => netidByPersonId.get(personId) ?? []))].sort(),
+    ]),
+  );
+}
+
 /**
  * Lead display names for every research entity that has one, keyed by entity id,
  * for a batch caller that judges many records in one pass and must not pay a

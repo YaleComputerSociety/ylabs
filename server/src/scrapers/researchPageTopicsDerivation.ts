@@ -26,6 +26,7 @@ import {
 } from './utils/researchPageText';
 import { descriptionPageNamesRowLead } from './sources/labMicrositeDescriptionLLMExtractor';
 import { isPersonResearchRow } from '../utils/researchStatementPassage';
+import { isYalePeoplePageForNetid } from './utils/yalePeoplePageNetid';
 import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 import { ownOrgUnitLabelsFromObservations } from './utils/ownOrgUnitLabelTopics';
 
@@ -51,6 +52,7 @@ export interface TopicEvidenceRow {
   name?: unknown;
   websiteUrl?: unknown;
   leadNames?: readonly (string | null | undefined)[];
+  leadNetids?: readonly string[];
 }
 
 const leadNamesOf = (row: TopicEvidenceRow): string[] =>
@@ -82,17 +84,19 @@ export function researchPageTextEntriesForRowTopics(
       [storedTextByUrl.get(entry.url), entry.text].filter(Boolean).join('\n'),
     );
   }
-  return pages.filter((page) =>
-    leadNames.some((personName) =>
-      descriptionPageNamesRowLead({
-        personName,
-        websiteUrl: row.websiteUrl,
-        rowName: row.name,
-        kind: 'individual',
-        pageUrl: page.url,
-        pageText: storedTextByUrl.get(page.url) ?? page.text,
-      }),
-    ),
+  return pages.filter(
+    (page) =>
+      isYalePeoplePageForNetid(page.url, row.leadNetids ?? []) ||
+      leadNames.some((personName) =>
+        descriptionPageNamesRowLead({
+          personName,
+          websiteUrl: row.websiteUrl,
+          rowName: row.name,
+          kind: 'individual',
+          pageUrl: page.url,
+          pageText: storedTextByUrl.get(page.url) ?? page.text,
+        }),
+      ),
   );
 }
 
