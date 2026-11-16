@@ -1283,7 +1283,9 @@ export async function planHealsForFoldedShells(input: {
  * Carries a joint appointee's second official page onto the survivor of a merge that already
  * ran before the union could carry it (#6376), through the same link append as a merge. It runs
  * only for the folded records an operator names with `--only-shell`, and reuses the merge-time
- * rule, so it carries nothing the union would refuse.
+ * rule, so it carries nothing the union would refuse. A page that another named folded record
+ * with a different survivor also holds counts as held elsewhere, so two survivors never both
+ * gain one page in the same run.
  */
 async function planFoldedShellOfficialPageCarries(input: {
   Researcher: mongoose.mongo.Collection;
@@ -1293,8 +1295,8 @@ async function planFoldedShellOfficialPageCarries(input: {
   unionContext: (canonicalId: string, shellId: string) => ResearcherAttributeUnionContext;
   canonicalMergeState: Map<string, ResearcherAttributeSnapshot>;
   canonicalAppendedLinks: Map<string, ResearcherAttributeSnapshot['profileLinks']>;
-}): Promise<number> {
-  if (input.foldedShellDocs.length === 0) return 0;
+}): Promise<{ carried: number; carriedShellIds: string[] }> {
+  if (input.foldedShellDocs.length === 0) return { carried: 0, carriedShellIds: [] };
   const survivorIds = [
     ...new Set(input.foldedShellDocs.map((doc) => idKey(doc.dedupedIntoResearcherId))),
   ];
@@ -1306,17 +1308,38 @@ async function planFoldedShellOfficialPageCarries(input: {
     { projection: input.attributeProjection },
   ).toArray()) as any[];
   const survivorById = new Map(survivors.map((doc) => [idKey(doc._id), doc]));
+  const survivorsByFoldedPage = new Map<string, Set<string>>();
+  for (const shell of input.foldedShellDocs) {
+    for (const page of yaleOfficialProfileKeys(shell.profileLinks)) {
+      survivorsByFoldedPage.set(
+        page,
+        (survivorsByFoldedPage.get(page) ?? new Set()).add(idKey(shell.dedupedIntoResearcherId)),
+      );
+    }
+  }
+  const pagesFoldedIntoAnotherSurvivor = (survivorId: string): Set<string> =>
+    new Set(
+      [...survivorsByFoldedPage]
+        .filter(([, survivorIds]) => [...survivorIds].some((id) => id !== survivorId))
+        .map(([page]) => page),
+    );
   let carried = 0;
+  const carriedShellIds: string[] = [];
   for (const shell of input.foldedShellDocs) {
     const survivorId = idKey(shell.dedupedIntoResearcherId);
     const survivor = survivorById.get(survivorId);
     if (!survivor) continue;
     const state = input.canonicalMergeState.get(survivorId) ?? input.snapshotOf(survivor);
-    const plan = planResearcherAttributeUnion(
-      state,
-      { ...input.snapshotOf(shell), identifiers: {}, profile: {} },
-      input.unionContext(survivorId, idKey(shell._id)),
-    );
+    const context = input.unionContext(survivorId, idKey(shell._id));
+    const plan = planResearcherAttributeUnion(state, input.snapshotOf(shell), {
+      ...context,
+      officialPagesHeldElsewhere: new Set([
+        ...(context.officialPagesHeldElsewhere ?? []),
+        ...pagesFoldedIntoAnotherSurvivor(survivorId),
+      ]),
+    });
+    // Only official pages are applied here: identifier and profile fills of a folded record were
+    // already decided when it was merged, and a heal never revisits them.
     const pages = plan.profileLinksToAppend.filter((link) => link.kind === 'YALE_OFFICIAL');
     if (pages.length === 0) continue;
     input.canonicalMergeState.set(survivorId, {
@@ -1328,8 +1351,9 @@ async function planFoldedShellOfficialPageCarries(input: {
       ...pages,
     ]);
     carried += pages.length;
+    carriedShellIds.push(idKey(shell._id));
   }
-  return carried;
+  return { carried, carriedShellIds };
 }
 
 export async function dedupeAccountlessResearcherShells(options: {
@@ -1924,7 +1948,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     onlyShellsNotPlanned.splice(0, onlyShellsNotPlanned.length, ...stillNotPlanned);
   }
 
-  const foldedOfficialPagesCarried = await planFoldedShellOfficialPageCarries({
+  const foldedOfficialPageCarries = await planFoldedShellOfficialPageCarries({
     Researcher,
     foldedShellDocs,
     attributeProjection,
@@ -1933,6 +1957,12 @@ export async function dedupeAccountlessResearcherShells(options: {
     canonicalMergeState,
     canonicalAppendedLinks,
   });
+  const foldedOfficialPagesCarried = foldedOfficialPageCarries.carried;
+  if (onlyShellsNotPlanned) {
+    const carriedIds = new Set(foldedOfficialPageCarries.carriedShellIds);
+    const stillNotPlanned = onlyShellsNotPlanned.filter((id) => !carriedIds.has(id));
+    onlyShellsNotPlanned.splice(0, onlyShellsNotPlanned.length, ...stillNotPlanned);
+  }
 
   const canonicalIds = new Set<string>([
     ...canonicalAppendedLinks.keys(),

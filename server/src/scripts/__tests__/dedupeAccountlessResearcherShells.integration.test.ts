@@ -496,6 +496,8 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
         displayName: 'Joint Fixture',
         archived: true,
         dedupedIntoResearcherId: survivor,
+        identifiers: { email: 'folded.joint@example.test', netid: 'jf9001' },
+        profile: { title: 'Professor of Folded Fixtures' },
         profileLinks: [
           survivorPage,
           unheldPage,
@@ -526,6 +528,10 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     expect(scoped.foldedOfficialPagesCarried).toBe(1);
     expect(scoped.shellsMerged).toBe(0);
     expect(await survivorUrls()).toEqual([survivorPage.url, unheldPage.url]);
+    const survivorAfter = (await db.collection('researchers').findOne({ _id: survivor }))!;
+    expect(survivorAfter.identifiers).toEqual({ email: 'directory.joint@example.test' });
+    expect(survivorAfter.profile?.title).toBeUndefined();
+    expect(scoped.onlyShellsNotPlanned ?? []).not.toContain(folded.toHexString());
 
     const rerun = await dedupeAccountlessResearcherShells({
       apply: true,
@@ -533,6 +539,49 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     });
     expect(rerun.foldedOfficialPagesCarried).toBe(0);
     expect(await survivorUrls()).toEqual([survivorPage.url, unheldPage.url]);
+  });
+
+  it('never gives two survivors one page that two named folded records both hold (#6376 review)', async () => {
+    const db = mongoose.connection.db!;
+    const [survivorX, survivorY, foldedA, foldedB] = [0, 1, 2, 3].map(
+      () => new mongoose.Types.ObjectId(),
+    );
+    const officialPage = (department: string) => ({
+      kind: 'YALE_OFFICIAL',
+      url: `https://${department}-fixture.yale.edu/people/shared-fixture`,
+    });
+    const pageX = officialPage('history');
+    const pageY = officialPage('physics');
+    const shared = officialPage('classics');
+    await db.collection('researchers').insertMany([
+      { _id: survivorX, displayName: 'Shared Fixture', archived: false, profileLinks: [pageX] },
+      { _id: survivorY, displayName: 'Shared Fixture', archived: false, profileLinks: [pageY] },
+      {
+        _id: foldedA,
+        displayName: 'Shared Fixture',
+        archived: true,
+        dedupedIntoResearcherId: survivorX,
+        profileLinks: [pageX, shared],
+      },
+      {
+        _id: foldedB,
+        displayName: 'Shared Fixture',
+        archived: true,
+        dedupedIntoResearcherId: survivorY,
+        profileLinks: [pageY, shared],
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({
+      apply: true,
+      onlyShellIds: [foldedA.toHexString(), foldedB.toHexString()],
+    });
+
+    const holders = await db
+      .collection('researchers')
+      .countDocuments({ archived: { $ne: true }, 'profileLinks.url': shared.url });
+    expect(holders).toBe(0);
+    expect(result.foldedOfficialPagesCarried).toBe(0);
   });
 
   it('folds a name-only shell into a netid-backed accountless canonical (FRA lead)', async () => {
