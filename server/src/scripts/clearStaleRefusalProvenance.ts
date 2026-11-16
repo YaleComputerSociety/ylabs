@@ -15,7 +15,11 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
-import { fieldProvenancePath, staleRefusalProvenanceOf } from './refusedFieldProvenance';
+import {
+  fieldProvenancePath,
+  staleRefusalProvenanceOf,
+  type StaleRefusalProvenance,
+} from './refusedFieldProvenance';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -27,16 +31,38 @@ export async function runClearStaleRefusalProvenance(options: { apply: boolean }
     fieldValueRefusals: { $exists: true },
     fieldProvenance: { $exists: true },
   }).lean<Record<string, unknown>[]>();
-  const stamps = (await Promise.all(rows.map(staleRefusalProvenanceOf))).flat();
-  if (options.apply) {
-    for (const stamp of stamps) {
-      await ResearchEntity.updateOne(
-        { _id: new mongoose.Types.ObjectId(stamp.id) },
-        { $unset: { [fieldProvenancePath(stamp.field)]: '' } },
-      );
+  const stamps: StaleRefusalProvenance[] = [];
+  let unset = 0;
+  for (const row of rows) {
+    for (const stamp of await staleRefusalProvenanceOf(row)) {
+      stamps.push(stamp);
+      if (options.apply) unset += await unsetStampIfUnchangedSinceRead(row, stamp.field);
     }
   }
-  return { mode: options.apply ? 'apply' : 'dry-run', rowsWithRefusals: rows.length, stamps };
+  return {
+    mode: options.apply ? 'apply' : 'dry-run',
+    rowsWithRefusals: rows.length,
+    stamps,
+    ...(options.apply ? { unset, changedSinceRead: stamps.length - unset } : {}),
+  };
+}
+
+const unchangedSinceRead = (value: unknown) => (value === undefined ? { $exists: false } : value);
+
+export async function unsetStampIfUnchangedSinceRead(
+  row: Record<string, unknown>,
+  field: string,
+): Promise<number> {
+  const stampRead = (row.fieldProvenance as Record<string, { observationId?: unknown }>)[field];
+  const result = await ResearchEntity.updateOne(
+    {
+      _id: row._id,
+      [field]: unchangedSinceRead(row[field]),
+      [`${fieldProvenancePath(field)}.observationId`]: unchangedSinceRead(stampRead?.observationId),
+    },
+    { $unset: { [fieldProvenancePath(field)]: '' } },
+  );
+  return result.modifiedCount;
 }
 
 async function main(): Promise<void> {

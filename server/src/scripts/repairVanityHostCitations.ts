@@ -31,6 +31,7 @@ import {
   planVanityRepairRow,
 } from './repairVanityHostCitationsCore';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { fieldProvenancePath, provenanceNoLongerDescribesValue } from './refusedFieldProvenance';
 
 export interface VanityRepairOptions {
   apply: boolean;
@@ -104,7 +105,7 @@ async function main() {
     },
   })
     .select(
-      'slug sourceUrls websiteUrl website manuallyLockedFields fieldValueRefusals sourceLinkHealth archived studentVisibilityTier',
+      'slug sourceUrls websiteUrl website manuallyLockedFields fieldValueRefusals fieldProvenance sourceLinkHealth archived studentVisibilityTier',
     )
     .lean()) as unknown as Array<Record<string, any>>;
 
@@ -178,9 +179,21 @@ async function main() {
 
         if (options.apply) {
           const { changedFields: _changedFields, fieldValueRefusalUpdate, ...fields } = change;
+          const staleProvenance: Record<string, ''> = {};
+          for (const field of ['websiteUrl', 'website'] as const) {
+            if (
+              fields[field] !== undefined &&
+              (await provenanceNoLongerDescribesValue(row, field, fields[field]))
+            ) {
+              staleProvenance[fieldProvenancePath(field)] = '';
+            }
+          }
           await ResearchEntity.updateOne(
             { _id: row._id },
-            { $set: { ...fields, ...(fieldValueRefusalUpdate ?? {}) } },
+            {
+              $set: { ...fields, ...(fieldValueRefusalUpdate ?? {}) },
+              ...(Object.keys(staleProvenance).length > 0 ? { $unset: staleProvenance } : {}),
+            },
           );
         }
       } catch (error) {

@@ -5,7 +5,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { planFieldValueRefusal } from '../../utils/researchEntityFieldValueRefusals';
-import { runClearStaleRefusalProvenance } from '../clearStaleRefusalProvenance';
+import {
+  runClearStaleRefusalProvenance,
+  unsetStampIfUnchangedSinceRead,
+} from '../clearStaleRefusalProvenance';
 import { planRefuseFieldValueWrite } from '../refuseResearchEntityFieldValue';
 import { provenanceNoLongerDescribesValue } from '../refusedFieldProvenance';
 
@@ -143,5 +146,25 @@ describe('a refusal leaves no stamp describing a value the row no longer holds (
     expect(after?.fieldValueRefusals).toEqual(before?.fieldValueRefusals);
 
     expect((await runClearStaleRefusalProvenance({ apply: false })).stamps).toEqual([]);
+  });
+
+  it('keeps a stamp a resolve rewrote after the repair read the row', async () => {
+    const refused = await observationOf('websiteUrl', REFUSED_SITE);
+    const row = await ResearchEntity.create({
+      slug: 'synthetic-row',
+      name: 'Synthetic Raced Research',
+      entityType: 'LAB',
+      fieldProvenance: { websiteUrl: stampFor(refused._id) },
+    });
+    const read = await ResearchEntity.findById(row._id).lean<Record<string, unknown>>();
+    const fresh = await observationOf('websiteUrl', OWN_SITE);
+    await ResearchEntity.updateOne(
+      { _id: row._id },
+      { $set: { websiteUrl: OWN_SITE, 'fieldProvenance.websiteUrl': stampFor(fresh._id) } },
+    );
+
+    expect(await unsetStampIfUnchangedSinceRead(read!, 'websiteUrl')).toBe(0);
+    const after = await ResearchEntity.findById(row._id).lean();
+    expect(String(after?.fieldProvenance?.websiteUrl?.observationId)).toBe(String(fresh._id));
   });
 });

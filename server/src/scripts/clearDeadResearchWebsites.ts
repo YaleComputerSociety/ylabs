@@ -22,6 +22,7 @@ import {
   reportDeadWebsiteRefusals,
   type DeadWebsiteRow,
 } from './clearDeadResearchWebsitesCore';
+import { fieldProvenancePath } from './refusedFieldProvenance';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -217,7 +218,12 @@ async function main(): Promise<void> {
           : row;
         const result = await ResearchEntity.updateOne(
           { slug },
-          { $set: planDeadWebsiteClearWrite(current, own, new Date()) },
+          {
+            $set: planDeadWebsiteClearWrite(current, own, new Date()),
+            $unset: Object.fromEntries(
+              own.map((plan) => [fieldProvenancePath(plan.field), '' as const]),
+            ),
+          },
         );
         if (result.modifiedCount) cleared += own.length;
         stoppedAfter = 'clearing';
