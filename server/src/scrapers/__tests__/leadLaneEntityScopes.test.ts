@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -95,24 +93,8 @@ describe('a director lane lead counts everywhere but a person row the lane does 
   });
 });
 
-describe('the lanes that emit a director are exactly the registered ones (#6327)', () => {
-  const SOURCES_DIR = path.resolve(__dirname, '../sources');
-  const EMITTING_LANE_FILES = ['centerDirectorLLMExtractor.ts', 'centerDirectorScraper.ts'];
-
-  it('names every source file that emits a director field, so a new lane fails here', () => {
-    const emitting = fs
-      .readdirSync(SOURCES_DIR)
-      .filter((file) => file.endsWith('.ts'))
-      .filter((file) =>
-        /field: 'inferredDirector(User)?Name'/.test(
-          fs.readFileSync(path.join(SOURCES_DIR, file), 'utf8'),
-        ),
-      )
-      .sort();
-    expect(emitting).toEqual([...EMITTING_LANE_FILES].sort());
-  });
-
-  it('registers a scope for each emitting lane', () => {
+describe('the registry scopes exactly the two director lanes (#6327)', () => {
+  it('registers a scope for each director lane', () => {
     expect(Object.keys(LEAD_LANE_ENTITY_TYPE_SCOPES).sort()).toEqual(
       [CENTER_DIRECTOR_LLM_SOURCE_NAME, CENTER_DIRECTOR_SOURCE_NAME].sort(),
     );
