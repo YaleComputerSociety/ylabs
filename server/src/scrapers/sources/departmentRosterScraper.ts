@@ -4477,8 +4477,9 @@ const distinctTitleValues = (held: readonly HeldRosterTitle[]): string[] => [
 const soleTitle = (held: readonly HeldRosterTitle[]): HeldRosterTitle | undefined =>
   held.length > 0 && distinctTitleValues(held).length === 1 ? held[0] : undefined;
 
-// `title` is latest-wins for a user, so emitting each config's read as it arrived let the last
-// config win (#5801 cause 2) and let a listing replace the lane's own profile read (cause 3).
+// The materializer keeps this lane's newest title read for a user, so emitting each config's read
+// as it arrived let the last config win (#5801 cause 2) and let a listing replace the lane's own
+// profile read (cause 3).
 // A faculty-appointment listing outranks a staff one, as for typing. Emitting nothing on
 // ambiguity is deliberate: it leaves the stored title standing.
 export function pickRosterTitleForRunEnd(
