@@ -3161,16 +3161,30 @@ function firstPersonSpecificYaleEmail(
 // center/institute affiliations that are not academic departments, so outside
 // an Appointments block only an element explicitly classed "department" is
 // trusted as a department signal.
+// A YaleSites `profile-meta` department line names the site hosting the page, so every profile on
+// a department's own site reads as that department whatever the person's appointment is: all 63
+// live readings from one such host stated the host's department while 31 of those people hold
+// another (#6185). It states no appointment, so it is never read as one.
+const HOST_SITE_DEPARTMENT_LINE = '[class*="profile-meta__department-line"]';
+
 function extractDepartments($: cheerio.CheerioAPI): string[] {
   const appointmentCards = $('.profile-details-appointment-card');
   if (appointmentCards.length > 0) return primaryAppointmentUnits($, appointmentCards);
   const values: string[] = [];
-  $('[class*="department"]').each((_i, el) => {
-    const value = textValue($(el).text());
-    if (isDepartmentHeadingChrome(value)) return false;
-    if (value && value.length < 160) values.push(value);
-  });
+  $('[class*="department"]')
+    .filter((_i, el) => $(el).closest(HOST_SITE_DEPARTMENT_LINE).length === 0)
+    .each((_i, el) => {
+      const value = textValue(textOutsideHostSiteDepartmentLine($, el));
+      if (isDepartmentHeadingChrome(value)) return false;
+      if (value && value.length < 160) values.push(value);
+    });
   return uniqueStrings(values).slice(0, 5);
+}
+
+function textOutsideHostSiteDepartmentLine($: cheerio.CheerioAPI, el: any): string {
+  const copy = $(el).clone();
+  copy.find(HOST_SITE_DEPARTMENT_LINE).remove();
+  return copy.text();
 }
 
 // A YSM or YSPH profile states each appointment as a card naming its academic unit and whether
