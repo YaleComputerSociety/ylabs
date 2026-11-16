@@ -90,6 +90,119 @@ describe('researchPageTextEntriesForRowTopics on a person row (#6110)', () => {
     ).toEqual([LANDING]);
   });
 
+  describe("reads the lead's name the way a page prints it (#6389)", () => {
+    const compoundRow: TopicEvidenceRow = {
+      ...personRow,
+      leadNames: ['Avery Robin Quillon-Fernsby'],
+    };
+    const school = {
+      url: 'https://fixture-dept.yale.edu/research',
+      text: 'Research in global health.',
+    };
+
+    it('keeps a profile that prints the first part of a compound surname with another of the names', () => {
+      const profile = {
+        url: 'https://medicine.yale.edu/profile/robin-quillon/',
+        text: 'Interests: child development.',
+      };
+      expect(urlsOf(researchPageTextEntriesForRowTopics([profile, school], compoundRow))).toEqual([
+        profile.url,
+      ]);
+    });
+
+    it('refuses a page naming a different person who shares one hyphen part of the surname', () => {
+      const namesake = {
+        url: 'https://fixture-dept.yale.edu/news/award',
+        text: 'Dr. Jordan Quillon received the teaching award.',
+      };
+      expect(researchPageTextEntriesForRowTopics([namesake], compoundRow)).toEqual([]);
+    });
+
+    it('takes the surname before post-nominal credentials', () => {
+      const profile = {
+        url: 'https://medicine.yale.edu/profile/avery-quillon/',
+        text: 'Health informatics and care quality.',
+      };
+      expect(
+        urlsOf(
+          researchPageTextEntriesForRowTopics([profile], {
+            ...personRow,
+            leadNames: ['Avery Quillon, MD, MPH, Facp'],
+          }),
+        ),
+      ).toEqual([profile.url]);
+    });
+
+    it('never matches on a surname particle or a short part', () => {
+      const page = {
+        url: 'https://fixture-dept.yale.edu/research',
+        text: 'Avery spoke at the van der Berg symposium and the El Camino forum.',
+      };
+      expect(
+        researchPageTextEntriesForRowTopics([page], {
+          ...personRow,
+          leadNames: ['Avery Van-Quill'],
+        }),
+      ).toEqual([]);
+      expect(
+        researchPageTextEntriesForRowTopics([page], {
+          ...personRow,
+          leadNames: ['Avery El-Quill'],
+        }),
+      ).toEqual([]);
+    });
+  });
+
+  it("keeps a Yale profile keyed by the lead's own netid, which never prints the name (#6389)", () => {
+    const netidProfile = {
+      url: 'https://medicine.yale.edu/profile/aq123/',
+      text: 'My main focus is the study of ischemic heart disease.',
+    };
+    expect(
+      urlsOf(
+        researchPageTextEntriesForRowTopics([netidProfile, landingPage], {
+          ...personRow,
+          leadNetids: ['AQ123'],
+        }),
+      ),
+    ).toEqual([netidProfile.url]);
+  });
+
+  it('refuses a netid profile that belongs to someone else, or a netid page off Yale', () => {
+    const otherProfile = { url: 'https://medicine.yale.edu/profile/zz999/', text: 'Cardiology.' };
+    const offYale = { url: 'https://example.org/people/aq123/', text: 'Cardiology.' };
+    expect(
+      researchPageTextEntriesForRowTopics([otherProfile, offYale], {
+        ...personRow,
+        leadNetids: ['aq123'],
+      }),
+    ).toEqual([]);
+  });
+
+  it('refuses a netid that only shares a prefix with the lead netid', () => {
+    const longer = { url: 'https://medicine.yale.edu/profile/aq1234/', text: 'Cardiology.' };
+    const shorter = { url: 'https://medicine.yale.edu/people/aq12/', text: 'Cardiology.' };
+    expect(
+      researchPageTextEntriesForRowTopics([longer, shorter], {
+        ...personRow,
+        leadNetids: ['aq123'],
+      }),
+    ).toEqual([]);
+  });
+
+  it('ignores a stored netid that is not netid-shaped, such as an email local part (#5744)', () => {
+    const nameSlugProfile = {
+      url: 'https://medicine.yale.edu/profile/avery.quill/',
+      text: 'Cardiology.',
+    };
+    expect(
+      researchPageTextEntriesForRowTopics([nameSlugProfile], {
+        ...personRow,
+        leadNetids: ['avery.quill'],
+      }),
+    ).toEqual([]);
+  });
+
   it('keys the reading on the filtered pages, so derive and resolve agree', async () => {
     const asked: string[] = [];
     await researchPageTopicsStateFor(
