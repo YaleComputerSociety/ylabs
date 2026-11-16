@@ -7,6 +7,7 @@ import {
   YALE_HOST_DEFAULT_THROTTLE,
   type HostSlotLimiter,
 } from '../hostConcurrencyLimiter';
+import type { HostSlotRelease } from '../hostThrottlePolicy';
 import { fetchPageWithPolicy, HostRateLimiter, type HttpRequestFn } from '../httpFetch';
 import {
   HostBudgetUnavailableError,
@@ -275,6 +276,101 @@ describe('MachineHostBudgetLimiter reclaiming slots', () => {
     },
     LOCK_TEST_TIMEOUT_MS,
   );
+});
+
+describe('MachineHostBudgetLimiter lock age and broker order (#6227)', () => {
+  it(
+    'judges lock age by the injected clock, not the file time',
+    async () => {
+      const limiter = budget({ sleep: yieldingSleep, acquireTimeoutMs: 1_000 });
+      fs.mkdirSync(limiter.directory, { recursive: true });
+      const lockPath = limiter.statePath('lab.example.org').replace(/\.json$/, '.lock');
+      fs.writeFileSync(
+        lockPath,
+        JSON.stringify({
+          pid: OTHER_LIVE_PID,
+          token: 'old-by-clock',
+          at: clock - MACHINE_HOST_LOCK_STALE_MS - 1,
+        }),
+      );
+
+      const release = await limiter.acquire('lab.example.org');
+
+      release();
+      expect(limiter.readState('lab.example.org')).toBeDefined();
+    },
+    LOCK_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'keeps a lock the injected clock calls fresh, however old the file looks',
+    async () => {
+      const limiter = budget({ sleep: yieldingSleep, unavailableTimeoutMs: 1 });
+      fs.mkdirSync(limiter.directory, { recursive: true });
+      const lockPath = limiter.statePath('lab.example.org').replace(/\.json$/, '.lock');
+      fs.writeFileSync(
+        lockPath,
+        JSON.stringify({ pid: OTHER_LIVE_PID, token: 'fresh-by-clock', at: clock + 600_000 }),
+      );
+      const old = new Date(Date.now() - MACHINE_HOST_LOCK_STALE_MS - 60_000);
+      fs.utimesSync(lockPath, old, old);
+      let attempts = 0;
+      const sleeping = async (ms: number) => {
+        attempts += 1;
+        if (attempts > 50) throw new Error('still waiting on the fresh lock');
+        await yieldingSleep(ms);
+      };
+
+      await expect(budget({ sleep: sleeping }).acquire('lab.example.org')).rejects.toThrow(
+        'still waiting on the fresh lock',
+      );
+      expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).token).toBe('fresh-by-clock');
+    },
+    LOCK_TEST_TIMEOUT_MS,
+  );
+
+  it('spaces sends from the broker grant, not before it, above concurrency 1', async () => {
+    const timers: Array<{ at: number; wake: () => void }> = [];
+    const virtualSleep = (ms: number) =>
+      new Promise<void>((wake) => timers.push({ at: clock + Math.max(1, ms), wake }));
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+    const runUntil = async (done: () => boolean) => {
+      for (let steps = 0; !done(); steps += 1) {
+        if (steps > 10_000) throw new Error('virtual time did not settle');
+        await settle();
+        if (done() || timers.length === 0) continue;
+        timers.sort((a, b) => a.at - b.at);
+        const next = timers.shift()!;
+        clock = Math.max(clock, next.at);
+        next.wake();
+      }
+    };
+    const limiter = budget({ sleep: virtualSleep });
+    const waiting: Array<() => void> = [];
+    const slowBroker: HostSlotLimiter = {
+      acquire: () =>
+        new Promise((resolve) => {
+          waiting.push(() => resolve(() => {}));
+        }),
+    };
+    const sentAt: number[] = [];
+    const releases: HostSlotRelease[] = [];
+    for (let request = 0; request < 3; request += 1) {
+      void limiter.acquireAround('lab.example.org', slowBroker).then((release) => {
+        sentAt.push(clock);
+        releases.push(release);
+      });
+    }
+    await runUntil(() => waiting.length === 3);
+    clock += 5_000;
+    for (const grant of waiting) grant();
+    await runUntil(() => sentAt.length === 3);
+    for (const release of releases) release();
+
+    const gaps = sentAt.slice(1).map((at, index) => at - sentAt[index]);
+    expect(MACHINE_DEFAULT_HOST_BUDGET.concurrency).toBeGreaterThan(1);
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(MACHINE_DEFAULT_HOST_BUDGET.minIntervalMs);
+  });
 });
 
 describe('fetchPageWithPolicy redirects', () => {

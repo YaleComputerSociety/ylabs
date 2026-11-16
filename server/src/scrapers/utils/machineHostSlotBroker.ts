@@ -10,6 +10,7 @@ import {
   type HostSlotRelease,
 } from './hostConcurrencyLimiter';
 import { brokerSocketPath, HostSlotBroker, type BrokerMessage } from './hostSlotBroker';
+import { breakFileLockIfUnchanged, readFileLock } from './staleFileLock';
 
 export const MACHINE_HOST_SLOTS_ENV = 'SCRAPER_MACHINE_HOST_SLOTS';
 export const MACHINE_HOST_SLOT_DIR_ENV = 'SCRAPER_MACHINE_HOST_SLOT_DIR';
@@ -67,21 +68,24 @@ function resolveAcquireTimeoutMs(env: NodeJS.ProcessEnv): number {
 interface LockRecord {
   pid: number;
   token: string;
+  at: number;
 }
 
-function readLock(lockPath: string): { raw: string; record?: LockRecord; ageMs: number } | null {
+function readLock(
+  lockPath: string,
+): { raw: string; record?: { pid: number; token?: string }; ageMs: number } | null {
+  const lock = readFileLock(lockPath, Date.now);
+  if (!lock) return null;
+  let token: string | undefined;
   try {
-    const raw = fs.readFileSync(lockPath, 'utf8');
-    const ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
-    try {
-      const parsed = JSON.parse(raw) as LockRecord;
-      return Number.isInteger(parsed?.pid) ? { raw, record: parsed, ageMs } : { raw, ageMs };
-    } catch {
-      return { raw, ageMs };
-    }
+    const parsed = JSON.parse(lock.raw) as { token?: unknown };
+    token = typeof parsed?.token === 'string' ? parsed.token : undefined;
   } catch {
-    return null;
+    token = undefined;
   }
+  return lock.pid === undefined
+    ? { raw: lock.raw, ageMs: lock.ageMs }
+    : { raw: lock.raw, record: { pid: lock.pid, ...(token ? { token } : {}) }, ageMs: lock.ageMs };
 }
 
 export function isProcessAlive(pid: number): boolean {
@@ -93,7 +97,7 @@ export function isProcessAlive(pid: number): boolean {
   }
 }
 
-export function isStaleLock(lock: { record?: LockRecord; ageMs: number }): boolean {
+export function isStaleLock(lock: { record?: { pid: number }; ageMs: number }): boolean {
   if (!lock.record) return lock.ageMs > LOCK_GRACE_MS;
   if (!isProcessAlive(lock.record.pid)) return true;
   // Reached only after the socket refused a connection: a live broker listens within moments
@@ -111,26 +115,12 @@ function tryCreateLock(lockPath: string, record: LockRecord): boolean {
   }
 }
 
-// Breaking a lock by rename is atomic, so two processes that both judged it stale cannot each
-// delete the other's fresh lock; whoever renamed a lock it did not judge puts it back.
-export function breakStaleLock(lockPath: string, observedRaw: string): void {
-  const moved = `${lockPath}.${process.pid}.${Math.random().toString(36).slice(2)}.stale`;
-  try {
-    fs.renameSync(lockPath, moved);
-  } catch {
-    return;
-  }
-  try {
-    if (fs.readFileSync(moved, 'utf8') !== observedRaw) {
-      try {
-        fs.linkSync(moved, lockPath);
-      } catch {
-        // A newer lock already exists, so the one moved aside is obsolete either way.
-      }
-    }
-  } finally {
-    fs.rmSync(moved, { force: true });
-  }
+function breakStaleLock(lockPath: string, observedRaw: string): void {
+  breakFileLockIfUnchanged(lockPath, observedRaw, {
+    now: Date.now,
+    pid: process.pid,
+    guardStaleMs: LOCK_GRACE_MS,
+  });
 }
 
 function connectOnce(socketPath: string): Promise<net.Socket | null> {
@@ -317,7 +307,7 @@ export class MachineHostSlotLimiter implements HostSlotLimiter {
   private async tryBecomeHost(): Promise<boolean> {
     const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     fs.mkdirSync(path.dirname(this.paths.lockPath), { recursive: true, mode: 0o700 });
-    if (!tryCreateLock(this.paths.lockPath, { pid: process.pid, token })) {
+    if (!tryCreateLock(this.paths.lockPath, { pid: process.pid, token, at: Date.now() })) {
       const lock = readLock(this.paths.lockPath);
       if (lock && isStaleLock(lock)) breakStaleLock(this.paths.lockPath, lock.raw);
       return false;
