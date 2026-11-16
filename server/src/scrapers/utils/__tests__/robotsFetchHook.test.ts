@@ -3,6 +3,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 const PRIVATE_HOSTS = new Set(['169.254.169.254', 'metadata.internal']);
 
+const SSRF_SAFE_AGENTS = vi.hoisted(() => ({
+  httpAgent: { ssrfSafe: 'http' },
+  httpsAgent: { ssrfSafe: 'https' },
+}));
+
 vi.mock('../../../utils/ssrfGuard', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../utils/ssrfGuard')>();
   return {
@@ -14,7 +19,7 @@ vi.mock('../../../utils/ssrfGuard', async (importOriginal) => {
       }
       return url;
     },
-    ssrfSafeAgents: () => ({}),
+    ssrfSafeAgents: () => SSRF_SAFE_AGENTS,
   };
 });
 
@@ -44,10 +49,12 @@ const ROBOTS_BY_HOST: Record<string, string | Error> = {
 const pausedHosts = new Set<string>();
 
 const sent: string[] = [];
+const robotsRequestConfigs: InternalAxiosRequestConfig[] = [];
 
 const stubNetwork: AxiosAdapter = async (config: InternalAxiosRequestConfig) => {
   const url = new URL(String(config.url));
   sent.push(`${url.hostname}${url.pathname}`);
+  if (url.pathname === '/robots.txt') robotsRequestConfigs.push(config);
   if (url.pathname === '/robots.txt' && url.hostname === 'redirecting.example.edu') {
     return {
       data: '',
@@ -92,6 +99,7 @@ afterAll(() => {
 
 beforeEach(() => {
   sent.length = 0;
+  robotsRequestConfigs.length = 0;
   pausedHosts.clear();
   resetRobotsPolicyCacheForTests();
   resetHostCrawlDelaysForTests();
@@ -132,6 +140,16 @@ describe('the robots.txt hook (#6213)', () => {
       resolveHostThrottle('brief.example.edu', { concurrency: 1, minIntervalMs: 1_500 }),
     ).toEqual({ concurrency: 1, minIntervalMs: 1_500 });
     expect(machineHostBudgetFor('brief.example.edu').minIntervalMs).toBeGreaterThanOrEqual(1_000);
+  });
+
+  it('reads robots.txt over the SSRF-safe agents and follows no redirect itself', async () => {
+    await axios.get('https://open.example.edu/page');
+
+    expect(robotsRequestConfigs).toHaveLength(1);
+    const [config] = robotsRequestConfigs;
+    expect(config.httpAgent).toEqual(SSRF_SAFE_AGENTS.httpAgent);
+    expect(config.httpsAgent).toEqual(SSRF_SAFE_AGENTS.httpsAgent);
+    expect(config.maxRedirects).toBe(0);
   });
 
   it('never sends a robots.txt request to a private address a redirect points at', async () => {
