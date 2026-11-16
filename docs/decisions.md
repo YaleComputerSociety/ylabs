@@ -19,6 +19,20 @@ Measured on Development from stored own-site page text, 15 served rows state a p
 A rule whose every current match is a false positive adds risk without benefit, so the issue is parked and reopens when a real own-unit case appears; its comment lists the six test shapes a builder starts from.
 Until then, a lead a roster re-asserts after an operator ended it is corrected per row with an audited refusal of that lead claim, which persists across resolves, never with a direct edge detach.
 
+## 2026-11-16: The Dedupe Name Carry Is The One Sanctioned Direct Write (#6325)
+
+Decision (manager, 2026-11-16).
+`research-entity:dedupe-by-pi` keeps writing the plan's `canonicalName` onto the survivor's `name` and `displayName`, and this is the one direct field write a merge is allowed.
+It stays scoped as it is: only onto the planned canonical, never a never-demote swap's survivor, and only when the canonical's own name is a PI-derived `<PI> Lab` placeholder for the same lead (`comparablePiLabName`).
+The website carry was removed instead (#6323), because website evidence decides that field reliably.
+
+The derivation that would replace it was built and measured, and it does not pay.
+A merged-in twin's name could displace the survivor's own placeholder only when every survivor observation was a placeholder for its live lead and the twin's name passed every name guard, with the placeholder kept as a fallback-ranked candidate.
+A scoped `name`/`displayName` dry run over all 1,856 merged survivors on Development, diffed against the same run on unchanged code, planned 26 changes, and read by hand about 4 were better names.
+Three served rows would have taken a twin's link label ("Lab Website") as their name, about 20 were the lead's own name with initials, credentials or a spelling variant added, and earlier variants also renamed labs after a different person.
+Twin name evidence for this field is mostly noise, and each guard added to separate a real lab name from it uncovered another class, so no derivation is reliable enough to own the field.
+The handful of rows whose twin does state a better name are operator-judgement candidates, recorded by predicate on #6325, not lane work.
+
 ## 2026-11-13: A Lead's Person Row Folds Into Their Lab Only When It Is The Same Research (#6206)
 
 Decision (owner, 2026-11-13).
