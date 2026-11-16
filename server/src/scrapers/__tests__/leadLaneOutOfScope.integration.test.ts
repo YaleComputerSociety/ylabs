@@ -193,4 +193,29 @@ describe('a director lane asserts no lead on a row type it does not read (#6327)
     await leadEdgePass();
     expect(await liveDirectorPersonIds(rowId)).toEqual([]);
   });
+
+  describe('a director from a lane with no registered scope (#6327 review)', () => {
+    const moveObservationsToUnregisteredLane = () =>
+      mongoose.connection
+        .db!.collection('observations')
+        .updateMany(
+          { entityKey: CENTER_SLUG, field: { $regex: '^inferredDirector' } },
+          { $set: { sourceName: 'synthetic-unregistered-director-lane' } },
+        );
+
+    it('forms no edge on a person row', async () => {
+      const { rowId } = await seed();
+      await moveObservationsToUnregisteredLane();
+      await retypeToPersonRow(rowId);
+      await leadEdgePass();
+      expect(await liveDirectorPersonIds(rowId)).toEqual([]);
+    });
+
+    it('still forms the edge on an organisation row', async () => {
+      const { personId, rowId } = await seed();
+      await moveObservationsToUnregisteredLane();
+      await leadEdgePass();
+      expect(await liveDirectorPersonIds(rowId)).toEqual([`${String(personId)}:DIRECTOR`]);
+    });
+  });
 });

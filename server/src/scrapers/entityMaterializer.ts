@@ -5912,12 +5912,13 @@ async function directorObservationsInLaneScope(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
 ): Promise<MaterializerObservationLike[]> {
-  const scoped = observations.filter((obs) =>
-    Object.hasOwn(LEAD_LANE_ENTITY_TYPE_SCOPES, textValue(obs.sourceName)),
-  );
-  if (scoped.length === 0) return observations;
+  const isDirectorObservation = (obs: MaterializerObservationLike) =>
+    textValue(obs.field).startsWith('inferredDirector');
+  if (!observations.some(isDirectorObservation)) return observations;
   const entityType = await entityTypeOf(researchEntityId);
-  return observations.filter((obs) => laneLeadCountsOnEntityType(obs.sourceName, entityType));
+  return observations.filter(
+    (obs) => !isDirectorObservation(obs) || laneLeadCountsOnEntityType(obs.sourceName, entityType),
+  );
 }
 
 async function resolveInferredDirector(

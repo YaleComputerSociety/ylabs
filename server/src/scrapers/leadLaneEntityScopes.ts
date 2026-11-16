@@ -15,9 +15,10 @@ export const LEAD_LANE_ENTITY_TYPE_SCOPES: Readonly<Record<string, readonly stri
   [CENTER_DIRECTOR_SOURCE_NAME]: [...ORG_ENTITY_TYPES, 'LAB'],
 };
 
+/** A lane with no registered scope reads nothing for this purpose, so it fails closed. */
 export function laneReadsEntityType(sourceName: unknown, entityType: unknown): boolean {
   const scope = LEAD_LANE_ENTITY_TYPE_SCOPES[String(sourceName ?? '')];
-  return !scope || scope.includes(String(entityType ?? ''));
+  return Boolean(scope) && scope.includes(String(entityType ?? ''));
 }
 
 export function laneLeadCountsOnEntityType(sourceName: unknown, entityType: unknown): boolean {
