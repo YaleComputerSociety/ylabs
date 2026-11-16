@@ -1,3 +1,4 @@
+import { constants as fsConstants } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { resolveSafeJsonReportOutputPath } from '../scripts/scriptWriteGuards';
@@ -9,11 +10,17 @@ export function hasOutputPath(value: unknown): value is string {
 export async function writeJsonOutputFile(outputPath: string, payload: unknown): Promise<string> {
   const resolvedPath = resolveSafeJsonReportOutputPath(outputPath);
   await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-  await fs.writeFile(resolvedPath, `${JSON.stringify(payload, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  });
-  await fs.chmod(resolvedPath, 0o600);
+  const handle = await fs.open(
+    resolvedPath,
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    await handle.chmod(0o600);
+    await handle.writeFile(`${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  } finally {
+    await handle.close();
+  }
   return resolvedPath;
 }
 

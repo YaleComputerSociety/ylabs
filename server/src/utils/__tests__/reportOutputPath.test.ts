@@ -46,6 +46,36 @@ function isolatedRoots() {
   };
 }
 
+describe('a symbolic link at the report path (#6366)', () => {
+  it('refuses a dangling link that points into the checkout', () => {
+    const { repositoryRoot, reportRoot, resolve } = isolatedRoots();
+    const output = path.join(reportRoot, 'escape.json');
+    fs.symlinkSync(path.join(repositoryRoot, 'not-yet-written.json'), output);
+
+    expect(() => resolve(output)).toThrow(/must not be a symbolic link/);
+    expect(fs.existsSync(path.join(repositoryRoot, 'not-yet-written.json'))).toBe(false);
+  });
+
+  it('refuses a dangling link that points outside every approved root', () => {
+    const { reportRoot, resolve } = isolatedRoots();
+    const elsewhere = scratch('ylabs-report-elsewhere-');
+    const output = path.join(reportRoot, 'elsewhere.json');
+    fs.symlinkSync(path.join(elsewhere, 'target.json'), output);
+
+    expect(() => resolve(output)).toThrow(/must not be a symbolic link/);
+  });
+
+  it('refuses a live link to an existing file', () => {
+    const { reportRoot, resolve } = isolatedRoots();
+    const target = path.join(reportRoot, 'real.json');
+    fs.writeFileSync(target, '{}');
+    const output = path.join(reportRoot, 'alias.json');
+    fs.symlinkSync(target, output);
+
+    expect(() => resolve(output)).toThrow(/must not be a symbolic link/);
+  });
+});
+
 describe('YLABS_REPORT_ROOT (#6366)', () => {
   it('approves a report root outside the checkout, and only while it is set', () => {
     const { reportRoot, resolve } = isolatedRoots();

@@ -133,6 +133,9 @@ export function resolveSafeJsonReportPath(
       }`,
     );
   }
+  if (fs.lstatSync(resolved, { throwIfNoEntry: false })?.isSymbolicLink()) {
+    throw new Error(`${flag} must not be a symbolic link`);
+  }
   const realTarget = resolveRealPath(resolved);
   if (
     reportRoot &&
