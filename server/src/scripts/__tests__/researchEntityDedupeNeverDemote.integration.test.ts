@@ -18,6 +18,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import {
   applyResearchEntityDedupeMergeGroup,
   resolveNonDemotingMerge,
+  SURVIVOR_KEEPS_ITS_OWN_CARD,
 } from '../dedupeResearchEntitiesByPi';
 import { holdMergesThatWouldDemote } from '../mergeSameLeadDuplicateGroupsCore';
 
@@ -247,6 +248,7 @@ describe('never-demote merge guard', () => {
           resolveNonDemotingMerge(
             new mongoose.Types.ObjectId(survivorId),
             loserIds.map((id) => new mongoose.Types.ObjectId(id)),
+            SURVIVOR_KEEPS_ITS_OWN_CARD,
           ),
       );
 
@@ -254,6 +256,61 @@ describe('never-demote merge guard', () => {
       expect(result.held).toEqual([{ url: SHARED_URL, reason: 'would-demote-a-served-row' }]);
     },
   );
+
+  it('holds a same-lead merge whose prose-less survivor would only hold the tier by borrowing the twin card it never receives (#6272)', async () => {
+    const proselessSurvivorId = new mongoose.Types.ObjectId();
+    const readyId = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    await db.collection('research_entities').insertMany([
+      {
+        _id: proselessSurvivorId,
+        slug: 'ysm-roe',
+        name: 'Roe Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        archived: false,
+        studentVisibilityTier: 'suppressed',
+        fullDescription: '',
+        shortDescription: '',
+        sourceUrls: [SHARED_URL],
+      },
+      {
+        _id: readyId,
+        slug: 'ysm-faculty-jane-roe',
+        name: 'Roe Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        archived: false,
+        studentVisibilityTier: 'student_ready',
+        fullDescription: READY_FULL,
+        shortDescription: READY_SHORT,
+        sourceUrls: [SHARED_URL],
+      },
+    ]);
+    await seedReadyLead(readyId);
+
+    const result = await holdMergesThatWouldDemote(
+      [
+        {
+          url: SHARED_URL,
+          corroboration: 'name-agrees',
+          survivorId: proselessSurvivorId.toHexString(),
+          loserIds: [readyId.toHexString()],
+          survivorGainsFunding: false,
+        },
+      ],
+      (survivorId, loserIds) =>
+        resolveNonDemotingMerge(
+          new mongoose.Types.ObjectId(survivorId),
+          loserIds.map((id) => new mongoose.Types.ObjectId(id)),
+          SURVIVOR_KEEPS_ITS_OWN_CARD,
+        ),
+    );
+
+    expect(result.kept).toEqual([]);
+    expect(result.held).toEqual([{ url: SHARED_URL, reason: 'would-demote-a-served-row' }]);
+  });
 
   it('refuses the swap rather than hard-deleting the planned canonical under deleteDuplicates', async () => {
     const plannedCanonicalId = new mongoose.Types.ObjectId();

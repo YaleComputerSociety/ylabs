@@ -44,7 +44,11 @@ import {
   summarizeSameLeadMergeHolds,
   type SameLeadMergeMember,
 } from './mergeSameLeadDuplicateGroupsCore';
-import { planUrlIdentityLaneVerdicts, resolveNonDemotingMerge } from './dedupeResearchEntitiesByPi';
+import {
+  planUrlIdentityLaneVerdicts,
+  resolveNonDemotingMerge,
+  SURVIVOR_KEEPS_ITS_OWN_CARD,
+} from './dedupeResearchEntitiesByPi';
 import {
   MERGE_SURVIVOR_ONLY_FIELDS_FLAG,
   assertScopedSurvivorApply,
@@ -227,6 +231,7 @@ async function main(): Promise<void> {
       resolveNonDemotingMerge(
         new mongoose.Types.ObjectId(survivorId),
         loserIds.map((id) => new mongoose.Types.ObjectId(id)),
+        SURVIVOR_KEEPS_ITS_OWN_CARD,
       ),
   );
   const outcome = {

@@ -2443,7 +2443,14 @@ export interface NonDemotingMergeResolution {
 export type PlannedMergeCarry = Pick<
   ResearchEntityDedupeMergeGroup,
   'mergedDepartments' | 'mergedResearchAreas' | 'mergedSourceUrls'
->;
+> & { carriesProse?: boolean };
+
+export const SURVIVOR_KEEPS_ITS_OWN_CARD: PlannedMergeCarry = {
+  mergedDepartments: [],
+  mergedResearchAreas: [],
+  mergedSourceUrls: [],
+  carriesProse: false,
+};
 
 const carriedStrings = (values: unknown): string[] =>
   Array.isArray(values) ? values.map((value) => String(value)).filter(Boolean) : [];
@@ -2485,6 +2492,7 @@ export async function resolveNonDemotingMerge(
       ? carriedStrings(plannedCarry.mergedDepartments)
       : docs.flatMap((doc) => carriedStrings(doc.departments)),
   };
+  const carriesProse = plannedCarry?.carriesProse !== false;
   const storedAfterMerge = (
     survivor: Record<string, any>,
     field: keyof typeof carriedByMerge,
@@ -2520,7 +2528,7 @@ export async function resolveNonDemotingMerge(
   for (const candidateId of candidateOrder) {
     const doc = docById.get(String(candidateId));
     if (!doc) continue;
-    const keepsOwnProse = mergeSurvivorHoldsOwnProse(doc);
+    const keepsOwnProse = !carriesProse || mergeSurvivorHoldsOwnProse(doc);
     const hypothetical = {
       ...doc,
       fullDescription: keepsOwnProse ? doc.fullDescription : bestFull || doc.fullDescription,
