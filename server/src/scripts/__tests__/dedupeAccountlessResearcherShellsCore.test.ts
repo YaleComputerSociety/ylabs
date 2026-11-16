@@ -786,6 +786,43 @@ describe('planAccountlessClusterFolds', () => {
       expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(0);
     });
 
+    it('folds the evidence-joined pair of a three-record name group and leaves the name-only third unfolded', () => {
+      const department = { primaryDepartment: 'Synthetic Department' };
+      const plan = planAccountlessClusterFolds(
+        [
+          member('1', { ...department, profileLinks: page(16) }),
+          member('2', { ...department, profileLinks: page(16), liveRoleEdges: 1 }),
+          member('3', department),
+        ],
+        [],
+      );
+      expect(plan.groups).toBe(1);
+      expect([...plan.foldTargetById]).toEqual([['1'.padStart(24, '0'), '2'.padStart(24, '0')]]);
+      expect(plan.foldedGroups).toBe(1);
+      expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+      expect(plan.nameOnlyGroups).toEqual([['3'.padStart(24, '0')]]);
+    });
+
+    it('folds every member of a three-record name group that evidence connects', () => {
+      const department = { primaryDepartment: 'Synthetic Department' };
+      const plan = planAccountlessClusterFolds(
+        [
+          member('1', { ...department, profileLinks: page(17) }),
+          member('2', { ...department, profileLinks: page(17), liveRoleEdges: 1, netid: 'sf17' }),
+          member('3', { ...department, netid: 'sf17' }),
+        ],
+        [],
+      );
+      expect(new Map(plan.foldTargetById)).toEqual(
+        new Map([
+          ['1'.padStart(24, '0'), '2'.padStart(24, '0')],
+          ['3'.padStart(24, '0'), '2'.padStart(24, '0')],
+        ]),
+      );
+      expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(0);
+      expect(plan.nameOnlyGroups).toEqual([]);
+    });
+
     it('leaves two records with identical clean names apart when nothing else joins them', () => {
       const plan = planAccountlessClusterFolds([member('1'), member('2')], []);
       expect(plan.foldTargetById.size).toBe(0);

@@ -1909,8 +1909,10 @@ function clusterEvidenceLabel(
  * already found it unable to tell those records apart. A name, with or without a department
  * or a shared row, is not evidence of one person, so a group whose members are not all
  * connected by a shared page, shared official profile, cited official page or an agreeing
- * netid or ORCID is reported in
- * `nameOnlyGroups` and never folded.
+ * netid or ORCID is never folded on the name. Each evidence-connected part of a group folds
+ * into its own survivor, and a member that only a name ties to the rest is reported in
+ * `nameOnlyGroups` and left unfolded. An identifier, rank or surname conflict anywhere in a
+ * group still refuses the whole group.
  */
 export function planAccountlessClusterFolds(
   members: ReadonlyArray<AccountlessClusterMember>,
@@ -2028,24 +2030,34 @@ export function planAccountlessClusterFolds(
       plan.refusedGroups[refusal] += 1;
       continue;
     }
-    if (new Set(group.map((member) => evidence.find(member.id))).size > 1) {
-      plan.refusedGroups.NAME_ONLY_EVIDENCE += 1;
-      plan.nameOnlyGroups.push(group.map((member) => member.id));
-      continue;
-    }
-    const survivor = accountlessClusterSurvivor(group);
-    const joinedBySharedProfile = group.some((member) => profileJoinedIds.has(member.id));
-    const joinedByCitedPage = group.some((member) => citedPageJoinedIds.has(member.id));
-    const groupIds = new Set(group.map((member) => member.id));
+    const components = new Map<string, AccountlessClusterMember[]>();
     for (const member of group) {
-      if (member.id === survivor.id) continue;
-      plan.foldTargetById.set(member.id, survivor.id);
-      const label = clusterEvidenceLabel(member.id, survivor.id, groupIds, evidenceJoins);
-      if (label) plan.evidenceById.set(member.id, label);
-      if (joinedBySharedProfile) plan.sharedOfficialProfileFoldIds.add(member.id);
-      else if (joinedByCitedPage) plan.citedOfficialPageFoldIds.add(member.id);
+      const root = evidence.find(member.id);
+      components.set(root, [...(components.get(root) ?? []), member]);
     }
-    plan.foldedGroups += 1;
+    const nameOnlyMembers = [...components.values()].filter((part) => part.length === 1).flat();
+    if (nameOnlyMembers.length > 0) {
+      plan.refusedGroups.NAME_ONLY_EVIDENCE += 1;
+      plan.nameOnlyGroups.push(nameOnlyMembers.map((member) => member.id));
+    }
+    let folded = false;
+    for (const part of components.values()) {
+      if (part.length < 2) continue;
+      const survivor = accountlessClusterSurvivor(part);
+      const joinedBySharedProfile = part.some((member) => profileJoinedIds.has(member.id));
+      const joinedByCitedPage = part.some((member) => citedPageJoinedIds.has(member.id));
+      const partIds = new Set(part.map((member) => member.id));
+      for (const member of part) {
+        if (member.id === survivor.id) continue;
+        plan.foldTargetById.set(member.id, survivor.id);
+        const label = clusterEvidenceLabel(member.id, survivor.id, partIds, evidenceJoins);
+        if (label) plan.evidenceById.set(member.id, label);
+        if (joinedBySharedProfile) plan.sharedOfficialProfileFoldIds.add(member.id);
+        else if (joinedByCitedPage) plan.citedOfficialPageFoldIds.add(member.id);
+      }
+      folded = true;
+    }
+    if (folded) plan.foldedGroups += 1;
   }
   return plan;
 }

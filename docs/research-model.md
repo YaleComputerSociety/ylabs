@@ -473,7 +473,9 @@ Measured on Development on 2026-10-05 in dry run it raised the folded groups fro
 The survivor is the record with the most live role edges, then the most healthy verified primary links, then the record an ORCID identifies, then the oldest, so the choice is reproducible and never alphabetical.
 The ORCID step keeps the identified record's name when an older copy holds a name a label cleaner damaged (#4879).
 A page or name that any record outside the group also holds joins nobody, because the outranking arms already found it unable to tell those records apart.
-Those keys only group records: a group folds only when evidence connects every member, a shared verified page, a shared official profile, a cited official page, or an agreeing netid or ORCID, and a group held together by names alone is counted under `refusedGroups.NAME_ONLY_EVIDENCE`, listed in `nameOnlyGroups`, and never folded (#6378).
+Those keys only group records, and a name never joins two members for a fold.
+Each part of a group that evidence connects (a shared verified page, a shared official profile, a cited official page, or an agreeing netid or ORCID) folds into its own survivor.
+A member only a name ties to the rest is counted under `refusedGroups.NAME_ONLY_EVIDENCE`, listed in `nameOnlyGroups`, and left unfolded (#6378).
 The whole group is refused on any disagreement of netid, ORCID, title rank, or surname, with every pair of surnames compared, and with credentials after a comma, generational suffixes and trailing periods read past.
 A standalone `Mc` or `Mac` token is read as part of the surname that follows it, because a label cleaner that split every case boundary stored such a surname as two words (#4879).
 Measured on Development on 2026-10-04 with that change: 3 groups, 2 folded, 1 refused on two different ORCIDs.
