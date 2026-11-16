@@ -25,6 +25,7 @@ import {
 const SEED_HOST = '8.8.8.8';
 const ASSET_HOST = 'assets.test';
 const TUNNEL_HOST = 'tunnel.test';
+const BARE_SEED_HOST = 'seed.test';
 const POLITE_ROBOTS = 'User-agent: *\nDisallow: /private/\nCrawl-delay: 5\n';
 
 const robotsFetcherFor = (bodies: Record<string, string>) => {
@@ -119,7 +120,11 @@ describe('the rendered fetch reads robots.txt for its seed (#6340)', () => {
     };
     mocks.execFile.mockImplementationOnce((_command, _args, _options, callback) => {
       callback(null, {
-        stdout: JSON.stringify({ url: `https://${SEED_HOST}/public`, statusCode: 200, html: '<html>ok</html>' }),
+        stdout: JSON.stringify({
+          url: `https://${SEED_HOST}/public`,
+          statusCode: 200,
+          html: '<html>ok</html>',
+        }),
         stderr: '',
       });
     });
@@ -268,6 +273,33 @@ describe('the rendered fetch proxy reads robots.txt for subresources (#6340)', (
     expect(response.status).toBe(200);
     expect(robots.asked).toEqual([]);
     expect(slots.taken).toEqual([]);
+  });
+
+  it.each([
+    { held: `www.${BARE_SEED_HOST}`, asset: BARE_SEED_HOST },
+    { held: BARE_SEED_HOST, asset: `www.${BARE_SEED_HOST}` },
+  ])('reads robots.txt for $asset when the render holds $held', async ({ held, asset }) => {
+    const robots = robotsFetcherFor({ [asset]: POLITE_ROBOTS });
+    await startProxy(robots.fetcher, recordingSlots().limiter, held);
+
+    const response = await getThroughProxy(asset, '/private/script.js');
+
+    expect(response.status).toBe(403);
+    expect(hits).toEqual([]);
+    expect(robots.asked).toEqual([asset]);
+    expect(proxy!.robotsRefusals()).toEqual([expect.any(RobotsDisallowedError)]);
+  });
+
+  it('records the Crawl-delay of a tunnel to the www variant of the held host', async () => {
+    const asset = `www.${BARE_SEED_HOST}`;
+    const robots = robotsFetcherFor({ [asset]: POLITE_ROBOTS });
+    await startProxy(robots.fetcher, recordingSlots().limiter, BARE_SEED_HOST);
+
+    const status = await openTunnel(`${asset}:${upstreamPort}`);
+
+    expect(status).toContain(' 200 ');
+    expect(robots.asked).toEqual([asset]);
+    expect(hostCrawlDelayMs(asset)).toBe(5_000);
   });
 
   it('records a tunnelled host Crawl-delay before the tunnel takes its slot', async () => {

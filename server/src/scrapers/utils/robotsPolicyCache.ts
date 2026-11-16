@@ -51,7 +51,8 @@ function policyFromOutcome(outcome: RobotsTxtFetchOutcome): {
   };
 }
 
-const cacheKey = (host: string): string => host.trim().toLowerCase().replace(/\.$/, '');
+export const robotsPolicyHostKey = (host: string): string =>
+  host.trim().toLowerCase().replace(/\.$/, '');
 
 /**
  * The policy already read for a host, without reading it again. For a request that must not send
@@ -62,7 +63,7 @@ export function cachedRobotsPolicy(
   host: string,
   now: () => number = Date.now,
 ): RobotsPolicy | undefined {
-  const cached = cache.get(cacheKey(host));
+  const cached = cache.get(robotsPolicyHostKey(host));
   return cached && cached.expiresAt > now() ? cached.policy : undefined;
 }
 
@@ -71,7 +72,7 @@ export async function robotsPolicyFor(
   fetchRobotsTxt: RobotsTxtFetcher,
   now: () => number = Date.now,
 ): Promise<RobotsPolicy> {
-  const key = cacheKey(host);
+  const key = robotsPolicyHostKey(host);
   const cached = cache.get(key);
   if (cached && cached.expiresAt > now()) return cached.policy;
   const inFlight = pending.get(key);

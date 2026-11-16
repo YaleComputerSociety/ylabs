@@ -8,7 +8,11 @@ import { activeHostPause, HostPausedError, type HostPause } from './hostPause';
 import { HOST_SLOT_WAIT_TIMEOUT_MS } from './hostThrottlePolicy';
 import { RobotsDisallowedError } from './robotsDisallowedError';
 import { enforceRobotsForPageRead, recordRobotsCrawlDelay } from './robotsFetchHook';
-import { cachedRobotsPolicy, type RobotsTxtFetcher } from './robotsPolicyCache';
+import {
+  cachedRobotsPolicy,
+  robotsPolicyHostKey,
+  type RobotsTxtFetcher,
+} from './robotsPolicyCache';
 import { robotsAllows } from './robotsTxt';
 import { scraperHostSlotLimiter } from './scraperHostSlotLimiter';
 import {
@@ -104,6 +108,8 @@ export async function startSsrfGuardedForwardProxy(
   const hostSlots = options.hostSlots ?? scraperHostSlotLimiter();
   const hostSlotWaitMs = options.hostSlotWaitMs ?? HOST_SLOT_WAIT_TIMEOUT_MS;
   const heldHost = options.heldHost ? normalizeExcludedHost(options.heldHost) : undefined;
+  const heldRobotsHost = options.heldHost ? robotsPolicyHostKey(options.heldHost) : undefined;
+  const isHeldRobotsHost = (host: string) => robotsPolicyHostKey(host) === heldRobotsHost;
   const hostPause = options.hostPause ?? activeHostPause;
   const requestLog =
     options.requestLog === undefined ? processScraperRequestLog() : options.requestLog;
@@ -177,7 +183,7 @@ export async function startSsrfGuardedForwardProxy(
     const portSuffix = target.port === 80 ? '' : `:${target.port}`;
     const url = new URL(`http://${target.hostname}${portSuffix}${target.path}`);
     try {
-      if (heldHost && normalizeExcludedHost(target.hostname) === heldHost) {
+      if (isHeldRobotsHost(target.hostname)) {
         const policy = cachedRobotsPolicy(target.hostname);
         const path = `${url.pathname}${url.search}`;
         return policy && !robotsAllows(policy, path)
@@ -193,7 +199,7 @@ export async function startSsrfGuardedForwardProxy(
 
   /** An HTTPS tunnel's paths are encrypted, so only its host's Crawl-delay can apply. */
   const recordTunnelCrawlDelay = async (host: string): Promise<void> => {
-    if (heldHost && normalizeExcludedHost(host) === heldHost) return;
+    if (isHeldRobotsHost(host)) return;
     await recordRobotsCrawlDelay(host, options.robotsTxtFetcher).catch(() => undefined);
   };
 
