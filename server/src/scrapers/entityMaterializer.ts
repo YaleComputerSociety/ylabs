@@ -8993,10 +8993,13 @@ function newestLaneReadOfUserTitles<T extends { field?: unknown; sourceName?: un
  * The lanes whose `user` title is read from the person's own official profile page's title
  * block, each verified against its extractor (#5578), mapped to the extraction marker a read
  * must carry, if any. Every other title lane copies that page, reads another page, or cannot
- * say which element it read: the A-Z index reads a lab page's contact widget, and the
- * backfill takes the first title-classed element on the page. The roster reads either its
- * listing or the profile, so only a read marked as taken from the profile's title block
- * counts; an unmarked roster read, including every one stored before the marker, does not.
+ * say which element it read: the A-Z index reads a lab page's contact widget. The roster reads
+ * either its listing or the profile, so only a read marked as taken from the profile's title
+ * block counts; an unmarked roster read, including every one stored before the marker, does not.
+ * The official-profile backfill emits only for an identity-confirmed user, but otherwise takes
+ * the first title-classed element on the page, so its read is first-hand only when it carries
+ * the marker, which it sets on a title read from the contact-information template verified in
+ * #6177; an unmarked backfill read stays non-first-hand.
  */
 export const FIRST_HAND_USER_TITLE_SOURCES: ReadonlyMap<
   string,
@@ -9005,6 +9008,7 @@ export const FIRST_HAND_USER_TITLE_SOURCES: ReadonlyMap<
   ['ysm-faculty-directory', undefined],
   ['yse-faculty-directory', undefined],
   ['dept-faculty-roster', 'profileTitleBlock'],
+  ['official-profile-pi-backfill', 'profileTitleBlock'],
 ]);
 
 export function isFirstHandUserTitleRead(observation: {
