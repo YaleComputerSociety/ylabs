@@ -220,7 +220,7 @@ yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app
 SMOKE_COOKIE='<operator-session-cookie>' yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false
 ```
 
-When `beta:data-quality --include-samples` reports `sourceHealthWarnings`, use each queue item's `nextCommand` to write the latest scraper report for that source. Those commands are read-only and point at `/tmp/ylabs-scraper-reports/<source>-<runId>.json`.
+When `beta:data-quality --include-samples` reports `sourceHealthWarnings`, use each queue item's `nextCommand` to write the latest scraper report for that source. Those commands are read-only and point at `/tmp/ylabs-scraper-reports/<source>-<runId>.json`; create that directory first with `mkdir -p /tmp/ylabs-scraper-reports`, because `--output` refuses a report directory that does not exist.
 
 Do not run production copy commands or retention `--apply` until the packet is complete.
 

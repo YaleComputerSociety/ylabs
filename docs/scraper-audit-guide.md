@@ -116,6 +116,7 @@ npx -y corepack@0.34.7 yarn --cwd server scrape report --run <scrapeRunId>
 To save a durable QA artifact outside the repo, add `--output`:
 
 ```bash
+mkdir -p /tmp/ylabs-scraper-reports
 npx -y corepack@0.34.7 yarn --cwd server scrape report --run <scrapeRunId> --output /tmp/ylabs-scraper-reports/<scrapeRunId>.json
 ```
 
