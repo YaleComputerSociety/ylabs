@@ -287,15 +287,20 @@ export function topicVocabularyFrom(
  * therefore kept only when some word is a topic term, and a word that is also part of a
  * person's name never counts as one; in doubt the query is dropped.
  */
+const isTopicShapedSymbol = (token: string, vocabulary: TopicVocabulary): boolean =>
+  /\p{N}/u.test(token) &&
+  /\p{L}/u.test(token) &&
+  (token.match(/\p{L}+/gu) ?? []).every(
+    (letters) => letters.length <= 2 || vocabulary.isTopicTerm(letters),
+  );
+
 export function queryIsNameShaped(query: string, vocabulary: TopicVocabulary): boolean {
-  const tokens = query
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .map((token) => token.replace(/\p{N}+/gu, ''))
+  const rawTokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (rawTokens.some((token) => isTopicShapedSymbol(token, vocabulary))) return false;
+  const tokens = rawTokens
+    .map((token) => token.replace(/[^\p{L}'.-]+/gu, ''))
     .filter((token) => /\p{L}/u.test(token) && !ACCESS_FILTER_WORDS.has(token));
   if (tokens.length === 0 || tokens.length > NAME_SHAPED_MAX_WORDS) return false;
-  if (!tokens.every((token) => /^[\p{L}'.-]+$/u.test(token))) return false;
   return !tokens.some((token) =>
     token
       .split(/['.-]+/)

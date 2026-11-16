@@ -220,6 +220,23 @@ describe('queryIsNameShaped', () => {
     expect(queryIsNameShaped('soil2 chemistry', topicVocabulary)).toBe(false);
   });
 
+  it('keeps a gene or virus symbol mixing letters and digits as a topic', () => {
+    const geneVocabulary = {
+      isTopicTerm: (word: string) => TOPIC_WORDS.has(word) || word === 'brca',
+    };
+    for (const query of ['tp53', 'cd19', 'il6', 'h1n1', 'brca1', 'tp53 Tqxa']) {
+      expect(queryIsNameShaped(query, geneVocabulary)).toBe(false);
+    }
+    expect(queryIsNameShaped('Tqxa2', geneVocabulary)).toBe(true);
+  });
+
+  it('reads a name written with a comma or parentheses as the name it carries', () => {
+    expect(queryIsNameShaped('Vrnbe, Tqxa', topicVocabulary)).toBe(true);
+    expect(queryIsNameShaped('Tqxa (Vrnbe)', topicVocabulary)).toBe(true);
+    expect(queryIsNameShaped('"Tqxa Vrnbe"', topicVocabulary)).toBe(true);
+    expect(queryIsNameShaped('ecology, marine', topicVocabulary)).toBe(false);
+  });
+
   it('leaves a purely numeric query to the filter-phrase rule rather than calling it a name', () => {
     expect(queryIsNameShaped('2027', topicVocabulary)).toBe(false);
   });
