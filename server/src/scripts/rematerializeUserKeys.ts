@@ -15,7 +15,8 @@
  *
  * `--only-fields=<paths>` scopes the write to named researcher paths (#5816): every planned
  * path outside the expanded scope is left as stored, neither written nor deleted, and listed per
- * key under `outOfScopePaths` (#6276); a key no researcher joins mints nothing, and each pass
+ * key under `outOfScopePaths` (#6276); a key no researcher joins mints nothing unless
+ * `--mint-listed-keys` is set (#5875), and each pass
  * summary carries `plannedPathSet` and
  * `outOfScopePathSet`, so "nothing outside the scope" is a check that `plannedPathSet` is a
  * subset of the printed `scope`. Accepted paths: displayName, profile.title,
@@ -29,6 +30,10 @@
  *
  *   yarn --cwd server observations:rematerialize-user-keys --keys-file=<keys.json> \
  *     --only-fields=identifiers.email --output=<tmp>.json
+ *
+ * `--mint-listed-keys` (with `--only-fields`) lets a listed key that no researcher joins mint one
+ * wherever a full run's mint rules would, and only for keys in the file; each pass summary then
+ * counts `keysMinting`.
  */
 import { startLongRunProgress } from '../utils/longRunProgress';
 import dotenv from 'dotenv';
@@ -58,12 +63,17 @@ async function visit(
   entityKey: string,
   apply: boolean,
   onlyFields: readonly string[],
+  mintListedUserKeys: ReadonlySet<string> | undefined,
 ): Promise<UserKeyPassRow> {
   try {
     const result: any = await materializeEntity(
       'user',
       { entityKey },
-      { dryRun: !apply, ...(onlyFields.length > 0 ? { userWriteOnlyFields: onlyFields } : {}) },
+      {
+        dryRun: !apply,
+        ...(onlyFields.length > 0 ? { userWriteOnlyFields: onlyFields } : {}),
+        ...(mintListedUserKeys ? { mintListedUserKeys } : {}),
+      },
     );
     return {
       entityKey,
@@ -72,6 +82,7 @@ async function visit(
       ...(onlyFields.length > 0
         ? { outOfScopePaths: Array.isArray(result?.outOfScopePaths) ? result.outOfScopePaths : [] }
         : {}),
+      ...(result?.created === true ? { created: true as const } : {}),
       ...(result?.skipped ? { skipped: String(result.skipped) } : {}),
     };
   } catch (error) {
@@ -93,6 +104,7 @@ async function main(): Promise<void> {
   });
   const keys = userKeysFromJson(fs.readFileSync(path.resolve(args.keysFile), 'utf8'));
   const outputPath = resolveSafeJsonReportOutputPath(args.output);
+  const mintListedUserKeys = args.mintListedKeys ? new Set(keys) : undefined;
   await initializeConnections();
   try {
     const passes: UserKeyPassRow[][] = [];
@@ -105,7 +117,7 @@ async function main(): Promise<void> {
       );
       try {
         for (const key of keys) {
-          const row = await visit(key, args.apply, args.onlyFields);
+          const row = await visit(key, args.apply, args.onlyFields, mintListedUserKeys);
           rows.push(row);
           progress.tick(Boolean(row.error));
         }
@@ -122,6 +134,7 @@ async function main(): Promise<void> {
         ? { onlyFields: args.onlyFields, scope: expandUserMaterializerScope(args.onlyFields) }
         : {}),
       keys: keys.length,
+      ...(args.mintListedKeys ? { mintListedKeys: true } : {}),
       passes: summaries,
     };
     fs.writeFileSync(outputPath, JSON.stringify({ ...report, rows: passes }, null, 2));

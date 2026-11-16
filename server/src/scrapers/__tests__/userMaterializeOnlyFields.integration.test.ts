@@ -20,6 +20,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
   return { ...actual, recomputeBrowseRankForEntities: vi.fn().mockResolvedValue(undefined) };
 });
 
+import { Account } from '../../models/account';
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -420,6 +421,113 @@ describe('a user materialize scoped to named fields writes only that scope (#581
     const unscoped = await materializeEntity('user', { entityKey: MINT_KEY }, {});
     expect(unscoped.created).toBe(true);
     expect(await Researcher.countDocuments({})).toBe(1);
+  });
+
+  const seedLeadAttributedMintKey = async (attributed: boolean) => {
+    const scrapeRunId = new mongoose.Types.ObjectId();
+    if (attributed) {
+      await ResearchEntity.create({
+        slug: NAMING_SLUG,
+        name: 'Fixture 5816 Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        archived: false,
+      });
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: NAMING_SLUG,
+        field: 'inferredPiUserKey',
+        value: MINT_KEY,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://fixture5816.example.edu/faculty/',
+        confidence: 0.7,
+        observedAt: new Date('2026-11-01T00:00:00Z'),
+        superseded: false,
+        scrapeRunId,
+      });
+    }
+    for (const [field, value] of [
+      ['fname', 'Avery'],
+      ['lname', 'Synthetic'],
+      ['title', 'Professor of Fixture Studies'],
+    ] as const) {
+      await observation({ entityKey: MINT_KEY, field, value, scrapeRunId });
+    }
+  };
+
+  it('mints a researcher on a field-scoped resolve only for a listed key (#5875)', async () => {
+    await seedLeadAttributedMintKey(true);
+
+    const unlisted = await materializeEntity(
+      'user',
+      { entityKey: MINT_KEY },
+      {
+        userWriteOnlyFields: ['displayName'],
+        mintListedUserKeys: new Set(['dept:fixture5816:someone-else']),
+      },
+    );
+    expect(unlisted.skipped).toBe('field-scoped-run-mints-no-researcher');
+    const fieldOnly = await materializeEntity(
+      'user',
+      { entityKey: MINT_KEY },
+      { userWriteOnlyFields: ['displayName'] },
+    );
+    expect(fieldOnly.skipped).toBe('field-scoped-run-mints-no-researcher');
+    expect(await Researcher.countDocuments({})).toBe(0);
+
+    const listed = await materializeEntity(
+      'user',
+      { entityKey: MINT_KEY },
+      { userWriteOnlyFields: ['displayName'], mintListedUserKeys: new Set([MINT_KEY]) },
+    );
+    expect(listed.created).toBe(true);
+    expect(await Researcher.countDocuments({})).toBe(1);
+    expect((await Researcher.findOne({}).lean<any>())?.displayName).toBe('Avery Synthetic');
+  });
+
+  it('writes nothing to existing records when a listed key mints (#5875)', async () => {
+    await seedLeadAttributedMintKey(true);
+    const existing = await seedResearcher({ displayName: 'Blake Unrelated' });
+    const account = await Account.create({
+      netid: NETID,
+      email: PAGE_EMAIL,
+      status: 'UNKNOWN',
+      archived: false,
+    });
+    const researcherBefore = await Researcher.findById(existing._id).lean();
+    const accountBefore = await Account.findById(account._id).lean();
+    const entityBefore = await ResearchEntity.findOne({ slug: NAMING_SLUG }).lean();
+    const edgesBefore = await RoleAssignment.countDocuments({});
+
+    const listed = await materializeEntity(
+      'user',
+      { entityKey: MINT_KEY },
+      { userWriteOnlyFields: ['displayName'], mintListedUserKeys: new Set([MINT_KEY]) },
+    );
+
+    expect(listed.created).toBe(true);
+    expect(await Researcher.countDocuments({})).toBe(2);
+    expect(await Researcher.findById(existing._id).lean()).toEqual(researcherBefore);
+    expect(await Account.findById(account._id).lean()).toEqual(accountBefore);
+    expect(await ResearchEntity.findOne({ slug: NAMING_SLUG }).lean()).toEqual(entityBefore);
+    expect(await RoleAssignment.countDocuments({})).toBe(edgesBefore);
+  });
+
+  it('keeps the full-run mint refusal for a listed key the corpus never names as a lead (#5875)', async () => {
+    await seedLeadAttributedMintKey(false);
+
+    const listed = await materializeEntity(
+      'user',
+      { entityKey: MINT_KEY },
+      { userWriteOnlyFields: ['displayName'], mintListedUserKeys: new Set([MINT_KEY]) },
+    );
+    const unscoped = await materializeEntity('user', { entityKey: MINT_KEY }, { dryRun: true });
+
+    expect(unscoped.skipped).toBeTruthy();
+    expect(unscoped.skipped).not.toBe('field-scoped-run-mints-no-researcher');
+    expect(listed.skipped).toBe(unscoped.skipped);
+    expect(await Researcher.countDocuments({})).toBe(0);
   });
 
   const seedFirstHandTitleResearcher = async () => {

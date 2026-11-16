@@ -731,6 +731,7 @@ import { distinctPeopleVerdictPairsJoinedByFold } from './distinctPeopleVerdict'
 
 interface MaterializeOptions {
   dryRun?: boolean;
+  mintListedUserKeys?: ReadonlySet<string>;
   /**
    * Plan as if these archived research rows were already deleted, so a dry run answers
    * whether deleting a retired row would let the next resolve mint it again (#5189).
@@ -10597,7 +10598,9 @@ async function materializeUserIdentityToResearcher(
   //     on `missing_lead`.
   //   - Only a live entity's attribution may mint (`liveResearchEntityNamesUserKeyAsLead`).
   let mintedFromPiAttribution = false;
-  if (!researcher && scope) return skipped('field-scoped-run-mints-no-researcher');
+  if (!researcher && scope && !options.mintListedUserKeys?.has(textValue(identifier.entityKey))) {
+    return skipped('field-scoped-run-mints-no-researcher');
+  }
   if (!researcher) {
     const attributionKey = textValue(identifier.entityKey);
     const keyIdentity = inferredPiUserKeyIdentity(attributionKey);
