@@ -303,6 +303,33 @@ describe('MachineHostBudgetLimiter lock age and broker order (#6227)', () => {
   );
 
   it(
+    'breaks a live holder lock stamped well ahead of the clock, as after a wall clock step back',
+    async () => {
+      let attempts = 0;
+      const limiter = budget({
+        acquireTimeoutMs: 1_000,
+        sleep: async (ms) => {
+          attempts += 1;
+          if (attempts > 50) throw new Error('waited on the future-stamped lock');
+          await yieldingSleep(ms);
+        },
+      });
+      fs.mkdirSync(limiter.directory, { recursive: true });
+      const lockPath = limiter.statePath('lab.example.org').replace(/\.json$/, '.lock');
+      fs.writeFileSync(
+        lockPath,
+        JSON.stringify({ pid: OTHER_LIVE_PID, token: 'from-the-future', at: clock + 10_000 }),
+      );
+
+      const release = await limiter.acquire('lab.example.org');
+
+      release();
+      expect(limiter.readState('lab.example.org')).toBeDefined();
+    },
+    LOCK_TEST_TIMEOUT_MS,
+  );
+
+  it(
     'keeps a lock the injected clock calls fresh, however old the file looks',
     async () => {
       const limiter = budget({ sleep: yieldingSleep, unavailableTimeoutMs: 1 });
@@ -310,7 +337,7 @@ describe('MachineHostBudgetLimiter lock age and broker order (#6227)', () => {
       const lockPath = limiter.statePath('lab.example.org').replace(/\.json$/, '.lock');
       fs.writeFileSync(
         lockPath,
-        JSON.stringify({ pid: OTHER_LIVE_PID, token: 'fresh-by-clock', at: clock + 600_000 }),
+        JSON.stringify({ pid: OTHER_LIVE_PID, token: 'fresh-by-clock', at: clock }),
       );
       const old = new Date(Date.now() - MACHINE_HOST_LOCK_STALE_MS - 60_000);
       fs.utimesSync(lockPath, old, old);

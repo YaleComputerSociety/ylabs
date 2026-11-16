@@ -10,7 +10,8 @@ export interface FileLockRead {
 /**
  * A lock file's contents and age. Age comes from the `at` the holder wrote with the caller's clock,
  * so a test's injected clock decides staleness (#6227); a lock written before `at` existed falls
- * back to the file's modification time against the wall clock.
+ * back to the file's modification time against the wall clock. Age is the distance either way, so
+ * a lock stamped ahead of the clock (the wall clock stepped back) still goes stale.
  */
 export function readFileLock(lockPath: string, now: () => number): FileLockRead | null {
   let raw: string;
@@ -31,7 +32,7 @@ export function readFileLock(lockPath: string, now: () => number): FileLockRead 
   return {
     raw,
     ...(Number.isInteger(record.pid) ? { pid: record.pid as number } : {}),
-    ageMs: at !== undefined ? now() - at : Date.now() - mtimeMs,
+    ageMs: Math.abs(at !== undefined ? now() - at : Date.now() - mtimeMs),
   };
 }
 
