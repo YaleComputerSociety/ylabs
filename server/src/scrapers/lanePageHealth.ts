@@ -270,7 +270,7 @@ export function withoutGoneLanePageObservations<T extends LanePageObservation>(
     const withdrawn =
       page !== undefined &&
       page.goneAt > page.liveAt &&
-      observedTime(observation.observedAt) < page.goneAt;
+      (borrowsPages(laneOf(observation)) || observedTime(observation.observedAt) < page.goneAt);
     if (!withdrawn) {
       kept.push(observation);
       continue;
@@ -289,6 +289,8 @@ function comparableValue(value: unknown): string {
 }
 
 const GONE_PAGE_BODY_FIELDS = ['description', 'fullDescription'] as const;
+
+const GONE_PAGE_EVIDENCE_FIELDS = ['methods'] as const;
 
 export function planGoneLanePageFieldClears(input: {
   stored: Record<string, unknown> | null | undefined;
@@ -321,9 +323,10 @@ export function planGoneLanePageFieldClears(input: {
     clearedBodies.includes('fullDescription') &&
     clearable('shortDescription') &&
     (storedValue('shortDescription') !== null || 'shortDescription' in input.staged);
+  const clearedEvidence = GONE_PAGE_EVIDENCE_FIELDS.filter(storedFromGonePage);
   return cardFollowsClearedBody || storedFromGonePage('shortDescription')
-    ? [...clearedBodies, 'shortDescription']
-    : clearedBodies;
+    ? [...clearedBodies, 'shortDescription', ...clearedEvidence]
+    : [...clearedBodies, ...clearedEvidence];
 }
 
 export class LanePageReads {
