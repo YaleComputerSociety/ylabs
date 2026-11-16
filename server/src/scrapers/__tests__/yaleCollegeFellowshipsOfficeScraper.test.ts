@@ -1384,6 +1384,13 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     }
   });
 
+  it('keeps an open window open when a later word is a review plan or a closing date', () => {
+    expect(rowAccepting('Applications are now open and will be reviewed on a rolling basis.')).toBe(
+      true,
+    );
+    expect(rowAccepting('Applications for the summer are open through May 1.')).toBe(true);
+  });
+
   it('does not read past-tense rolling review as accepting', () => {
     expect(rowAccepting('Applications were accepted on a rolling basis last spring.')).toBe(false);
   });

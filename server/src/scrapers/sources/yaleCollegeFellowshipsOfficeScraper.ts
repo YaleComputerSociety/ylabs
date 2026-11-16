@@ -818,8 +818,8 @@ const OPENING_STATEMENT = /\bapplications?\b[^;]*?\bopen\b/i;
 
 const MONTH = String.raw`(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*`;
 
-const FUTURE_TIME = new RegExp(
-  String.raw`\b(?:next|again|later|soon|upcoming|starting|beginning|will)\b|\b(?:in|on|from|after)\s+(?:early\s+|mid-?\s*|late\s+)?(?:${MONTH}|spring|summer|fall|autumn|winter|\d)|\b${MONTH}\s+\d`,
+const FUTURE_OPENING = new RegExp(
+  String.raw`\b(?:re)?open(?:s|ing)?\s+(?:again\s+)?(?:for\s+(?:[\w'’-]+\s+){1,4}?)?(?:next|later|soon|(?:in|on|from|starting|beginning)\s+(?:early\s+|mid-?\s*|late\s+)?(?:${MONTH}|spring|summer|fall|autumn|winter|\d)|${MONTH}\s+\d)|\bwill\s+(?:re)?open\b|\bopens\s+on\b`,
   'i',
 );
 
@@ -844,7 +844,7 @@ const SENTENCE_BREAK =
 const withoutFutureOpening = (sentence: string): string => {
   const opening = OPENING_STATEMENT.exec(sentence);
   if (!opening) return sentence;
-  return FUTURE_TIME.test(sentence.slice(opening.index + opening[0].length))
+  return FUTURE_OPENING.test(sentence.slice(opening.index))
     ? sentence.slice(0, opening.index)
     : sentence;
 };
