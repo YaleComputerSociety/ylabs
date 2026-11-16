@@ -39,10 +39,13 @@ describe('a value no person can hold is never a shared identity (#5991)', () => 
           id: 'survivor',
           displayName: 'Avery Synth',
           email: 'avery.synth@example.test',
+          netid: 'as123',
           orcid: REAL_A,
         },
       ]);
-      expect(decideShellMerge({ displayName: 'Avery Synth', orcid: bogus }, index)).toMatchObject({
+      expect(
+        decideShellMerge({ displayName: 'Avery Synth', netid: 'as123', orcid: bogus }, index),
+      ).toMatchObject({
         merge: true,
         canonicalId: 'survivor',
       });
@@ -51,11 +54,15 @@ describe('a value no person can hold is never a shared identity (#5991)', () => 
           id: 'survivor',
           displayName: 'Avery Synth',
           email: 'avery.synth@example.test',
+          netid: 'as123',
           orcid: bogus,
         },
       ]);
       expect(
-        decideShellMerge({ displayName: 'Avery Synth', orcid: REAL_A }, bogusSurvivor),
+        decideShellMerge(
+          { displayName: 'Avery Synth', netid: 'as123', orcid: REAL_A },
+          bogusSurvivor,
+        ),
       ).toMatchObject({ merge: true, canonicalId: 'survivor' });
     });
 

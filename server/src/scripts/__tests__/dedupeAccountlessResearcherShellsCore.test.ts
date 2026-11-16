@@ -22,6 +22,7 @@ import {
   withoutDistinctPeopleFolds,
   resolveFinalMergeTargets,
   researchEntityIdsToRegateAfterFold,
+  plannedMergeArm,
 } from '../dedupeAccountlessResearcherShellsCore';
 import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
 
@@ -38,6 +39,8 @@ const SYNTHETIC_ORCID_10 = syntheticPersonOrcid(509);
 const SYNTHETIC_ORCID_11 = syntheticPersonOrcid(510);
 const SYNTHETIC_ORCID_12 = syntheticPersonOrcid(511);
 const SYNTHETIC_ORCID_13 = syntheticPersonOrcid(512);
+const SYNTHETIC_ORCID_14 = syntheticPersonOrcid(513);
+const SYNTHETIC_ORCID_15 = syntheticPersonOrcid(514);
 
 describe('normalizeResearcherName', () => {
   it('lowercases, trims, and collapses whitespace', () => {
@@ -85,11 +88,11 @@ describe('decideShellMerge', () => {
     { id: 'namesake-b', displayName: 'Sam Twin', email: 'account-twin-b@example.test' },
   ]);
 
-  it('merges when exactly one same-name account-linked canonical exists', () => {
+  it('refuses a fold into the one same-name account-linked canonical on the name alone', () => {
     expect(decideShellMerge({ displayName: 'jane roe' }, index)).toEqual({
-      merge: true,
+      merge: false,
       canonicalId: 'canonical-roe',
-      reason: 'MERGEABLE',
+      reason: 'NAME_ONLY_EVIDENCE',
       matchedOn: 'name',
     });
   });
@@ -132,11 +135,11 @@ describe('decideShellMerge', () => {
     { id: 'canonical-netid', displayName: 'Nina Netid', netid: 'nn42' },
   ]);
 
-  it('folds a name-only shell into a netid-backed canonical of the same name', () => {
+  it('refuses a name-only shell against a netid-backed canonical of the same name', () => {
     expect(decideShellMerge({ id: 'name-only', displayName: 'Nina Netid' }, netidIndex)).toEqual({
-      merge: true,
+      merge: false,
       canonicalId: 'canonical-netid',
-      reason: 'MERGEABLE',
+      reason: 'NAME_ONLY_EVIDENCE',
       matchedOn: 'name',
     });
   });
@@ -157,15 +160,31 @@ describe('decideShellMerge', () => {
   });
 
   const mixedIndex = buildCanonicalNameIndex([
-    { id: 'account-backed', displayName: 'Nina Netid', email: 'account-nina@example.test' },
+    {
+      id: 'account-backed',
+      displayName: 'Nina Netid',
+      email: 'account-nina@example.test',
+      orcid: SYNTHETIC_ORCID_14,
+    },
     { id: 'netid-backed', displayName: 'Nina Netid', netid: 'nn42' },
   ]);
 
   it('prefers the account-backed canonical over a same-name netid-backed one', () => {
-    expect(decideShellMerge({ id: 'name-only', displayName: 'Nina Netid' }, mixedIndex)).toEqual({
+    expect(
+      decideShellMerge(
+        { id: 'name-only', displayName: 'Nina Netid', orcid: SYNTHETIC_ORCID_14 },
+        mixedIndex,
+      ),
+    ).toEqual({
       merge: true,
       canonicalId: 'account-backed',
       reason: 'MERGEABLE',
+      matchedOn: 'name',
+    });
+    expect(decideShellMerge({ id: 'name-only', displayName: 'Nina Netid' }, mixedIndex)).toEqual({
+      merge: false,
+      canonicalId: 'account-backed',
+      reason: 'NAME_ONLY_EVIDENCE',
       matchedOn: 'name',
     });
   });
@@ -173,13 +192,29 @@ describe('decideShellMerge', () => {
   it('folds a netid-backed shell into the account-backed canonical of the same name', () => {
     expect(
       decideShellMerge(
-        { id: 'netid-backed', displayName: 'Nina Netid', netid: 'nn42' },
+        {
+          id: 'netid-backed',
+          displayName: 'Nina Netid',
+          netid: 'nn42',
+          orcid: SYNTHETIC_ORCID_14,
+        },
         mixedIndex,
       ),
     ).toEqual({
       merge: true,
       canonicalId: 'account-backed',
       reason: 'MERGEABLE',
+      matchedOn: 'name',
+    });
+    expect(
+      decideShellMerge(
+        { id: 'netid-backed', displayName: 'Nina Netid', netid: 'nn42' },
+        mixedIndex,
+      ),
+    ).toEqual({
+      merge: false,
+      canonicalId: 'account-backed',
+      reason: 'NAME_ONLY_EVIDENCE',
       matchedOn: 'name',
     });
   });
@@ -515,11 +550,28 @@ describe('decideShellMerge netid arm (#3166)', () => {
 
   it('leaves the name arm reachable and labelled when no netid matches', () => {
     const nameIndex = buildCanonicalNameIndex([
-      { id: 'canonical', displayName: 'Jane Roe', email: 'account-9@example.test' },
+      {
+        id: 'canonical',
+        displayName: 'Jane Roe',
+        email: 'account-9@example.test',
+        orcid: SYNTHETIC_ORCID_15,
+      },
     ]);
     expect(
-      decideShellMerge({ id: 'shell', displayName: 'Jane Roe' }, nameIndex, netidIndex),
+      decideShellMerge(
+        { id: 'shell', displayName: 'Jane Roe', orcid: SYNTHETIC_ORCID_15 },
+        nameIndex,
+        netidIndex,
+      ),
     ).toEqual({ merge: true, canonicalId: 'canonical', reason: 'MERGEABLE', matchedOn: 'name' });
+    expect(
+      decideShellMerge({ id: 'shell', displayName: 'Jane Roe' }, nameIndex, netidIndex),
+    ).toEqual({
+      merge: false,
+      canonicalId: 'canonical',
+      reason: 'NAME_ONLY_EVIDENCE',
+      matchedOn: 'name',
+    });
   });
 });
 
@@ -691,13 +743,29 @@ describe('planAccountlessClusterFolds', () => {
   describe('a noisy spelling of a name-only record', () => {
     const noisy = 'Photo of SAM FIXTURE, PhD.';
 
-    it('folds into the one name-only record whose stored name it sanitizes to', () => {
+    it('groups the noisy copy with the one record whose stored name it sanitizes to, and refuses the fold', () => {
       const plan = planAccountlessClusterFolds(
         [member('1', { displayName: noisy }), member('2', { liveRoleEdges: 1 })],
         [],
       );
+      expect(plan.groups).toBe(1);
+      expect(plan.foldTargetById.size).toBe(0);
+      expect(plan.foldedGroups).toBe(0);
+      expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+      expect(plan.nameOnlyGroups).toEqual([['1'.padStart(24, '0'), '2'.padStart(24, '0')]]);
+    });
+
+    it('folds the noisy copy into the clean record when they share a healthy verified page', () => {
+      const plan = planAccountlessClusterFolds(
+        [
+          member('1', { displayName: noisy, profileLinks: page(15) }),
+          member('2', { liveRoleEdges: 1, profileLinks: page(15) }),
+        ],
+        [],
+      );
       expect(plan.foldTargetById.get('1'.padStart(24, '0'))).toBe('2'.padStart(24, '0'));
       expect(plan.foldedGroups).toBe(1);
+      expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(0);
     });
 
     it('leaves two records with identical clean names apart when nothing else joins them', () => {
@@ -769,7 +837,10 @@ describe('planAccountlessClusterFolds', () => {
       ],
       [],
     );
-    expect(together.foldTargetById.size).toBe(1);
+    expect(together.groups).toBe(1);
+    expect(together.foldTargetById.size).toBe(0);
+    expect(together.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+    expect(together.nameOnlyGroups).toEqual([['4'.padStart(24, '0'), '5'.padStart(24, '0')]]);
     const apart = planAccountlessClusterFolds(
       [
         member('6', { primaryDepartment: 'Fixture Studies' }),
@@ -1032,8 +1103,27 @@ describe('planAccountlessClusterFolds shared-row key (#4939)', () => {
       ],
       [],
     );
+    expect(plan.groups).toBe(1);
+    expect(plan.foldedGroups).toBe(0);
+    expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+    expect(plan.nameOnlyGroups).toEqual([['a', 'b']]);
+  });
+
+  it('folds two same-name records on the same live row when they also share a netid', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        member('a', {
+          primaryDepartment: 'Synthetic Studies',
+          liveRowIds: ['row-1'],
+          netid: 'ap123',
+        }),
+        member('b', { liveRowIds: ['row-1'], netid: 'ap123' }),
+      ],
+      [],
+    );
     expect(plan.foldedGroups).toBe(1);
     expect(plan.foldTargetById.size).toBe(1);
+    expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(0);
   });
 
   it('does not group same-name records that share no row and no department', () => {
@@ -1356,11 +1446,16 @@ describe('directory-email fold (#5811)', () => {
 
   it('leaves a later arm free to fold when its own directory witness is ambiguous', () => {
     const exactName = buildCanonicalNameIndex([
-      { id: '3', displayName: 'Avery Synthetic', email: 'avery.synthetic@example.test' },
+      {
+        id: '3',
+        displayName: 'Avery Synthetic',
+        email: 'avery.synthetic@example.test',
+        orcid: SYNTHETIC_ORCID_14,
+      },
     ]);
     const decideWith = (names: ReturnType<typeof buildCanonicalNameIndex>) =>
       decideShellMerge(
-        shell('Avery Synthetic'),
+        shell('Avery Synthetic', { orcid: SYNTHETIC_ORCID_14 }),
         names,
         new Map(),
         [],
@@ -1426,5 +1521,109 @@ describe('directory-email fold (#5811)', () => {
     expect(
       decideDirectoryEmailFold(shell('Avery Synthetic'), paired('fx901'), new Map()),
     ).toBeUndefined();
+  });
+});
+
+describe('a matching name is never evidence of one person on its own (#6378)', () => {
+  const healthyPrimaryPage = [
+    {
+      kind: 'YALE_OFFICIAL',
+      purpose: 'PRIMARY_IDENTITY',
+      url: 'https://dept.example.edu/p/6378',
+      verifiedAt: new Date(),
+      healthStatus: 'HEALTHY',
+    },
+  ];
+  const namesake = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    displayName: 'Synthetic Person',
+    primaryDepartment: 'Synthetic Studies',
+    liveRoleEdges: 0,
+    ...extra,
+  });
+
+  it('refuses two records sharing a full name and a stated department and nothing else', () => {
+    const plan = planAccountlessClusterFolds([namesake('left'), namesake('right')], []);
+    expect(plan.groups).toBe(1);
+    expect(plan.foldedGroups).toBe(0);
+    expect(plan.foldTargetById.size).toBe(0);
+    expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+    expect(plan.nameOnlyGroups).toEqual([['left', 'right']]);
+  });
+
+  it('folds the same pair when the two records also share a netid', () => {
+    const plan = planAccountlessClusterFolds(
+      [namesake('left', { netid: 'sp637' }), namesake('right', { netid: 'sp637' })],
+      [],
+    );
+    expect(plan.foldedGroups).toBe(1);
+    expect(plan.foldTargetById.size).toBe(1);
+    expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(0);
+    expect(plan.nameOnlyGroups).toEqual([]);
+  });
+
+  it('folds the same pair when the two records also share a healthy verified primary page', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        namesake('left', { profileLinks: healthyPrimaryPage }),
+        namesake('right', { profileLinks: healthyPrimaryPage }),
+      ],
+      [],
+    );
+    expect(plan.foldedGroups).toBe(1);
+    expect(plan.foldTargetById.size).toBe(1);
+    expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(0);
+  });
+
+  it('refuses a same-name stronger canonical on the name alone and folds it with an agreeing ORCID', () => {
+    const index = buildCanonicalNameIndex([
+      {
+        id: 'canonical',
+        displayName: 'Synthetic Person',
+        email: 'account-synthetic@example.test',
+        orcid: SYNTHETIC_ORCID_15,
+      },
+    ]);
+    expect(decideShellMerge({ id: 'shell', displayName: 'Synthetic Person' }, index)).toEqual({
+      merge: false,
+      canonicalId: 'canonical',
+      reason: 'NAME_ONLY_EVIDENCE',
+      matchedOn: 'name',
+    });
+    expect(
+      decideShellMerge(
+        { id: 'shell', displayName: 'Synthetic Person', orcid: SYNTHETIC_ORCID_15 },
+        index,
+      ),
+    ).toEqual({ merge: true, canonicalId: 'canonical', reason: 'MERGEABLE', matchedOn: 'name' });
+  });
+});
+
+describe('plannedMergeArm', () => {
+  const none = new Set<string>();
+
+  it('returns the identity arm that decided the fold when one is recorded', () => {
+    expect(
+      plannedMergeArm(
+        'shell',
+        new Map([['shell', 'netid']]),
+        new Set(['shell']),
+        new Set(['shell']),
+      ),
+    ).toBe('netid');
+  });
+
+  it('returns the accountless-cluster arm for a cluster fold', () => {
+    expect(plannedMergeArm('shell', new Map(), none, new Set(['shell']))).toBe(
+      'accountless-cluster',
+    );
+  });
+
+  it('returns the alias-twin arm for an alias twin fold', () => {
+    expect(plannedMergeArm('shell', new Map(), new Set(['shell']), none)).toBe('alias-twin');
+  });
+
+  it('throws for a shell no arm planned', () => {
+    expect(() => plannedMergeArm('shell', new Map(), none, none)).toThrow(/no planning arm/);
   });
 });

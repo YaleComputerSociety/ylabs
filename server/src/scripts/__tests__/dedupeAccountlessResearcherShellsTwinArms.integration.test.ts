@@ -307,17 +307,23 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
   });
 
   describe('inverted display name in the accountless cluster', () => {
-    it('folds "Surname, Given" with "Given Surname" in one department, once', async () => {
+    const seedInvertedPair = async (invertedIdentifiers: Record<string, unknown>) => {
       const survivor = await seedShell('Avery Synth', {
         identifiers: { orcid: SYNTHETIC_ORCID_1 },
         profile: { primaryDepartment: 'Fixture Studies', title: 'Lecturer' },
       });
       const inverted = await seedShell('Synth, Avery', {
+        identifiers: invertedIdentifiers,
         profile: {
           primaryDepartment: 'Fixture Studies',
           title: 'Assistant Professor of Fixture Studies',
         },
       });
+      return { survivor, inverted };
+    };
+
+    it('folds "Surname, Given" with "Given Surname" in one department, once', async () => {
+      const { survivor, inverted } = await seedInvertedPair({ orcid: SYNTHETIC_ORCID_1 });
       const row = await seedRow('lab-fixture');
       await db()
         .collection('role_assignments')
@@ -338,6 +344,19 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
       expect(second.shellsMerged).toBe(0);
     });
 
+    it('groups "Surname, Given" with "Given Surname" but refuses the fold when the name and department are the only evidence', async () => {
+      const { survivor, inverted } = await seedInvertedPair({});
+
+      const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+      expect(result.accountlessClusters).toMatchObject({ groups: 1, foldedGroups: 0, folds: 0 });
+      expect(result.accountlessClusters.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+      expect(result.accountlessClusters.nameOnlyGroups.map((group) => [...group].sort())).toEqual([
+        [String(survivor), String(inverted)].sort(),
+      ]);
+      expect((await researcherState(inverted)).archived).toBe(false);
+    });
+
     it('keeps a similarly named different person apart', async () => {
       await seedShell('Avery Synth', { profile: { primaryDepartment: 'Fixture Studies' } });
       const other = await seedShell('Synthe, Avery', {
@@ -356,8 +375,11 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
       const holder = await seedHolder('Ji Yeon Fixture', {
         netid: 'fx903',
         email: 'jiyeon.fixture@yale.edu',
+        orcid: SYNTHETIC_ORCID_2,
       });
-      const shell = await seedShell('Jiyeon Fixture');
+      const shell = await seedShell('Jiyeon Fixture', {
+        identifiers: { orcid: SYNTHETIC_ORCID_2 },
+      });
       const row = await seedRow('fra-fixture');
       const shellEdge = new mongoose.Types.ObjectId();
       await db()
