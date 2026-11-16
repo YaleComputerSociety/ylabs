@@ -804,9 +804,15 @@ function extractEmail(text: string): string | undefined {
   return text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
 }
 
+const STATED_APPLICATION_CLOSURE =
+  /\bapplications?\b[^.]{0,60}?\b(?:are|is)\s+(?:now\s+)?closed\b|\bapplication status:?\s*closed\b/i;
+
+const PAST_ROLLING_REVIEW = /\b(?:were|was)\s+(?:accepted|reviewed)\s+on\s+a\s+rolling\s+basis\b/gi;
+
 function hasExplicitActiveApplicationLanguage(text: string): boolean {
+  if (STATED_APPLICATION_CLOSURE.test(text)) return false;
   return /\bapplications?\s+(are\s+)?(now\s+)?open\b|\bcurrently accepting applications\b|\brolling\b|\breview(?:ed|ing)?\s+applications?\s+as\s+(?:we|they)\s+(?:are\s+)?receiv|\bapplications?\s+(?:are\s+)?accepted\s+(?:on\s+a\s+)?(?:rolling|continuous|year[-\s]?round)\b|\bno\s+(?:fixed|set)\s+deadline\b/i.test(
-    text,
+    text.replace(PAST_ROLLING_REVIEW, ''),
   );
 }
 

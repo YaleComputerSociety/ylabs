@@ -1310,6 +1310,43 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(candidates[0]?.isAcceptingApplications).toBe(true);
   });
 
+  const rowAccepting = (rowText: string, referenceDate = new Date('2026-08-22T00:00:00Z')) =>
+    parseFellowshipCatalogPage(
+      `
+        <main>
+          <p>
+            <a href="https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program">Research Internship Program</a>
+            ${rowText}
+          </p>
+        </main>
+      `,
+      fundingPageUrl,
+      referenceDate,
+    )[0]?.isAcceptingApplications;
+
+  it('does not read a stated closure as accepting, even beside rolling language', () => {
+    expect(
+      rowAccepting(
+        'Applications were accepted on a rolling basis until February 20. Applications for Summer 2026 are now closed.',
+      ),
+    ).toBe(false);
+    expect(rowAccepting('Application Status: CLOSED. Applications are reviewed on a rolling basis.')).toBe(
+      false,
+    );
+  });
+
+  it('does not read past-tense rolling review as accepting', () => {
+    expect(rowAccepting('Applications were accepted on a rolling basis last spring.')).toBe(false);
+  });
+
+  it('keeps a new cycle accepting when a closure names the old cycle and a future deadline is stated', () => {
+    expect(
+      rowAccepting(
+        'Applications for 2025 are closed. Application Deadline 09/11/26 for the 2026 cycle.',
+      ),
+    ).toBe(true);
+  });
+
   it('emits one source-backed observation group per candidate', () => {
     const observations = candidateToObservations({
       sourceKey: 'yale-college-fellowships-office:fixture-family-research-fellowship',
