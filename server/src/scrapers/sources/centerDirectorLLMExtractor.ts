@@ -389,7 +389,7 @@ async function defaultCallLLM(input: {
   };
 }
 
-async function defaultCenterFinder(
+export async function defaultCenterFinder(
   options: { only?: string[]; skipCentersLedByOtherSources?: boolean } = {},
 ): Promise<CandidateCenter[]> {
   const only = Array.from(

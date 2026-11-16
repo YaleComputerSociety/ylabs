@@ -611,7 +611,7 @@ import {
   reconcileCodeLaneDirectorRetirementsFromRun,
 } from './centerDirectorRetirement';
 import { CENTER_DIRECTOR_SOURCE_NAME } from './centerDirectorReadSnapshot';
-import { LEAD_LANE_ENTITY_TYPE_SCOPES, laneReadsEntityType } from './leadLaneEntityScopes';
+import { LEAD_LANE_ENTITY_TYPE_SCOPES, laneLeadCountsOnEntityType } from './leadLaneEntityScopes';
 import {
   OFFICIAL_PROFILE_DIRECTOR_LANE,
   reconcileOfficialProfileDirectorRetirementsFromRun,
@@ -4710,7 +4710,7 @@ async function outOfScopeLaneLeadEdgesToEnd(researchEntityId: string): Promise<L
   if (edgeDocs.length === 0) return [];
   const entityType = await entityTypeOf(researchEntityId);
   return edgeDocs
-    .filter((edge) => !laneReadsEntityType(edge.rosterProvenance?.sourceName, entityType))
+    .filter((edge) => !laneLeadCountsOnEntityType(edge.rosterProvenance?.sourceName, entityType))
     .map((edge) => ({
       edgeId: String(edge._id),
       personId: String(edge.personId ?? ''),
@@ -5917,7 +5917,7 @@ async function directorObservationsInLaneScope(
   );
   if (scoped.length === 0) return observations;
   const entityType = await entityTypeOf(researchEntityId);
-  return observations.filter((obs) => laneReadsEntityType(obs.sourceName, entityType));
+  return observations.filter((obs) => laneLeadCountsOnEntityType(obs.sourceName, entityType));
 }
 
 async function resolveInferredDirector(

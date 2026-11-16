@@ -1,3 +1,4 @@
+import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 import { CENTER_DIRECTOR_SOURCE_NAME } from './centerDirectorReadSnapshot';
 
 export const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'] as const;
@@ -17,4 +18,10 @@ export const LEAD_LANE_ENTITY_TYPE_SCOPES: Readonly<Record<string, readonly stri
 export function laneReadsEntityType(sourceName: unknown, entityType: unknown): boolean {
   const scope = LEAD_LANE_ENTITY_TYPE_SCOPES[String(sourceName ?? '')];
   return !scope || scope.includes(String(entityType ?? ''));
+}
+
+export function laneLeadCountsOnEntityType(sourceName: unknown, entityType: unknown): boolean {
+  return (
+    laneReadsEntityType(sourceName, entityType) || !isPersonScopedResearchEntityType(entityType)
+  );
 }
