@@ -45,9 +45,14 @@ describe('the researcher fold keeps current memberships (#5990, DB-backed)', () 
         _id: survivorId,
         displayName: 'Avery Synth',
         archived: false,
-        identifiers: { email: 'directory.fixture1@example.test' },
+        identifiers: { email: 'directory.fixture1@example.test', netid: 'as5990' },
       },
-      { _id: shellId, displayName: 'Avery Synth', archived: false },
+      {
+        _id: shellId,
+        displayName: 'Avery Synth',
+        archived: false,
+        identifiers: { netid: 'as5990' },
+      },
       {
         _id: foldedShellId,
         displayName: 'Avery Synth',

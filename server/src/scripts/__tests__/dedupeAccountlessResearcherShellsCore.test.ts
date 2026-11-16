@@ -180,7 +180,7 @@ describe('decideShellMerge', () => {
       canonicalId: 'account-backed',
       reason: 'MERGEABLE',
       matchedOn: 'name',
-      matchedEvidence: 'name and ORCID 0000-0003-4000-5132',
+      matchedEvidence: `name and ORCID ${SYNTHETIC_ORCID_14}`,
     });
     expect(decideShellMerge({ id: 'name-only', displayName: 'Nina Netid' }, mixedIndex)).toEqual({
       merge: false,
@@ -206,7 +206,7 @@ describe('decideShellMerge', () => {
       canonicalId: 'account-backed',
       reason: 'MERGEABLE',
       matchedOn: 'name',
-      matchedEvidence: 'name and ORCID 0000-0003-4000-5132',
+      matchedEvidence: `name and ORCID ${SYNTHETIC_ORCID_14}`,
     });
     expect(
       decideShellMerge(
@@ -577,7 +577,7 @@ describe('decideShellMerge netid arm (#3166)', () => {
       canonicalId: 'canonical',
       reason: 'MERGEABLE',
       matchedOn: 'name',
-      matchedEvidence: 'name and ORCID 0000-0003-4000-5140',
+      matchedEvidence: `name and ORCID ${SYNTHETIC_ORCID_15}`,
     });
     expect(
       decideShellMerge({ id: 'shell', displayName: 'Jane Roe' }, nameIndex, netidIndex),
@@ -1492,7 +1492,7 @@ describe('directory-email fold (#5811)', () => {
       canonicalId: '3',
       reason: 'MERGEABLE',
       matchedOn: 'name',
-      matchedEvidence: 'name and ORCID 0000-0003-4000-5132',
+      matchedEvidence: `name and ORCID ${SYNTHETIC_ORCID_14}`,
     });
     expect(decideWith(new Map())).toEqual({
       merge: false,
@@ -1623,7 +1623,7 @@ describe('a matching name is never evidence of one person on its own (#6378)', (
       canonicalId: 'canonical',
       reason: 'MERGEABLE',
       matchedOn: 'name',
-      matchedEvidence: 'name and ORCID 0000-0003-4000-5140',
+      matchedEvidence: `name and ORCID ${SYNTHETIC_ORCID_15}`,
     });
   });
 });
