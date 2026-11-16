@@ -116,6 +116,19 @@ describe('researchPageTextEntriesForRowTopics on a person row (#6110)', () => {
     ).toEqual([]);
   });
 
+  it('ignores a stored netid that is not netid-shaped, such as an email local part (#5744)', () => {
+    const nameSlugProfile = {
+      url: 'https://medicine.yale.edu/profile/avery.quill/',
+      text: 'Cardiology.',
+    };
+    expect(
+      researchPageTextEntriesForRowTopics([nameSlugProfile], {
+        ...personRow,
+        leadNetids: ['avery.quill'],
+      }),
+    ).toEqual([]);
+  });
+
   it('keys the reading on the filtered pages, so derive and resolve agree', async () => {
     const asked: string[] = [];
     await researchPageTopicsStateFor(
