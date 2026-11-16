@@ -62,11 +62,18 @@ function seedDocuments() {
 }
 
 // Newer Node majors emit runtime deprecation notices for loader APIs `tsx` uses, which are
-// diagnostics from the runtime rather than output from the lane under test.
+// diagnostics from the runtime rather than output from the lane under test. The report-path
+// guard's temp-root warning is expected here too, because the report is written under the temp
+// directory (#6366).
 const stripNodeRuntimeNotices = (stderr: string): string =>
   stderr
     .split('\n')
-    .filter((line) => !/^\(node:\d+\)/.test(line) && !/^\(Use `node --trace-/.test(line))
+    .filter(
+      (line) =>
+        !/^\(node:\d+\)/.test(line) &&
+        !/^\(Use `node --trace-/.test(line) &&
+        !/^WARNING: --output .* is under a temp directory the system may wipe/.test(line),
+    )
     .join('\n')
     .trim();
 

@@ -6,9 +6,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { hasOutputPath, writeJsonOutputFile, writeOptionalJsonOutput } from '../scraperCliOutput';
 
 describe('scraperCliOutput', () => {
-  it('writes pretty JSON output files with parent directories', async () => {
+  it('writes pretty JSON output files with owner-only permissions', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-scraper-cli-output-'));
-    const outputPath = path.join(dir, 'nested', 'retention.json');
+    const outputPath = path.join(dir, 'retention.json');
 
     const resolved = await writeJsonOutputFile(outputPath, {
       apply: false,
@@ -23,6 +23,15 @@ describe('scraperCliOutput', () => {
       sourceName: 'openalex',
     });
     expect(fs.readFileSync(outputPath, 'utf8')).toMatch(/\n$/);
+    expect(fs.statSync(outputPath).mode & 0o777).toBe(0o600);
+  });
+
+  it('refuses a report path whose directory does not exist, before writing anything (#6366)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-scraper-cli-output-'));
+    await expect(
+      writeJsonOutputFile(path.join(dir, 'nested', 'retention.json'), { ok: true }),
+    ).rejects.toThrow('does not exist; create it before the run');
+    expect(fs.existsSync(path.join(dir, 'nested'))).toBe(false);
   });
 
   it('rejects unsafe scraper CLI output paths before writing', async () => {

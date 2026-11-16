@@ -230,6 +230,7 @@ The helper creates the worktree, runs `scripts/install-all.sh` so dependencies a
 It copies `server/.env` and `client/.env` from the primary checkout with mode 0600, writes the reserved ports into them (`PORT`, `SERVER_BASE_URL`, `VITE_APP_SERVER`), and prints both start commands and a dev-login URL that returns to the worktree's client port.
 It never prints the env values, and says so when the primary checkout has no `server/.env` to copy.
 It always writes `ALLOW_NON_PROD_SCRAPER_WRITES=` (off) into the copied `server/.env`, whatever the primary checkout holds, so a scraper command run in a worktree is a dry run unless that run sets the flag itself.
+Set `YLABS_REPORT_ROOT` in the worktree's `server/.env` to an absolute directory outside the repository, such as an experiments folder, so an apply's `--output` report survives a temp-directory sweep.
 - Do not symlink `node_modules` between worktrees when running dev servers concurrently.
 They share Vite's `node_modules/.vite` cache and clobber each other.
 Per-worktree `node_modules` directories are the isolation boundary: caches such as `.vite` are per worktree, while package files are shared hardlinks that must never be written in place.

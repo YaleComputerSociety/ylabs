@@ -9,7 +9,11 @@ export function hasOutputPath(value: unknown): value is string {
 export async function writeJsonOutputFile(outputPath: string, payload: unknown): Promise<string> {
   const resolvedPath = resolveSafeJsonReportOutputPath(outputPath);
   await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-  await fs.writeFile(resolvedPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  await fs.writeFile(resolvedPath, `${JSON.stringify(payload, null, 2)}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+  await fs.chmod(resolvedPath, 0o600);
   return resolvedPath;
 }
 

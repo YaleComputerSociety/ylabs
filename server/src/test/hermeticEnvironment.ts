@@ -73,6 +73,7 @@ export const applyEnvironmentFence = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   // machine's shared validator cache; a suite that tests the cache points it at its own directory.
   env.SCRAPER_HTTP_CACHE = 'off';
   env.DEV_WRITE_LEASE = 'off';
+  delete env.YLABS_REPORT_ROOT;
   return env;
 };
 
@@ -85,6 +86,9 @@ export const INERT_FENCED_VALUE = '/nonexistent-ylabs-hermetic-fence/ylabs-herme
 // Keys whose empty value is the explicit "off", so a fenced child never even tries to open them.
 const OFF_IN_FENCED_CHILD: Record<string, string> = {
   SCRAPER_REQUEST_LOG: '',
+  // An operator's report root would add an approved --output root to every child, and the inert
+  // fenced value is not a directory, so it would refuse every child's report path instead.
+  YLABS_REPORT_ROOT: '',
 };
 
 /**

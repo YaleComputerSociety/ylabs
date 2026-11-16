@@ -6,6 +6,7 @@ import {
 } from './scraperEnvironment';
 import type { ScraperOptions } from './types';
 import { parseUserOnlyFieldsList } from './userMaterializerFieldScope';
+import { resolveSafeJsonReportOutputPath } from '../utils/reportOutputPath';
 import { observedEntityTypes, type ObservedEntityType } from '../models/observation';
 import type { StudentVisibilityGateCollection } from '../services/studentVisibilityGateService';
 
@@ -316,6 +317,9 @@ export function buildScraperCliPreflight(
   mongoUrl?: string,
   env: NodeJS.ProcessEnv = process.env,
 ): ScraperCliPreflight {
+  if (flags.output !== undefined) {
+    resolveSafeJsonReportOutputPath(typeof flags.output === 'string' ? flags.output : undefined);
+  }
   if (command !== 'materialize' && flags['only-fields'] !== undefined) {
     throw new Error('--only-fields applies only to scrape materialize --run <runId>.');
   }

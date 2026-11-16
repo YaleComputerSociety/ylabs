@@ -5,6 +5,7 @@ import {
 } from '../scrapers/rowKeyedContactEvidence';
 import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { resolveSafeJsonReportOutputPath } from '../utils/reportOutputPath';
 import {
   materializerProjectionPathIsStorable,
   type UnbackedResearchAreaOutcome,
@@ -243,11 +244,11 @@ export function parseRematerializeResearchEntitiesArgs(
       continue;
     }
     if (arg.startsWith('--output=')) {
-      args.output = arg.slice('--output='.length);
+      args.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
       continue;
     }
     if (arg === '--output') {
-      args.output = argv[index + 1];
+      args.output = resolveSafeJsonReportOutputPath(argv[index + 1]);
       index += 1;
       continue;
     }

@@ -1,10 +1,6 @@
 import path from 'path';
 import { describe, expect, it } from 'vitest';
-import {
-  buildReviewSample,
-  resolveReviewSampleOutputPath,
-  reviewSampleOutputRoots,
-} from '../officialUndergradListReviewSample';
+import { buildReviewSample, parseReviewSampleArgs } from '../officialUndergradListReviewSample';
 
 const SOURCE = 'theater-performance-studies-senior-projects';
 const INDEX = 'https://tdps.example.edu/archive';
@@ -94,29 +90,16 @@ describe('buildReviewSample', () => {
   });
 });
 
-describe('resolveReviewSampleOutputPath', () => {
-  const roots = reviewSampleOutputRoots('/work/server', '/home/someone');
-
-  it('writes only under ./tmp, /tmp or the private experiments folder', () => {
-    expect(roots).toEqual([
-      path.resolve('/work/server/tmp'),
-      path.resolve('/tmp'),
-      path.resolve('/home/someone/Personal/ylabs-experiments'),
-    ]);
-    expect(resolveReviewSampleOutputPath('/tmp/sample.json', roots)).toBe(
+describe('parseReviewSampleArgs --output', () => {
+  it('resolves the report path through the shared report-path guard', () => {
+    expect(parseReviewSampleArgs(['--output', '/tmp/sample.json']).output).toBe(
       path.resolve('/tmp/sample.json'),
-    );
-    expect(
-      resolveReviewSampleOutputPath('/home/someone/Personal/ylabs-experiments/5839/s.json', roots),
-    ).toBe(path.resolve('/home/someone/Personal/ylabs-experiments/5839/s.json'));
-    expect(resolveReviewSampleOutputPath('/work/server/tmp/s.json', roots)).toBe(
-      path.resolve('/work/server/tmp/s.json'),
     );
   });
 
-  it('refuses a path outside those roots, even an approved temp root', () => {
-    expect(() => resolveReviewSampleOutputPath('/work/server/src/sample.json', roots)).toThrow();
-    expect(() => resolveReviewSampleOutputPath('/tmp-evil/sample.json', roots)).toThrow();
-    expect(() => resolveReviewSampleOutputPath('/tmp/sample.txt', roots)).toThrow();
+  it('refuses a path outside the approved roots, a lookalike temp root, or a non-JSON file', () => {
+    expect(() => parseReviewSampleArgs(['--output', path.resolve('src/sample.json')])).toThrow();
+    expect(() => parseReviewSampleArgs(['--output', '/tmp-evil/sample.json'])).toThrow();
+    expect(() => parseReviewSampleArgs(['--output', '/tmp/sample.txt'])).toThrow();
   });
 });
