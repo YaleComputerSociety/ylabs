@@ -615,6 +615,7 @@ describe('the first-hand title screen (#5578)', () => {
     latestFullRunIdByLane: new Map([
       ['ysm-faculty-directory', FULL_RUN],
       ['dept-faculty-roster', FULL_RUN],
+      ['official-profile-pi-backfill', FULL_RUN],
     ]),
   };
   const title = (sourceName: string, value: string, observedAt: string, _id: string) => ({
@@ -697,5 +698,26 @@ describe('the first-hand title screen (#5578)', () => {
     const roster = title('dept-faculty-roster', COPIED_RANK, '2026-09-01T00:00:00Z', 'b');
 
     expect(userTitleEvidence([elsewhere, roster], pages)).toEqual([elsewhere, roster]);
+  });
+
+  describe('a marked official-profile backfill read (#6197)', () => {
+    const markedBackfill = (sourceUrl: string) => ({
+      ...title('official-profile-pi-backfill', FIRST_HAND_RANK, '2026-10-01T00:00:00Z', 'a'),
+      sourceUrl,
+      extraction: { source: 'profileTitleBlock' },
+    });
+    const roster = title('dept-faculty-roster', COPIED_RANK, '2026-09-01T00:00:00Z', 'b');
+
+    it("is first-hand on the researcher's own official page", () => {
+      const own = markedBackfill(OFFICIAL_PAGE);
+
+      expect(userTitleEvidence([own, roster], pages)).toEqual([own]);
+    });
+
+    it("is not first-hand on a page that is not among the researcher's official pages", () => {
+      const elsewhere = markedBackfill('https://nursing.yale.edu/people/someone-else/');
+
+      expect(userTitleEvidence([elsewhere, roster], pages)).toEqual([elsewhere, roster]);
+    });
   });
 });

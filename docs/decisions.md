@@ -82,6 +82,9 @@ An `official-profile-pi-backfill` title read counts as first-hand when the lane 
 The lane sets that marker only when the emitted title is the appointment in the contact-information field, the template verified in #6177.
 An unmarked read, from any other element, a JSON-LD `jobTitle` or a meta description, stays non-first-hand, because the lane cannot say which element it read.
 A keyed `visible-profile-bio-backfill` run now emits the page's title, while an unkeyed run emits exactly what it did before: no title and no new absence claim.
+Until the joint freshness rule (#6197, #5594) merges, the lane sets the marker only on a keyed `visible-profile-bio-backfill` run.
+A title from any other call site, the queued branch of an unkeyed full run included, stays unmarked, so no full-run read becomes first-hand under this entry.
+Once that rule merges, full-run marked reads may count with no further ruling.
 
 ## 2026-11-13: A Lead's Person Row Folds Into Their Lab Only When It Is The Same Research (#6206)
 

@@ -6230,6 +6230,10 @@ describe('keyed visible-profile-bio titles and the verified-template marker (#61
       </div></div>
     </div>`,
   );
+  const contactFieldPageWithEmail = contactFieldPage.replace(
+    '<p>School Fixture - Room 100</p>',
+    '<p>School Fixture - Room 100</p><p><a href="mailto:synthetic.person@yale.edu">synthetic.person@yale.edu</a></p>',
+  );
   const titleClassPage = page('', `<div class="profile-title">${appointment}</div>`);
   const jsonLdPage = page(
     `<script type="application/ld+json">${JSON.stringify({
@@ -6320,16 +6324,76 @@ describe('keyed visible-profile-bio titles and the verified-template marker (#61
     expect(identity?.titleFromVerifiedTemplate).toBeUndefined();
   });
 
-  it('marks the title the queued branch emits from a contact-information page', () => {
+  it('leaves the title of an unkeyed queued run of a contact-information page unmarked', async () => {
+    const emitted: ObservationInput[] = [];
+    const queuedEntity = {
+      _id: 'entity-synthetic-person',
+      name: 'Synthetic Person Research',
+      slug: 'faculty-research-area-synthetic-person',
+      websiteUrl: nursingProfileUrl,
+      leadUsers: [{ fname: 'Synthetic', lname: 'Person', name: 'Synthetic Person' }],
+    };
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => contactFieldPageWithEmail),
+      vi.fn(async () => [queuedEntity]),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      0,
+    );
+
+    await scraper.run(contextFor(emitted));
+    const titles = emitted.filter((o) => o.entityType === 'user' && o.field === 'title');
+
+    expect(titles).toEqual([
+      expect.objectContaining({ entityKey: 'netid:synthetic.person', value: appointment }),
+    ]);
+    expect(titles[0]).not.toHaveProperty('extraction');
+  });
+
+  it('marks a verified-template title only when the caller says the run is keyed', () => {
     const identity = extractOfficialProfileIdentity(contactFieldPage, nursingProfileUrl, target, {
       requireEmail: false,
     });
+    const titleOf = (markVerifiedTitle?: boolean) =>
+      identityToUserObservations(identity!, { netid: 'sp123' }, { markVerifiedTitle }).find(
+        (o) => o.field === 'title',
+      );
 
     expect(identity?.titleFromVerifiedTemplate).toBe(true);
-    expect(
-      identityToUserObservations(identity!, { netid: 'sp123' }).find((o) => o.field === 'title'),
-    ).toEqual(
+    expect(titleOf()).toEqual(expect.objectContaining({ value: appointment }));
+    expect(titleOf()).not.toHaveProperty('extraction');
+    expect(titleOf(false)).not.toHaveProperty('extraction');
+    expect(titleOf(true)).toEqual(
       expect.objectContaining({ value: appointment, extraction: { source: 'profileTitleBlock' } }),
     );
+  });
+
+  it('emits no title from a keyed run of a contact-information page that names another person', async () => {
+    const otherPersonPage = contactFieldPage.replace(/Synthetic Person/g, 'Unrelated Fixture');
+    const emitted = await visibleRunTitles(otherPersonPage, [
+      'visible-profile-bio-backfill',
+      'sp123',
+    ]);
+
+    const pageSubject = {
+      ...target,
+      fname: 'Unrelated',
+      lname: 'Fixture',
+      name: 'Unrelated Fixture',
+    };
+
+    expect(
+      extractOfficialProfileIdentity(otherPersonPage, nursingProfileUrl, pageSubject, {
+        requireEmail: false,
+      })?.titleFromVerifiedTemplate,
+    ).toBe(true);
+    expect(
+      extractOfficialProfileIdentity(otherPersonPage, nursingProfileUrl, target, {
+        requireEmail: false,
+      }),
+    ).toBeNull();
+    expect(emitted.some((o) => o.field === 'title')).toBe(false);
   });
 });

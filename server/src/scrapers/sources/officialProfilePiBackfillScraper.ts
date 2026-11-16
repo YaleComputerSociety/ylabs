@@ -244,6 +244,7 @@ interface IdentityToUserObservationOptions {
   includeIdentityEnrichment?: boolean;
   includeEmail?: boolean;
   includeTitle?: boolean;
+  markVerifiedTitle?: boolean;
   directoryNetidsByAddress?: DirectoryNetidsByAddress;
   pageOrcidWitnessedForNetid?: boolean;
   canonicalDepartment?: CanonicalDepartment | null;
@@ -4216,7 +4217,9 @@ export function identityToUserObservations(
     sourceUrl: identity.canonicalUrl,
     confidenceOverride: 0.95,
     ...(attestsNoEmail ? { assertsNoValueFor: ['email'] } : {}),
-    ...(field === 'title' && identity.titleFromVerifiedTemplate
+    ...(field === 'title' &&
+    options.markVerifiedTitle === true &&
+    identity.titleFromVerifiedTemplate
       ? { extraction: { source: 'profileTitleBlock' as const } }
       : {}),
   }));
@@ -5759,6 +5762,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     const runQueuedPiBackfill =
       targetKeys.length === 0 && (only.size === 0 || only.has(QUEUED_PI_BACKFILL_KEY));
     const runVisibleProfileBioBackfill = only.has(VISIBLE_PROFILE_BIO_BACKFILL_KEY);
+    const keyedVisibleProfileBioRun = runVisibleProfileBioBackfill && targetKeys.length > 0;
     const runProfileDescriptionBackfill = only.has(PROFILE_DESCRIPTION_BACKFILL_KEY);
     const runLeadDirectWebsiteBackfill = only.has(LEAD_DIRECT_WEBSITE_BACKFILL_KEY);
     const runSourceUrlWebsiteBackfill = only.has(SOURCE_URL_WEBSITE_BACKFILL_KEY);
@@ -6011,7 +6015,8 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     includeProfileEnrichment: runVisibleProfileBioBackfill,
                     includeIdentityEnrichment: !runVisibleProfileBioBackfill,
                     includeEmail: true,
-                    includeTitle: runVisibleProfileBioBackfill && targetKeys.length > 0,
+                    includeTitle: keyedVisibleProfileBioRun,
+                    markVerifiedTitle: keyedVisibleProfileBioRun,
                     directoryNetidsByAddress:
                       directoryNetidsByAddress ?? (await loadDirectoryNetidsByAddress()),
                     pageOrcidWitnessedForNetid,
