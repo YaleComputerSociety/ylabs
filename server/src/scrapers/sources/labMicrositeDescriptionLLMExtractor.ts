@@ -1116,9 +1116,9 @@ const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
 export function descriptionPageNamesRowLead(
   input: RowLead & { pageUrl: string; pageText: string },
 ): boolean {
-  const surname = leadSurname(input.personName);
-  if (!surname) return true;
-  if (!rowIsScopedToLead(input, surname)) return true;
+  const surnames = leadSurnameVariants(input.personName);
+  if (surnames.length === 0) return true;
+  if (!surnames.some((surname) => rowIsScopedToLead(input, surname))) return true;
   if (!isYaleHostedPage(input.pageUrl)) {
     return (
       nonYaleMicrositeOwnership({
@@ -1129,8 +1129,33 @@ export function descriptionPageNamesRowLead(
     );
   }
   if (isUnderOwnWebsite(input.pageUrl, input.websiteUrl)) return true;
-  if (urlCarriesSurname(input.pageUrl, surname)) return true;
-  return ` ${comparableName(input.pageText)} `.includes(` ${surname} `);
+  if (surnames.some((surname) => urlCarriesSurname(input.pageUrl, surname))) return true;
+  const pageWords = ` ${comparableName(input.pageText)} `;
+  return surnames.some((surname) => pageWords.includes(` ${surname} `));
+}
+
+const MIN_COMPOUND_SURNAME_PART_LENGTH = 3;
+
+/**
+ * A display name can end in post-nominal credentials after a comma, and a compound surname
+ * is often printed by one of its parts alone, so the page judge accepts the surname of the
+ * name before its first comma and each hyphen part of it (#6389).
+ */
+function leadSurnameVariants(personName: string | undefined): string[] {
+  const beforeCredentials = String(personName || '').split(',')[0] ?? '';
+  const surnames = new Set<string>();
+  const surname = leadSurname(beforeCredentials) || leadSurname(personName);
+  if (surname) surnames.add(surname);
+  const lastToken = beforeCredentials.trim().split(/\s+/).pop() ?? '';
+  if (lastToken.includes('-')) {
+    for (const part of lastToken.split('-')) {
+      const comparable = comparableName(part);
+      if (comparable.length >= MIN_COMPOUND_SURNAME_PART_LENGTH && !comparable.includes(' ')) {
+        surnames.add(comparable);
+      }
+    }
+  }
+  return [...surnames];
 }
 
 /**
