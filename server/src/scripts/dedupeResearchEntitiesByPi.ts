@@ -15,6 +15,7 @@ import {
   PI_DEDUPE_SELF_RELATIONSHIP_ARCHIVE_REASON,
 } from '../models/entityArchival';
 import {
+  deriveMergeSurvivorWebsite,
   rematerializeMergeCanonicalFillOnly,
   type MergeCanonicalRematerialization,
 } from '../services/researchEntityMergeRematerializeService';
@@ -2670,21 +2671,17 @@ export async function applyResearchEntityDedupeMergeGroup(
   }
 
   const canonicalIdentitySet: Record<string, unknown> = { lastObservedAt: new Date() };
-  // `canonicalName`/`canonicalWebsiteUrl` are the identity a donor twin should lend to
-  // the entity the plan named as canonical, gated on that entity carrying no concrete
-  // website of its own. A never-demote swap makes a different twin the survivor, and
-  // the gate was never evaluated for it, so carrying the pair over would rename a
-  // third entity and repoint it at another lab's site.
+  // `canonicalName` is the name a donor twin should lend to the entity the plan named
+  // as canonical. A never-demote swap makes a different twin the survivor, and the gate
+  // was never evaluated for it, so carrying the name over would rename a third entity.
+  // The planned website is never written here: `deriveMergeSurvivorWebsite` derives it
+  // from evidence after the fold (#6323).
   const survivorIsPlannedCanonical = canonicalId.equals(requestedCanonicalId);
   const carriedName = survivorIsPlannedCanonical ? String(group.canonicalName || '').trim() : '';
-  const carriedWebsiteUrl = survivorIsPlannedCanonical
-    ? String(group.canonicalWebsiteUrl || '').trim()
-    : '';
   if (carriedName) {
     canonicalIdentitySet.name = carriedName;
     canonicalIdentitySet.displayName = carriedName;
   }
-  if (carriedWebsiteUrl) canonicalIdentitySet.websiteUrl = carriedWebsiteUrl;
   const carriedFullDescription =
     (hydratedFullDescription || '').trim() || String(group.canonicalFullDescription || '').trim();
   const carriedShortDescription =
@@ -2851,6 +2848,8 @@ export async function applyResearchEntityDedupeMergeGroup(
       ? await rematerializeMergeCanonicalFillOnly(canonicalId)
       : ({ attempted: false } as MergeCanonicalRematerialization);
 
+  const survivorWebsiteDerivation = await deriveMergeSurvivorWebsite(canonicalId);
+
   const survivorVisibility = await repairMergeSurvivorVisibility(canonicalId);
 
   // A merge relinks roster members and lead assignments onto the survivor, so its
@@ -2868,6 +2867,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     canonicalEntityId: String(canonicalId),
     duplicateEntityIds: duplicateIds.map(String),
     canonicalUpdated: canonicalUpdate.modifiedCount || 0,
+    survivorWebsiteDerivation,
     archivedEntities: archived.modifiedCount || 0,
     deletedEntities: deleted.deletedCount || 0,
     retiredConflictingMembers: retiredConflictingMembers.modifiedCount || 0,

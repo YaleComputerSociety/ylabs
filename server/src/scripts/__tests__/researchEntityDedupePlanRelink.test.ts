@@ -6,6 +6,25 @@ import { buildOrgNameResearchEntityDedupePlan } from '../researchEntityPiDedupeC
 
 const oid = () => new mongoose.Types.ObjectId();
 
+const seedObservation = (input: {
+  entityKey: string;
+  field: string;
+  value: unknown;
+  sourceName?: string;
+}) =>
+  mongoose.connection.db!.collection('observations').insertOne({
+    entityType: 'researchEntity',
+    entityKey: input.entityKey,
+    field: input.field,
+    value: input.value,
+    sourceId: oid(),
+    sourceName: input.sourceName ?? 'research-center-index',
+    sourceUrl: `https://example.edu/source/${input.entityKey}`,
+    confidence: 0.9,
+    observedAt: new Date('2026-01-01T00:00:00Z'),
+    superseded: false,
+  });
+
 describe('applyResearchEntityDedupeMergeGroup saved-plan relink', () => {
   let replSet: MongoMemoryReplSet;
 
@@ -24,7 +43,12 @@ describe('applyResearchEntityDedupeMergeGroup saved-plan relink', () => {
 
   beforeEach(async () => {
     const db = mongoose.connection.db!;
-    for (const name of ['research_entities', 'research_plans', 'role_assignments']) {
+    for (const name of [
+      'research_entities',
+      'research_plans',
+      'role_assignments',
+      'observations',
+    ]) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -114,9 +138,10 @@ describe('applyResearchEntityDedupeMergeGroup field-merge carry', () => {
 
   beforeEach(async () => {
     await mongoose.connection.db!.collection('research_entities').deleteMany({});
+    await mongoose.connection.db!.collection('observations').deleteMany({});
   });
 
-  it('writes the carried best website but keeps the canonical its own description', async () => {
+  it('derives the donor website the merged-in twin backs but keeps the canonical its own description', async () => {
     const db = mongoose.connection.db!;
     const canonicalId = new mongoose.Types.ObjectId();
     const duplicateId = new mongoose.Types.ObjectId();
@@ -124,6 +149,11 @@ describe('applyResearchEntityDedupeMergeGroup field-merge carry', () => {
       { _id: canonicalId, slug: 'yse-faculty-example', archived: false, fullDescription: 'thin' },
       { _id: duplicateId, slug: 'nsf-pi-shell', archived: false, fullDescription: 'X'.repeat(400) },
     ]);
+    await seedObservation({
+      entityKey: 'nsf-pi-shell',
+      field: 'websiteUrl',
+      value: 'https://example-lab.research.yale.edu/',
+    });
 
     await applyResearchEntityDedupeMergeGroup(
       {
@@ -141,6 +171,84 @@ describe('applyResearchEntityDedupeMergeGroup field-merge carry', () => {
     const canonical = await db.collection('research_entities').findOne({ _id: canonicalId });
     expect(canonical?.websiteUrl).toBe('https://example-lab.research.yale.edu/');
     expect(canonical?.fullDescription).toBe('thin');
+  });
+
+  it('never writes a planned donor website that no observation backs (#6323)', async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = new mongoose.Types.ObjectId();
+    const duplicateId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      { _id: canonicalId, slug: 'unbacked-canonical', archived: false },
+      {
+        _id: duplicateId,
+        slug: 'unbacked-twin',
+        archived: false,
+        websiteUrl: 'https://unbacked-twin.yale.edu/',
+      },
+    ]);
+
+    await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+        canonicalWebsiteUrl: 'https://unbacked-twin.yale.edu/',
+      } as any,
+      { deleteDuplicates: false, relinkReferences: true },
+    );
+
+    const canonical = await db.collection('research_entities').findOne({ _id: canonicalId });
+    expect(canonical?.websiteUrl ?? '').toBe('');
+  });
+
+  it("keeps a survivor's own lab-identity website over the twin's the plan carried (#6323)", async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = new mongoose.Types.ObjectId();
+    const duplicateId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      {
+        _id: canonicalId,
+        slug: 'owned-slot-survivor',
+        archived: false,
+        entityType: 'LAB',
+        websiteUrl: 'https://twin-site.yale.edu/',
+      },
+      { _id: duplicateId, slug: 'owned-slot-twin', archived: false },
+    ]);
+    await seedObservation({
+      entityKey: 'owned-slot-survivor',
+      field: 'entityType',
+      value: 'LAB',
+      sourceName: 'dept-faculty-roster',
+    });
+    await seedObservation({
+      entityKey: 'owned-slot-survivor',
+      field: 'websiteUrl',
+      value: 'https://own-lab.yale.edu/',
+      sourceName: 'dept-faculty-roster',
+    });
+    await seedObservation({
+      entityKey: 'owned-slot-twin',
+      field: 'websiteUrl',
+      value: 'https://twin-site.yale.edu/',
+    });
+
+    await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+        canonicalWebsiteUrl: 'https://twin-site.yale.edu/',
+      } as any,
+      { deleteDuplicates: false, relinkReferences: true },
+    );
+
+    const canonical = await db.collection('research_entities').findOne({ _id: canonicalId });
+    expect(canonical?.websiteUrl).toBe('https://own-lab.yale.edu/');
   });
 
   it('writes the carried fullest description onto a canonical that states none', async () => {
@@ -262,6 +370,11 @@ describe('org-name dedupe archives the shell twin and redirects it to the surviv
         sourceUrls: ['https://synthinstitute.yale.edu/'],
       },
     ]);
+    await seedObservation({
+      entityKey: 'yale-research-center-synthetic-institute',
+      field: 'websiteUrl',
+      value: 'https://synthinstitute.yale.edu/',
+    });
     const planId = oid();
     await db.collection('research_plans').insertOne({
       _id: planId,

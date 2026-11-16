@@ -79,3 +79,29 @@ export async function rematerializeMergeCanonicalFillOnly(
     changedFields,
   };
 }
+
+export interface MergeSurvivorWebsiteDerivation {
+  attempted: boolean;
+  fieldsWritten?: number;
+  skipped?: string;
+}
+
+export const MERGE_SURVIVOR_WEBSITE_FIELDS = ['website', 'websiteUrl'] as const;
+
+/**
+ * A merge never writes a survivor's website itself (#6323): the materializer derives it
+ * from the evidence that reaches the survivor after the fold, which lets a merged-in
+ * twin's backed website fill an empty slot and refuses one the survivor's own
+ * lab-identity lane already owns.
+ */
+export async function deriveMergeSurvivorWebsite(
+  canonicalId: mongoose.Types.ObjectId | string,
+): Promise<MergeSurvivorWebsiteDerivation> {
+  const result = await materializeEntity(
+    'researchEntity',
+    { entityId: String(canonicalId) },
+    { writeOnlyFields: [...MERGE_SURVIVOR_WEBSITE_FIELDS] },
+  );
+  if (result.skipped) return { attempted: true, skipped: result.skipped, fieldsWritten: 0 };
+  return { attempted: true, fieldsWritten: result.fieldsWritten };
+}
