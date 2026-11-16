@@ -316,6 +316,12 @@ A canonical name that contains a filler word (`ecology and evolutionary biology`
 | `yarn --cwd server researchers:repair-person-name-noise` | Strip scraped furniture from `researchers.displayName` (image-caption wrapper, trailing post-nominal credential run, former-name annotation, shouty casing) and re-gate the entities the repaired people lead (Development-gated, dry-run default); apply requires `--apply --confirm-repair-person-name-noise`, and `--limit=N` caps how many rewrites one run may write. Person names ARE indexed, as `leadProfessorNames` and `professorNames`, so a repaired name reaches search only after `meili:rebuild-research-entities`. |
 | `yarn --cwd server research-entity:archived-visibility-verdicts` | Read the student-visibility tier histogram both with and without the `archived` filter, and the zero-hard-blocker held population both ways, so a count by tier is a command rather than an ad-hoc pipeline. Dry-run default; `--apply --confirm-archived-visibility-verdict-repair` withdraws the verdict from archived rows; `--assert-clean` exits non-zero while the two readings disagree. |
 
+### Decide an empty topic reading the way the materializer does (#6360)
+
+Decide whether a row's page-topic reading is empty by calling `researchPageTopicsStateFor` with the row's evidence row, as the materializer does, and never by hashing the raw page text.
+A person-scoped row's reading is keyed on its page text after the lead-name page filter (#6120), so a raw-text hash finds a different reading or none.
+Measured on the #6360 part-2 set, 3 of 7 disagreeing rows were person rows read under the wrong hash and 3 more had a non-empty reading for their current text, so a list built from raw hashes overstated the empty-reading set.
+
 ## Default `/research` ordering
 
 With no query, `/research` sorts by `browseRankScore:desc` then `browseTiebreakKey:asc`.
