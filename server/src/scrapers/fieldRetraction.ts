@@ -115,6 +115,7 @@ import {
   type ResearchEntityTombstoneNode,
 } from '../services/researchEntityCanonicalTombstone';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { isPlausiblePersonOrcid, normalizeOrcid } from '../utils/orcid';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { REDIRECT_LOOP_ERROR_CODES } from './utils/notObserved';
 import {
@@ -1881,8 +1882,18 @@ const USER_FIELD_RETRACTION_ROLLBACK_REASONS: Readonly<Record<string, string>> =
  */
 const PAGE_SCOPED_USER_ABSENCE_FIELDS: ReadonlySet<string> = new Set(['email', 'orcid', 'title']);
 
+/**
+ * A lane-and-field rule on what an absence alone may retract (#6329). Under
+ * `implausible-or-owned-elsewhere`, a page that stops stating the field retracts the value only
+ * when the value fails `isPlausiblePersonOrcid` (#5998), or another source's live evidence puts
+ * the same value on a different person by the engine's user-key join. An ORCID is a permanent
+ * personal identifier, so a roster page dropping it is a layout change, not evidence it changed.
+ */
+export type UserAbsenceRetractionGate = 'implausible-or-owned-elsewhere';
+
 export interface UserFieldRetractionContract {
   retractableFields: readonly string[];
+  absenceRetractionGates?: Readonly<Record<string, UserAbsenceRetractionGate>>;
   notes: string;
 }
 
@@ -1894,8 +1905,9 @@ export const userFieldRetractionContracts: Readonly<Record<string, UserFieldRetr
   },
   'dept-faculty-roster': {
     retractableFields: ['email', 'orcid'],
+    absenceRetractionGates: { orcid: 'implausible-or-owned-elsewhere' },
     notes:
-      "States assertsNoValueFor: [email] on the profileUrls row, filed under the profile page its email rows use, only when the person's own profile was read and named them, that page states no address of any kind, and the roster card yielded none. A shared roster address it withheld records refused, and an unread or refused profile claims nothing. States assertsNoValueFor: [orcid] on the same row only when that read page's subject node states no ORCID link and nothing labelled ORCID (#5991); a page whose ORCID the reader refused still states one, so it claims nothing.",
+      "States assertsNoValueFor: [email] on the profileUrls row, filed under the profile page its email rows use, only when the person's own profile was read and named them, that page states no address of any kind, and the roster card yielded none. A shared roster address it withheld records refused, and an unread or refused profile claims nothing. States assertsNoValueFor: [orcid] on the same row only when that read page's subject node states no ORCID link and nothing labelled ORCID (#5991); a page whose ORCID the reader refused still states one, so it claims nothing. That claim retracts a plausible ORCID only when another source's live evidence puts the same iD on a different person; an implausible one is retracted on the claim alone (#6329).",
   },
 };
 
@@ -1916,6 +1928,11 @@ export function assertUserFieldRetractionContractsAreDeclarable(
         );
       }
       assertDeclarableRetractionField(field, 'retractable');
+    }
+    for (const field of Object.keys(contract.absenceRetractionGates ?? {})) {
+      if (!contract.retractableFields.includes(field)) {
+        throw new Error(`${sourceName} gates ${JSON.stringify(field)}, which it cannot retract.`);
+      }
     }
   }
 }
@@ -1961,6 +1978,8 @@ export interface UserFieldRetractionCounts {
   /** The lane re-read the page and did NOT state it carries no address. */
   absenceNotWitnessed: number;
   awaitingSecondCompleteRead: number;
+  /** Absent from complete reads, but a plausible value no other source puts on someone else. */
+  keptPlausibleOnAbsence: number;
   retractedObservations: number;
   retractedSubjects: number;
 }
@@ -1977,9 +1996,23 @@ const emptyUserCounts = (): UserFieldRetractionCounts => ({
   sourceHasNotReread: 0,
   absenceNotWitnessed: 0,
   awaitingSecondCompleteRead: 0,
+  keptPlausibleOnAbsence: 0,
   retractedObservations: 0,
   retractedSubjects: 0,
 });
+
+/** Whether an absence alone may retract this observation under its field's gate. */
+export function absenceMayRetract(
+  contract: UserFieldRetractionContract,
+  observation: Pick<UserFieldRetractionCandidateObservation, 'observationId' | 'field' | 'value'>,
+  ownedElsewhere: ReadonlySet<string> = new Set(),
+): boolean {
+  const gate = contract.absenceRetractionGates?.[observation.field];
+  if (gate !== 'implausible-or-owned-elsewhere') return true;
+  return (
+    !isPlausiblePersonOrcid(observation.value) || ownedElsewhere.has(observation.observationId)
+  );
+}
 
 export function planUserFieldRetractions(input: {
   sourceName: string;
@@ -1989,6 +2022,8 @@ export function planUserFieldRetractions(input: {
   minCompleteReads?: number;
   maxAbsentFraction?: number;
   dropGuardMinPopulation?: number;
+  /** Observation ids whose value another source's live evidence puts on a different person. */
+  ownedElsewhere?: ReadonlySet<string>;
 }): UserFieldRetractionPlan {
   const retractableFields = new Set(input.contract.retractableFields);
   const readsByPage = new Map<string, FieldRetractionCompleteRead[]>();
@@ -2020,7 +2055,9 @@ export function planUserFieldRetractions(input: {
     if (verdict === 'source-has-not-reread') counts.sourceHasNotReread += 1;
     else if (verdict === 'absence-not-witnessed') counts.absenceNotWitnessed += 1;
     else if (verdict === 'awaiting-second-complete-read') counts.awaitingSecondCompleteRead += 1;
-    else {
+    else if (!absenceMayRetract(input.contract, observation, input.ownedElsewhere)) {
+      counts.keptPlausibleOnAbsence += 1;
+    } else {
       const key = `${pageKey}\u0000${observation.field}`;
       const planned = retractedByPageField.get(key) ?? {
         entityKey: observation.entityKey,
@@ -2194,10 +2231,72 @@ async function loadUserPageReads(
   return reads;
 }
 
+export type UserKeyResearcherJoin = (entityKey: string) => Promise<string | undefined>;
+
+const engineUserKeyJoin: UserKeyResearcherJoin = async (entityKey) => {
+  const { userKeyResearcherJoins } = await import('./entityMaterializer');
+  return (await userKeyResearcherJoins(entityKey)).joinedResearcherId;
+};
+
+/**
+ * The gated observations whose value another source's live evidence puts on a different
+ * person, read in one batched query and compared through the engine's user-key join. An
+ * observation whose own key joins no one is never "elsewhere", because there is no person
+ * to differ from.
+ */
+export async function orcidObservationsOwnedElsewhere(input: {
+  sourceName: string;
+  contract: UserFieldRetractionContract;
+  observations: readonly UserFieldRetractionCandidateObservation[];
+  joinUserKey?: UserKeyResearcherJoin;
+}): Promise<Set<string>> {
+  const gated = input.observations.filter(
+    (observation) =>
+      input.contract.absenceRetractionGates?.[observation.field] ===
+        'implausible-or-owned-elsewhere' && isPlausiblePersonOrcid(observation.value),
+  );
+  if (gated.length === 0) return new Set();
+  const iDs = [...new Set(gated.map((observation) => normalizeOrcid(observation.value)))];
+  const rivals = (await Observation.find({
+    entityType: 'user',
+    field: 'orcid',
+    sourceName: { $ne: input.sourceName },
+    superseded: { $ne: true },
+    'rollback.rolledBackAt': { $exists: false },
+    value: { $in: [...iDs, ...iDs.map((iD) => `https://orcid.org/${iD}`)] },
+  })
+    .select('entityKey entityId value')
+    .lean()) as any[];
+  if (rivals.length === 0) return new Set();
+  const join = input.joinUserKey ?? engineUserKeyJoin;
+  const joined = new Map<string, string | undefined>();
+  const researcherFor = async (entityKey: string) => {
+    if (!joined.has(entityKey)) joined.set(entityKey, await join(entityKey));
+    return joined.get(entityKey);
+  };
+  const rivalHolders = new Map<string, Set<string>>();
+  for (const rival of rivals) {
+    const entityKey = observationEntityKey(rival);
+    const holder = entityKey ? await researcherFor(entityKey) : undefined;
+    if (!holder) continue;
+    const iD = normalizeOrcid(rival.value);
+    rivalHolders.set(iD, (rivalHolders.get(iD) ?? new Set<string>()).add(holder));
+  }
+  const owned = new Set<string>();
+  for (const observation of gated) {
+    const holders = rivalHolders.get(normalizeOrcid(observation.value));
+    if (!holders?.size) continue;
+    const own = await researcherFor(observation.entityKey);
+    if (own && [...holders].some((holder) => holder !== own)) owned.add(observation.observationId);
+  }
+  return owned;
+}
+
 export async function reconcileUserFieldRetractions(options: {
   sourceName: string;
   dryRun?: boolean;
   rederive?: UserSubjectRederiver;
+  joinUserKey?: UserKeyResearcherJoin;
 }): Promise<UserFieldRetractionResult> {
   const dryRun = options.dryRun === true;
   const result = (
@@ -2225,11 +2324,18 @@ export async function reconcileUserFieldRetractions(options: {
   const reads = await loadUserPageReads(options.sourceName, [
     ...new Set(activeObservations.map((observation) => observation.sourceUrl)),
   ]);
+  const ownedElsewhere = await orcidObservationsOwnedElsewhere({
+    sourceName: options.sourceName,
+    contract,
+    observations: activeObservations,
+    joinUserKey: options.joinUserKey,
+  });
   const plan = planUserFieldRetractions({
     sourceName: options.sourceName,
     contract,
     reads,
     activeObservations,
+    ownedElsewhere,
   });
   for (const frozen of plan.frozenFields) {
     console.warn(
