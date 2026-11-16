@@ -166,6 +166,13 @@ describe('queryNamesATopic', () => {
     expect(queryNamesATopic('freshmen')).toBe(false);
     expect(queryNamesATopic('research for sophomores')).toBe(false);
     expect(queryNamesATopic('first year seminar in coastal ecology')).toBe(true);
+    expect(queryNamesATopic('2027')).toBe(false);
+    expect(queryNamesATopic('CPSC 4xx')).toBe(false);
+    expect(queryNamesATopic('cpsc 474')).toBe(false);
+    expect(queryNamesATopic('MATH225')).toBe(false);
+    expect(queryNamesATopic('cpsc 201 math 225')).toBe(false);
+    expect(queryNamesATopic('covid 19 vaccines')).toBe(true);
+    expect(queryNamesATopic('5g networks')).toBe(true);
     expect(queryNamesATopic('coastal ecology')).toBe(true);
     expect(queryNamesATopic('coastal ecology labs for undergrads')).toBe(true);
   });
@@ -198,6 +205,19 @@ const TOPIC_WORDS = new Set([
 const topicVocabulary = { isTopicTerm: (word: string) => TOPIC_WORDS.has(word) };
 
 describe('queryIsNameShaped', () => {
+  it('reads a name with digits beside or inside its words as the name it carries', () => {
+    expect(queryIsNameShaped('Tqxa Vrnbe 2027', topicVocabulary)).toBe(true);
+    expect(queryIsNameShaped('Tqxa2', topicVocabulary)).toBe(true);
+    expect(queryIsNameShaped('2027 Tqxa Vrnbe', topicVocabulary)).toBe(true);
+    expect(queryIsNameShaped('Tqxa Vrnbe 2027 2028', topicVocabulary)).toBe(true);
+    expect(queryIsNameShaped('marine biology 2027', topicVocabulary)).toBe(false);
+    expect(queryIsNameShaped('soil2 chemistry', topicVocabulary)).toBe(false);
+  });
+
+  it('leaves a purely numeric query to the filter-phrase rule rather than calling it a name', () => {
+    expect(queryIsNameShaped('2027', topicVocabulary)).toBe(false);
+  });
+
   it('drops a short letters-only query with no topic term', () => {
     expect(queryIsNameShaped('Tqxa Vrnbe', topicVocabulary)).toBe(true);
     expect(queryIsNameShaped("Tqxa O'Vrnbe-Plok", topicVocabulary)).toBe(true);
@@ -206,7 +226,6 @@ describe('queryIsNameShaped', () => {
 
   it('keeps a query with a topic term, a digit, or more than four words', () => {
     expect(queryIsNameShaped('Tqxa marine biology', topicVocabulary)).toBe(false);
-    expect(queryIsNameShaped('Tqxa Vrnbe 2026', topicVocabulary)).toBe(false);
     expect(queryIsNameShaped('tqxa vrnbe plok zemv quor', topicVocabulary)).toBe(false);
   });
 
@@ -317,6 +336,28 @@ describe('collectRoundQueries', () => {
         'too-few-results': 0,
       },
     });
+  });
+
+  it('drops a name with a digit before search and files course codes as filter phrases', async () => {
+    const asked: string[] = [];
+    const { queries, report } = await collectRoundQueries({
+      aggregates: [
+        { query: 'Tqxa Vrnbe 2027', searchCount: 1 },
+        { query: 'Tqxa2', searchCount: 1 },
+        { query: 'CPSC 4xx', searchCount: 1 },
+        { query: '2027', searchCount: 1 },
+        { query: 'marine biology 2027', searchCount: 1 },
+      ],
+      existingEntries: [],
+      topicVocabulary,
+      searchCandidates: async (query) => {
+        asked.push(query);
+        return servedFor({})(query);
+      },
+    });
+    expect(asked).toEqual(['marine biology 2027']);
+    expect(queries.map((query) => query.query)).toEqual(['marine biology 2027']);
+    expect(report.excluded).toMatchObject({ 'name-shaped': 2, 'filter-phrase': 2 });
   });
 
   it('refuses a query whose served list cannot be reordered', async () => {

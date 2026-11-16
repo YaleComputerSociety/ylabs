@@ -250,8 +250,13 @@ const queryWords = (query: string): string[] =>
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
 
+const COURSE_CODE_OR_NUMBER_QUERY = /^(?:[\d\s]+|(?:(?:[a-z]{2,5}\s*)?\d[\dx]{1,3}[a-z]?\s*)+)$/;
+
+const isCourseCodeOrNumber = (query: string): boolean =>
+  COURSE_CODE_OR_NUMBER_QUERY.test(query.trim().toLowerCase());
+
 export const queryNamesATopic = (query: string): boolean =>
-  queryWords(query).some((word) => !ACCESS_FILTER_WORDS.has(word));
+  !isCourseCodeOrNumber(query) && queryWords(query).some((word) => !ACCESS_FILTER_WORDS.has(word));
 
 export const NAME_SHAPED_MAX_WORDS = 4;
 
@@ -287,6 +292,7 @@ export function queryIsNameShaped(query: string, vocabulary: TopicVocabulary): b
     .trim()
     .toLowerCase()
     .split(/\s+/)
+    .map((token) => token.replace(/\p{N}+/gu, ''))
     .filter((token) => token && !ACCESS_FILTER_WORDS.has(token));
   if (tokens.length === 0 || tokens.length > NAME_SHAPED_MAX_WORDS) return false;
   if (!tokens.every((token) => /^[\p{L}'.-]+$/u.test(token))) return false;
