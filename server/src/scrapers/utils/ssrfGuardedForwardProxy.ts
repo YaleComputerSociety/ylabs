@@ -6,6 +6,10 @@ import { ssrfSafeLookup, stripIpv6Brackets } from '../../utils/ssrfGuard';
 import { acquireHostSlotWithin, type HostSlotLimiter } from './hostConcurrencyLimiter';
 import { activeHostPause, HostPausedError, type HostPause } from './hostPause';
 import { HOST_SLOT_WAIT_TIMEOUT_MS } from './hostThrottlePolicy';
+import { RobotsDisallowedError } from './robotsDisallowedError';
+import { enforceRobotsForPageRead, recordRobotsCrawlDelay } from './robotsFetchHook';
+import { cachedRobotsPolicy, type RobotsTxtFetcher } from './robotsPolicyCache';
+import { robotsAllows } from './robotsTxt';
 import { scraperHostSlotLimiter } from './scraperHostSlotLimiter';
 import {
   processScraperRequestLog,
@@ -25,6 +29,12 @@ export interface SsrfGuardedForwardProxy {
   forwardedHosts: () => string[];
   refusedHosts: () => string[];
   pacingRefusals: () => ForwardProxyPacingRefusal[];
+  /**
+   * Subresource requests refused because the host's robots.txt disallows the path (#6340). Kept
+   * apart from `pacingRefusals`, which fail the render: one disallowed asset must not throw away a
+   * page whose seed robots.txt allows.
+   */
+  robotsRefusals: () => RobotsDisallowedError[];
   close: () => Promise<void>;
 }
 
@@ -41,6 +51,7 @@ export interface SsrfGuardedForwardProxyOptions {
   heldHost?: string;
   hostPause?: (host: string) => HostPause | undefined;
   requestLog?: ScraperRequestLog | null;
+  robotsTxtFetcher?: RobotsTxtFetcher;
 }
 
 const DEFAULT_FORWARDABLE_PORTS: ReadonlySet<number> = new Set([80, 443]);
@@ -93,11 +104,14 @@ export async function startSsrfGuardedForwardProxy(
   const hostSlots = options.hostSlots ?? scraperHostSlotLimiter();
   const hostSlotWaitMs = options.hostSlotWaitMs ?? HOST_SLOT_WAIT_TIMEOUT_MS;
   const heldHost = options.heldHost ? normalizeExcludedHost(options.heldHost) : undefined;
+  const isHeldHost = (host: string) =>
+    heldHost !== undefined && normalizeExcludedHost(host) === heldHost;
   const hostPause = options.hostPause ?? activeHostPause;
   const requestLog =
     options.requestLog === undefined ? processScraperRequestLog() : options.requestLog;
   const forwarded: string[] = [];
   const refused: string[] = [];
+  const robotsRefused: RobotsDisallowedError[] = [];
   const pacingRefused: ForwardProxyPacingRefusal[] = [];
   const sockets = new Set<Duplex>();
   const track = (socket: Duplex) => {
@@ -136,7 +150,7 @@ export async function startSsrfGuardedForwardProxy(
   const charge = async (host: string): Promise<(() => void) | null> => {
     const pausedBefore = hostPause(host);
     if (pausedBefore) return refusePacing(host, new HostPausedError(pausedBefore));
-    if (heldHost && normalizeExcludedHost(host) === heldHost) return () => {};
+    if (isHeldHost(host)) return () => {};
     let release: () => void;
     try {
       release = await acquireHostSlotWithin(hostSlots, host, hostSlotWaitMs);
@@ -151,6 +165,42 @@ export async function startSsrfGuardedForwardProxy(
     return release;
   };
 
+  /**
+   * A plain-HTTP subresource is checked against its host's robots.txt before it takes a slot. The
+   * render's own seed host was checked, and its policy read, before the render took that host's
+   * only slot. The budget keys a `www.` variant with the seed host (`normalizeExcludedHost`), so a
+   * subresource on either reads only the cached policy (the variant's own entry, else the seed's)
+   * and never sends a robots.txt read that would wait on the held slot. A robots.txt read refused
+   * by a pause or the budget is left to `charge`, which refuses the request for the same reason.
+   */
+  const robotsRefusalFor = async (
+    target: ForwardTarget & { path: string },
+    method: string | undefined,
+  ): Promise<RobotsDisallowedError | null> => {
+    const portSuffix = target.port === 80 ? '' : `:${target.port}`;
+    const url = new URL(`http://${target.hostname}${portSuffix}${target.path}`);
+    try {
+      if (isHeldHost(target.hostname)) {
+        const policy =
+          cachedRobotsPolicy(target.hostname) ?? cachedRobotsPolicy(options.heldHost ?? '');
+        const path = `${url.pathname}${url.search}`;
+        return policy && !robotsAllows(policy, path)
+          ? new RobotsDisallowedError(target.hostname, path)
+          : null;
+      }
+      await enforceRobotsForPageRead(url, method, options.robotsTxtFetcher);
+      return null;
+    } catch (error) {
+      return error instanceof RobotsDisallowedError ? error : null;
+    }
+  };
+
+  /** An HTTPS tunnel's paths are encrypted, so only its host's Crawl-delay can apply. */
+  const recordTunnelCrawlDelay = async (host: string): Promise<void> => {
+    if (isHeldHost(host)) return;
+    await recordRobotsCrawlDelay(host, options.robotsTxtFetcher).catch(() => undefined);
+  };
+
   const logRequest = (url: string, dispatchedAt: Date, outcome: ScraperRequestOutcome) =>
     requestLog?.record(url, dispatchedAt, Date.now() - dispatchedAt.getTime(), outcome);
 
@@ -160,6 +210,13 @@ export async function startSsrfGuardedForwardProxy(
     if (!target || !address) {
       res.writeHead(403, { 'content-type': 'text/plain' });
       res.end('Blocked by SSRF guard');
+      return;
+    }
+    const robotsRefusal = await robotsRefusalFor(target, req.method);
+    if (robotsRefusal) {
+      robotsRefused.push(robotsRefusal);
+      res.writeHead(403, { 'content-type': 'text/plain' });
+      res.end('Disallowed by robots.txt');
       return;
     }
     const release = await charge(target.hostname);
@@ -213,6 +270,7 @@ export async function startSsrfGuardedForwardProxy(
       clientSocket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n');
       return;
     }
+    await recordTunnelCrawlDelay(target.hostname);
     const release = await charge(target.hostname);
     if (!release) {
       clientSocket.end('HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n');
@@ -253,6 +311,7 @@ export async function startSsrfGuardedForwardProxy(
     forwardedHosts: () => [...forwarded],
     refusedHosts: () => [...refused],
     pacingRefusals: () => [...pacingRefused],
+    robotsRefusals: () => [...robotsRefused],
     close: () =>
       new Promise<void>((resolve) => {
         for (const socket of sockets) socket.destroy();

@@ -2,6 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ execFile: vi.fn() }));
 
+// No robots.txt is read in this suite: every host allows everything, so these tests keep
+// exercising what they were written for. robotsFetchHookRendered.test.ts covers the robots path.
+vi.mock('../utils/robotsPolicyCache', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/robotsPolicyCache')>()),
+  robotsPolicyFor: async () => ({ rules: [] }),
+}));
+
 vi.mock('node:child_process', () => ({ execFile: mocks.execFile }));
 
 import {

@@ -12,6 +12,13 @@ import type { HostSlotLimiter } from '../hostConcurrencyLimiter';
 import { HostSlotWaitTimeoutError } from '../hostThrottlePolicy';
 import { isNotObserved } from '../notObserved';
 
+// No robots.txt is read in this suite: every host allows everything, so these tests keep
+// exercising what they were written for. robotsFetchHookRendered.test.ts covers the robots path.
+vi.mock('../robotsPolicyCache', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../robotsPolicyCache')>()),
+  robotsPolicyFor: async () => ({ rules: [] }),
+}));
+
 const UPSTREAM_NAME = 'upstream.test';
 
 describe('startSsrfGuardedForwardProxy', () => {

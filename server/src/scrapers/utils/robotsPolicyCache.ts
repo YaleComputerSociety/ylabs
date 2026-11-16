@@ -51,12 +51,27 @@ function policyFromOutcome(outcome: RobotsTxtFetchOutcome): {
   };
 }
 
+const cacheKey = (host: string): string => host.trim().toLowerCase().replace(/\.$/, '');
+
+/**
+ * The policy already read for a host, without reading it again. For a request that must not send
+ * a robots.txt read of its own, such as a subresource of a render that already holds the host's
+ * only slot (#6340): the render's seed check read the policy before it took that slot.
+ */
+export function cachedRobotsPolicy(
+  host: string,
+  now: () => number = Date.now,
+): RobotsPolicy | undefined {
+  const cached = cache.get(cacheKey(host));
+  return cached && cached.expiresAt > now() ? cached.policy : undefined;
+}
+
 export async function robotsPolicyFor(
   host: string,
   fetchRobotsTxt: RobotsTxtFetcher,
   now: () => number = Date.now,
 ): Promise<RobotsPolicy> {
-  const key = host.trim().toLowerCase().replace(/\.$/, '');
+  const key = cacheKey(host);
   const cached = cache.get(key);
   if (cached && cached.expiresAt > now()) return cached.policy;
   const inFlight = pending.get(key);

@@ -78,6 +78,43 @@ export const fetchRobotsTxtOverAxios: RobotsTxtFetcher = async (host) => {
   }
 };
 
+const isPageReadMethod = (method: string | undefined): boolean => {
+  const normalized = (method ?? 'get').toLowerCase();
+  return normalized === 'get' || normalized === 'head';
+};
+
+const isRobotsExemptHost = (host: string): boolean =>
+  isHostBudgetExempt(host) || MACHINE_API_HOSTS_EXEMPT_FROM_ROBOTS.has(host);
+
+/**
+ * The one robots.txt decision every fetch path takes: the axios hook, the rendered seed and the
+ * rendered fetch's forward proxy (#6213, #6340). It records the host's Crawl-delay before the
+ * caller takes a host slot, and refuses a disallowed page read before anything is sent.
+ */
+export async function enforceRobotsForPageRead(
+  url: URL,
+  method: string | undefined,
+  fetchRobotsTxt: RobotsTxtFetcher = fetchRobotsTxtOverAxios,
+): Promise<void> {
+  if (!isPageReadMethod(method)) return;
+  const host = url.hostname.toLowerCase();
+  if (!host || isRobotsExemptHost(host)) return;
+  const policy = await robotsPolicyFor(host, fetchRobotsTxt);
+  recordHostCrawlDelay(host, policy.crawlDelayMs);
+  const path = `${url.pathname}${url.search}`;
+  if (!robotsAllows(policy, path)) throw new RobotsDisallowedError(host, path);
+}
+
+/** Records a host's Crawl-delay from its robots.txt, for a request whose path cannot be read. */
+export async function recordRobotsCrawlDelay(
+  host: string,
+  fetchRobotsTxt: RobotsTxtFetcher = fetchRobotsTxtOverAxios,
+): Promise<void> {
+  const key = host.toLowerCase();
+  if (!key || isRobotsExemptHost(key)) return;
+  recordHostCrawlDelay(key, (await robotsPolicyFor(key, fetchRobotsTxt)).crawlDelayMs);
+}
+
 function requestPath(config: InternalAxiosRequestConfig): string {
   try {
     const url = new URL(axios.getUri(config));
@@ -104,12 +141,9 @@ export function installRobotsPolicyInterceptor(
   installed = true;
   axios.interceptors.request.use(async (config) => {
     if ((config as unknown as Record<string, unknown>)[ROBOTS_TXT_FETCH_KEY]) return config;
-    const method = (config.method ?? 'get').toLowerCase();
-    if (method !== 'get' && method !== 'head') return config;
+    if (!isPageReadMethod(config.method)) return config;
     const host = hostnameForLimiter(config.url, config.baseURL);
-    if (!host || isHostBudgetExempt(host) || MACHINE_API_HOSTS_EXEMPT_FROM_ROBOTS.has(host)) {
-      return config;
-    }
+    if (!host || isRobotsExemptHost(host)) return config;
     const policy = await robotsPolicyFor(host, fetchRobotsTxt);
     recordHostCrawlDelay(host, policy.crawlDelayMs);
     const path = requestPath(config);
