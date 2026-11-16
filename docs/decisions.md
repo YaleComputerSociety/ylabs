@@ -19,12 +19,12 @@ Measured on Development from stored own-site page text, 15 served rows state a p
 A rule whose every current match is a false positive adds risk without benefit, so the issue is parked and reopens when a real own-unit case appears; its comment lists the six test shapes a builder starts from.
 Until then, a lead a roster re-asserts after an operator ended it is corrected per row with an audited refusal of that lead claim, which persists across resolves, never with a direct edge detach.
 
-## 2026-11-16: The Dedupe Name Carry Is The One Sanctioned Direct Write (#6325)
-
+## 2026-11-16: The Dedupe Name Carry Is The One Sanctioned Direct Name Write (#6325)
 Decision (manager, 2026-11-16).
-`research-entity:dedupe-by-pi` keeps writing the plan's `canonicalName` onto the survivor's `name` and `displayName`, and this is the one direct field write a merge is allowed.
+`research-entity:dedupe-by-pi` keeps writing the plan's `canonicalName` onto the survivor's `name` and `displayName`, and this is the one direct `name`/`displayName` write a merge is allowed.
 It stays scoped as it is: only onto the planned canonical, never a never-demote swap's survivor, and only when the canonical's own name is a PI-derived `<PI> Lab` placeholder for the same lead (`comparablePiLabName`).
 The website carry was removed instead (#6323), because website evidence decides that field reliably.
+The same merge step also fills the survivor's description from its twins when the survivor holds no prose of its own, and consolidates `recentGrants`, `recentGrantCount` and `fundingAgencies`; those are separate merge consolidation, and this entry neither sanctions nor retires them.
 
 The derivation that would replace it was built and measured, and it does not pay.
 A merged-in twin's name could displace the survivor's own placeholder only when every survivor observation was a placeholder for its live lead and the twin's name passed every name guard, with the placeholder kept as a fallback-ranked candidate.
