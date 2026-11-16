@@ -467,16 +467,34 @@ describe('ndcgOutcomes and gateRound', () => {
     ]);
   });
 
-  it('draws the same bootstrap interval for the same deltas every run', () => {
-    const deltas = [0.1, -0.05, 0.2, 0, 0.3, 0.15, -0.1, 0.05, 0.25, 0.1];
-    const outcomes = deltas.map((delta, index) => ({
+  const outcomesFor = (deltas: readonly number[]) =>
+    deltas.map((delta, index) => ({
       row: `R${index + 1}`,
       servedNdcg: 0.5,
       rerankedNdcg: 0.5 + delta,
       delta,
       ungradedPairs: 0,
     }));
-    expect(gateRound(outcomes).ci95).toEqual([0.02, 0.175]);
+
+  it('draws the same bootstrap interval for the same deltas every run', () => {
+    const outcomes = outcomesFor([0.1, -0.05, 0.2, 0, 0.3, 0.15, -0.1, 0.05, 0.25, 0.1]);
+    expect(gateRound(outcomes).ci95).toEqual(gateRound(outcomes).ci95);
+  });
+
+  it('brackets the mean delta with a non-degenerate interval inside the range of the deltas', () => {
+    const deltas = [0.1, -0.05, 0.2, 0, 0.3, 0.15, -0.1, 0.05, 0.25, 0.1];
+    const meanDelta = deltas.reduce((total, delta) => total + delta, 0) / deltas.length;
+    const [lower, upper] = gateRound(outcomesFor(deltas)).ci95;
+    expect(lower).toBeGreaterThanOrEqual(Math.min(...deltas));
+    expect(lower).toBeLessThan(meanDelta);
+    expect(upper).toBeGreaterThan(meanDelta);
+    expect(upper).toBeLessThanOrEqual(Math.max(...deltas));
+  });
+
+  it('collapses the interval onto the delta when every query moves by the same amount', () => {
+    const [lower, upper] = gateRound(outcomesFor(Array(12).fill(0.25))).ci95;
+    expect(lower).toBeCloseTo(0.25, 12);
+    expect(upper).toBeCloseTo(0.25, 12);
   });
 
   it('refuses an empty round', () => {
