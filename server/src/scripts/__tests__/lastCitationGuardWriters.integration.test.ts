@@ -36,10 +36,13 @@ import {
   type PlannedRow as OrganizationIdentityPlannedRow,
 } from '../retireOrganizationIdentityWebsiteGrafts';
 import { writeRetireSharedRosterWebsitesPlan } from '../retireSharedRosterWebsites';
+import { applyStrips as stripDirectoryLoaderSourceUrls } from '../stripDirectoryLoaderSourceUrls';
+import { updateOneKeepingLastCitation } from '../../services/lastCitationGuard';
 import { applyRetirement as retireStaleLaunchOverrides } from '../retireStaleLaunchSuppressionOverrides';
 import { planFieldValueRefusal } from '../../utils/researchEntityFieldValueRefusals';
 
 const SLUG = 'synthetic-last-citation-row';
+const DIRECTORY_LOADER_CITATION = 'https://example.edu/synthetic-directory-loader/';
 const ONLY_CITATION = 'https://example.edu/synthetic-gone-page/';
 const LIVE_ELSEWHERE = 'https://example.edu/synthetic-live-page/';
 
@@ -390,6 +393,35 @@ describe('writers keep a served row last citation stamp and still clear the valu
     expect(result.lastCitationStampsKept).toBe(1);
     expect(after.displayName).toBeUndefined();
     expect(after.fieldProvenance.displayName.sourceUrl).toBe(directoryProfile);
+  });
+
+  it('stripDirectoryLoaderSourceUrls keeps the directory-loader citation a served row has nothing else to cite by', async () => {
+    const _id = await seedRow({ sourceUrls: [DIRECTORY_LOADER_CITATION] });
+
+    const result = await stripDirectoryLoaderSourceUrls([
+      {
+        researchEntityId: String(_id),
+        label: SLUG,
+        removed: [DIRECTORY_LOADER_CITATION],
+        remainingCount: 0,
+      },
+    ]);
+
+    expect(result.lastCitationsKept).toBe(1);
+    expect((await stored()).sourceUrls).toEqual([DIRECTORY_LOADER_CITATION]);
+  });
+
+  it('a conditional write whose filter no longer matches reports nothing kept', async () => {
+    await seedRow({ websiteUrl: ONLY_CITATION, fieldProvenance: { websiteUrl: stamp() } });
+
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
+      { slug: SLUG, websiteUrl: LIVE_ELSEWHERE },
+      { $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' } },
+    );
+
+    expect(result).toEqual({ modifiedCount: 0, withheld: [] });
+    expect((await stored()).fieldProvenance.websiteUrl.sourceUrl).toBe(ONLY_CITATION);
   });
 
   it('an unserved row still loses the stamp, so the guard is scoped to served rows', async () => {

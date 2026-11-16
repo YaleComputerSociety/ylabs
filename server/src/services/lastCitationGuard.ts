@@ -250,6 +250,7 @@ export async function updateOneKeepingLastCitation(
     .select(LAST_CITATION_GUARD_PROJECTION)
     .session(options.session ?? null)
     .lean<CitationGuardedEntity | null>();
+  if (!current) return { modifiedCount: 0, withheld: [] };
   const guarded = withholdLastCitationRemovalsFromUpdate(storedCitationState(current), update);
   if (Object.keys(guarded.update).length === 0) {
     return { modifiedCount: 0, withheld: guarded.withheld };

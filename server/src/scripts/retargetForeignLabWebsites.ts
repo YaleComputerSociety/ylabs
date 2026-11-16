@@ -733,8 +733,10 @@ export async function applyRetargetRows(rows: RetargetRow[]): Promise<{
         { $set: { sourceUrls: remainingSourceUrls } },
       );
       if (trimmed.withheld.length > 0) summary.lastCitationStampsKept += 1;
-      summary.holderFieldsCleared += 1;
-      summary.touchedSlugs.push(row.holderSlug);
+      if (trimmed.modifiedCount > 0) {
+        summary.holderFieldsCleared += 1;
+        summary.touchedSlugs.push(row.holderSlug);
+      }
     }
 
     const graftRemoval = await retireSiteGraftFromHolder(row);
