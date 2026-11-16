@@ -270,6 +270,8 @@ export interface ResearchPageTopicsState {
   /** The candidate is the stored list's own reading, re-judged against the current text. */
   revalidatesStoredList?: true;
   readingIsEmpty?: true;
+  /** The lead filter left no page, and the stored derived list cites one of the pages it excluded. */
+  storedListCitesExcludedPage?: true;
 }
 
 /**
@@ -281,7 +283,10 @@ export interface ResearchPageTopicsState {
  * a weaker lane before anyone reads the new text (#5882). It takes the page text's own
  * observation time, so the resolver ages it with its evidence. When the row's lead filter
  * leaves no page, the state carries no text hash, so the stored list is kept rather than
- * withdrawn: a filter that removes all evidence is silence, not a reading of no topics.
+ * withdrawn: a filter that removes all evidence is silence, not a reading of no topics. The
+ * exception is a stored derived list that cites one of the pages the filter excluded: that
+ * list was read from a page the lane now refuses as this person's evidence, so it is stale
+ * and retires through the ordinary path (#6386).
  */
 export async function researchPageTopicsStateFor(
   observations: readonly ResearchPageTextObservationLike[],
@@ -294,7 +299,14 @@ export async function researchPageTopicsStateFor(
   const pages = researchPageTextEntriesForRowTopics(current.value, row);
   const leadFilterLeftNoEvidence =
     pages.length === 0 && researchPageTextEntriesForTopics(current.value).length > 0;
-  if (leadFilterLeftNoEvidence) return {};
+  if (leadFilterLeftNoEvidence) {
+    return storedDerivedListCitesOneOf(
+      storedProvenance,
+      researchPageTextEntriesForTopics(current.value),
+    )
+      ? { storedListCitesExcludedPage: true }
+      : {};
+  }
   const currentTextHash = researchPageTextHash(pages);
   if (pages.length === 0) return { currentTextHash };
   const inputHash = researchTopicsDerivationInputHash(pages);
@@ -325,6 +337,21 @@ export async function researchPageTopicsStateFor(
 interface DerivationHashes {
   derivationInputHash: string;
   derivationTextHash: string;
+}
+
+const comparablePageUrl = (url: string): string =>
+  url.trim().replace(/#.*$/, '').replace(/\?.*$/, '').replace(/\/+$/, '').toLowerCase();
+
+function storedDerivedListCitesOneOf(
+  storedProvenance: unknown,
+  pages: readonly ResearchPageTextEntry[],
+): boolean {
+  if (!storedProvenance || typeof storedProvenance !== 'object') return false;
+  const record = storedProvenance as Record<string, unknown>;
+  if (record.sourceName !== PAGE_QUOTED_RESEARCH_TOPICS_SOURCE) return false;
+  if (typeof record.sourceUrl !== 'string' || !record.sourceUrl.trim()) return false;
+  const cited = comparablePageUrl(record.sourceUrl);
+  return pages.some((page) => comparablePageUrl(page.url) === cited);
 }
 
 function storedDerivedListProvenance(storedProvenance: unknown): DerivationHashes | null {
@@ -388,6 +415,7 @@ export function storedDerivedResearchAreasAreStale(
       ? (storedProvenance as Record<string, unknown>)
       : {};
   if (record.sourceName !== PAGE_QUOTED_RESEARCH_TOPICS_SOURCE) return false;
+  if (state.storedListCitesExcludedPage) return true;
   if (!state.currentTextHash) return false;
   if (state.revalidatesStoredList) return false;
   return record.derivationTextHash !== state.currentTextHash;
