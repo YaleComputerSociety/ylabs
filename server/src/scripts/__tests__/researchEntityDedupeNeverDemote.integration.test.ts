@@ -15,7 +15,11 @@ vi.mock('../../services/meiliSyncService', () => ({
 }));
 
 import { ResearchEntity } from '../../models/researchEntity';
-import { applyResearchEntityDedupeMergeGroup } from '../dedupeResearchEntitiesByPi';
+import {
+  applyResearchEntityDedupeMergeGroup,
+  resolveNonDemotingMerge,
+} from '../dedupeResearchEntitiesByPi';
+import { holdMergesThatWouldDemote } from '../mergeSameLeadDuplicateGroupsCore';
 
 const READY_FULL =
   'The Roe Laboratory investigates the molecular mechanisms of immune regulation and cancer immunotherapy, focusing on how T cells recognize and respond to the tumor microenvironment, and develops single-cell and spatial approaches to map the signaling circuits that shape durable anti-tumor responses.';
@@ -221,6 +225,35 @@ describe('never-demote merge guard', () => {
     ]);
     await seedReadyLead(readyId);
   };
+
+  it.each(['name-agrees', 'leadless-or-member-led-twin'] as const)(
+    'holds a same-lead %s merge whose planned survivor would demote the served twin (#6272)',
+    async (corroboration) => {
+      const plannedCanonicalId = new mongoose.Types.ObjectId();
+      const readyId = new mongoose.Types.ObjectId();
+      await seedSwapPair(plannedCanonicalId, readyId);
+
+      const result = await holdMergesThatWouldDemote(
+        [
+          {
+            url: SHARED_URL,
+            corroboration,
+            survivorId: plannedCanonicalId.toHexString(),
+            loserIds: [readyId.toHexString()],
+            survivorGainsFunding: false,
+          },
+        ],
+        (survivorId, loserIds) =>
+          resolveNonDemotingMerge(
+            new mongoose.Types.ObjectId(survivorId),
+            loserIds.map((id) => new mongoose.Types.ObjectId(id)),
+          ),
+      );
+
+      expect(result.kept).toEqual([]);
+      expect(result.held).toEqual([{ url: SHARED_URL, reason: 'would-demote-a-served-row' }]);
+    },
+  );
 
   it('refuses the swap rather than hard-deleting the planned canonical under deleteDuplicates', async () => {
     const plannedCanonicalId = new mongoose.Types.ObjectId();
