@@ -108,6 +108,15 @@ Run each command through the machine's heavy-command slot.
 
 Issue and pull request text reports a round by these counts only, never a query or a row.
 
+### Cadence and the first round
+
+A round runs by hand when at least 20 new eligible queries have accumulated since the last one, or monthly, whichever comes first; nothing schedules it, and every round passes the import gate before anything is seeded.
+The first round (2026-11-16) read every Production search since 2025-01-01: 573 distinct cache keys, of which 67 were kept and 506 excluded (250 name-shaped, 225 already seeded, 17 not rerank-eligible, 7 filter phrases, 7 name queries).
+Its blind-judged nDCG@10 rose from 0.688 to 0.932 (95% interval +0.196 to +0.297), with 59 queries better and none worse, and one-word queries gained as much as longer ones, so a round is not limited to multi-word queries.
+Seeded on Development as `full-v5-2026-11-16`, the served route rose from 0.707 to 0.933 and served the offline reorder on 64 of the 67 queries.
+The same round re-scored the 56 rows whose text had changed in 53 stale `full-v4` entries and re-seeded them as `full-v5b-2026-11-16`, leaving no stale seeded entry.
+Both the scorer and the judge are Claude sessions, so a round's gain is measured by the same model family that produced it; the scored and graded pairs are kept outside the repository, mode 0600, for an independent non-Claude check if one is wanted.
+
 ## Environments and privacy
 
 The cache is environment-local: it is in `NEVER_COPY_COLLECTIONS` and in the collections a Development refresh preserves (`server/src/scripts/mirrorCollectionPolicy.ts`).

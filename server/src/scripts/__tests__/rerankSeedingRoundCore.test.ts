@@ -478,7 +478,7 @@ describe('ndcgOutcomes and gateRound', () => {
 
   it('draws the same bootstrap interval for the same deltas every run', () => {
     const outcomes = outcomesFor([0.1, -0.05, 0.2, 0, 0.3, 0.15, -0.1, 0.05, 0.25, 0.1]);
-    expect(gateRound(outcomes).ci95).toEqual(gateRound(outcomes).ci95);
+    expect(gateRound(outcomes).ci95).toEqual([0.02, 0.175]);
   });
 
   it('brackets the mean delta with a non-degenerate interval inside the range of the deltas', () => {
