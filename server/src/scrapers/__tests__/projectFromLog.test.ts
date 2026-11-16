@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY,
   projectFromLog,
@@ -60,6 +60,65 @@ describe('projectFromLog', () => {
   afterEach(() => {
     setOrgUnitCanonicalizerForTesting(null);
     resetOrgUnitCanonicalizerCache();
+  });
+
+  describe("the lead's first-hand section (#6381)", () => {
+    const rowId = '6a0000000000000000006381';
+    const cardiology = async () => ({
+      section: 'Cardiovascular Medicine',
+      parent: 'Internal Medicine',
+    });
+
+    beforeEach(() => {
+      setOrgUnitCanonicalizerForTesting(
+        createOrgUnitCanonicalizer(
+          buildOrgUnitResolverIndex([
+            { slug: 'school-of-medicine', name: 'School of Medicine', kind: 'SCHOOL' },
+            { slug: 'internal-medicine', name: 'Internal Medicine', kind: 'DEPARTMENT' },
+            { slug: 'surgery', name: 'Surgery', kind: 'DEPARTMENT' },
+            {
+              slug: 'cardiovascular-medicine',
+              name: 'Cardiovascular Medicine',
+              kind: 'SECTION',
+            },
+          ]),
+        ),
+      );
+    });
+
+    it('projects the section beside the parent, and projects it again over its own output', async () => {
+      const first = await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Internal Medicine']) },
+          entityDoc: { _id: rowId, departments: ['Internal Medicine'] },
+          leadFirstHandSectionForResearchEntity: cardiology,
+        }),
+      );
+      expect(first.set.departments).toEqual(['Internal Medicine', 'Cardiovascular Medicine']);
+
+      const second = await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Internal Medicine']) },
+          entityDoc: { _id: rowId, departments: first.set.departments },
+          leadFirstHandSectionForResearchEntity: cardiology,
+        }),
+      );
+      expect(second.set.departments).toEqual(first.set.departments);
+    });
+
+    it('projects no section when the projected departments lack its parent', async () => {
+      const result = await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Surgery']) },
+          entityDoc: { _id: rowId, departments: ['Surgery'] },
+          leadFirstHandSectionForResearchEntity: cardiology,
+        }),
+      );
+      expect(result.set.departments).toEqual(['Surgery']);
+    });
   });
 
   it('is byte-identical across runs with a fixed clock (idempotency contract)', async () => {

@@ -576,6 +576,7 @@ import {
   applyResearchEntityOrgUnitCanonicalization,
   getOrgUnitCanonicalizer,
   researchEntityOrgUnitProfileUrls,
+  type OrgUnitCanonicalizer,
 } from './orgUnitCanonicalization';
 import { withoutRefusedSchools, withoutRefusedSchoolsOrTheirProvenance } from './refusedSchools';
 import {
@@ -5646,6 +5647,7 @@ export interface LeadPiSchoolInheritanceResult {
   /** Fields this pass asserted as observations, so the value survives a re-projection. */
   observed?: string[];
   refreshed?: Array<'school' | 'departments'>;
+  addedSection?: string;
   observationSkipped?: 'source-not-registered' | 'observation-refused';
   indexSyncFailed?: true;
 }
@@ -5720,6 +5722,137 @@ async function leadDepartmentWithParentSchool(
   return school ? { department, school } : undefined;
 }
 
+const LEAD_SECTION_FIRST_HAND_DEPARTMENT_SOURCES: ReadonlySet<string> = new Set([
+  'ysm-faculty-directory',
+  'yse-faculty-directory',
+  'official-profile-pi-backfill',
+]);
+
+export interface LeadSection {
+  section: string;
+  parent: string;
+}
+
+function singleCatalogUnit(
+  canonicalizer: OrgUnitCanonicalizer,
+  value: unknown,
+): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const canonical = canonicalizer.canonicalizeDepartments([value]);
+  return canonical.values.length === 1 && canonical.unmatched.length === 0
+    ? canonical.values[0]
+    : undefined;
+}
+
+function unitPhrasesInTitle(title: string): string[] {
+  const phrases = new Set<string>();
+  for (const match of title.matchAll(/\(([^)]+)\)/g)) {
+    for (const part of match[1].split(/[,;]/)) phrases.add(part.trim());
+  }
+  for (const match of title.matchAll(/\bof\s+(?:the\s+)?([^,;()]+)/gi))
+    phrases.add(match[1].trim());
+  return [...phrases].filter(Boolean);
+}
+
+export function titleNamesCatalogUnit(
+  canonicalizer: OrgUnitCanonicalizer,
+  title: unknown,
+  unit: string,
+): boolean {
+  if (typeof title !== 'string') return false;
+  return unitPhrasesInTitle(title).some(
+    (phrase) => singleCatalogUnit(canonicalizer, phrase) === unit,
+  );
+}
+
+export function statesLeadSectionFirstHand(
+  canonicalizer: OrgUnitCanonicalizer,
+  observations: readonly any[],
+  section: string,
+): boolean {
+  return observations.some((observation) => {
+    if (shouldIgnoreObservationForEntityMaterialization('user', observation)) return false;
+    const lane = textValue(observation.sourceName);
+    if (lane === DEPARTMENT_ROSTER_APPOINTMENT_SOURCE) return false;
+    if (observation.field === 'primaryDepartment') {
+      return (
+        LEAD_SECTION_FIRST_HAND_DEPARTMENT_SOURCES.has(lane) &&
+        singleCatalogUnit(canonicalizer, observation.value) === section
+      );
+    }
+    return (
+      observation.field === 'title' &&
+      isFirstHandUserTitleRead(observation) &&
+      titleNamesCatalogUnit(canonicalizer, observation.value, section)
+    );
+  });
+}
+
+export function departmentsWithLeadSection(
+  departments: readonly unknown[],
+  leadSection: LeadSection | undefined,
+): string[] | undefined {
+  if (!leadSection) return undefined;
+  const current = departments.map((value) => textValue(value)).filter(Boolean);
+  if (current.includes(leadSection.section) || !current.includes(leadSection.parent)) {
+    return undefined;
+  }
+  return [...current, leadSection.section];
+}
+
+/**
+ * The catalog section the row's single current lead is appointed in, when the lead's stored
+ * department resolves to a section and a first-hand read states it (#6381). A department
+ * roster files its own department for everyone it lists, so a roster read never counts.
+ * The projection and the inheritance pass both apply it: `departments` resolves to one
+ * winning reading, so a section added only after the projection would be removed again by
+ * the next one.
+ */
+export async function leadFirstHandSectionForResearchEntity(
+  researchEntityId: string,
+): Promise<LeadSection | undefined> {
+  const leadResearcherId = await resolveSingleLeadResearcherId(researchEntityId);
+  if (!leadResearcherId) return undefined;
+  const researcher = (await Researcher.findById(leadResearcherId)
+    .select('identifiers profileLinks profile')
+    .lean()) as any;
+  if (!researcher) return undefined;
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  const section = singleCatalogUnit(canonicalizer, researcher.profile?.primaryDepartment);
+  const parent = section ? canonicalizer.parentDepartmentsFor(section)[0] : undefined;
+  if (!section || !parent) return undefined;
+  const keys = await userKeysNamingResearcherIdentity(researcher);
+  const observations = [...(await liveObservationsOfUserKeys(keys)).values()].flat();
+  return statesLeadSectionFirstHand(canonicalizer, observations, section)
+    ? { section, parent }
+    : undefined;
+}
+
+async function addLeadSectionBesideParent(
+  researchEntityId: string,
+  storedDepartments: unknown,
+  dryRun: boolean | undefined,
+): Promise<LeadPiSchoolInheritanceResult> {
+  const departments = departmentsWithLeadSection(
+    Array.isArray(storedDepartments) ? storedDepartments : [],
+    await leadFirstHandSectionForResearchEntity(researchEntityId),
+  );
+  if (!departments) return { inherited: false, skipped: 'has-school-and-department' };
+  const addedSection = departments[departments.length - 1];
+  if (dryRun) return { inherited: true, departments, addedSection };
+  await withResearchEntityWriteTransaction((session) =>
+    ResearchEntity.updateOne({ _id: researchEntityId }, { $set: { departments } }, { session }),
+  );
+  const fresh = await ResearchEntity.findById(researchEntityId).lean();
+  const indexSynced = !!fresh && (await syncEntity('researchEntity', fresh));
+  return {
+    inherited: true,
+    departments,
+    addedSection,
+    ...(indexSynced ? {} : { indexSyncFailed: true as const }),
+  };
+}
+
 export function leadPiInheritedFields(fieldProvenance: unknown): Set<'school' | 'departments'> {
   const entries = (fieldProvenance ?? {}) as Record<string, { sourceName?: unknown } | undefined>;
   const inherited = new Set<'school' | 'departments'>();
@@ -5771,6 +5904,9 @@ export async function inheritSchoolFromLeadPi(
   });
   const inheritedFields = leadPiInheritedFields(entity.fieldProvenance);
   const refreshable = gate === 'has-school-and-department' && inheritedFields.size > 0;
+  if (gate === 'has-school-and-department' && !refreshable) {
+    return addLeadSectionBesideParent(researchEntityId, entity.departments, options.dryRun);
+  }
   if (gate !== 'school-and-department' && gate !== 'department-only' && !refreshable) {
     return { inherited: false, skipped: gate };
   }
@@ -11459,6 +11595,7 @@ export interface ProjectFromLogInput {
   storedResearchAreasEvidenceRetired?: boolean;
   applyDescriptionResearchAreaDerivation?: typeof applyDescriptionResearchAreaDerivation;
   applyResearchEntityOrgUnitCanonicalization?: typeof applyResearchEntityOrgUnitCanonicalization;
+  leadFirstHandSectionForResearchEntity?: typeof leadFirstHandSectionForResearchEntity;
   applyResearchEntityResearchAreaCanonicalization?: typeof applyResearchEntityResearchAreaCanonicalization;
 }
 
@@ -13607,6 +13744,23 @@ export async function projectFromLog(
     await (
       input.applyResearchEntityOrgUnitCanonicalization ?? applyResearchEntityOrgUnitCanonicalization
     )(set, entityDoc, orgUnitProfileUrls);
+    const leadSectionFor =
+      input.leadFirstHandSectionForResearchEntity ??
+      (input.applyResearchEntityOrgUnitCanonicalization
+        ? undefined
+        : leadFirstHandSectionForResearchEntity);
+    if (
+      leadSectionFor &&
+      Array.isArray(set.departments) &&
+      !manuallyLockedFields.includes('departments') &&
+      entityDoc?._id
+    ) {
+      const withLeadSection = departmentsWithLeadSection(
+        set.departments,
+        await leadSectionFor(String(entityDoc._id)),
+      );
+      if (withLeadSection) set.departments = withLeadSection;
+    }
     withoutRefusedSchoolsOrTheirProvenance(set, unset, entityDoc?.fieldValueRefusals);
     await canonicalizeResearchAreas(set, set.departments ?? entityDoc?.departments);
     const observedResearchAreasWhollyRejected =

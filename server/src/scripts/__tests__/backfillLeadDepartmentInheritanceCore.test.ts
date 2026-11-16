@@ -13,7 +13,11 @@ import {
   planLeadPiProvenanceReback,
   summarizeLeadDepartmentInheritance,
 } from '../backfillLeadDepartmentInheritanceCore';
-import { parseLeadDepartmentBackfillArgs } from '../backfillLeadDepartmentInheritance';
+import {
+  LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER,
+  leadDepartmentInheritanceCandidateFilter,
+  parseLeadDepartmentBackfillArgs,
+} from '../backfillLeadDepartmentInheritance';
 
 describe('summarizeLeadDepartmentInheritance', () => {
   it('separates the skip reasons instead of reporting one unchanged total', () => {
@@ -49,6 +53,41 @@ describe('summarizeLeadDepartmentInheritance', () => {
       ['Neurology', 1],
       ['Surgical Oncology', 1],
     ]);
+  });
+});
+
+describe("the lead's section added beside its parent (#6381)", () => {
+  it('counts section additions apart from fills and refreshes', () => {
+    const summary = summarizeLeadDepartmentInheritance([
+      {
+        id: '1',
+        result: {
+          inherited: true,
+          departments: ['Internal Medicine', 'Cardiovascular Medicine'],
+          addedSection: 'Cardiovascular Medicine',
+        },
+      },
+      { id: '2', result: { inherited: true, departments: ['Surgery'] } },
+      {
+        id: '3',
+        result: { inherited: true, departments: ['Neurology'], refreshed: ['departments'] },
+      },
+    ]);
+    expect(summary.inherited).toBe(3);
+    expect(summary.refreshed).toBe(1);
+    expect(summary.sectionsAdded).toBe(1);
+    expect(summary.sectionsAddedByName).toEqual([['Cardiovascular Medicine', 1]]);
+  });
+
+  it('also selects rows that carry a department a catalog section sits under', () => {
+    const filter = leadDepartmentInheritanceCandidateFilter(['Internal Medicine', 'Surgery']);
+    expect(filter.$or).toEqual([
+      ...LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER.$or,
+      { departments: { $in: ['Internal Medicine', 'Surgery'] } },
+    ]);
+    expect(leadDepartmentInheritanceCandidateFilter([])).toBe(
+      LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER,
+    );
   });
 });
 
