@@ -54,8 +54,7 @@ function releaseGuard(guardPath: string, token: string): void {
 function clearStaleGuard(guardPath: string, options: StaleLockBreakOptions): void {
   const guard = readFileLock(guardPath, options.now);
   if (!guard || guard.ageMs <= options.guardStaleMs) return;
-  const again = readFileLock(guardPath, options.now);
-  if (again?.raw === guard.raw) fs.rmSync(guardPath, { force: true });
+  fs.rmSync(guardPath, { force: true });
 }
 
 /**
