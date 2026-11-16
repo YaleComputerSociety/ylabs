@@ -1,5 +1,24 @@
 import axios, { type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { SsrfBlockedError } from '../../../utils/ssrfGuard';
+
+const PRIVATE_HOSTS = new Set(['169.254.169.254', 'metadata.internal']);
+
+vi.mock('../../../utils/ssrfGuard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../utils/ssrfGuard')>();
+  return {
+    ...actual,
+    assertPublicHttpUrl: async (raw: string) => {
+      const url = new URL(raw);
+      if (PRIVATE_HOSTS.has(url.hostname)) {
+        throw new actual.SsrfBlockedError('blocked', 'private-address');
+      }
+      return url;
+    },
+    ssrfSafeAgents: () => ({}),
+  };
+});
 
 import { resolveHostThrottle } from '../hostConcurrencyLimiter';
 import { HostPausedError } from '../hostPausedError';
@@ -21,6 +40,7 @@ const ROBOTS_BY_HOST: Record<string, string | Error> = {
   'www.split.example.edu': 'User-agent: *\nDisallow: /private/\n',
   'query.example.edu': 'User-agent: *\nDisallow: /*?print=\n',
   'paused.example.edu': 'User-agent: *\nDisallow: /private/\n',
+  'brief.example.edu': 'User-agent: *\nCrawl-delay: 1\n',
 };
 
 const pausedHosts = new Set<string>();
@@ -30,6 +50,15 @@ const sent: string[] = [];
 const stubNetwork: AxiosAdapter = async (config: InternalAxiosRequestConfig) => {
   const url = new URL(String(config.url));
   sent.push(`${url.hostname}${url.pathname}`);
+  if (url.pathname === '/robots.txt' && url.hostname === 'redirecting.example.edu') {
+    return {
+      data: '',
+      status: 302,
+      statusText: 'Found',
+      headers: { location: 'http://169.254.169.254/latest/meta-data/' },
+      config,
+    };
+  }
   if (url.pathname === '/robots.txt') {
     const robots = ROBOTS_BY_HOST[url.hostname];
     if (robots instanceof Error) throw robots;
@@ -98,12 +127,33 @@ describe('the robots.txt hook (#6213)', () => {
     expect(machineHostBudgetFor('polite.example.edu').minIntervalMs).toBe(10_000);
   });
 
-  it('never shortens a stricter floor', async () => {
-    await axios.get('https://open.example.edu/page');
+  it('never lets a Crawl-delay shorter than the floor shorten it', async () => {
+    await axios.get('https://brief.example.edu/page');
 
     expect(
-      resolveHostThrottle('open.example.edu', { concurrency: 1, minIntervalMs: 1_500 }),
+      resolveHostThrottle('brief.example.edu', { concurrency: 1, minIntervalMs: 1_500 }),
     ).toEqual({ concurrency: 1, minIntervalMs: 1_500 });
+    expect(machineHostBudgetFor('brief.example.edu').minIntervalMs).toBeGreaterThanOrEqual(1_000);
+  });
+
+  it('never sends a robots.txt request to a private address a redirect points at', async () => {
+    const failure = await axios.get('https://redirecting.example.edu/page').catch((e) => e);
+
+    expect(sent).toEqual(['redirecting.example.edu/robots.txt']);
+    expect(failure).toBeInstanceOf(SsrfBlockedError);
+    expect(isNotObserved(failure)).toBe(true);
+  });
+
+  it('never checks robots.txt for a machine API host', async () => {
+    await axios.get('https://api.nsf.gov/services/v1/awards.json');
+
+    expect(sent).toEqual(['api.nsf.gov/services/v1/awards.json']);
+  });
+
+  it('never checks robots.txt for a request that is not a page read', async () => {
+    await axios.post('https://polite.example.edu/private/search', { q: 'x' });
+
+    expect(sent).toEqual(['polite.example.edu/private/search']);
   });
 
   it('falls back to default pacing and allows the request when robots.txt cannot be read', async () => {

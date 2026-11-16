@@ -1,4 +1,3 @@
-import { normalizeExcludedHost } from '../../utils/excludedHosts';
 import { isRefusedBeforeSending } from './httpFetch';
 import { ALLOW_ALL_ROBOTS_POLICY, parseRobotsTxt, type RobotsPolicy } from './robotsTxt';
 
@@ -56,7 +55,7 @@ export async function robotsPolicyFor(
   fetchRobotsTxt: RobotsTxtFetcher,
   now: () => number = Date.now,
 ): Promise<RobotsPolicy> {
-  const key = normalizeExcludedHost(host);
+  const key = host.trim().toLowerCase().replace(/\.$/, '');
   const cached = cache.get(key);
   if (cached && cached.expiresAt > now()) return cached.policy;
   const inFlight = pending.get(key);

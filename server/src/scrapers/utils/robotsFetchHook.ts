@@ -1,5 +1,6 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios';
 
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { isHostBudgetExempt } from './hostBudgetExempt';
 import { hostnameForLimiter } from './hostConcurrencyLimiter';
 import { recordHostCrawlDelay } from './hostThrottlePolicy';
@@ -14,24 +15,64 @@ import { ROBOTS_TXT_MAX_BYTES, robotsAllows } from './robotsTxt';
 export const ROBOTS_TXT_FETCH_KEY = '__ylabsRobotsTxtFetch';
 
 const ROBOTS_TXT_TIMEOUT_MS = 10_000;
+const ROBOTS_TXT_MAX_REDIRECTS = 3;
+
+/**
+ * Machine APIs the scrapers call. robots.txt governs crawling pages, not API endpoints, and an API
+ * host's robots.txt (often `Disallow: /`) would otherwise stall its lane as not observed (#6338
+ * review). A guard test fails when the source names an `https://api.` host missing from this set.
+ */
+export const MACHINE_API_HOSTS_EXEMPT_FROM_ROBOTS: ReadonlySet<string> = new Set([
+  'api.crossref.org',
+  'api.exa.ai',
+  'api.nsf.gov',
+  'api.openai.com',
+  'api.openalex.org',
+  'api.parallel.ai',
+  'api.render.com',
+  'api.reporter.nih.gov',
+  'api.search.brave.com',
+  'api.tavily.com',
+  'api.yalies.io',
+]);
+
+const isRedirect = (status: number): boolean => status >= 300 && status < 400;
 
 export { RobotsDisallowedError };
 
+/**
+ * Reads robots.txt the way every other public fetch is read: each hop is checked by the SSRF guard
+ * before it is sent and connects through the SSRF-safe agents, so neither a rebinding DNS answer nor
+ * a redirect can send this request, which runs before every scraper request, to a private address.
+ */
 export const fetchRobotsTxtOverAxios: RobotsTxtFetcher = async (host) => {
   try {
-    const response = await axios.get<string>(`https://${host}/robots.txt`, {
-      responseType: 'text',
-      transformResponse: (body) => body,
-      timeout: ROBOTS_TXT_TIMEOUT_MS,
-      maxContentLength: ROBOTS_TXT_MAX_BYTES,
-      maxRedirects: 3,
-      validateStatus: () => true,
-      [ROBOTS_TXT_FETCH_KEY]: true,
-    } as Parameters<typeof axios.get>[1]);
-    return {
-      status: response.status,
-      body: typeof response.data === 'string' ? response.data : '',
-    } satisfies RobotsTxtFetchOutcome;
+    let target = (await assertPublicHttpUrl(`https://${host}/robots.txt`)).toString();
+    for (let hop = 0; ; hop += 1) {
+      const response = await axios.get<string>(target, {
+        responseType: 'text',
+        transformResponse: (body) => body,
+        timeout: ROBOTS_TXT_TIMEOUT_MS,
+        maxContentLength: ROBOTS_TXT_MAX_BYTES,
+        maxRedirects: 0,
+        validateStatus: () => true,
+        ...ssrfSafeAgents(),
+        [ROBOTS_TXT_FETCH_KEY]: true,
+      } as Parameters<typeof axios.get>[1]);
+      const location = response.headers?.location;
+      if (
+        isRedirect(response.status) &&
+        typeof location === 'string' &&
+        hop < ROBOTS_TXT_MAX_REDIRECTS
+      ) {
+        target = (await assertPublicHttpUrl(new URL(location, target).toString())).toString();
+        continue;
+      }
+      return {
+        status: response.status,
+        body: typeof response.data === 'string' ? response.data : '',
+      } satisfies RobotsTxtFetchOutcome;
+    }
   } catch (error) {
     return { error };
   }
@@ -54,6 +95,7 @@ let installed = false;
  * to 10 seconds, lengthens its spacing in both the process and the machine budget. The robots.txt
  * request itself skips this check but still passes every other hook, so it is paced and paused
  * like any other request, and a robots.txt that cannot be read falls back to default pacing.
+ * Only page reads are checked: a non-GET request and a machine API host are left alone.
  */
 export function installRobotsPolicyInterceptor(
   fetchRobotsTxt: RobotsTxtFetcher = fetchRobotsTxtOverAxios,
@@ -62,8 +104,12 @@ export function installRobotsPolicyInterceptor(
   installed = true;
   axios.interceptors.request.use(async (config) => {
     if ((config as unknown as Record<string, unknown>)[ROBOTS_TXT_FETCH_KEY]) return config;
+    const method = (config.method ?? 'get').toLowerCase();
+    if (method !== 'get' && method !== 'head') return config;
     const host = hostnameForLimiter(config.url, config.baseURL);
-    if (!host || isHostBudgetExempt(host)) return config;
+    if (!host || isHostBudgetExempt(host) || MACHINE_API_HOSTS_EXEMPT_FROM_ROBOTS.has(host)) {
+      return config;
+    }
     const policy = await robotsPolicyFor(host, fetchRobotsTxt);
     recordHostCrawlDelay(host, policy.crawlDelayMs);
     const path = requestPath(config);

@@ -66,7 +66,9 @@ function parseGroups(text: string): RobotsGroup[] {
 }
 
 const agentMatches = (agent: string, token: string): boolean =>
-  agent !== '*' && (agent === token || token.startsWith(agent) || agent.startsWith(token));
+  agent !== '' &&
+  agent !== '*' &&
+  (agent === token || token.startsWith(agent) || agent.startsWith(token));
 
 /**
  * The rules a robots.txt sets for us: every group naming our product token, merged, or else every

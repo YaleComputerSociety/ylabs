@@ -16,19 +16,19 @@ const fetcher = (outcome: Awaited<ReturnType<RobotsTxtFetcher>>) =>
   vi.fn<RobotsTxtFetcher>(async () => outcome);
 
 describe('robotsPolicyFor', () => {
-  it('reads a host robots.txt at most once a day, under its www spelling too', async () => {
+  it('reads a host robots.txt at most once a day', async () => {
     let at = 0;
     const fetchRobots = fetcher({ status: 200, body: 'User-agent: *\nDisallow: /private/\n' });
 
     const first = await robotsPolicyFor('www.dept.example.edu', fetchRobots, () => at);
     at += ROBOTS_POLICY_TTL_MS - 1;
-    await robotsPolicyFor('dept.example.edu', fetchRobots, () => at);
+    await robotsPolicyFor('www.dept.example.edu', fetchRobots, () => at);
     expect(fetchRobots).toHaveBeenCalledTimes(1);
     expect(fetchRobots).toHaveBeenCalledWith('www.dept.example.edu');
     expect(robotsAllows(first, '/private/x')).toBe(false);
 
     at += 1;
-    await robotsPolicyFor('dept.example.edu', fetchRobots, () => at);
+    await robotsPolicyFor('www.dept.example.edu', fetchRobots, () => at);
     expect(fetchRobots).toHaveBeenCalledTimes(2);
   });
 
@@ -98,5 +98,18 @@ describe('robotsPolicyFor', () => {
 
     expect(fetchRobots).toHaveBeenCalledTimes(2);
     expect(robotsAllows(policy, '/private/x')).toBe(false);
+  });
+
+  it('keeps a www host and its bare domain apart, since each serves its own robots.txt', async () => {
+    const asked: string[] = [];
+    const fetcher = async (host: string) => {
+      asked.push(host);
+      return { status: 200, body: host.startsWith('www.') ? 'User-agent: *\nDisallow: /\n' : '' };
+    };
+    const www = await robotsPolicyFor('www.twin.example.edu', fetcher);
+    const bare = await robotsPolicyFor('twin.example.edu', fetcher);
+    expect(asked).toEqual(['www.twin.example.edu', 'twin.example.edu']);
+    expect(www.rules).toHaveLength(1);
+    expect(bare.rules).toHaveLength(0);
   });
 });

@@ -126,4 +126,9 @@ Disallow: /*/print
 
     expect(robotsAllows(policy, '/late/x')).toBe(true);
   });
+
+  it('never treats an empty User-agent line as naming this crawler', () => {
+    const policy = parseRobotsTxt('User-agent:\nDisallow: /\n\nUser-agent: *\nAllow: /\n');
+    expect(robotsAllows(policy, '/any/page')).toBe(true);
+  });
 });
