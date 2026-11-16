@@ -27,6 +27,7 @@ import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -141,6 +142,7 @@ async function main(): Promise<void> {
 
     let rowsWritten = 0;
     let rowsAlreadyCollapsed = 0;
+    let lastCitationsKept = 0;
     // Withdraw the assertions behind the dropped mirrors before collapsing the list.
     // Collapsing alone left the mirror asserted, so the next projection restored it. A pure
     // collapse fits this helper because the dropped URL is withdrawn outright rather than
@@ -153,7 +155,8 @@ async function main(): Promise<void> {
     });
     if (options.apply) {
       for (const rowPlan of targets) {
-        const result = await ResearchEntity.updateOne(
+        const result = await updateOneKeepingLastCitation(
+          ResearchEntity,
           { slug: rowPlan.slug },
           {
             $set: { sourceUrls: rowPlan.sourceUrls, ...rowPlan.provenanceRepoint },
@@ -162,8 +165,9 @@ async function main(): Promise<void> {
               : {}),
           },
         );
+        if (result.withheld.length > 0) lastCitationsKept += 1;
         if (result.modifiedCount) rowsWritten += 1;
-        else rowsAlreadyCollapsed += 1;
+        else if (result.withheld.length === 0) rowsAlreadyCollapsed += 1;
       }
     }
 
@@ -176,6 +180,7 @@ async function main(): Promise<void> {
     console.log(
       `rows already collapsed:             ${options.apply ? rowsAlreadyCollapsed : 'n/a'}`,
     );
+    console.log(`last citations kept:                ${options.apply ? lastCitationsKept : 'n/a'}`);
 
     if (options.showPaths) {
       console.log('');
@@ -203,6 +208,7 @@ async function main(): Promise<void> {
             rowsAttempted: targets.length,
             rowsWritten,
             rowsAlreadyCollapsed,
+            lastCitationsKept,
             plan,
           },
           null,

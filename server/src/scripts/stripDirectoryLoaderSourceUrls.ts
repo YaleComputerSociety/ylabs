@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { isDirectoryLoaderUrl } from '../utils/researchHomeWebsiteUrl';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -19,7 +20,7 @@ export interface StripDirectoryLoaderSourceUrlsCliOptions {
   output?: string;
 }
 
-interface PlannedStrip {
+export interface PlannedStrip {
   researchEntityId: string;
   label: string;
   removed: string[];
@@ -136,14 +137,18 @@ async function loadCandidateEntities(limit: number) {
   return query.lean();
 }
 
-async function applyStrips(strips: PlannedStrip[]) {
+export async function applyStrips(strips: PlannedStrip[]) {
+  let lastCitationsKept = 0;
   for (const strip of strips) {
     if (!strip.researchEntityId) continue;
-    await ResearchEntity.updateOne(
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { _id: new mongoose.Types.ObjectId(strip.researchEntityId) },
       { $pull: { sourceUrls: { $in: strip.removed } } },
     );
+    if (result.withheld.length > 0) lastCitationsKept += 1;
   }
+  return { lastCitationsKept };
 }
 
 async function main() {
@@ -157,7 +162,7 @@ async function main() {
   await initializeConnections();
   const entities = await loadCandidateEntities(options.limit);
   const strips = planDirectoryLoaderSourceStrips(entities as any[]);
-  if (options.apply) await applyStrips(strips);
+  const applied = options.apply ? await applyStrips(strips) : null;
 
   const report = {
     mode: options.apply ? 'apply' : 'dry-run',
@@ -166,6 +171,7 @@ async function main() {
     scannedEntities: entities.length,
     affectedEntities: strips.length,
     removedSourceRows: strips.reduce((acc, strip) => acc + strip.removed.length, 0),
+    lastCitationsKept: applied?.lastCitationsKept ?? null,
     samples: strips.slice(0, 20),
     options,
   };

@@ -7,6 +7,7 @@ import type { ResearchEntityType } from '../models/researchAccessTypes';
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { appendObservations, retireObservations } from '../scrapers/observationStore';
 import {
   applyStudentVisibilityGatePlans,
@@ -877,6 +878,7 @@ export interface FraProfileSynthesisWithdrawalResult {
   completeReads: number;
   withdrawn: number;
   storedBodiesCleared: number;
+  lastCitationStampsKept: number;
   regated: number;
   rowsServingAfter: number;
 }
@@ -940,6 +942,7 @@ export async function applyFraProfileSynthesisWithdrawals(
     completeReads: options.completeReads,
     withdrawn: 0,
     storedBodiesCleared: 0,
+    lastCitationStampsKept: 0,
     regated: 0,
     rowsServingAfter: 0,
   };
@@ -962,7 +965,8 @@ export async function applyFraProfileSynthesisWithdrawals(
     let persisted = await readPersistedRow(plan.slug);
     const staleFields = persisted ? fieldsBackedByRetiredObservations(persisted, retiredIds) : [];
     if (persisted && staleFields.length > 0) {
-      await ResearchEntity.updateOne(
+      const cleared = await updateOneKeepingLastCitation(
+        ResearchEntity,
         { _id: (persisted as { _id?: unknown })._id },
         {
           $unset: Object.fromEntries(
@@ -973,6 +977,7 @@ export async function applyFraProfileSynthesisWithdrawals(
           ),
         },
       );
+      if (cleared.withheld.length > 0) result.lastCitationStampsKept += 1;
       if (staleFields.includes('fullDescription')) result.storedBodiesCleared += 1;
       await materializeEntity('researchEntity', { entityKey: plan.slug }, { dryRun: false });
       persisted = await readPersistedRow(plan.slug);

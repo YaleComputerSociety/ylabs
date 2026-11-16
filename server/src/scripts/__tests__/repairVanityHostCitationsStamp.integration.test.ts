@@ -50,14 +50,14 @@ describe('a vanity repoint keeps a stamp only for the URL its observation assert
 
   it('unsets the stamp whose observation asserts the vanity URL it replaces', async () => {
     const stamp = await observationOf(VANITY_URL);
-    const write = await planVanityRepairWrite(rowCiting(stamp._id), repoint as never);
+    const { write } = await planVanityRepairWrite(rowCiting(stamp._id), repoint as never);
     expect(write.$set.websiteUrl).toBe(DESTINATION_URL);
     expect(write.$unset).toEqual({ 'fieldProvenance.websiteUrl': '' });
   });
 
   it('keeps the stamp whose observation already asserts the destination URL', async () => {
     const stamp = await observationOf(DESTINATION_URL);
-    const write = await planVanityRepairWrite(rowCiting(stamp._id), repoint as never);
+    const { write } = await planVanityRepairWrite(rowCiting(stamp._id), repoint as never);
     expect(write.$unset).toBeUndefined();
   });
 });

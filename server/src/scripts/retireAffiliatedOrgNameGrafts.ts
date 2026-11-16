@@ -7,6 +7,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { RoleAssignment } from '../models/roleAssignment';
 import { Researcher } from '../models/researcher';
 import {
@@ -700,7 +701,9 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
  * umbrella organization; when nothing qualifies, `needsRescrapeToRename` already
  * reports it for a rename pass.
  */
-async function clearGraftFromDocument(row: OrgNameGraftRow): Promise<number> {
+async function clearGraftFromDocument(
+  row: OrgNameGraftRow,
+): Promise<{ corrected: number; lastCitationStampsKept: number }> {
   const entityFilter = row.entityId
     ? { _id: new mongoose.Types.ObjectId(row.entityId) }
     : { slug: row.entitySlug };
@@ -716,17 +719,22 @@ async function clearGraftFromDocument(row: OrgNameGraftRow): Promise<number> {
       : null;
   };
   let corrected = 0;
+  let lastCitationStampsKept = 0;
   for (const { field, storedName } of row.documentGraftedFields) {
     const update = correction(field);
     if (!update) continue;
-    const result = await ResearchEntity.updateOne(
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { ...entityFilter, [field]: storedName, manuallyLockedFields: { $ne: field } },
       update,
     );
-    corrected += result.modifiedCount || 0;
+    corrected += result.modifiedCount;
+    if (result.withheld.length > 0) lastCitationStampsKept += 1;
   }
-  corrected += await clearGraftedWebsiteFromDocument(row, entityFilter);
-  return corrected;
+  const website = await clearGraftedWebsiteFromDocument(row, entityFilter);
+  corrected += website.modifiedCount;
+  if (website.withheld.length > 0) lastCitationStampsKept += 1;
+  return { corrected, lastCitationStampsKept };
 }
 
 /**
@@ -746,9 +754,11 @@ async function clearGraftFromDocument(row: OrgNameGraftRow): Promise<number> {
 async function clearGraftedWebsiteFromDocument(
   row: OrgNameGraftRow,
   entityFilter: Record<string, unknown>,
-): Promise<number> {
-  if (!row.graftedWebsiteUrl || row.websiteSurvivorExists) return 0;
-  const result = await ResearchEntity.updateOne(
+): Promise<{ modifiedCount: number; withheld: string[] }> {
+  if (!row.graftedWebsiteUrl || row.websiteSurvivorExists)
+    return { modifiedCount: 0, withheld: [] };
+  return updateOneKeepingLastCitation(
+    ResearchEntity,
     {
       ...entityFilter,
       websiteUrl: row.graftedWebsiteUrl,
@@ -759,7 +769,6 @@ async function clearGraftedWebsiteFromDocument(
       $pull: { sourceUrls: row.graftedWebsiteUrl },
     },
   );
-  return result.modifiedCount || 0;
 }
 
 /**
@@ -814,9 +823,11 @@ export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
   regated: number;
   regateSkippedReason?: string;
   indexSync: IndexSyncOutcome;
+  lastCitationStampsKept: number;
 }> {
   let rolledBack = 0;
   let documentFieldsCorrected = 0;
+  let lastCitationStampsKept = 0;
   const correctedEntityIds = new Set<string>();
   for (const row of rows) {
     const ids = row.observationIds.map((id) => new mongoose.Types.ObjectId(id));
@@ -845,12 +856,13 @@ export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
       );
       rolledBack += websiteResult.modifiedCount || 0;
     }
-    const corrected = await clearGraftFromDocument(row);
+    const { corrected, lastCitationStampsKept: kept } = await clearGraftFromDocument(row);
     documentFieldsCorrected += corrected;
+    lastCitationStampsKept += kept;
     if (corrected > 0 && row.entityId) correctedEntityIds.add(row.entityId);
   }
   const regate = await regateCorrectedEntities(Array.from(correctedEntityIds));
-  return { rolledBack, documentFieldsCorrected, ...regate };
+  return { rolledBack, documentFieldsCorrected, lastCitationStampsKept, ...regate };
 }
 
 async function main() {
@@ -887,7 +899,13 @@ async function main() {
 
   const applied = args.apply
     ? await applyRows(applyTargets)
-    : { rolledBack: 0, documentFieldsCorrected: 0, regated: 0, indexSync: NO_INDEX_SYNC };
+    : {
+        rolledBack: 0,
+        documentFieldsCorrected: 0,
+        lastCitationStampsKept: 0,
+        regated: 0,
+        indexSync: NO_INDEX_SYNC,
+      };
 
   const byVerdict: Record<string, number> = {};
   const bySource: Record<string, number> = {};
@@ -908,6 +926,7 @@ async function main() {
     plannedObservations,
     rolledBackObservations: applied.rolledBack,
     documentFieldsCorrected: applied.documentFieldsCorrected,
+    lastCitationStampsKept: applied.lastCitationStampsKept,
     regated: applied.regated,
     regateSkippedReason: applied.regateSkippedReason,
     indexResynced: applied.indexSync.resynced,

@@ -21,6 +21,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { checkSourceLinkHealth, probeSourceLink } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { fetchPublicHttpUrl, type PublicHttpResponse } from '../scrapers/utils/httpFetch';
@@ -95,17 +96,21 @@ export async function followHttpRedirects(
 export async function planVanityRepairWrite(
   row: Record<string, unknown>,
   change: NonNullable<ReturnType<typeof planVanityRepairRow>>,
-): Promise<{ $set: Record<string, unknown>; $unset?: Record<string, ''> }> {
+): Promise<{
+  write: { $set: Record<string, unknown>; $unset?: Record<string, ''> };
+  withheld: string[];
+}> {
   const { changedFields: _changedFields, fieldValueRefusalUpdate, ...fields } = change;
   const rewritten = Object.fromEntries(
     (['websiteUrl', 'website'] as const)
       .filter((field) => fields[field] !== undefined)
       .map((field) => [field, fields[field]]),
   );
-  const unset = await staleProvenanceUnset(row, rewritten);
+  const $set = { ...fields, ...(fieldValueRefusalUpdate ?? {}) };
+  const { unset, withheld } = await staleProvenanceUnset(row, rewritten, $set);
   return {
-    $set: { ...fields, ...(fieldValueRefusalUpdate ?? {}) },
-    ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
+    write: { $set, ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}) },
+    withheld,
   };
 }
 
@@ -144,6 +149,7 @@ async function main() {
     repointed: [] as Array<Record<string, unknown>>,
     refused: [] as Array<Record<string, unknown>>,
     stampsToUnset: 0,
+    lastCitationStampsKept: 0,
     errors: 0,
   };
 
@@ -192,7 +198,7 @@ async function main() {
         const change = planVanityRepairRow(row, vanityUrl, decision.destinationUrl);
         if (!change) continue;
 
-        const write = await planVanityRepairWrite(row, change);
+        const { write, withheld } = await planVanityRepairWrite(row, change);
         report.repointed.push({
           slug: row.slug,
           from: vanityUrl,
@@ -203,9 +209,10 @@ async function main() {
         });
         report.stampsToUnset += Object.keys(write.$unset ?? {}).length;
 
-        if (options.apply) {
-          await ResearchEntity.updateOne({ _id: row._id }, write);
-        }
+        const appliedWithheld = options.apply
+          ? (await updateOneKeepingLastCitation(ResearchEntity, { _id: row._id }, write)).withheld
+          : [];
+        if (withheld.length > 0 || appliedWithheld.length > 0) report.lastCitationStampsKept += 1;
       } catch (error) {
         report.errors += 1;
         console.error(

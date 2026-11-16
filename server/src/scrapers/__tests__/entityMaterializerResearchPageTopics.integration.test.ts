@@ -201,6 +201,7 @@ describe('materializeEntity applies a cached research page topics derivation (#5
   it('withdraws the derived list once the page text it read is cleared', async () => {
     const first = await seedPageText(pages);
     await seedDerivation(pages);
+    await seedObservation('websiteUrl', HOME, 'department-directory');
     await materializeEntity('researchEntity', { entityKey: SLUG });
     expect((await persisted())?.researchAreas).toEqual(derivedTopics);
 

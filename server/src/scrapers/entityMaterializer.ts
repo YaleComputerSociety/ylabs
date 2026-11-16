@@ -6,6 +6,7 @@
  * entityKey, e.g. netid).
  */
 import { startLongRunProgress } from '../utils/longRunProgress';
+import { withholdLastCitationRemovals } from '../services/lastCitationGuard';
 import {
   isPersonResearchRow,
   narrowedLabSiteDescriptionValue,
@@ -1353,6 +1354,8 @@ interface MaterializeResult {
   outOfScopePaths?: string[];
   identityJoin?: UserIdentityJoin;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
+  /** The citation-removing paths withheld because they would leave the row citing nothing (#6320). */
+  lastCitationRemovalsWithheld?: string[];
   /** Fellowship fields this pass cleared because their only source states they have none. */
   fellowshipAbsenceClears?: FellowshipAbsenceClear[];
   /** Fellowship fields this pass cleared because no live observation states them (#4586). */
@@ -15679,7 +15682,7 @@ async function materializeEntityUnderRemovalGuard(
     storedResearchAreasEvidenceRetired,
   });
   const { conflicts } = projection;
-  const { set, unset, fieldsWritten } = options.onlyReconcileFieldProvenance
+  const projected = options.onlyReconcileFieldProvenance
     ? {
         set: Object.fromEntries(
           Object.entries(projection.relinkedProvenance).map(([field, entry]) => [
@@ -15693,7 +15696,24 @@ async function materializeEntityUnderRemovalGuard(
         fieldsWritten: 0,
       }
     : projection;
+  const { fieldsWritten } = projected;
+  // `entityDoc` is an unprojected read, so a key it lacks is absent from the stored row.
+  const lastCitationGuard =
+    isResearchEntityObservationType(entityType) && entityDoc
+      ? withholdLastCitationRemovals(entityDoc, {
+          set: projected.set,
+          unset: projected.unset,
+        })
+      : undefined;
+  const set = lastCitationGuard ? lastCitationGuard.set : projected.set;
+  const unset = (lastCitationGuard ? lastCitationGuard.unset : projected.unset) as Record<
+    string,
+    ''
+  >;
   const reportedProjectionOutcomes = {
+    ...(lastCitationGuard?.withheld.length
+      ? { lastCitationRemovalsWithheld: lastCitationGuard.withheld }
+      : {}),
     ...(projection.unbackedResearchAreas
       ? { unbackedResearchAreas: projection.unbackedResearchAreas }
       : {}),
@@ -16950,6 +16970,7 @@ async function materializeFromRunUnderRemovalGuard(
   const staleIndexEntityIds = new Set<string>();
   let staleIndexRowsWithoutId = 0;
   const unbackedResearchAreaOutcomes: Partial<Record<UnbackedResearchAreaOutcome, number>> = {};
+  let rowsWithLastCitationRemovalsWithheld = 0;
   const postMaterializationMetrics = emptyPostMaterializationMetrics();
   const {
     value: { linkedRowIndexSyncFailedEntityIds },
@@ -16994,6 +17015,7 @@ async function materializeFromRunUnderRemovalGuard(
           unbackedResearchAreaOutcomes[res.unbackedResearchAreas] =
             (unbackedResearchAreaOutcomes[res.unbackedResearchAreas] ?? 0) + 1;
         }
+        if (res.lastCitationRemovalsWithheld?.length) rowsWithLastCitationRemovalsWithheld += 1;
         addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
       },
     ),
@@ -17004,6 +17026,11 @@ async function materializeFromRunUnderRemovalGuard(
   if (Object.keys(unbackedResearchAreaOutcomes).length > 0) {
     console.info(
       `[unbacked-research-areas] rows whose stored researchAreas no live evidence states: ${JSON.stringify(unbackedResearchAreaOutcomes)}`,
+    );
+  }
+  if (rowsWithLastCitationRemovalsWithheld > 0) {
+    console.info(
+      `[last-citation-guard] research rows whose last citation stamp was kept: ${rowsWithLastCitationRemovalsWithheld}`,
     );
   }
   if (indexSyncFailures > 0) {

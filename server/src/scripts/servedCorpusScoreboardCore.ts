@@ -1,3 +1,4 @@
+import { citationUrlsOf } from '../services/sourceCitations';
 import {
   parseOperatorDatabaseEnvironment,
   type OperatorDatabaseEnvironment,
@@ -97,6 +98,18 @@ export interface ServedCorpusScoreboardCorpusTotals {
   reachable?: number;
   servesNoPage?: number;
   servesNoPageSlugs?: string[];
+  /**
+   * Served rows with no citation at all, in `sourceUrls` or any provenance stamp. The gate
+   * reads that as silence rather than as dead, so a writer that removed a served row's last
+   * citation would hide an `all_citations_dead` hold here; writers keep that stamp (#6320).
+   */
+  servedWithNoCitation?: number;
+}
+
+export function countRowsCitingNothing(rows: Iterable<Record<string, unknown>>): number {
+  let count = 0;
+  for (const row of rows) if (citationUrlsOf(row).length === 0) count += 1;
+  return count;
 }
 
 export interface ServedCorpusScoreboard {
@@ -625,6 +638,11 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
     `baseline slugs still served (${baseline.stillServed}) exceeds the served population (${corpus.studentReadyNotArchived})`,
   );
   failIf(
+    corpus.servedWithNoCitation !== undefined &&
+      corpus.servedWithNoCitation > corpus.studentReadyNotArchived,
+    `served rows citing nothing (${corpus.servedWithNoCitation}) exceeds student_ready and not archived (${corpus.studentReadyNotArchived})`,
+  );
+  failIf(
     corpus.reachable !== undefined && corpus.reachable > corpus.studentReadyNotArchived,
     `reachable (${corpus.reachable}) exceeds student_ready and not archived (${corpus.studentReadyNotArchived})`,
   );
@@ -728,6 +746,13 @@ export function formatServedCorpusScoreboardTable(scoreboards: ServedCorpusScore
     [
       '  serves no page',
       (s) => (s.corpus.servesNoPage === undefined ? 'not measured' : String(s.corpus.servesNoPage)),
+    ],
+    [
+      '  cites nothing',
+      (s) =>
+        s.corpus.servedWithNoCitation === undefined
+          ? 'not measured'
+          : String(s.corpus.servedWithNoCitation),
     ],
     [
       'unconfirmed, sustained refusal',

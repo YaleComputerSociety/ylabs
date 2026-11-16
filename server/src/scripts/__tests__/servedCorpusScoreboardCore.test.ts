@@ -7,6 +7,7 @@ import {
   collectionSetDelta,
   buildServedCorpusScoreboard,
   compareServedRowAgainstBaseline,
+  countRowsCitingNothing,
   detectBaselineExportCaps,
   formatServedCorpusScoreboardDetail,
   formatServedCorpusScoreboardTable,
@@ -551,6 +552,54 @@ describe('buildServedCorpusScoreboard', () => {
       researchAreas: 0,
     });
     expect(scoreboard.baseline.changed).toBe(1);
+  });
+});
+
+describe('served rows citing nothing (#6320)', () => {
+  const withCorpus = (corpus: Record<string, unknown>) =>
+    buildServedCorpusScoreboard({
+      environment: 'development',
+      databaseName: 'Development',
+      corpus: corpus as never,
+      baseline: [baselineEntry()],
+      rows: [servedRow()],
+    });
+
+  it('counts a row only when neither sourceUrls nor any stamp cites a page', () => {
+    expect(
+      countRowsCitingNothing([
+        { sourceUrls: [], fieldProvenance: {} },
+        { sourceUrls: ['  '], fieldProvenance: { name: { sourceName: 'synthetic-lane' } } },
+        { sourceUrls: ['https://example.edu/synthetic-a/'], fieldProvenance: {} },
+        {
+          sourceUrls: [],
+          fieldProvenance: { name: { sourceUrl: 'https://example.edu/synthetic-b/' } },
+        },
+      ]),
+    ).toBe(2);
+  });
+
+  it('reports the count in the table and says when it was not measured', () => {
+    const measured = withCorpus({
+      researchEntities: 10,
+      studentReadyNotArchived: 6,
+      servedWithNoCitation: 0,
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(measured)).not.toThrow();
+    expect(formatServedCorpusScoreboardTable([measured])).toMatch(/cites nothing\s+\| 0\s/);
+    expect(
+      formatServedCorpusScoreboardTable([
+        withCorpus({ researchEntities: 10, studentReadyNotArchived: 6 }),
+      ]),
+    ).toMatch(/cites nothing\s+\| not measured/);
+  });
+
+  it('refuses a count larger than the served population', () => {
+    expect(() =>
+      assertServedCorpusScoreboardConsistent(
+        withCorpus({ researchEntities: 10, studentReadyNotArchived: 6, servedWithNoCitation: 7 }),
+      ),
+    ).toThrow(/served rows citing nothing \(7\) exceeds student_ready and not archived \(6\)/);
   });
 });
 

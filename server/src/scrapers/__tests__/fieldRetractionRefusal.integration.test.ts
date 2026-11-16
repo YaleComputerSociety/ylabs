@@ -195,6 +195,32 @@ describe('a newer-version refusal retires the stale assertion end to end (#5803)
     expect(JSON.stringify(await Observation.find({}).sort({ _id: 1 }).lean())).toBe(snapshot);
   });
 
+  it('clears the link but keeps its stamp when it is the served row only citation (#6320)', async () => {
+    await ResearchEntity.collection.updateOne(
+      { slug: ENTITY_KEY },
+      {
+        $set: {
+          studentVisibilityTier: 'student_ready',
+          sourceUrls: [],
+          fieldProvenance: { websiteUrl: { sourceName: SOURCE_NAME, sourceUrl: STORED_LINK } },
+        },
+      },
+    );
+    await appendRun(witness(refusedStoredLink), new Date('2026-11-10T00:00:00Z'));
+    await appendRun(witness(refusedStoredLink), new Date('2026-11-12T00:00:00Z'));
+
+    const result = await reconcileFieldRetractions({
+      sourceName: SOURCE_NAME,
+      contract: CONTRACT,
+      probeValue: deadProbe,
+    });
+
+    expect(result.lastCitationStampsKept).toBe(1);
+    const stored = await ResearchEntity.collection.findOne({ slug: ENTITY_KEY });
+    expect(stored?.websiteUrl).toBeUndefined();
+    expect(stored?.fieldProvenance?.websiteUrl?.sourceUrl).toBe(STORED_LINK);
+  });
+
   it('retires a refused sole-holder link even though its page still answers', async () => {
     await appendRun(witness(refusedStoredLink), new Date('2026-11-10T00:00:00Z'));
     await appendRun(witness(refusedStoredLink), new Date('2026-11-12T00:00:00Z'));

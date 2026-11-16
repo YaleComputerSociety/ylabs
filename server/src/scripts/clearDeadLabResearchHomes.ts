@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
@@ -86,6 +87,23 @@ async function loadIndexSegments(): Promise<Set<string>> {
   return segments;
 }
 
+export async function clearDeadLabHomes(
+  rows: ReadonlyArray<{ entityId: string }>,
+): Promise<{ cleared: number; lastCitationStampsKept: number }> {
+  let cleared = 0;
+  let lastCitationStampsKept = 0;
+  for (const row of rows) {
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
+      { _id: new mongoose.Types.ObjectId(row.entityId) },
+      { $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' } },
+    );
+    if (result.modifiedCount > 0) cleared += 1;
+    if (result.withheld.length > 0) lastCitationStampsKept += 1;
+  }
+  return { cleared, lastCitationStampsKept };
+}
+
 async function main() {
   installScraperFetchHooks({ validatorCache: false });
   const args = parseArgs(process.argv.slice(2));
@@ -156,15 +174,10 @@ async function main() {
   }
 
   let cleared = 0;
+  let lastCitationStampsKept = 0;
   let regated = 0;
   if (args.apply && toClear.length > 0) {
-    for (const row of toClear) {
-      const result = await ResearchEntity.updateOne(
-        { _id: new mongoose.Types.ObjectId(row.entityId) },
-        { $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' } },
-      );
-      if (result.modifiedCount > 0) cleared += 1;
-    }
+    ({ cleared, lastCitationStampsKept } = await clearDeadLabHomes(toClear));
     const plans = await planStudentVisibilityGate({
       collection: 'research',
       mode: 'apply',
@@ -193,6 +206,7 @@ async function main() {
     plannedClearsServed: toClear.filter((row) => row.studentVisibilityTier === 'student_ready')
       .length,
     cleared,
+    lastCitationStampsKept,
     regated,
     rows: rows.filter((row) => row.verdict !== 'in-index'),
   };

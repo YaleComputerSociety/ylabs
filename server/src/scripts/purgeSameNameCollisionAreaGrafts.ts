@@ -36,9 +36,10 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import mongoose, { type AnyBulkWriteOperation } from 'mongoose';
+import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { Observation } from '../models/observation';
 import {
   syncResearchEntitiesWithOutcome,
@@ -511,6 +512,7 @@ async function main() {
     fullDescriptionsCleared: plannedUpdates.filter((u) => u.fullDescription).length,
     observationRelinksPlanned: plannedRelinks.length,
     observationRelinksSkipped: relinkSkipped,
+    lastCitationRemovalsWithheld: 0,
     reindexed: 0,
     indexSyncFailures: 0,
   };
@@ -528,7 +530,7 @@ async function main() {
   }
 
   if (options.apply && plannedUpdates.length > 0) {
-    const operations: AnyBulkWriteOperation[] = plannedUpdates.map((u) => {
+    for (const u of plannedUpdates) {
       const set: Record<string, unknown> = {};
       if (u.researchAreas) set.researchAreas = u.researchAreas.to;
       if (u.departments) set.departments = u.departments.to;
@@ -541,9 +543,13 @@ async function main() {
       if (u.websiteUrl) set.websiteUrl = u.websiteUrl.to;
       if (u.shortDescription) set.shortDescription = u.shortDescription.to;
       if (u.fullDescription) set.fullDescription = u.fullDescription.to;
-      return { updateOne: { filter: { slug: u.slug }, update: { $set: set } } };
-    });
-    await ResearchEntity.bulkWrite(operations, { ordered: false });
+      const result = await updateOneKeepingLastCitation(
+        ResearchEntity,
+        { slug: u.slug },
+        { $set: set },
+      );
+      if (result.withheld.length > 0) summary.lastCitationRemovalsWithheld += 1;
+    }
 
     const indexSync = await reindexChangedSlugs(plannedUpdates.map((u) => u.slug));
     summary.reindexed = indexSync.resynced;

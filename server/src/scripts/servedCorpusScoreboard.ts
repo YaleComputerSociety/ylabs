@@ -52,6 +52,7 @@ import {
   assertCollectionSetUnchanged,
   assertServedCorpusScoreboardConsistent,
   buildServedCorpusScoreboard,
+  countRowsCitingNothing,
   formatServedCorpusScoreboardReport,
   loadServedCorpusBaseline,
   parseServedCorpusScoreboardArgs,
@@ -141,12 +142,16 @@ async function scoreboardForEnvironment(
       studentVisibilityTier: SERVED_CORPUS_SCOREBOARD_SERVED_TIER,
       archived: { $ne: true },
     };
-    const [researchEntities, studentReadyNotArchived, docs, sustainedRefusal] = await Promise.all([
-      collection.countDocuments({}),
-      collection.countDocuments(servedFilter),
-      collection.find({ slug: { $in: slugs } }).toArray(),
-      loadServedSustainedRefusalReadings(db, servedFilter),
-    ]);
+    const [researchEntities, studentReadyNotArchived, docs, sustainedRefusal, servedCitations] =
+      await Promise.all([
+        collection.countDocuments({}),
+        collection.countDocuments(servedFilter),
+        collection.find({ slug: { $in: slugs } }).toArray(),
+        loadServedSustainedRefusalReadings(db, servedFilter),
+        collection
+          .find(servedFilter, { projection: { sourceUrls: 1, fieldProvenance: 1 } })
+          .toArray(),
+      ]);
 
     const tierAdmittedSlugs = options.corpusReachability
       ? (await collection.find(servedFilter, { projection: { slug: 1 } }).toArray()).map((doc) =>
@@ -184,6 +189,7 @@ async function scoreboardForEnvironment(
       corpus: {
         researchEntities,
         studentReadyNotArchived,
+        servedWithNoCitation: countRowsCitingNothing(servedCitations),
         ...(reachability
           ? {
               reachable: reachability.reachable,

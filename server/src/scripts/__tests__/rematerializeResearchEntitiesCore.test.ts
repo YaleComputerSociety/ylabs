@@ -711,6 +711,7 @@ describe('the change set covers every field the run may write (#3822)', () => {
       unbackedResearchAreas: {},
       researchAreaChips: { added: 0, removed: 0 },
       entitiesAwaitingCardSynthesis: 0,
+      entitiesWithLastCitationKept: 0,
     });
     expect(selectRematerializeRegateEntityIds([report])).toEqual(['aaaaaaaaaaaaaaaaaaaaaaaa']);
   });
@@ -800,6 +801,7 @@ describe('the change set covers every field the run may write (#3822)', () => {
       unbackedResearchAreas: {},
       researchAreaChips: { added: 0, removed: 0 },
       entitiesAwaitingCardSynthesis: 0,
+      entitiesWithLastCitationKept: 0,
     });
   });
 });
