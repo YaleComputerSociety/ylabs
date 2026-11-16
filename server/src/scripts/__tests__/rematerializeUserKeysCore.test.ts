@@ -30,6 +30,30 @@ describe('observations:rematerialize-user-keys arguments', () => {
     expect(() => parseRematerializeUserKeysArgs([...required, '--passes=2'])).toThrow(/apply/);
   });
 
+  it('takes --mint-listed-keys only together with a field scope (#5875)', () => {
+    const base = ['--keys-file=keys.json', '--output=tmp/out.json'];
+    expect(() => parseRematerializeUserKeysArgs([...base, '--mint-listed-keys'])).toThrow(
+      /--mint-listed-keys requires --only-fields/,
+    );
+    expect(
+      parseRematerializeUserKeysArgs([...base, '--only-fields=displayName', '--mint-listed-keys'])
+        .mintListedKeys,
+    ).toBe(true);
+    expect(
+      parseRematerializeUserKeysArgs([...base, '--only-fields=displayName']).mintListedKeys,
+    ).toBe(false);
+  });
+
+  it('counts minting keys in a pass summary only when a key minted (#5875)', () => {
+    const quiet = summarizeUserKeyPass(1, [{ entityKey: 'a', fieldsWritten: 0, plannedPaths: [] }]);
+    expect(quiet).not.toHaveProperty('keysMinting');
+    const minting = summarizeUserKeyPass(1, [
+      { entityKey: 'a', fieldsWritten: 3, plannedPaths: ['displayName'], created: true },
+      { entityKey: 'b', fieldsWritten: 0, plannedPaths: [] },
+    ]);
+    expect(minting.keysMinting).toBe(1);
+  });
+
   it('reads a JSON array of keys, de-duplicated, and refuses anything else', () => {
     expect(userKeysFromJson('["netid:fx1", " dept:a:fx ", "netid:fx1"]')).toEqual([
       'netid:fx1',
