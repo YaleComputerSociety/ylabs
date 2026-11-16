@@ -5,6 +5,7 @@ import path from 'path';
 import { isExcludedHostname, normalizeExcludedHost } from '../../utils/excludedHosts';
 import { isBenchmarkReplayActive } from '../benchmarkModeState';
 import { HostPausedError } from './hostPausedError';
+import { breakFileLockIfUnchanged, readFileLock } from './staleFileLock';
 import {
   DEFAULT_PER_HOST_CONCURRENCY,
   HOST_SLOT_WAIT_TIMEOUT_MS,
@@ -755,7 +756,7 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
 
   private tryLock(lockPath: string, token: string): boolean {
     try {
-      fs.writeFileSync(lockPath, JSON.stringify({ pid: this.pid, token }), {
+      fs.writeFileSync(lockPath, JSON.stringify({ pid: this.pid, token, at: this.now() }), {
         flag: 'wx',
         mode: 0o600,
       });
@@ -766,46 +767,18 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
     }
   }
 
-  // Breaking a lock by rename is atomic, so two processes that both judged it stale cannot each
-  // delete the other's fresh lock; whoever moved a lock it did not judge puts it back.
   private breakLockIfStale(lockPath: string): boolean {
-    let raw: string;
-    let ageMs: number;
-    try {
-      raw = fs.readFileSync(lockPath, 'utf8');
-      ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
-    } catch {
-      return true;
-    }
-    let holder: number | undefined;
-    try {
-      const pid = (JSON.parse(raw) as { pid?: unknown }).pid;
-      holder = Number.isInteger(pid) ? (pid as number) : undefined;
-    } catch {
-      holder = undefined;
-    }
+    const lock = readFileLock(lockPath, this.now);
+    if (!lock) return true;
     const stale =
-      ageMs > MACHINE_HOST_LOCK_STALE_MS ||
-      (holder !== undefined && holder !== this.pid && !this.isAlive(holder));
+      lock.ageMs > MACHINE_HOST_LOCK_STALE_MS ||
+      (lock.pid !== undefined && lock.pid !== this.pid && !this.isAlive(lock.pid));
     if (!stale) return false;
-    const moved = `${lockPath}.${this.pid}.${randomUUID()}.stale`;
-    try {
-      fs.renameSync(lockPath, moved);
-    } catch {
-      return true;
-    }
-    try {
-      if (fs.readFileSync(moved, 'utf8') !== raw) {
-        try {
-          fs.linkSync(moved, lockPath);
-        } catch {
-          // A newer lock already exists, so the one moved aside is obsolete either way.
-        }
-      }
-    } finally {
-      fs.rmSync(moved, { force: true });
-    }
-    return true;
+    return breakFileLockIfUnchanged(lockPath, lock.raw, {
+      now: this.now,
+      pid: this.pid,
+      guardStaleMs: MACHINE_HOST_LOCK_STALE_MS,
+    });
   }
 
   private unlockIfOurs(lockPath: string, token: string): void {
