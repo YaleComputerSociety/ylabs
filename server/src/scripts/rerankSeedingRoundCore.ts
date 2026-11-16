@@ -281,22 +281,32 @@ export function topicVocabularyFrom(
   };
 }
 
+const mixesLettersAndDigits = (token: string): boolean =>
+  /\p{N}/u.test(token) && /\p{L}/u.test(token);
+
+const isKnownSymbol = (token: string, vocabulary: TopicVocabulary): boolean =>
+  mixesLettersAndDigits(token) && vocabulary.isTopicTerm(token);
+
+const hasSymbolShape = (token: string, vocabulary: TopicVocabulary): boolean =>
+  mixesLettersAndDigits(token) &&
+  (token.match(/\p{L}+/gu) ?? []).every(
+    (letters) => letters.length <= 2 || vocabulary.isTopicTerm(letters),
+  );
+
+const isSymbolOnlyQuery = (tokens: string[], vocabulary: TopicVocabulary): boolean =>
+  tokens.some((token) => hasSymbolShape(token, vocabulary)) &&
+  tokens.every((token) => hasSymbolShape(token, vocabulary) || ACCESS_FILTER_WORDS.has(token));
+
 /**
  * Development's search recognises only the people its corpus carries, so a classmate's
  * name it does not know would pass the name-query gate. A short query of letters only is
  * therefore kept only when some word is a topic term, and a word that is also part of a
  * person's name never counts as one; in doubt the query is dropped.
  */
-const isTopicShapedSymbol = (token: string, vocabulary: TopicVocabulary): boolean =>
-  /\p{N}/u.test(token) &&
-  /\p{L}/u.test(token) &&
-  (token.match(/\p{L}+/gu) ?? []).every(
-    (letters) => letters.length <= 2 || vocabulary.isTopicTerm(letters),
-  );
-
 export function queryIsNameShaped(query: string, vocabulary: TopicVocabulary): boolean {
   const rawTokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (rawTokens.some((token) => isTopicShapedSymbol(token, vocabulary))) return false;
+  if (rawTokens.some((token) => isKnownSymbol(token, vocabulary))) return false;
+  if (isSymbolOnlyQuery(rawTokens, vocabulary)) return false;
   const tokens = rawTokens
     .map((token) => token.replace(/[^\p{L}'.-]+/gu, ''))
     .filter((token) => /\p{L}/u.test(token) && !ACCESS_FILTER_WORDS.has(token));

@@ -224,10 +224,24 @@ describe('queryIsNameShaped', () => {
     const geneVocabulary = {
       isTopicTerm: (word: string) => TOPIC_WORDS.has(word) || word === 'brca',
     };
-    for (const query of ['tp53', 'cd19', 'il6', 'h1n1', 'brca1', 'tp53 Tqxa']) {
+    for (const query of ['tp53', 'cd19', 'il6', 'h1n1', 'brca1', 'tp53 cd19', 'brca1 Tqxa']) {
       expect(queryIsNameShaped(query, geneVocabulary)).toBe(false);
     }
     expect(queryIsNameShaped('Tqxa2', geneVocabulary)).toBe(true);
+  });
+
+  it('reads a name beside a short letter-prefixed year as the name it carries', () => {
+    for (const query of ['Tqxa Vrnbe TD27', "Tqxa Vrnbe TD'27", 'Tqxa Y27', 'c2027 Tqxa Vrnbe']) {
+      expect(queryIsNameShaped(query, topicVocabulary)).toBe(true);
+    }
+  });
+
+  it('keeps a mixed word next to a name only when the corpus knows the whole word', () => {
+    const corpusVocabulary = {
+      isTopicTerm: (word: string) => TOPIC_WORDS.has(word) || word === 'tp53',
+    };
+    expect(queryIsNameShaped('tp53 Tqxa', corpusVocabulary)).toBe(false);
+    expect(queryIsNameShaped('tp53 Tqxa', topicVocabulary)).toBe(true);
   });
 
   it('reads a name written with a comma or parentheses as the name it carries', () => {
