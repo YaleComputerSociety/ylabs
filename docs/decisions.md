@@ -7,10 +7,10 @@ Track tactical work in GitHub issues and keep transient artifacts outside `docs/
 
 ## 2026-11-16: A Matching Name Alone Never Folds Two Researcher Records (#6378)
 
-Decision (the manager, 2026-11-16): `researchers:dedupe-accountless-shells` never applies a fold whose only evidence is a matching name, with or without a department or a shared row.
-That covers two paths.
+Decision (the manager, 2026-11-16): `researchers:dedupe-accountless-shells` never applies a fold whose only evidence is a matching name, with or without a department or a shared row, on the two paths below.
 The `name` arm, the last fallback in `decideShellMerge`, folds only when the shell's netid or ORCID agrees with the target's.
 The account-less cluster arm still groups records on a name plus a department, a name plus a live role on the same row, or a noisy spelling, but it folds a group only when a shared verified page, a shared official profile, a cited official page or an agreeing netid or ORCID connects every member.
+The `shared-row` arm is unchanged: it folds a shell only into a stronger record that holds a role on the same live row, because a row lists its own lead twice only when two lanes minted that lead under two spellings, so the row is the join and the name only vetoes (#4911).
 A refused name-only candidate is listed in the dry-run report (`nameOnlyFoldCandidates`, `accountlessClusters.nameOnlyGroups`) for operator review, and the tool never applies it.
 
 Two different people can share a name and a department, and a fold is permanent once applied, so a name is a reason to look and never a reason to merge.

@@ -323,6 +323,7 @@ async function loadRosterIdentityCandidates(
         orcid: typeof identity.orcid === 'string' ? identity.orcid.trim() || undefined : undefined,
         netid: bareNetid(netid),
         tier: researcherIdentityTier({ email: identity.email, netid }),
+        rosterListingKey: key,
       });
       candidatesByShellId.set(shellId, list);
     }

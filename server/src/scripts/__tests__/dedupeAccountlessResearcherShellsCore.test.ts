@@ -1656,3 +1656,42 @@ describe('plannedMergeArm', () => {
     expect(() => plannedMergeArm('shell', new Map(), none, none)).toThrow(/no planning arm/);
   });
 });
+
+describe('the evidence recorded on a planned merge', () => {
+  it('records the roster listing that joined a roster-identity fold, not the name', () => {
+    const listingKey = 'lab::entity-1::synthetic-roster::member-7';
+    expect(
+      decideShellMerge({ id: 'shell', displayName: 'Rory Listing' }, new Map(), new Map(), [
+        {
+          id: 'holder',
+          displayName: 'Rory Listing',
+          tier: 'DIRECTORY',
+          rosterListingKey: listingKey,
+        },
+      ]),
+    ).toEqual({
+      merge: true,
+      canonicalId: 'holder',
+      reason: 'MERGEABLE',
+      matchedOn: 'roster-identity',
+      matchedEvidence: `roster listing ${listingKey}`,
+    });
+  });
+
+  it('labels a cluster fold by the join that reaches its survivor, not an identifier shared outside the group', () => {
+    const id = (n: string) => n.padStart(24, '0');
+    const citedPage = 'https://dept.example.edu/p/77';
+    const plan = planAccountlessClusterFolds(
+      [
+        { id: id('1'), displayName: 'Sam Fixture', liveRoleEdges: 0, orcid: SYNTHETIC_ORCID_7 },
+        { id: id('2'), displayName: 'Sam Fixture', liveRoleEdges: 2 },
+        { id: id('9'), displayName: 'Other Person', liveRoleEdges: 0, orcid: SYNTHETIC_ORCID_7 },
+      ],
+      [],
+      [[id('1'), id('2')]],
+      new Map([[distinctPeoplePairKey(id('1'), id('2')), citedPage]]),
+    );
+    expect(plan.foldTargetById.get(id('1'))).toBe(id('2'));
+    expect(plan.evidenceById.get(id('1'))).toBe(`listing cites official page ${citedPage}`);
+  });
+});

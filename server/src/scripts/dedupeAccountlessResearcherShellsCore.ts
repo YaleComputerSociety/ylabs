@@ -357,6 +357,7 @@ function decideNetidFold(
 
 export interface RosterIdentityCandidate extends CanonicalCandidate {
   displayName?: unknown;
+  rosterListingKey?: string;
 }
 
 export interface SharedRowCandidate extends CanonicalCandidate {
@@ -505,7 +506,7 @@ function decideRosterIdentityFold(
     canonicalId: target.id,
     reason: 'MERGEABLE',
     matchedOn: 'roster-identity',
-    matchedEvidence: `roster listing name ${shellName}`,
+    matchedEvidence: `roster listing ${target.rosterListingKey ?? 'unrecorded'}`,
   };
 }
 
@@ -1877,6 +1878,29 @@ export function accountlessClusterSurvivor(
   )[0];
 }
 
+interface ClusterEvidenceJoin {
+  left: string;
+  right: string;
+  label: string;
+}
+
+function clusterEvidenceLabel(
+  memberId: string,
+  survivorId: string,
+  groupIds: ReadonlySet<string>,
+  joins: ReadonlyArray<ClusterEvidenceJoin>,
+): string | undefined {
+  const otherEnd = (join: ClusterEvidenceJoin): string | undefined =>
+    join.left === memberId ? join.right : join.right === memberId ? join.left : undefined;
+  const memberJoins = joins.filter((join) => otherEnd(join) !== undefined);
+  const inGroup = memberJoins.filter((join) => groupIds.has(otherEnd(join) as string));
+  return (
+    inGroup.find((join) => otherEnd(join) === survivorId) ??
+    inGroup[0] ??
+    memberJoins[0]
+  )?.label;
+}
+
 /**
  * Groups of shell records with no directory-backed member, which the outranking arms
  * cannot fold because nobody outranks anybody. A group is the records that share a
@@ -1915,11 +1939,10 @@ export function planAccountlessClusterFolds(
   const memberIdList = members.map((member) => member.id);
   const { find, join } = disjointSets(memberIdList);
   const evidence = disjointSets(memberIdList);
-  const evidenceLabelById = new Map<string, string>();
+  const evidenceJoins: ClusterEvidenceJoin[] = [];
   const joinOnEvidence = (left: string, right: string, label: string): void => {
     evidence.join(left, right);
-    for (const id of [left, right])
-      if (!evidenceLabelById.has(id)) evidenceLabelById.set(id, label);
+    evidenceJoins.push({ left, right, label });
   };
   const firstByKey = new Map<string, string>();
   for (const member of members) {
@@ -2016,10 +2039,11 @@ export function planAccountlessClusterFolds(
     const survivor = accountlessClusterSurvivor(group);
     const joinedBySharedProfile = group.some((member) => profileJoinedIds.has(member.id));
     const joinedByCitedPage = group.some((member) => citedPageJoinedIds.has(member.id));
+    const groupIds = new Set(group.map((member) => member.id));
     for (const member of group) {
       if (member.id === survivor.id) continue;
       plan.foldTargetById.set(member.id, survivor.id);
-      const label = evidenceLabelById.get(member.id);
+      const label = clusterEvidenceLabel(member.id, survivor.id, groupIds, evidenceJoins);
       if (label) plan.evidenceById.set(member.id, label);
       if (joinedBySharedProfile) plan.sharedOfficialProfileFoldIds.add(member.id);
       else if (joinedByCitedPage) plan.citedOfficialPageFoldIds.add(member.id);
