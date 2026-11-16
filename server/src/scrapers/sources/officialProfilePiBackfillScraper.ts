@@ -6,6 +6,7 @@ import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
@@ -154,7 +155,6 @@ import {
 import { mainComponentsOf, ysmPageDataFrom } from './ysmFacultyDirectoryScraper';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PROFILE_FETCH_THROTTLE_MS = 150;
 const PROFILE_FETCH_LOOKAHEAD = 4;
@@ -203,6 +203,11 @@ export interface OfficialProfileIdentity {
   statesNoEmailAddress?: boolean;
   /** The page states no ORCID link and nothing labelled ORCID, so the lane may attest none (#6003). */
   statesNoOrcid?: boolean;
+  /**
+   * The person's own, identity-confirmed page leaves no admissible title after the extractor's
+   * rules, so the lane may attest none (#6233).
+   */
+  statesNoTitle?: boolean;
   inMemoriam?: boolean;
   appointmentEndedOn?: string;
 }
@@ -1076,9 +1081,34 @@ function sameOfficialPersonPageForEntity(
   );
 }
 
+/**
+ * "Education" is also a page section label, but it ends an appointment phrase such as
+ * "Director of Clinical Education", which the label cut used to truncate (#6198). It is kept
+ * only when an appointment word sits right before it AND what follows reads as the same title:
+ * nothing, a separator, or a known continuation. Anything else, such as a degree or an
+ * institution, is the education section, and the label cut applies as before.
+ */
+const EDUCATION_INSIDE_APPOINTMENT =
+  /\b(?:of|in|for|and|&|clinical|medical|graduate|continuing|nursing|health|dental|professional|interprofessional|undergraduate|residency|fellowship)\s+education$/i;
+const EDUCATION_TITLE_CONTINUES =
+  /^\s*(?:$|[;|]|(?:programs?|department|division|center|centre|office|unit|section|initiatives?|committee|and|&|at|YSN|YSM|YSPH)\b)/i;
+
+function cutAtProfileSectionLabel(value: string): string {
+  const label = /\b(?:Bio|Biography|Education|Contact|Courses Taught|Curriculum Vitae)\b/gi;
+  for (const match of value.matchAll(label)) {
+    const index = match.index ?? 0;
+    const end = index + match[0].length;
+    const isAppointmentEducation =
+      /^education$/i.test(match[0]) &&
+      EDUCATION_INSIDE_APPOINTMENT.test(value.slice(Math.max(0, index - 40), end)) &&
+      EDUCATION_TITLE_CONTINUES.test(value.slice(end));
+    if (!isAppointmentEducation) return value.slice(0, index);
+  }
+  return value;
+}
+
 function cleanOfficialProfileTitle(value: string): string {
-  const cleaned = textValue(value)
-    .replace(/\b(?:Bio|Biography|Education|Contact|Courses Taught|Curriculum Vitae)\b[\s\S]*$/i, '')
+  const cleaned = cutAtProfileSectionLabel(textValue(value))
     .replace(/\s+\|.+$/g, '')
     .trim();
   if (!cleaned || cleaned.length > 220) return '';
@@ -1190,6 +1220,78 @@ const blockSeparatedText = (selection: cheerio.Cheerio<any>): string =>
     .map((el) => extractElementTextWithBlockSeparators(el))
     .join(' ');
 
+/**
+ * One school's Drupal profile template states the appointment only as a bold line of its
+ * contact-information field, not in any element classed as a title (#5874). Its bold lines are
+ * read in order as whole paragraphs, so an appointment split across tags stays whole; a block
+ * that breaks lines with `<br>` is read one bold tag at a time instead. A line
+ * naming an office or unit is refused, and reading stops at the first contact label, so a bold
+ * phone, address, hours or office line after it is never read.
+ */
+const CONTACT_FIELD_SELECTOR = '[class~="field-name-field-person-contact-information"]';
+const ORGANIZATIONAL_UNIT_LINE =
+  /^(?:the\s+)?(?:office|department|school|division|center|centre|program|institute)\s+(?:of|for)\b/i;
+const CONTACT_LABEL_LINE = /^(?:e-?mail|phone|tel(?:ephone)?|fax|office\s+hours|hours|address)\b/i;
+
+function contactFieldAppointment($: cheerio.CheerioAPI): string {
+  const field = $(CONTACT_FIELD_SELECTOR).first();
+  const boldLines = field
+    .find('strong')
+    .toArray()
+    .map((strong) => {
+      const block = $(strong).closest('p, div');
+      return block.length > 0 && block.find('br').length === 0 ? block.get(0)! : strong;
+    })
+    .filter((line, index, lines) => lines.indexOf(line) === index);
+  for (const line of boldLines) {
+    const value = cleanOfficialProfileTitle(blockSeparatedText($(line)));
+    if (!value) continue;
+    if (CONTACT_LABEL_LINE.test(value)) return '';
+    if (ORGANIZATIONAL_UNIT_LINE.test(value)) continue;
+    if (isAdmissibleOfficialProfileTitle(value)) return value;
+  }
+  return '';
+}
+
+/**
+ * Drupal blocks without a visible heading carry `block-without-title`, which `[class*="title"]`
+ * matches, so a whole navigation menu was read as the person's title (#5874, #5594).
+ */
+function classNamesATitle($: cheerio.CheerioAPI, element: AnyNode): boolean {
+  return ($(element).attr('class') ?? '')
+    .split(/\s+/)
+    .some((name) => name.includes('title') && !name.endsWith('without-title'));
+}
+
+/**
+ * Content cards on a profile page (news posts, awards, publications, events) carry their own
+ * title-classed headings. When the header appointment fails the title pattern, a card heading
+ * containing an appointment word was read as the person's title (#5594). A card is matched by
+ * a class name that starts with the component name, so a page-level class that merely
+ * contains it (`node-type-article-post`) does not hide the whole page.
+ */
+const PROFILE_CONTENT_CARD_CLASS_PREFIXES = [
+  'article-post',
+  'achievement-card',
+  'publication-card',
+  'event-list-item',
+  'pub--',
+];
+
+function insideProfileContentCard($: cheerio.CheerioAPI, element: AnyNode): boolean {
+  return $(element)
+    .parents()
+    .addBack()
+    .toArray()
+    .some((node) =>
+      ($(node).attr('class') ?? '')
+        .split(/\s+/)
+        .some((name) =>
+          PROFILE_CONTENT_CARD_CLASS_PREFIXES.some((prefix) => name.startsWith(prefix)),
+        ),
+    );
+}
+
 function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
   const selectors = [
     '[class*="title"]',
@@ -1197,10 +1299,13 @@ function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
     '[class*="position"]',
     'meta[name="description"]',
   ];
-  const titles: string[] = [];
+  const contactAppointment = contactFieldAppointment($);
+  const titles: string[] = contactAppointment ? [contactAppointment] : [];
   for (const selector of selectors) {
     const elements = $(selector).toArray();
     for (const el of elements) {
+      if (selector === '[class*="title"]' && !classNamesATitle($, el)) continue;
+      if (selector !== 'meta[name="description"]' && insideProfileContentCard($, el)) continue;
       const value = cleanOfficialProfileTitle(
         blockSeparatedText($(el)) || $(el).attr('content') || '',
       );
@@ -3868,6 +3973,7 @@ export function extractOfficialProfileIdentity(
             email,
             profileNetidSlug,
           ),
+          statesNoTitle: true,
           ...profileDepartureEvidence(html, profiles, new Date(), displayName),
         }
       : null;
@@ -3899,6 +4005,7 @@ export function extractOfficialProfileIdentity(
     ...(!orcid && pageStatesNoOrcid($) ? { statesNoOrcid: true } : {}),
     ...(bio ? {} : hasSuppressedProfileBioText($) ? { suppressDerivedBio: true } : {}),
     ...(!email && pageStatesNoEmailAddress($) ? { statesNoEmailAddress: true } : {}),
+    ...(title ? {} : { statesNoTitle: true }),
     ...profileDepartureEvidence(html, profiles, new Date(), displayName),
   };
 }
@@ -4035,19 +4142,27 @@ export function identityToUserObservations(
         options.directoryNetidsByAddress,
         options.pageOrcidWitnessedForNetid,
       );
+  const attestsNoTitle =
+    (options.includeProfileEnrichment ?? true) &&
+    !identity.title &&
+    identity.statesNoTitle === true;
   if (identity.emailOnly) {
-    return emailTiedToNetid && (options.includeEmail ?? options.includeIdentityEnrichment ?? true)
-      ? [
-          {
-            entityType: 'user',
-            entityKey: `netid:${netid}`,
-            field: 'email',
-            value: identity.email,
-            sourceUrl: identity.canonicalUrl,
-            confidenceOverride: 0.95,
-          },
-        ]
-      : [];
+    const emailRows: ObservationInput[] =
+      emailTiedToNetid && (options.includeEmail ?? options.includeIdentityEnrichment ?? true)
+        ? [
+            {
+              entityType: 'user',
+              entityKey: `netid:${netid}`,
+              field: 'email',
+              value: identity.email,
+              sourceUrl: identity.canonicalUrl,
+              confidenceOverride: 0.95,
+            },
+          ]
+        : [];
+    return attestsNoTitle
+      ? emailRows.map((observation) => withAbsenceClaim(observation, 'title'))
+      : emailRows;
   }
   const includeProfileEnrichment = options.includeProfileEnrichment ?? true;
   const includeIdentityEnrichment = options.includeIdentityEnrichment ?? true;
@@ -4136,9 +4251,8 @@ export function identityToUserObservations(
     }
   }
   const attestsNoOrcid = includeProfileEnrichment && !identity.orcid && identity.statesNoOrcid;
-  return attestsNoOrcid
-    ? observations.map((observation) => withAbsenceClaim(observation, 'orcid'))
-    : observations;
+  const absentFields = [...(attestsNoOrcid ? ['orcid'] : []), ...(attestsNoTitle ? ['title'] : [])];
+  return observations.map((observation) => absentFields.reduce(withAbsenceClaim, observation));
 }
 
 function withAbsenceClaim(observation: ObservationInput, field: string): ObservationInput {
@@ -4422,7 +4536,7 @@ export async function fetchHtml(
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
       maxRedirects: 5,
-      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+      headers: { Accept: 'text/html,application/xhtml+xml' },
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
     }),
@@ -4527,24 +4641,26 @@ export async function selectDirectVisibleProfileBioUserTargets(
   limit: number,
   excludedUserIds: Set<string>,
   identityEvidence?: VisibleBioIdentityEvidence,
+  onlyNetids?: ReadonlySet<string>,
 ): Promise<Array<Record<string, any>>> {
   if (limit <= 0) return [];
 
+  const candidates = Researcher.find({
+    archived: { $ne: true },
+    $and: [
+      { 'identifiers.netid': { $exists: true, $nin: ['', null] } },
+      ...(onlyNetids ? [{ 'identifiers.netid': { $in: [...onlyNetids] } }] : []),
+      {
+        $or: [
+          { 'profileLinks.kind': 'YALE_OFFICIAL' },
+          { 'profile.websiteUrl': { $exists: true, $nin: ['', null] } },
+        ],
+      },
+    ],
+  });
+  if (onlyNetids) candidates.collation({ locale: 'en', strength: 2 });
   const researchers = (await applyFiniteCandidateLimit(
-    Researcher.find({
-      archived: { $ne: true },
-      $and: [
-        { 'identifiers.netid': { $exists: true, $nin: ['', null] } },
-        {
-          $or: [
-            { 'profileLinks.kind': 'YALE_OFFICIAL' },
-            { 'profile.websiteUrl': { $exists: true, $nin: ['', null] } },
-          ],
-        },
-      ],
-    })
-      .select(PROFILE_USER_RESEARCHER_SELECT)
-      .sort({ updatedAt: 1 }),
+    candidates.select(PROFILE_USER_RESEARCHER_SELECT).sort({ updatedAt: 1 }),
     limit,
     4,
     50,
@@ -4553,6 +4669,7 @@ export async function selectDirectVisibleProfileBioUserTargets(
   const evidence = identityEvidence ?? (await loadVisibleBioIdentityEvidence());
   return profileUsersForResearchers(researchers)
     .filter((user) => user.netid && !excludedUserIds.has(idValue(user._id)))
+    .filter((user) => !onlyNetids || onlyNetids.has(textValue(user.netid).toLowerCase()))
     .map((user) => visibleBioTarget(user, visibleBioProfileUrlsForUser(user), [], evidence))
     .filter((target) => target.visibleBioProfileUrls.length > 0)
     .slice(0, limit);
@@ -4560,7 +4677,9 @@ export async function selectDirectVisibleProfileBioUserTargets(
 
 export async function selectVisibleProfileBioTargets(
   limit: number,
+  netids?: readonly string[],
 ): Promise<Array<Record<string, any>>> {
+  const onlyNetids = netids ? new Set(netids.map((netid) => netid.toLowerCase())) : undefined;
   const entities = await ResearchEntity.find({
     archived: { $ne: true },
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
@@ -4583,10 +4702,12 @@ export async function selectVisibleProfileBioTargets(
       entry,
     ]);
   }
-  const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
+  const rosterNetids = uniqueStrings(rosterEntries.map((entry) => entry.netid)).filter(
+    (netid) => !onlyNetids || onlyNetids.has(netid.toLowerCase()),
+  );
 
   const [users, evidence] = await Promise.all([
-    profileUsersByNetids(netids),
+    profileUsersByNetids(rosterNetids),
     loadVisibleBioIdentityEvidence(),
   ]);
 
@@ -4620,6 +4741,7 @@ export async function selectVisibleProfileBioTargets(
       limit - memberTargets.length,
       excludedUserIds,
       evidence,
+      onlyNetids,
     )),
   ].slice(0, limit);
 }
@@ -5535,6 +5657,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     ) => Promise<ExistingProfileUser | null> = resolveExistingUserForIdentity,
     private readonly visibleProfileSelector: (
       limit: number,
+      netids?: string[],
     ) => Promise<Array<Record<string, any>>> = selectVisibleProfileBioTargets,
     private readonly researchHomeProfileSelector: (
       limit: number,
@@ -5611,8 +5734,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     const hasExplicitMode = onlyValues.some((value) => OFFICIAL_PROFILE_MODE_KEYS.has(value));
     const runQueuedPiBackfill =
       targetKeys.length === 0 && (only.size === 0 || only.has(QUEUED_PI_BACKFILL_KEY));
-    const runVisibleProfileBioBackfill =
-      targetKeys.length === 0 && only.has(VISIBLE_PROFILE_BIO_BACKFILL_KEY);
+    const runVisibleProfileBioBackfill = only.has(VISIBLE_PROFILE_BIO_BACKFILL_KEY);
     const runProfileDescriptionBackfill = only.has(PROFILE_DESCRIPTION_BACKFILL_KEY);
     const runLeadDirectWebsiteBackfill = only.has(LEAD_DIRECT_WEBSITE_BACKFILL_KEY);
     const runSourceUrlWebsiteBackfill = only.has(SOURCE_URL_WEBSITE_BACKFILL_KEY);
@@ -5670,7 +5792,11 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         : (limitOption ?? 25);
     const selectedEntities = [
       ...(runQueuedPiBackfill ? await this.entitySelector(limit) : []),
-      ...(runVisibleProfileBioBackfill ? await this.visibleProfileSelector(limit) : []),
+      ...(runVisibleProfileBioBackfill
+        ? targetKeys.length > 0
+          ? await this.visibleProfileSelector(limit, targetKeys)
+          : await this.visibleProfileSelector(limit)
+        : []),
       ...(runProfileDescriptionBackfill
         ? await this.profileDescriptionSelector(limit, targetKeys)
         : []),

@@ -13,6 +13,7 @@ import {
   normalizeRosterName,
   rosterEntryGivenNameIsACredential,
   rosterResearchEntitySlug,
+  withoutTrailingPostNominals,
   type DeptConfig,
   type FacultyEntry,
 } from '../sources/departmentRosterScraper';
@@ -276,5 +277,39 @@ describe('a credential in the given-name position names no person (#5969)', () =
       new Map(),
     );
     expect(research.length).toBeGreaterThan(0);
+  });
+});
+
+describe('a degree with no comma before it is never read as the surname (#6035)', () => {
+  it('strips trailing degrees with or without periods, and keeps a surname spelled like one', () => {
+    expect(withoutTrailingPostNominals('Ada Alpha MD')).toBe('Ada Alpha');
+    expect(withoutTrailingPostNominals('Ada Alpha MD PhD')).toBe('Ada Alpha');
+    expect(withoutTrailingPostNominals('Ada Alpha M.D., Ph.D.')).toBe('Ada Alpha');
+    expect(withoutTrailingPostNominals('Ada Alpha MBChB')).toBe('Ada Alpha');
+    expect(withoutTrailingPostNominals('Ada Alpha DPhil')).toBe('Ada Alpha');
+    expect(withoutTrailingPostNominals('Ada Alpha BA')).toBe('Ada Alpha');
+    expect(withoutTrailingPostNominals('Ada Alpha, MD MPH')).toBe('Ada Alpha');
+    expect(withoutTrailingPostNominals('Ada Lin Ma')).toBe('Ada Lin Ma');
+    expect(withoutTrailingPostNominals('Ada Lin Do')).toBe('Ada Lin Do');
+    expect(withoutTrailingPostNominals('Ada MD')).toBe('Ada MD');
+    expect(withoutTrailingPostNominals('ADA ALPHA MD')).toBe('ADA ALPHA MD');
+  });
+
+  it('writes the surname, not the degree, as the name observation', async () => {
+    for (const name of ['Ada Alpha MD', 'Ada Alpha MBChB, PhD', 'Ada Alpha D.Phil.']) {
+      const { users } = await runRoster({ ...DEGREED, name }, new Map());
+      expect(users.find((o) => o.field === 'fname')?.value).toBe('Ada');
+      expect(users.find((o) => o.field === 'lname')?.value).toBe('Alpha');
+    }
+  });
+
+  it('keeps the person key the listing name was minted under', async () => {
+    const { users } = await runRoster(
+      { ...DEGREED, name: 'Ada Alpha MD', email: undefined },
+      new Map(),
+    );
+    expect(new Set(users.map((o) => o.entityKey))).toEqual(
+      new Set([`dept:${DEPT.deptKey}:ada-alpha-md`]),
+    );
   });
 });

@@ -947,6 +947,10 @@ export function enforceStudentReadyDescriptionInvariant(
 // materializer - never a genuinely source-less entity.
 export const BIOGRAPHY_DESCRIPTION_FALLBACK_REASON = 'biography_description_fallback';
 
+export const TRANSPARENCY_ONLY_VISIBILITY_REASONS: ReadonlySet<string> = new Set([
+  'formalization_only',
+]);
+
 export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
   'source_backed_description',
   BIOGRAPHY_DESCRIPTION_FALLBACK_REASON,
@@ -957,6 +961,8 @@ export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
   'missing_source_route',
   'missing_source_url',
   'missing_official_source',
+  LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON,
+  ...TRANSPARENCY_ONLY_VISIBILITY_REASONS,
 ]);
 
 export const isStudentReadySoftSignalReason = (reason: string): boolean =>
@@ -1042,7 +1048,6 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'permanently_closed',
   'lab_name_org_type_mismatch',
   'unbacked_lab_name',
-  LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON,
   LEAD_CONTRADICTED_BY_NAMESAKE_REASON,
   'inactive_at_yale',
   'archive_review',
@@ -1342,9 +1347,9 @@ export function computeResearchEntityStudentVisibility({
     !biographyWithoutResearch && servedBodyIsCareerBiographyWithoutResearch(publicDescription);
   if (careerBiographyWithoutResearch) reasons.push(CAREER_BIOGRAPHY_WITHOUT_RESEARCH_REASON);
   const servesNoResearchStatement = biographyWithoutResearch || careerBiographyWithoutResearch;
-  const leadTitleRuledNonHostingRank =
-    !missingLead && leadTitlesAreRuledNonHostingRanks(leadMembers);
-  if (leadTitleRuledNonHostingRank) reasons.push(LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON);
+  if (!missingLead && leadTitlesAreRuledNonHostingRanks(leadMembers)) {
+    reasons.push(LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON);
+  }
   const leadContradictedByNamesake =
     !missingLead && servedLeadIsContradictedByNamesake(entity, leadMembers);
   if (leadContradictedByNamesake) reasons.push(LEAD_CONTRADICTED_BY_NAMESAKE_REASON);
@@ -1375,7 +1380,6 @@ export function computeResearchEntityStudentVisibility({
     rightLeadAttached:
       (!requiresLead || quality.leadState === 'lead_attached') &&
       !profileIdentityRisk &&
-      !leadTitleRuledNonHostingRank &&
       !leadContradictedByNamesake,
     // A citation cannot identify this subject if the entity has no citation that
     // resolves. Folded in here rather than added as a new blocker because it is the
@@ -1412,7 +1416,6 @@ export function computeResearchEntityStudentVisibility({
     !labNameOrgTypeMismatch &&
     !unbackedLabName &&
     !servesNoResearchStatement &&
-    !leadTitleRuledNonHostingRank &&
     !leadContradictedByNamesake &&
     !duplicateRisk &&
     hasUsableName

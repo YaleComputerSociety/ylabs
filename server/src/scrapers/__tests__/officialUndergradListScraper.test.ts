@@ -346,6 +346,7 @@ describe('OfficialUndergradListScraper', () => {
       'cognitive-science-senior-essays',
       'eps-senior-theses',
       'economics-senior-essay-advisers',
+      'theater-performance-studies-senior-projects',
     ];
     const workedInsideResearch = [
       'tobin-research-assistantships',
@@ -393,6 +394,56 @@ describe('OfficialUndergradListScraper', () => {
       'Jordan Pellow',
     ]);
     expect(JSON.stringify(read.listings)).not.toMatch(/Quill|Wren|Edible|Advisers At Once/);
+  });
+
+  it('reads Theater, Dance, and Performance Studies advisers from the index alone, and stores no student', async () => {
+    const config = UNDERGRAD_LIST_SOURCE_CONFIGS.find(
+      (entry) => entry.source === 'theater-performance-studies-senior-projects',
+    )!;
+    const index = `<h2 class="component-wrapper__heading">2024-25 Curricular Productions</h2>
+      <ul><li class="reference-card"><h3><a class="reference-card__heading-link" href="/01-synthetic-play">01: A Synthetic Play</a></h3>
+        <div class="reference-card__snippet"><div><p>A senior project in acting for Juniper Talloway</p>
+        <p>Directed by Ezra Quenby</p><p>Advised by Rowan Synthetic</p></div></div></li></ul>
+      <h2 class="component-wrapper__heading">2012-13 Curricular Productions</h2>
+      <ul><li class="reference-card"><h3><a class="reference-card__heading-link" href="/01-old-play">01: Old</a></h3>
+        <div class="reference-card__snippet"><div><p>A senior project for Juniper Talloway</p><p>Advised by Rowan Synthetic</p></div></div></li></ul>`;
+    const fetched: string[] = [];
+    const fetchText = async (url: string) => {
+      fetched.push(url);
+      return url === config.landingUrl ? index : '<p>Advised by Ezra Quenby</p>';
+    };
+    const emitted: ObservationInput[] = [];
+
+    const read = await config.read(fetchText, NOW);
+    await new OfficialUndergradListScraper({
+      fetchText,
+      resolveMentor: resolveBy({ 'Rowan Synthetic': 'synthetic-lab' }),
+      storedListEvidenceFinder: async () => new Map(),
+      sources: [config],
+    }).run(context(emitted));
+
+    expect(fetched).toEqual([config.landingUrl, config.landingUrl]);
+    expect(read.complete).toBe(true);
+    expect(read.listings.map((listing) => [listing.adviserName, listing.year])).toEqual([
+      ['Rowan Synthetic', 2025],
+    ]);
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        entityKey: 'synthetic-lab',
+        value: [
+          {
+            source: 'theater-performance-studies-senior-projects',
+            kind: 'advised',
+            count: 1,
+            latestYear: 2025,
+            sourceUrl: config.landingUrl,
+          },
+        ],
+      }),
+    ]);
+    expect(JSON.stringify([read, emitted])).not.toMatch(
+      /Juniper|Talloway|Ezra|Quenby|Synthetic Play/i,
+    );
   });
 
   it('keeps going when one source throws, and records it', async () => {

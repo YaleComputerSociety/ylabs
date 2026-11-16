@@ -9,6 +9,7 @@ import type {
 import type { WorkPlannerMetrics } from './workPlanner';
 import type { HttpValidatorCacheStats } from './utils/httpValidatorCache';
 import type { SweepPageReuseStats } from './utils/sweepPageReuse';
+import type { KnownDeadUrlStats } from './utils/knownDeadUrls';
 import type { ThrottleRetryStats } from './utils/throttleRetryStats';
 import type { DatabaseWriteRetryStats } from './utils/databaseWriteRetry';
 import type { RekeyedPersonKeyRunSummary } from './rekeyedPersonKeyRetirement';
@@ -140,6 +141,7 @@ export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMod
   attempts: ScraperFetchAttemptMetrics<TFetchMode>[];
   httpCache?: HttpValidatorCacheStats;
   sweepPageReuse?: SweepPageReuseStats;
+  knownDeadUrlSkip?: KnownDeadUrlStats;
   throttleRetry?: ThrottleRetryStats;
   databaseWriteRetry?: DatabaseWriteRetryStats;
   summary: {
@@ -193,6 +195,29 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
    * inconclusive; a zero reads as barren.
    */
   unitYields?: Record<string, number>;
+  /**
+   * research-page-text: the rows a host throttled, by host, so the next run can count how many
+   * are throttled again (#6166, #6195).
+   */
+  throttledRowsByHost?: Record<string, string[]>;
+  /** research-page-text: rows left for a later run because their host was paused, by host. */
+  deferredRowsByHost?: Record<string, { rows: number; resumesAt: string }>;
+  /**
+   * research-page-text: how each host it touched answered, so a host that was tried and refused
+   * can be told apart from one the run never asked (#6195).
+   */
+  hostReadOutcomes?: Record<
+    string,
+    { answered: number; refused: number; skipped: number; failed: number }
+  >;
+  /**
+   * research-page-text: hosts refused on at least 3 runs spanning 14 days or more with no answer
+   * between, and how many rows each run keeps unconfirmed; a flag, never a retirement (#6195).
+   */
+  sustainedRefusalHosts?: Record<
+    string,
+    { firstRefusedAt: string; confirmingRefusalAt: string; runs: number; rowsUnconfirmed: number }
+  >;
   removedByRequest?: number;
   rekeyedPersonKeys?: RekeyedPersonKeyRunSummary;
   descriptionSlotAttestation?: {

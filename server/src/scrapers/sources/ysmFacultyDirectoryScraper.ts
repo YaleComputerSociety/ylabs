@@ -39,6 +39,13 @@ import {
   type TitledPersonKeysLoader,
 } from '../utils/laneTitledPersonKeys';
 import axios from 'axios';
+import {
+  catalogDepartment,
+  catalogSchoolForDepartment,
+} from '../directoryExportDepartmentEvidence';
+import { SCHOOL_OF_MEDICINE_NAME } from '../orgUnitCanonicalization';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import type { CanonicalDepartment } from '../utils/directoryExportDepartment';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
@@ -95,7 +102,6 @@ import {
 const DIRECTORY_URL = 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/';
 const SOURCE_KEY = 'ysm-faculty-directory';
 const SCHOOL_NAME = 'Yale School of Medicine';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PROFILE_FETCH_LOOKAHEAD = 4;
 export const REFUSED_PROFILE_RETRY_PAUSE_MS = 60_000;
@@ -136,6 +142,16 @@ export interface YsmFacultyProfile {
   email?: string;
   orcid?: string;
   departments: string[];
+  /**
+   * The profile's stated appointments, primary first, without the `organizations` list the
+   * `departments` label carries (centers, houses, labs, societies). Only these can be a home
+   * department (#6070).
+   */
+  appointmentDepartments: string[];
+  /** The units of the appointments the page marks `Primary`; a secondary is never one (#6160). */
+  primaryAppointmentUnits?: string[];
+  /** The one catalog school those primary units belong to, when they name exactly one (#6160). */
+  primaryAppointmentSchool?: string;
   researchAreas: string[];
   description?: string;
   bio?: string;
@@ -265,12 +281,9 @@ export function parseYsmFacultyDirectory(html: string): RawYsmFaculty[] {
   return Array.from(bySlug.values());
 }
 
-function departmentsFromAboutSection(about: Record<string, unknown>): string[] {
+function appointmentDepartmentsFromAboutSection(about: Record<string, unknown>): string[] {
   const appointments = Array.isArray(about.appointments)
     ? (about.appointments as Record<string, unknown>[])
-    : [];
-  const organizations = Array.isArray(about.organizations)
-    ? (about.organizations as Record<string, unknown>[])
     : [];
   const primary = appointments
     .filter((a) => textValue(a.type) === 'Primary')
@@ -278,8 +291,66 @@ function departmentsFromAboutSection(about: Record<string, unknown>): string[] {
   const secondary = appointments
     .filter((a) => textValue(a.type) !== 'Primary')
     .map((a) => textValue(a.organizationName));
+  return uniqueStrings([...primary, ...secondary]).slice(0, MAX_DEPARTMENTS);
+}
+
+function primaryAppointmentUnitsFromAboutSection(about: Record<string, unknown>): string[] {
+  const appointments = Array.isArray(about.appointments)
+    ? (about.appointments as Record<string, unknown>[])
+    : [];
+  return uniqueStrings(
+    appointments
+      .filter((a) => textValue(a.type) === 'Primary')
+      .map((a) => textValue(a.organizationName)),
+  );
+}
+
+export type SchoolForDepartment = (department: string) => string | undefined;
+
+export function ysmPrimaryAppointmentSchool(
+  profile: Pick<YsmFacultyProfile, 'primaryAppointmentUnits'>,
+  schoolForDepartment: SchoolForDepartment | null,
+): string | undefined {
+  const units = profile.primaryAppointmentUnits ?? [];
+  if (!schoolForDepartment || units.length === 0) return undefined;
+  const schools = units.map((unit) => schoolForDepartment(unit));
+  if (schools.some((school) => !school)) return undefined;
+  const distinct = uniqueStrings(schools);
+  return distinct.length === 1 ? distinct[0] : undefined;
+}
+
+function ysmResearchEntitySchool(profile: Pick<YsmFacultyProfile, 'primaryAppointmentSchool'>) {
+  const stated = profile.primaryAppointmentSchool;
+  return stated && stated !== SCHOOL_OF_MEDICINE_NAME ? stated : SCHOOL_NAME;
+}
+
+function departmentsFromAboutSection(about: Record<string, unknown>): string[] {
+  const organizations = Array.isArray(about.organizations)
+    ? (about.organizations as Record<string, unknown>[])
+    : [];
   const orgNames = organizations.map((o) => textValue(o.name));
-  return uniqueStrings([...primary, ...secondary, ...orgNames]).slice(0, MAX_DEPARTMENTS);
+  return uniqueStrings([...appointmentDepartmentsFromAboutSection(about), ...orgNames]).slice(
+    0,
+    MAX_DEPARTMENTS,
+  );
+}
+
+/**
+ * The home department a profile states: the catalog's name for its first appointment, when
+ * the department catalog names it (#6070), so an alias spelling is stored as the catalog name
+ * the way the official-profile backfill stores it (#6099). A later appointment is never
+ * promoted in its place (`docs/decisions.md`, 2026-11-13), an organization is never one, and
+ * an appointment the catalog does not name (a program, a center, a lab) is no department claim.
+ * With no catalog the lane emits none, failing closed like the official-profile backfill (#6099),
+ * because it cannot tell a department from a center then.
+ */
+export function ysmHomeDepartment(
+  profile: Pick<YsmFacultyProfile, 'appointmentDepartments'>,
+  canonicalDepartment: CanonicalDepartment | null,
+): string | undefined {
+  if (!canonicalDepartment) return undefined;
+  const [first] = profile.appointmentDepartments;
+  return first ? canonicalDepartment(first) : undefined;
 }
 
 function extractPersonEmail(rawEmail: unknown, name: string): string | undefined {
@@ -375,6 +446,8 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
     email: extractPersonEmail(getInTouch.email, name),
     orcid: extractOrcid(research),
     departments: departmentsFromAboutSection(about),
+    appointmentDepartments: appointmentDepartmentsFromAboutSection(about),
+    primaryAppointmentUnits: primaryAppointmentUnitsFromAboutSection(about),
     researchAreas,
     description: clippedText(htmlToText(research.researchDescription)),
     bio: clippedText(htmlToText(about.bio)),
@@ -407,7 +480,10 @@ export function screenedProfileTitleObservations(
   return observations.filter((observation) => observation.field === 'title');
 }
 
-export function facultyToUserObservations(profile: YsmFacultyProfile): {
+export function facultyToUserObservations(
+  profile: YsmFacultyProfile,
+  canonicalDepartment: CanonicalDepartment | null = null,
+): {
   observations: ObservationInput[];
   entityKey: string;
 } {
@@ -422,8 +498,9 @@ export function facultyToUserObservations(profile: YsmFacultyProfile): {
   if (first) obs.push({ ...base, field: 'fname', value: first });
   if (last) obs.push({ ...base, field: 'lname', value: last });
   obs.push({ ...base, field: 'userType', value: classifyUserType(profile.screeningTitle) });
+  const homeDepartment = ysmHomeDepartment(profile, canonicalDepartment);
+  if (homeDepartment) obs.push({ ...base, field: 'primaryDepartment', value: homeDepartment });
   if (profile.departments.length > 0) {
-    obs.push({ ...base, field: 'primaryDepartment', value: profile.departments[0] });
     obs.push({ ...base, field: 'departments', value: profile.departments });
   }
   if (profile.email) obs.push({ ...base, field: 'email', value: profile.email });
@@ -595,7 +672,7 @@ export function facultyToResearchEntityObservations(
     { ...base, field: 'name', value: entityName },
     { ...base, field: 'kind', value: hasLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: hasLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
-    { ...base, field: 'school', value: SCHOOL_NAME },
+    { ...base, field: 'school', value: ysmResearchEntitySchool(profile) },
     { ...base, field: 'sourceUrls', value: sourceUrls },
     {
       ...base,
@@ -659,7 +736,6 @@ async function fetchHtml(
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -683,6 +759,10 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     private readonly probePage?: LanePageProbe,
     private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
     private readonly titledPersonKeysLoader: TitledPersonKeysLoader = loadLaneTitledPersonKeys,
+    private readonly catalogDepartmentLoader: () => Promise<CanonicalDepartment | null> = () =>
+      mongooseConnectionWasOpened() ? catalogDepartment() : Promise.resolve(null),
+    private readonly catalogSchoolLoader: () => Promise<SchoolForDepartment | null> = () =>
+      mongooseConnectionWasOpened() ? catalogSchoolForDepartment() : Promise.resolve(null),
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -719,6 +799,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     // cannot be narrowed to research roles here - a role needs the person's own
     // profile, and this run only fetches the limited slice (#2368/#2369).
     const directorySurnames = personSurnamesFromDisplayNames(roster.map((entry) => entry.name));
+    const canonicalDepartment = await this.catalogDepartmentLoader();
+    const schoolForDepartment = await this.catalogSchoolLoader();
     const rekeyReads = new RekeyedPersonReads(SOURCE_KEY);
     rekeyReads.recordLaneNames(directoryNameCensus(roster));
     const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
@@ -800,7 +882,10 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         }
 
         researchersEnriched += 1;
-        const { observations: userObs, entityKey } = facultyToUserObservations(profile);
+        const { observations: userObs, entityKey } = facultyToUserObservations(
+          profile,
+          canonicalDepartment,
+        );
         await ctx.emit(userObs);
         rekeyReads.recordPerson(userObs);
         totalObs += userObs.length;
@@ -827,7 +912,10 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         }
 
         const entityObs = facultyToResearchEntityObservations(
-          profile,
+          {
+            ...profile,
+            primaryAppointmentSchool: ysmPrimaryAppointmentSchool(profile, schoolForDepartment),
+          },
           entityKey,
           directorySurnames,
           labUrlUnusabilityFor(labUrlEvidenceBySlug, `ysm-faculty-${profile.slug}`),

@@ -447,7 +447,6 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
     axios.get(safeUrlText, {
       timeout: 30000,
       headers: {
-        'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
         Accept: 'text/html,application/xhtml+xml',
       },
       maxRedirects: 5,

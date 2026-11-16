@@ -96,7 +96,7 @@ export async function runSchoolHostMismatchBackfill(options: {
 
   const query = ResearchEntity.find(filter)
     .select(
-      '_id slug name school schools departments websiteUrl sourceUrls fullDescription researchAreas entityType',
+      '_id slug name school schools departments websiteUrl sourceUrls fullDescription researchAreas entityType fieldValueRefusals',
     )
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);

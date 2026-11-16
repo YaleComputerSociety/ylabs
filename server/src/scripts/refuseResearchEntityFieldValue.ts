@@ -48,6 +48,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   fieldValueRefusalKey,
+  fieldValueRefusalsPath,
   liveFieldValueRefusals,
   planFieldValueRefusal,
   planFieldValueRefusalWithdrawal,
@@ -60,6 +61,10 @@ import {
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import {
+  planRefusalClosureRederivation,
+  type RefusalClosureRederivation,
+} from './refusalClosureRederivation';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -162,6 +167,66 @@ export function assertRefuseFieldValueArgs(args: RefuseFieldValueArgs): void {
   }
 }
 
+export interface RefuseFieldValueWritePlan {
+  refusedKey: string;
+  clearsStoredValue: boolean;
+  closureRederivation: RefusalClosureRederivation;
+  write: { $set: Record<string, unknown>; $unset?: Record<string, ''> };
+  regates: boolean;
+}
+
+/**
+ * The one write a refusal makes: the refusal record, the clear of the stored value when it is
+ * the refused one, and the re-derived closure of that field (#6155), so no sibling keeps
+ * serving the value the record refuses.
+ */
+export async function planRefuseFieldValueWrite(
+  row: Record<string, unknown>,
+  args: Pick<
+    RefuseFieldValueArgs,
+    'field' | 'value' | 'rule' | 'sourceName' | 'note' | 'decidedBy' | 'evidenceUrl' | 'withdraw'
+  >,
+): Promise<RefuseFieldValueWritePlan> {
+  const refusedKey = fieldValueRefusalKey(args.field, args.value);
+  const storedKey = fieldValueRefusalKey(args.field, row[args.field]);
+  const clearsStoredValue = !args.withdraw && storedKey !== '' && storedKey === refusedKey;
+  const record = args.withdraw
+    ? planFieldValueRefusalWithdrawal(row.fieldValueRefusals, args.field, args.value, args.note)
+    : planFieldValueRefusal(row.fieldValueRefusals, {
+        field: args.field,
+        value: args.value,
+        rule: args.rule,
+        ...(args.sourceName ? { sourceName: args.sourceName } : {}),
+        refusedBy: args.decidedBy ? `${SCRIPT_NAME} (${args.decidedBy})` : SCRIPT_NAME,
+        note: args.note,
+        evidenceUrl: args.evidenceUrl,
+      });
+  const closureRederivation: RefusalClosureRederivation = args.withdraw
+    ? { outcome: 'not-a-closure-member' }
+    : await planRefusalClosureRederivation({
+        row,
+        field: args.field,
+        value: args.value,
+        clearsStoredValue,
+        fieldValueRefusalsAfterRecord: {
+          ...(row.fieldValueRefusals as Record<string, unknown> | undefined),
+          [args.field]: record[fieldValueRefusalsPath(args.field)],
+        },
+      });
+  const rederivedClosure =
+    closureRederivation.outcome === 'rederived' ? closureRederivation.set : {};
+  return {
+    refusedKey,
+    clearsStoredValue,
+    closureRederivation,
+    write: {
+      $set: { ...record, ...rederivedClosure },
+      ...(clearsStoredValue ? { $unset: { [args.field]: '' as const } } : {}),
+    },
+    regates: clearsStoredValue || Object.keys(rederivedClosure).length > 0,
+  };
+}
+
 async function main(): Promise<void> {
   const args = parseRefuseFieldValueArgs(process.argv.slice(2));
   assertRefuseFieldValueArgs(args);
@@ -175,9 +240,8 @@ async function main(): Promise<void> {
     const row = await ResearchEntity.findOne({ slug: args.slug }).lean<Record<string, unknown>>();
     if (!row) throw new Error(`no research entity for the named slug`);
 
-    const refusedKey = fieldValueRefusalKey(args.field, args.value);
-    const storedKey = fieldValueRefusalKey(args.field, row[args.field]);
-    const clearsStoredValue = !args.withdraw && storedKey !== '' && storedKey === refusedKey;
+    const { refusedKey, clearsStoredValue, closureRederivation, write, regates } =
+      await planRefuseFieldValueWrite(row, args);
     const listEntryRemoval = args.withdraw
       ? undefined
       : planListEntryRefusalRemoval({
@@ -198,18 +262,6 @@ async function main(): Promise<void> {
               .lean<Array<{ value?: unknown }>>()
           ).map((observation) => observation.value),
         });
-    const update = args.withdraw
-      ? planFieldValueRefusalWithdrawal(row.fieldValueRefusals, args.field, args.value, args.note)
-      : planFieldValueRefusal(row.fieldValueRefusals, {
-          field: args.field,
-          value: args.value,
-          rule: args.rule,
-          ...(args.sourceName ? { sourceName: args.sourceName } : {}),
-          refusedBy: args.decidedBy ? `${SCRIPT_NAME} (${args.decidedBy})` : SCRIPT_NAME,
-          note: args.note,
-          evidenceUrl: args.evidenceUrl,
-        });
-
     console.log(
       JSON.stringify(
         {
@@ -221,6 +273,7 @@ async function main(): Promise<void> {
           refusedKey,
           storedValueIsTheRefusedValue: clearsStoredValue,
           ...(listEntryRemoval ? { listEntryRemoval } : {}),
+          closureRederivation,
           liveRefusalsBefore: liveFieldValueRefusals(row.fieldValueRefusals, args.field).length,
           alsoStillLocked: Array.isArray(row.manuallyLockedFields)
             ? (row.manuallyLockedFields as string[]).includes(args.field)
@@ -236,12 +289,9 @@ async function main(): Promise<void> {
       return;
     }
 
-    await ResearchEntity.updateOne(
-      { _id: row._id },
-      clearsStoredValue ? { $set: update, $unset: { [args.field]: '' } } : { $set: update },
-    );
+    await ResearchEntity.updateOne({ _id: row._id }, write);
 
-    if (clearsStoredValue) {
+    if (regates) {
       // A cleared served field can change what the row is allowed to show, so it is
       // re-gated here rather than left on a tier decided about evidence it no longer
       // has. Same reason `fieldRetraction` re-gates what it clears.

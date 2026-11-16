@@ -260,6 +260,23 @@ describe('a stored department only screened readings back is cleared on resolve'
     expect((await stored(person._id))?.profile?.primaryDepartment).toBeUndefined();
   });
 
+  it('keeps a value two person-name-joined keys state, one screened and one not', async () => {
+    const person = await seedPerson(SCREENED);
+    const otherRosterKey = 'dept:fixture-other-studies:fixture-quillsby';
+    await Observation.insertMany([
+      reading('netid', NETID),
+      reading('fname', 'Fixture'),
+      reading('lname', 'Quillsby'),
+      ...rosterReadings(SCREENED, 'fixture-screened-lane'),
+      reading('fname', 'Fixture', 'dept-faculty-roster', otherRosterKey),
+      reading('lname', 'Quillsby', 'dept-faculty-roster', otherRosterKey),
+      reading('primaryDepartment', SCREENED, 'fixture-open-lane', otherRosterKey),
+    ]);
+
+    await resolve();
+    expect((await stored(person._id))?.profile?.primaryDepartment).toBe(SCREENED);
+  });
+
   it('never touches a never-backed stored department', async () => {
     const person = await seedPerson('Fixture Legacy Studies');
     await seedScreenedKey();

@@ -5,7 +5,12 @@ import {
   sourceLinkHealthRunOptions,
   sourceLinkHealthBackfillStdoutSummary,
   type SourceLinkHealthBackfillResult,
+  DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
+  DEFAULT_DRY_RUN_PROBE_REUSE_HOURS,
+  readSourceLinkUrlFile,
 } from '../backfillSourceLinkHealth';
+
+const DEFAULT_REUSE_MS = DEFAULT_DRY_RUN_PROBE_REUSE_HOURS * 60 * 60_000;
 
 describe('parseSourceLinkHealthBackfillArgs', () => {
   it('defaults to a full dry run that re-probes every row', () => {
@@ -40,6 +45,7 @@ describe('sourceLinkHealthRunOptions', () => {
       dryRun: false,
       limit: 100,
       staleOnly: true,
+      stopOnStatuses: [403, 429],
     });
   });
 
@@ -49,6 +55,9 @@ describe('sourceLinkHealthRunOptions', () => {
       dryRun: true,
       staleOnly: false,
       httpWebsitesOnly: true,
+      samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
+      reuseProbesWithinMs: DEFAULT_REUSE_MS,
+      stopOnStatuses: [403, 429],
     });
   });
 
@@ -56,6 +65,9 @@ describe('sourceLinkHealthRunOptions', () => {
     expect(sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs([]))).toEqual({
       dryRun: true,
       staleOnly: false,
+      samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
+      reuseProbesWithinMs: DEFAULT_REUSE_MS,
+      stopOnStatuses: [403, 429],
     });
   });
 });
@@ -74,6 +86,7 @@ describe('--checked-before', () => {
       limit: 5000,
       staleOnly: false,
       checkedBefore: new Date('2026-09-10T21:00:00.000Z'),
+      stopOnStatuses: [403, 429],
     });
   });
 
@@ -96,6 +109,9 @@ describe('--checked-before', () => {
     expect(sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs([]))).toEqual({
       dryRun: true,
       staleOnly: false,
+      samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
+      reuseProbesWithinMs: DEFAULT_REUSE_MS,
+      stopOnStatuses: [403, 429],
     });
   });
 });
@@ -108,6 +124,9 @@ describe('--reprobe-healthy-after-days', () => {
       dryRun: true,
       staleOnly: false,
       reprobeHealthyAfterDays: 7,
+      samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
+      reuseProbesWithinMs: DEFAULT_REUSE_MS,
+      stopOnStatuses: [403, 429],
     });
   });
 
@@ -137,11 +156,19 @@ describe('sourceLinkHealthBackfillStdoutSummary', () => {
       checked: 1,
       updated: 1,
       errors: 0,
+      deferredPausedHost: 0,
+      pausedHosts: '',
       preservedDecisiveVerdicts: 0,
       preservedUnreachedVerdicts: 0,
+      heldConnectionFailures: 2,
       verdictTransitions: { 'HEALTHY->UNAVAILABLE': 1 },
       clearedTlsFlags: 0,
       servedWebsitesLost: 1,
+      excludedHostLinks: 0,
+      keptUnobservedLinks: 0,
+      probesReused: 0,
+      probesByHost: {},
+      stoppedHosts: [],
       lostVerdictSamples: [
         {
           slug,
@@ -170,7 +197,104 @@ describe('sourceLinkHealthBackfillStdoutSummary', () => {
       sampleCount: 1,
       lostVerdictSampleCount: 1,
       servedWebsitesLost: 1,
+      heldConnectionFailures: 2,
       verdictTransitions: { 'HEALTHY->UNAVAILABLE': 1 },
     });
+  });
+});
+
+describe('#6182 dry-run sampling and url scope flags', () => {
+  it('samples a dry run by default, and --full-dry-run sweeps', () => {
+    expect(sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs([])).samplePerHost).toBe(
+      DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
+    );
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(['--full-dry-run']))
+        .samplePerHost,
+    ).toBeUndefined();
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(['--sample-per-host=5']))
+        .samplePerHost,
+    ).toBe(5);
+  });
+
+  it('never samples an apply, and refuses sampling flags on one', () => {
+    const apply = ['--apply', '--confirm-source-link-health', '--limit=10'];
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(apply)).samplePerHost,
+    ).toBeUndefined();
+    expect(() => parseSourceLinkHealthBackfillArgs([...apply, '--full-dry-run'])).toThrow();
+    expect(() => parseSourceLinkHealthBackfillArgs([...apply, '--sample-per-host=5'])).toThrow();
+  });
+
+  it('carries --stop-on-status and refuses a non-status', () => {
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(['--stop-on-status=403,429']))
+        .stopOnStatuses,
+    ).toEqual([403, 429]);
+    expect(() => parseSourceLinkHealthBackfillArgs(['--stop-on-status=forbidden'])).toThrow();
+  });
+
+  it('reads a url file in order, skipping blanks, comments and repeats', () => {
+    expect(
+      readSourceLinkUrlFile(
+        'https://a.example.edu/x\n\n# note\nhttps://b.example.edu/y\nhttps://a.example.edu/x\n',
+      ),
+    ).toEqual(['https://a.example.edu/x', 'https://b.example.edu/y']);
+  });
+});
+
+describe('#6214 dry-run probe reuse flags', () => {
+  const apply = ['--apply', '--confirm-source-link-health', '--limit=10'];
+
+  it('reuses probes for a day on a dry run by default', () => {
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs([])).reuseProbesWithinMs,
+    ).toBe(24 * 60 * 60_000);
+  });
+
+  it('takes a window in hours, and --no-probe-reuse turns reuse off', () => {
+    expect(
+      sourceLinkHealthRunOptions(
+        parseSourceLinkHealthBackfillArgs(['--reuse-probes-within-hours=2']),
+      ).reuseProbesWithinMs,
+    ).toBe(2 * 60 * 60_000);
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(['--no-probe-reuse']))
+        .reuseProbesWithinMs,
+    ).toBeUndefined();
+    expect(() =>
+      parseSourceLinkHealthBackfillArgs(['--no-probe-reuse', '--reuse-probes-within-hours=2']),
+    ).toThrow();
+  });
+
+  it('never reuses probes on an apply, and refuses the window flag on one', () => {
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(apply)).reuseProbesWithinMs,
+    ).toBeUndefined();
+    expect(() =>
+      parseSourceLinkHealthBackfillArgs([...apply, '--reuse-probes-within-hours=2']),
+    ).toThrow(/dry run only/);
+  });
+});
+
+describe('#6214 stop a host at its first refusal by default', () => {
+  it('stops on 403 and 429 unless told otherwise', () => {
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs([])).stopOnStatuses,
+    ).toEqual([403, 429]);
+    expect(
+      sourceLinkHealthRunOptions(
+        parseSourceLinkHealthBackfillArgs(['--apply', '--confirm-source-link-health', '--limit=1']),
+      ).stopOnStatuses,
+    ).toEqual([403, 429]);
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(['--stop-on-status=429']))
+        .stopOnStatuses,
+    ).toEqual([429]);
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(['--no-stop-on-refusal']))
+        .stopOnStatuses,
+    ).toBeUndefined();
   });
 });

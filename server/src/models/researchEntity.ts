@@ -160,6 +160,63 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       type: Date,
       required: false,
     },
+    /**
+     * The start of the backfill run whose probe found the host refusing or unable to
+     * route a connection while the stored verdict was `HEALTHY` or `REDIRECTED`. The
+     * verdict stands until a run starting at least six hours later sees the same
+     * failure, and any probe that reaches the host drops this, so a host that refused
+     * for a few minutes is not recorded as gone (#6116).
+     */
+    pendingConnectionFailureAt: {
+      type: Date,
+      required: false,
+    },
+    /**
+     * When the probe recorded as `pendingConnectionFailureAt` saw the failure. A run can
+     * probe a URL hours after it starts, so the confirming probe must also come at least
+     * six hours after this one (#6116).
+     */
+    pendingConnectionFailureProbedAt: {
+      type: Date,
+      required: false,
+    },
+    /**
+     * The start of the run whose failure confirmed `pendingConnectionFailureAt` and
+     * recorded `UNAVAILABLE`, kept beside it so the retirement shows both observations
+     * (#6116).
+     */
+    confirmingConnectionFailureAt: {
+      type: Date,
+      required: false,
+    },
+    /**
+     * The `UNAVAILABLE` came from a refused or unroutable connection rather than a DNS
+     * record confirmed absent, so a later removal confirms it only against the same class
+     * of failure (#6264).
+     */
+    connectionLevelFailure: {
+      type: Boolean,
+      required: false,
+    },
+    /**
+     * The `UNAVAILABLE` came from a DNS record confirmed absent. Recorded positively, so
+     * a verdict written before either class field existed reads as unknown and a removal
+     * waits for the next sweep to record its class (#6264).
+     */
+    nameNotFound: {
+      type: Boolean,
+      required: false,
+    },
+    /**
+     * The `UNAVAILABLE` came from a host that answered by refusing the connection
+     * (`ECONNREFUSED`). Unlike an unroutable network or host, which can mean this machine
+     * had no route, only this connection failure is evidence about the host, so it is the
+     * only one a removal may confirm against (#6264).
+     */
+    connectionRefused: {
+      type: Boolean,
+      required: false,
+    },
   },
   { _id: false },
 );

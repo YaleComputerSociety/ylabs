@@ -129,7 +129,6 @@ import {
 import { liveResearchEntityIdForLaneKey } from '../renamedResearchEntityAdoption';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_PROMPT_CHARS = 50_000;
 const DEFAULT_LIMIT = 100;
@@ -1568,7 +1567,7 @@ export interface FetchedPage {
   html: string;
 }
 
-/** Default page fetcher: axios + 10s timeout + USER_AGENT. Returns null on
+/** Default page fetcher: axios + 10s timeout + SCRAPER_USER_AGENT. Returns null on
  *  any non-2xx, network error, or timeout. */
 export type FetchPageFn = (url: string) => Promise<FetchedPage | null>;
 
@@ -1577,7 +1576,7 @@ export const defaultFetchPage: FetchPageFn = async (url) => {
   // preserve this path's null-on-failure contract by mapping any final error to null.
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
+      headers: { Accept: 'text/html,*/*' },
       timeoutMs: FETCH_TIMEOUT_MS,
     });
     return { url: page.url, html: page.html };

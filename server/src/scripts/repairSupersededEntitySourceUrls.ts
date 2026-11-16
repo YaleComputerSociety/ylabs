@@ -28,6 +28,7 @@ import {
 } from './repairSupersededEntitySourceUrlsCore';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import { connectScriptMongo } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -371,6 +372,7 @@ export function stdoutReport(
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseRepairSupersededEntitySourceUrlsArgs(process.argv.slice(2));
   assertRepairSupersededEntitySourceUrlsApplyAllowed(options);
 

@@ -1,7 +1,11 @@
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
-import { isCurriculumVitaeRecordSentence } from '../../utils/careerBiographyDescription';
+import {
+  isBibliographicCitationSentence,
+  isCurriculumVitaeRecordSentence,
+  splitDescriptionSentences,
+} from '../../utils/careerBiographyDescription';
 import { removeRelatedEntityTeaserCards } from '../../utils/relatedEntityTeaserCards';
 import { extractElementTextWithLineBreaks } from './htmlText';
 import { removeProfilePublicityRegions } from './profilePublicityRegions';
@@ -67,16 +71,290 @@ function isContactLine(line: string): boolean {
   return wordCount(line) <= MAX_CONTACT_LINE_WORDS && redactDirectContactInfo(line) !== line;
 }
 
-function isStatementLine(line: string): boolean {
+const MIN_RECOVERED_SENTENCE_WORDS = 8;
+const CITATION_FRAGMENT =
+  /\b(?:doi|pmid|pmcid|isbn)\b|\b(?:19|20)\d{2}[a-z]?\s*[).]|\(\s*(?:19|20)\d{2}/i;
+
+// A past appointment told as a span of years: "taught at X from 1997-2018". It needs a career
+// verb bound to a post, and "worked" or "served" must name a post or an institution, so a
+// research sentence that spans years ("tracked kelp recovery from 1997 to 2018", "worked at
+// field sites from 2005 to 2015") is not one. Kept local to page text, because
+// isCurriculumVitaeRecordSentence also decides what a served description shows (#6201).
+const CAREER_POST_OR_INSTITUTION =
+  '(?:professor|lecturer|fellow|director|chair|dean|faculty|instructor|curator|editor|president|university|college|institute|hospital|school)';
+const CAREER_HISTORY_YEAR_RANGE_SENTENCE = new RegExp(
+  '\\b(?:(?:taught|lectured)\\s+(?:at|in)' +
+    `|(?:served\\s+(?:as|on|at|in)|worked\\s+(?:at|as))\\s+[^.]{0,60}?\\b${CAREER_POST_OR_INSTITUTION}` +
+    '|practi[cs]ed\\s+(?:at|as|in)|chaired\\s+the' +
+    '|directed\\s+the\\s+[^.]{0,60}?\\b(?:center|centre|program(?:me)?|institute|department|school|division|museum|clinic))' +
+    '\\b[^.]{0,120}?\\bfrom\\s+(?:19|20)\\d{2}\\s*(?:[-\\u2013\\u2014]|to|until|through)\\s*(?:(?:19|20)\\d{2}|present|now)\\b',
+  'i',
+);
+
+const isPageTextCvRecord = (text: string): boolean =>
+  isCurriculumVitaeRecordSentence(text) || CAREER_HISTORY_YEAR_RANGE_SENTENCE.test(text);
+
+const isRecoverableResearchSentence = (sentence: string): boolean =>
+  wordCount(sentence) >= MIN_RECOVERED_SENTENCE_WORDS &&
+  !isPageTextCvRecord(sentence) &&
+  !isBibliographicCitationSentence(sentence) &&
+  !CITATION_FRAGMENT.test(sentence);
+
+/**
+ * A line the CV-record test flags, less its CV sentences (#6159). An extracted line is often
+ * a whole biography paragraph, and judging it as one sentence let a single "author of" or
+ * "appointed" drop the research sentences beside it. A line that is itself a citation stays
+ * dropped, and only whole prose sentences are recovered, because splitting a citation yields
+ * author, year and venue pieces the sentence-level test no longer recognises.
+ */
+function withoutCurriculumVitaeSentences(line: string): string {
+  if (isBibliographicCitationSentence(line)) return '';
+  return splitDescriptionSentences(line).filter(isRecoverableResearchSentence).join(' ');
+}
+
+const ENDS_AS_A_SENTENCE = /[.!?]["')\]\u2019\u201d]?$/;
+const SKIP_LINK_LINE = /^(?:skip|jump)\s+(?:to|past|over|content|navigation|main)\b/i;
+const ACCESSIBILITY_LINK_LINE =
+  /\b(?:accessibility\s+(?:statement|policy|notice|help|assistance|feedback|options|settings)|(?:report|request)\s+an?\s+(?:digital\s+)?accessibility\s+(?:issue|problem|barrier|accommodation)|screen\s+readers?\s+only)\b/i;
+const MAX_ACCESSIBILITY_LINE_WORDS = 12;
+const CURRICULUM_VITAE_LABEL = String.raw`curriculum vitae|c\.?v\.?|r[e\u00e9]sum[e\u00e9]`;
+const CONTACT_OR_LINK_LABEL = String.raw`${CURRICULUM_VITAE_LABEL}|(?:lab |personal )?web\s?site|home\s?page|e-?mail|phone|tel(?:ephone)?|fax|mobile|office|address|orcid|google scholar|twitter|linkedin|bluesky|github|researchgate`;
+const CONTACT_OR_LINK_LABEL_LINE = new RegExp(`^(?:${CONTACT_OR_LINK_LABEL})\\s*:`, 'i');
+const IMAGE_CREDIT_LABEL_LINE =
+  /^(?:(?:photo(?:graph)?|image|picture|illustration|video|cover|header|banner)s?\s+)?credits?\s*:/i;
+const FILE_OR_DATE_NOTE = /\([^)]*\)/g;
+const BARE_LABEL_ORNAMENT = /\s*(?::|\.{2,}|\u2026|[|\u203a\u00bb\u2192>]+)\s*$/;
+const BARE_CONTACT_OR_LINK_LABEL_LINE = new RegExp(`^(?:${CONTACT_OR_LINK_LABEL})$`, 'i');
+const MONTH_OR_SEASON =
+  '(?:spring|summer|fall|autumn|winter|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const LABEL_DATE = new RegExp(`(?:\\b${MONTH_OR_SEASON}\\s+)?\\b(?:19|20)\\d{2}\\b`, 'gi');
+const CURRICULUM_VITAE_LINK_QUALIFIER =
+  /^(?:my|the|full|short|complete|current|updated|academic|printable|downloadable|download|view|see|open)$/i;
+const CURRICULUM_VITAE_LINK_TAIL = new RegExp(`(?:^|\\s)(?:${CURRICULUM_VITAE_LABEL})$`, 'i');
+const OWNER_NAME_TOKEN = /^\p{Lu}[\p{L}'\u2019.-]*$/u;
+const MAX_CURRICULUM_VITAE_LINK_PREFIX_WORDS = 3;
+
+const MAX_DROPPED_LABEL_VALUE_WORDS = 6;
+const LINK_OR_EMAIL_VALUE = /^(?:https?:\/\/|www\.|[\w.+-]+@[\w-]+\.)/i;
+
+const LISTING_NOUN =
+  '(?:news|events|stories|posts|articles|updates|items|entries|publications|projects|results|videos|photos|press(?: releases)?|info(?:rmation)?)';
+const LISTING_QUALIFIER = '(?:upcoming|recent|latest|past|older|our|lab|center|centre|department)';
+const PROPER_NOUN = "\\p{Lu}[\\p{L}&'\u2019-]*";
+const LISTING_NAVIGATION_LINE = new RegExp(
+  '^(?:' +
+    `(?:read|view|see|show|load|browse|learn)\\s+(?:more|less|all|full|the full|complete|entire)(?:\\s+[\\p{L}&'\u2019-]+){0,3}` +
+    `|(?:more|all)(?:\\s+(?:${LISTING_QUALIFIER}|${PROPER_NOUN})){0,2}?\\s+${LISTING_NOUN}` +
+    `|(?:older|newer|previous|next)(?:\\s+${LISTING_QUALIFIER}){0,2}?\\s+${LISTING_NOUN}` +
+    ')\\s*(?:\\.{2,}|\u2026|[\u203a\u00bb\u2192>]+)?$',
+  'iu',
+);
+const IMAGE_BYLINE_LINE =
+  /^(?:photo(?:graph)?s?|images?|pictures?|illustrations?|artwork|video)\s+(?:by|courtesy(?:\s+of)?)\s+(.+)$/i;
+const BYLINE_CONNECTOR = /^(?:and|&|of|the|de|van|von|la|le)$/i;
+const MAX_BYLINE_CREDIT_WORDS = 6;
+const MAX_IMAGE_BYLINE_WORDS = 12;
+
+/** A skip link or an accessibility link line (#6201). */
+function isSkipOrAccessibilityLine(line: string): boolean {
   return (
-    wordCount(line) >= MIN_LINE_WORDS &&
-    !isCurriculumVitaeRecordSentence(line) &&
-    !isContactLine(line)
+    SKIP_LINK_LINE.test(line) ||
+    (wordCount(line) <= MAX_ACCESSIBILITY_LINE_WORDS && ACCESSIBILITY_LINK_LINE.test(line))
   );
 }
 
+const isListingNavigationLine = (line: string): boolean => LISTING_NAVIGATION_LINE.test(line);
+
+function isImageBylineLine(line: string): boolean {
+  const credited = line.match(IMAGE_BYLINE_LINE)?.[1]?.trim();
+  if (!credited || ENDS_AS_A_SENTENCE.test(line) || wordCount(line) > MAX_IMAGE_BYLINE_WORDS) {
+    return false;
+  }
+  const words = credited.split(/\s+/);
+  return (
+    words.length <= MAX_BYLINE_CREDIT_WORDS &&
+    words.some((word) => OWNER_NAME_TOKEN.test(word)) &&
+    words.every((word) => OWNER_NAME_TOKEN.test(word) || BYLINE_CONNECTOR.test(word))
+  );
+}
+
+const POSSESSIVE = /['\u2019]s$/i;
+const HONORIFIC = /^(?:dr|prof|professor|mr|ms|mrs)\.?$/i;
+
+const GENERIC_HOST_LABELS = new Set([
+  'www',
+  'yale',
+  'edu',
+  'org',
+  'com',
+  'net',
+  'io',
+  'sites',
+  'campuspress',
+]);
+
+/**
+ * The lowercased words of the page's own address, which name the person a profile page is
+ * about: its path segments, and its host labels, where a personal site carries the name.
+ */
+export function pageOwnerTokens(pageUrl: string): ReadonlySet<string> {
+  try {
+    const url = new URL(pageUrl);
+    const hostLabels = url.hostname
+      .toLowerCase()
+      .split('.')
+      .filter((label) => !GENERIC_HOST_LABELS.has(label));
+    return new Set(
+      [...url.pathname.toLowerCase().split(/[^\p{L}\p{N}]+/u), ...hostLabels].filter(
+        (token) => token.length >= 2,
+      ),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+const MIN_JOINED_NAME_PART = 3;
+
+const ownerNamesPart = (ownerTokens: ReadonlySet<string>, part: string): boolean =>
+  ownerTokens.has(part) ||
+  (part.length >= MIN_JOINED_NAME_PART &&
+    [...ownerTokens].some((token) => token.length > part.length && token.includes(part)));
+
+const nameParts = (word: string): string[] =>
+  word.replace(POSSESSIVE, '').toLowerCase().split(/[-.]/).filter(Boolean);
+
+/**
+ * A CV link: the label alone, after qualifiers, or after the page's own person, named by a
+ * possessive or by a name word the page's address carries. A capitalized phrase that names
+ * no one on the page ("Robust Visual CV", computer vision) is a topic, not a link (#6159).
+ */
+function isCurriculumVitaeLinkLine(line: string, ownerTokens: ReadonlySet<string>): boolean {
+  if (ENDS_AS_A_SENTENCE.test(line)) return false;
+  const core = line
+    .replace(FILE_OR_DATE_NOTE, ' ')
+    .replace(LABEL_DATE, ' ')
+    .replace(BARE_LABEL_ORNAMENT, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const tail = core.match(CURRICULUM_VITAE_LINK_TAIL);
+  if (!tail) return false;
+  const prefix = core.slice(0, tail.index).split(' ').filter(Boolean);
+  if (prefix.length > MAX_CURRICULUM_VITAE_LINK_PREFIX_WORDS) return false;
+  const names = prefix.filter(
+    (word) => !CURRICULUM_VITAE_LINK_QUALIFIER.test(word) && !HONORIFIC.test(word),
+  );
+  if (names.length === 0) return true;
+  if (!names.every((word) => OWNER_NAME_TOKEN.test(word))) return false;
+  return (
+    POSSESSIVE.test(names[names.length - 1]) ||
+    names.some((word) => nameParts(word).some((part) => ownerNamesPart(ownerTokens, part)))
+  );
+}
+
+const isBareContactOrLinkLabelLine = (line: string, ownerTokens: ReadonlySet<string>): boolean =>
+  BARE_CONTACT_OR_LINK_LABEL_LINE.test(
+    line
+      .replace(FILE_OR_DATE_NOTE, ' ')
+      .replace(BARE_LABEL_ORNAMENT, '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  ) || isCurriculumVitaeLinkLine(line, ownerTokens);
+
+const isLinkOrCaptionLine = (line: string): boolean =>
+  isSkipOrAccessibilityLine(line) || isListingNavigationLine(line) || isImageBylineLine(line);
+
+/**
+ * The line without a leading contact or link label such as "Curriculum Vitae:" or "Website:"
+ * (#6201), or nothing when what follows the label is short, a link or an email address. On a
+ * profile those labels sit beside the name and title, and once a recovered biography lifts
+ * the row over the floor they would ride along into the stored text; a template that puts a
+ * label before a blurb keeps the blurb.
+ */
+function withoutContactOrLinkLabel(
+  line: string,
+  ownerTokens: ReadonlySet<string> = new Set(),
+): string {
+  if (isBareContactOrLinkLabelLine(line, ownerTokens)) return '';
+  const credit = line.match(IMAGE_CREDIT_LABEL_LINE);
+  if (credit) {
+    const value = line.slice(credit[0].length).trim();
+    return ENDS_AS_A_SENTENCE.test(value) && wordCount(value) > MAX_DROPPED_LABEL_VALUE_WORDS
+      ? value
+      : '';
+  }
+  const label = line.match(CONTACT_OR_LINK_LABEL_LINE);
+  if (!label) return line;
+  const value = line.slice(label[0].length).trim();
+  return wordCount(value) <= MAX_DROPPED_LABEL_VALUE_WORDS || LINK_OR_EMAIL_VALUE.test(value)
+    ? ''
+    : value;
+}
+
+function statementTextOfLine(rawLine: string, ownerTokens: ReadonlySet<string>): string {
+  if (isLinkOrCaptionLine(rawLine)) return '';
+  const line = withoutContactOrLinkLabel(rawLine, ownerTokens);
+  if (wordCount(line) < MIN_LINE_WORDS || isContactLine(line)) return '';
+  return isPageTextCvRecord(line) ? withoutCurriculumVitaeSentences(line) : line;
+}
+
 const NON_CONTENT_ELEMENTS =
-  'script, style, noscript, svg, iframe, nav, header, footer, aside, form, button, address';
+  'script, style, noscript, svg, iframe, nav, footer, aside, form, button, address';
+
+const MAIN_CONTENT = 'main, article, [role="main"]';
+const MIN_HEADING_BLOCK_SUMMARY_WORDS = 12;
+
+const isPageHeadingBlock = ($: cheerio.CheerioAPI, header: AnyNode): boolean =>
+  $(header).attr('role') !== 'banner' &&
+  $(header).parents(MAIN_CONTENT).length > 0 &&
+  $(header).find('h1').length > 0;
+
+/**
+ * The prose a heading-block paragraph carries, held to the same rule as a recovered CV
+ * paragraph (#6201). A profile's heading block often puts its name, title, a skip link and
+ * "Website:" or "Curriculum Vitae:" labels in one paragraph split by line breaks, so each line
+ * is read on its own. When the paragraph has several lines, one that does not end as a sentence
+ * is a name, title or label. Only whole sentences passing that rule are kept, so a topical label
+ * such as "Research interests:" is not dropped as a label, but it stays only inside a line that
+ * ends as a sentence and only with a sentence of eight or more words.
+ */
+function headingBlockSummaryText(paragraph: AnyNode): string {
+  const lines = extractElementTextWithLineBreaks(paragraph)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines
+    .filter((line) => !isLinkOrCaptionLine(line))
+    .map((line) => withoutContactOrLinkLabel(line))
+    .filter((line) => line && (lines.length === 1 || ENDS_AS_A_SENTENCE.test(line)))
+    .flatMap((line) => splitDescriptionSentences(line))
+    .filter(isRecoverableResearchSentence)
+    .join(' ');
+}
+
+/**
+ * Removes every `header` except the summary paragraphs of the page's own heading block: the
+ * header in the main content that holds the page's `h1`, where a center or program page often
+ * states what it does (#6159). Its link labels, photo buttons and name line are still removed,
+ * and so are banners and the headers of teaser cards, which carry no `h1`.
+ */
+function removeHeadersKeepingPageSummary($: cheerio.CheerioAPI): void {
+  $('header').each((_index, header) => {
+    if (!isPageHeadingBlock($, header)) {
+      $(header).remove();
+      return;
+    }
+    const summary = $(header)
+      .find('p')
+      .toArray()
+      .filter((paragraph) => wordCount($(paragraph).text()) >= MIN_HEADING_BLOCK_SUMMARY_WORDS)
+      .map((paragraph) => headingBlockSummaryText(paragraph))
+      .filter(Boolean)
+      .map((text) => $.html($('<p></p>').text(text)))
+      .join('');
+    $(header).replaceWith(summary);
+  });
+}
 
 const DIV_SITE_MENU_SELECTORS: readonly string[] = [
   '[class*="navigation-panel"]',
@@ -96,6 +374,7 @@ function pageLinesWithHeadingMarks(html: string, pageUrl: string): string[] {
   const $ = cheerio.load(html);
   $(NON_CONTENT_ELEMENTS).remove();
   $(DIV_SITE_MENU_SELECTORS.join(', ')).remove();
+  removeHeadersKeepingPageSummary($);
   removeProfilePublicityRegions($);
   removeRelatedEntityTeaserCards($, pageUrl);
   $('h1, h2, h3, h4, h5, h6').each((_index, element) => {
@@ -126,12 +405,12 @@ function pageSections(lines: readonly string[]): PageSection[] {
 
 /**
  * The text of a page's research statement, read with code: the page body without site
- * chrome, navigation, footers, contact blocks, publicity regions and other units' teaser
- * cards, with the sections a heading names as publications, a bibliography, a CV or contact
+ * chrome, navigation, headers other than the page's own summary, footers, contact blocks, publicity regions and other
+ * units' teaser cards, with the sections a heading names as publications, a bibliography, a CV or contact
  * details left out, and the sections a heading names as research placed first so the cap
  * keeps them. News, people and teaching sections stay, because a lab often states its
  * subject there; only their publication, CV and contact lines are dropped, wherever they
- * sit. Every line is kept only once.
+ * sit, a flagged paragraph keeping its research sentences. Every line is kept only once.
  */
 export function researchStatementTextOfPage(html: string, pageUrl: string): string {
   if (!html) return '';
@@ -142,12 +421,14 @@ export function researchStatementTextOfPage(html: string, pageUrl: string): stri
     ...sections.filter((section) => section.kind === 'research'),
     ...sections.filter((section) => section.kind === 'neutral'),
   ];
+  const ownerTokens = pageOwnerTokens(pageUrl);
   const seen = new Set<string>();
   const kept: string[] = [];
   for (const line of ordered.flatMap((section) => section.lines)) {
-    if (!isStatementLine(line) || seen.has(line)) continue;
-    seen.add(line);
-    kept.push(line);
+    const statement = statementTextOfLine(line, ownerTokens);
+    if (!statement || seen.has(statement)) continue;
+    seen.add(statement);
+    kept.push(statement);
   }
   return kept.join('\n');
 }

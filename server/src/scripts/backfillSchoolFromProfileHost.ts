@@ -93,6 +93,7 @@ interface EntityRow {
   departments?: unknown;
   websiteUrl?: unknown;
   sourceUrls?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 export async function runSchoolProfileHostBackfill(options: {
@@ -112,7 +113,9 @@ export async function runSchoolProfileHostBackfill(options: {
   };
 
   const query = ResearchEntity.find(filter)
-    .select('_id slug name entityType school schools departments websiteUrl sourceUrls')
+    .select(
+      '_id slug name entityType school schools departments websiteUrl sourceUrls fieldValueRefusals',
+    )
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
   const entities = (await query.lean()) as EntityRow[];
@@ -131,6 +134,7 @@ export async function runSchoolProfileHostBackfill(options: {
           departments: entity.departments,
           websiteUrl: entity.websiteUrl,
           sourceUrls: entity.sourceUrls,
+          fieldValueRefusals: entity.fieldValueRefusals,
         },
         observedAt,
       ),

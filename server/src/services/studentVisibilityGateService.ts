@@ -278,7 +278,6 @@ export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'profile_biography_shell',
   'research_infrastructure_only',
 ]);
-export const REVIEW_EXCEPTION_REPAIR_REASONS: ReadonlySet<string> = new Set(['formalization_only']);
 // Every field the tier computation reads must be listed here. A field the
 // computation consults but the projection omits arrives as `undefined`, so the
 // branch depending on it silently never fires and the gate reports a clean
@@ -372,8 +371,6 @@ export async function researchEntityIdsWithGateAttachedLead(
 }
 
 export const repairStageForReasons = (reasons: string[]) => {
-  if (reasons.some((reason) => REVIEW_EXCEPTION_REPAIR_REASONS.has(reason)))
-    return 'review_exception';
   if (reasons.includes('exact_url_duplicate_risk')) return 'suppression';
   if (reasons.includes('generic_directory_shell')) return 'suppression';
   if (reasons.includes('profile_biography_shell')) return 'suppression';
@@ -391,8 +388,8 @@ export const repairStageForReasons = (reasons: string[]) => {
 // `startsWith('missing_')` rule would otherwise sweep in. The single source of
 // truth is STUDENT_READY_HARD_BLOCKER_REASONS / STUDENT_READY_SOFT_SIGNAL_REASONS
 // in studentVisibilityTier.ts. The residual `_only` clause keeps
-// review-exception reasons (formalization_only, application_source_only,
-// profile_fallback_only) blocking without enumerating each here.
+// review-exception reasons (application_source_only, profile_fallback_only)
+// blocking without enumerating each here.
 export function isBlockingVisibilityReason(reason: string): boolean {
   if (isStudentVisibilitySignalReason(reason)) return false;
   if (isStudentReadyHardBlockerReason(reason)) return true;

@@ -13,6 +13,7 @@ import {
 } from './runScraperSweep';
 import { RENDER_CRON_RUN_LIMIT_MS } from './weeklyDevelopmentSweepCore';
 import { formatDuration, type StoredWeeklySweepRun } from './weeklySweepRunsReportCore';
+import { effectiveObservationCount } from '../scrapers/effectiveObservationCount';
 
 export const SWEEP_RENDER_SERVICE_ID = 'crn-db0sddk9v7es73cqui20';
 export const SWEEP_DATABASE_ROLE = 'ylabs-sweep-dev';
@@ -325,6 +326,7 @@ export interface ScrapeRunCounts {
   finishedAt?: Date | string;
   codeSha?: string;
   observationCount?: number;
+  storedObservationCountAtReconcile?: number;
   entitiesCreated?: number;
   entitiesUpdated?: number;
   entitiesArchived?: number;
@@ -371,16 +373,16 @@ export function compareRerunWithBaseline(input: {
   if (!current) {
     return result('missing', ['no scrape_runs row was written by this rerun']);
   }
-  const summary = `run ${String(current._id ?? '?')} ${current.status ?? 'unknown'}, code ${current.codeSha?.slice(0, 9) ?? 'unknown'}, ${countOf(current.observationCount)} observations, ${countOf(current.entitiesCreated)} created / ${countOf(current.entitiesUpdated)} updated / ${countOf(current.entitiesArchived)} archived, ${countOf(current.materializationErrors)} materialization errors`;
+  const summary = `run ${String(current._id ?? '?')} ${current.status ?? 'unknown'}, code ${current.codeSha?.slice(0, 9) ?? 'unknown'}, ${effectiveObservationCount(current)} observations, ${countOf(current.entitiesCreated)} created / ${countOf(current.entitiesUpdated)} updated / ${countOf(current.entitiesArchived)} archived, ${countOf(current.materializationErrors)} materialization errors`;
   if (current.status !== 'success') return result('failed', [summary]);
-  if (countOf(current.observationCount) === 0) {
+  if (effectiveObservationCount(current) === 0) {
     return result('produced-nothing', [summary, 'producedNothing: the run wrote no observations']);
   }
   if (!baseline) {
     return result('no-baseline', [summary, 'no earlier comparable successful run to compare with']);
   }
   const deltas: Array<[string, number, number]> = [
-    ['observations', countOf(baseline.observationCount), countOf(current.observationCount)],
+    ['observations', effectiveObservationCount(baseline), effectiveObservationCount(current)],
     ['entities updated', countOf(baseline.entitiesUpdated), countOf(current.entitiesUpdated)],
   ];
   const lines = [

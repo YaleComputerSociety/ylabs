@@ -75,6 +75,7 @@ import {
   type RosterOwnerKeyRowLoader,
 } from '../rosterOwnerKeyRows';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { isPersonNamePostNominalToken } from '../../utils/personNameHygiene';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type {
@@ -84,6 +85,7 @@ import type {
   ObservationInput,
   ScraperFetchMetric,
 } from '../types';
+import type { ObservationRefusedValue } from '../observationRefusals';
 import {
   isLikelyPersonSpecificYaleEmail,
   isRoleOrUnitMailbox,
@@ -140,7 +142,21 @@ import {
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
 import { isTruncatedPersonTitle } from '../../utils/titleHygiene';
-import { orgUnitMatchKey } from '../orgUnitCanonicalization';
+import {
+  getOrgUnitCanonicalizer,
+  orgUnitMatchKey,
+  type OrgUnitCanonicalizer,
+} from '../orgUnitCanonicalization';
+import {
+  silentRosterPagesAssertingHome,
+  silentRosterPagesNote,
+  type RosterTitleTally,
+} from '../silentRosterDirectories';
+import {
+  rosterHomeDepartmentStatement,
+  rosterTitleSectionParenthetical,
+  type RosterTitleUnit,
+} from '../rosterHomeDepartmentStatement';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
   ROSTER_LANE_FAILED_READ_STATUSES,
@@ -171,7 +187,6 @@ import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKe
 import { isLabDirectoryListingUrl } from '../laneRefusedWebsiteUrl';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 
 /**
@@ -304,6 +319,27 @@ const ROSTER_SYNTHESIZED_DESCRIPTION_CONFIDENCE = 0.5;
 const ROSTER_PROFILE_DESCRIPTION_CONFIDENCE = 0.55;
 const STATED_LAB_NAME_CONFIDENCE = 0.8;
 
+export const ROSTER_LAB_WEBSITE_CLASSIFIER = 'dept-faculty-roster-lab-website';
+// Bump when a change to the profile lab-link rules refuses links an earlier version admitted, so
+// field retraction can tell this read's refusal from the older read that asserted the link (#5803).
+export const ROSTER_LAB_WEBSITE_CLASSIFIER_VERSION = 1;
+
+export type LabUrlRefusalReason =
+  | 'publicity_region_link'
+  | 'path_word_without_website_signal'
+  | 'national_laboratory'
+  | 'institutional_advancement'
+  | 'map_or_publicity_page'
+  | 'posting_course_care_or_listing_page'
+  | 'own_site_directory_page'
+  | 'offsite_person_profile'
+  | 'generic_lab_directory';
+
+export interface LabUrlRefusal {
+  url: string;
+  reason: LabUrlRefusalReason;
+}
+
 /** Minimal structured row produced by every per-department extractor. */
 export interface FacultyEntry {
   name: string;
@@ -363,6 +399,8 @@ export interface FacultyEntry {
    * `departmentRosterLabSlotAttestation.test.ts` enforces by scanning this file.
    */
   labSlotAttestation?: 'empty' | 'refused';
+  /** The candidate lab links the profile read saw and declined, each with the rule that declined it (#5803). */
+  labUrlRefusals?: LabUrlRefusal[];
   /**
    * Set when the profile presented `labUrl` as its own labelled website button, with the
    * title of the lab card the button sits in (#5819).
@@ -450,6 +488,24 @@ export interface DeptConfig {
    * the person's real department is left to resolve from a better source.
    */
   affiliatesOnly?: boolean;
+  /**
+   * When true, `deptName` names a center or program the catalog does not hold as a department
+   * (Stem Cell Center, West Campus Institutes, the Physician Associate Program), or a catalog
+   * department whose page states no one's appointment (`namesCatalogDepartment`), so the person's
+   * `primaryDepartment` is withheld and nothing else changes: membership, the `departments`
+   * label, the roster-health snapshot, withdrawn keys and roster-bio minting read the lane
+   * exactly as before (#6071). Narrower than `affiliatesOnly`, which also withholds the label
+   * and roster-bio minting, and than `crossListedProgramme`, which rank-gates rows and
+   * publishes no snapshot.
+   */
+  withholdsHomeDepartment?: boolean;
+  /**
+   * Set beside `withholdsHomeDepartment` when `deptName` is a catalog department whose page
+   * withholds only because it states no one's appointment (#6299). The name stays in the title
+   * vocabulary, so a title on another roster that names it first still withholds that roster's
+   * department.
+   */
+  namesCatalogDepartment?: boolean;
   /**
    * When true, this page is a school's own whole-faculty directory rather than a
    * department roster, so `deptName` names the school and there is no department
@@ -2203,6 +2259,8 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://filmstudies.yale.edu/people/faculty',
     paginated: false,
     extractor: viewsTableRowExtractor,
+    withholdsHomeDepartment: true,
+    namesCatalogDepartment: true,
   },
   {
     deptKey: 'spanish-portuguese',
@@ -2390,6 +2448,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: profileGridItemExtractor,
     officialProfileOnly: true,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'physician-associate-program',
@@ -2398,6 +2457,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://medicine.yale.edu/pa/profession/meet-the-team/',
     paginated: false,
     extractor: profileGridItemExtractor,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'som',
@@ -2482,6 +2542,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://westcampus.yale.edu/about-us/faculty',
     paginated: false,
     extractor: referenceCardExtractor,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'art',
@@ -2907,6 +2968,8 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://applied.math.yale.edu/people/faculty',
     paginated: false,
     extractor: viewsTableRowExtractor,
+    withholdsHomeDepartment: true,
+    namesCatalogDepartment: true,
   },
   {
     deptKey: 'history-science-medicine-public-health',
@@ -2915,6 +2978,8 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://hshm.yale.edu/people/faculty',
     paginated: false,
     extractor: viewsTableRowExtractor,
+    withholdsHomeDepartment: true,
+    namesCatalogDepartment: true,
   },
   {
     deptKey: 'judaic-studies',
@@ -3513,7 +3578,6 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -3545,7 +3609,6 @@ async function fetchDeptData(
     axios.post(safeDataUrlText, body, {
       timeout: FETCH_TIMEOUT_MS,
       headers: {
-        'User-Agent': USER_AGENT,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       maxRedirects: 5,
@@ -3576,6 +3639,7 @@ export function profileEnrichmentFromHtml(
     | 'emailSlotAttestation'
     | 'labUrl'
     | 'labSlotAttestation'
+    | 'labUrlRefusals'
     | 'labWebsiteButton'
     | 'title'
     | 'orcid'
@@ -3608,6 +3672,11 @@ export function profileEnrichmentFromHtml(
   // path whose label names something else (#5819), so only a page that offered no
   // candidate leaves the slot claimable as empty (#3135).
   let labUrlCandidateRefused = false;
+  const labUrlRefusals: LabUrlRefusal[] = [];
+  const refuseCandidate = (url: string | undefined, reason: LabUrlRefusalReason) => {
+    labUrlCandidateRefused = true;
+    if (url) labUrlRefusals.push({ url, reason });
+  };
   const scholarCandidateProfileUrls: string[] = [];
   const profileHost = (() => {
     try {
@@ -3626,7 +3695,11 @@ export function profileEnrichmentFromHtml(
     // carries, so declining it is a refusal rather than an empty slot (#5819, #3135).
     if (isInProfilePublicityRegion(link) && !isProfileWebsiteButton(link)) {
       if (isInProfileRelatedLinksList(link) && WEBSITE_SIGNAL.test(link.text())) {
-        labUrlCandidateRefused = true;
+        const relatedHref = link.attr('href') || '';
+        refuseCandidate(
+          relatedHref ? absolutize(relatedHref, profileUrl) : undefined,
+          'publicity_region_link',
+        );
       }
       return;
     }
@@ -3673,22 +3746,22 @@ export function profileEnrichmentFromHtml(
       (WEBSITE_SIGNAL.test(parsed.pathname) && pathNamesALab(parsed.pathname)) ||
       (linkTextDescribesNothing(text) && pathNamesAWebsite);
     if (!hasWebsiteSignal) {
-      if (pathNamesAWebsite) labUrlCandidateRefused = true;
+      if (pathNamesAWebsite) refuseCandidate(absolute, 'path_word_without_website_signal');
       return;
     }
     if (NATIONAL_LABORATORY_TEXT.test(`${text} ${aria} ${titleAttr}`)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'national_laboratory');
       return;
     }
     if (isInstitutionalAdvancementUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'institutional_advancement');
       return;
     }
     // The signal is exactly what a Locations card's `aria-label="Get <Name> Lab
     // directions"` spells, so this destination has to be judged on its own shape
     // rather than on the words the page wraps it in (#3184).
     if (isMapOrDirectionsUrl(absolute) || isInstitutionalPublicityPageUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'map_or_publicity_page');
       return;
     }
     if (
@@ -3697,7 +3770,7 @@ export function profileEnrichmentFromHtml(
       isPatientCarePageUrl(absolute) ||
       isLabDirectoryListingUrl(absolute)
     ) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'posting_course_care_or_listing_page');
       return;
     }
 
@@ -3705,16 +3778,16 @@ export function profileEnrichmentFromHtml(
     const isProfileSite = profileHost && candidateHost === profileHost;
     const isDirectoryPath = /\/(people|person|profile|faculty|directory)\//i.test(parsed.pathname);
     if (isProfileSite && isDirectoryPath) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'own_site_directory_page');
       return;
     }
     if (isOffsiteInstitutionPersonProfileUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'offsite_person_profile');
       return;
     }
 
     if (isGenericLabDirectoryUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'generic_lab_directory');
       return;
     }
     labUrl = absolute;
@@ -3748,6 +3821,7 @@ export function profileEnrichmentFromHtml(
     title,
     labUrl,
     ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
+    ...(labUrlRefusals.length > 0 ? { labUrlRefusals } : {}),
     ...(labWebsiteButton ? { labWebsiteButton } : {}),
     orcid: declaredName ? subjectProfileOrcid($, declaredName) : undefined,
     ...(declaredName && subjectProfileStatesNoOrcid($, declaredName)
@@ -3820,7 +3894,46 @@ function mergedEmailSlotAttestation(
   return enrichment.emailSlotAttestation === 'empty' ? 'empty' : undefined;
 }
 
-function mergeProfileEnrichment(
+/**
+ * The links this read declined, as field-retraction refusals of `websiteUrl` (#5803). A link the
+ * read went on to assert is never also refused. When the read is filed under a page other than
+ * the one an admitted link is filed under (a lab-less read is filed under the profile, an
+ * admitted link under the roster listing), the refusal names that listing page as
+ * `assertedUnder`, which retraction honours only if the same run read it.
+ */
+export function rosterLabUrlRefusedValues(
+  refusals: readonly LabUrlRefusal[] | undefined,
+  assertedLabUrl: string | undefined,
+  pages: { witnessPage: string; admittedLinkPage: string },
+): ObservationRefusedValue[] {
+  const asserted = assertedLabUrl ? normalizeUrlForDedupe(assertedLabUrl) : '';
+  const assertedUnder =
+    pages.admittedLinkPage && pages.admittedLinkPage !== pages.witnessPage
+      ? pages.admittedLinkPage
+      : undefined;
+  return (refusals ?? [])
+    .filter((refusal) => normalizeUrlForDedupe(refusal.url) !== asserted)
+    .map((refusal) => ({
+      field: 'websiteUrl',
+      value: refusal.url,
+      reason: refusal.reason,
+      classifier: ROSTER_LAB_WEBSITE_CLASSIFIER,
+      classifierVersion: ROSTER_LAB_WEBSITE_CLASSIFIER_VERSION,
+      ...(assertedUnder ? { assertedUnder } : {}),
+    }));
+}
+
+function mergedLabUrlRefusals(
+  ...lists: Array<readonly LabUrlRefusal[] | undefined>
+): LabUrlRefusal[] | undefined {
+  const byUrl = new Map<string, LabUrlRefusal>();
+  for (const refusal of lists.flatMap((list) => list ?? [])) {
+    if (!byUrl.has(refusal.url)) byUrl.set(refusal.url, refusal);
+  }
+  return byUrl.size > 0 ? [...byUrl.values()] : undefined;
+}
+
+export function mergeProfileEnrichment(
   entry: FacultyEntry,
   enrichment: Partial<
     Pick<
@@ -3831,6 +3944,7 @@ function mergeProfileEnrichment(
       | 'emailSlotAttestation'
       | 'labUrl'
       | 'labSlotAttestation'
+      | 'labUrlRefusals'
       | 'labWebsiteButton'
       | 'title'
       | 'orcid'
@@ -3870,6 +3984,7 @@ function mergeProfileEnrichment(
         ? enrichment.labWebsiteButton
         : entry.labWebsiteButton,
     labSlotAttestation: mergedLabSlotAttestation(entry, enrichment),
+    labUrlRefusals: mergedLabUrlRefusals(entry.labUrlRefusals, enrichment.labUrlRefusals),
     orcid: entry.orcid || enrichment.orcid,
     orcidSlotAttestation:
       entry.orcid || enrichment.orcid ? undefined : enrichment.orcidSlotAttestation,
@@ -4389,13 +4504,36 @@ export function rosterAbsenceClaims(entry: FacultyEntry): string[] {
   ];
 }
 
+export const assertsHomeDepartment = (dept: DeptConfig): boolean =>
+  !dept.affiliatesOnly &&
+  !dept.schoolWideDirectory &&
+  !dept.crossListedProgramme &&
+  !dept.withholdsHomeDepartment;
+
+/** The department names a roster title can name, so a title naming another one first is read. */
+export function rosterDepartmentVocabulary(configs: Iterable<DeptConfig>): Set<string> {
+  const names = new Set<string>();
+  for (const config of [...DEFAULT_DEPT_CONFIGS, ...configs]) {
+    if (assertsHomeDepartment(config) || config.namesCatalogDepartment) {
+      names.add(config.deptName);
+    }
+  }
+  return names;
+}
+
+export interface RosterHomeDepartmentContext {
+  departmentNames: Iterable<string>;
+  classifyUnit?: (parenthetical: string) => RosterTitleUnit;
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
   sourceUrl: string,
+  homeDepartment?: RosterHomeDepartmentContext,
 ): { observations: ObservationInput[]; entityKey: string } {
   const cleaned = normalizeRosterName(entry.name);
-  const { first, last } = splitName(cleaned);
+  const { first, last } = splitName(withoutTrailingPostNominals(cleaned));
   const personEmail =
     isLikelyPersonSpecificYaleEmail(entry.email, cleaned) &&
     !isRoleOrUnitMailbox(entry.email, rosterUnitMailboxTokens(entry, dept, sourceUrl))
@@ -4428,8 +4566,16 @@ function entryToUserObservations(
     });
   }
   if (!dept.affiliatesOnly && !dept.schoolWideDirectory) {
-    if (!dept.crossListedProgramme) {
-      obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
+    if (!dept.crossListedProgramme && !dept.withholdsHomeDepartment) {
+      const statement = rosterHomeDepartmentStatement({
+        deptName: dept.deptName,
+        title: entry.title,
+        departmentNames: homeDepartment?.departmentNames ?? rosterDepartmentVocabulary([dept]),
+        classifyUnit: homeDepartment?.classifyUnit,
+      });
+      if (statement.kind === 'assert') {
+        obs.push({ ...rosterBase, field: 'primaryDepartment', value: statement.value });
+      }
     }
     obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
   }
@@ -4709,6 +4855,35 @@ function rosterListedName(listed: string): Pick<FacultyEntry, 'name' | 'nameAsLi
 const writtenAsACredential = (word: string): boolean =>
   /\./.test(word) || /[a-z][A-Z]/.test(word) || (word.length > 1 && word === word.toUpperCase());
 
+const NAME_TOKENS_LEFT_AFTER_A_POST_NOMINAL = 2;
+
+const writtenWithACredentialCapital = (word: string): boolean =>
+  /\./.test(word) || /.\p{Lu}/u.test(word) || (word.length > 1 && word === word.toUpperCase());
+
+const isWrittenPostNominal = (word: string): boolean =>
+  (isDegreeToken(word) || isPersonNamePostNominalToken(word)) &&
+  writtenWithACredentialCapital(word);
+
+/**
+ * A name with its trailing degrees removed when no comma sets them off ("<given> <surname>
+ * MD PhD"), which the comma-run rules cannot see and `splitName` would read as the surname
+ * (#6035). Only the name observations read it, so the person key and the row slug, both
+ * minted from the normalized name, keep their continuity. A shouty all-caps name, or one
+ * that would be left with fewer than a given name and a surname, keeps every token.
+ */
+export function withoutTrailingPostNominals(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  const bare = (word: string) => word.replace(/[,;]+$/, '');
+  while (
+    words.length > NAME_TOKENS_LEFT_AFTER_A_POST_NOMINAL &&
+    /[a-z]/.test(words.slice(0, -1).join(' ')) &&
+    isWrittenPostNominal(bare(words[words.length - 1]))
+  ) {
+    words.pop();
+  }
+  return words.join(' ').replace(/[,;]+$/, '');
+}
+
 /**
  * A roster entry whose given-name position holds a credential ("PhD <surname>") names no
  * person, so the lane mints no person and no research row from it (#5969). A given name
@@ -4822,6 +4997,10 @@ function entryToResearchEntityObservationsUnscreened(
   // Only a positively attested empty slot is an absence. A refusal, and silence from
   // a parse that never looked, both leave the claim unmade (#3135, #2647).
   const labSlotIsEmpty = !entry.labUrl && entry.labSlotAttestation === 'empty';
+  const refusedValues = rosterLabUrlRefusedValues(entry.labUrlRefusals, labUrl, {
+    witnessPage: base.sourceUrl,
+    admittedLinkPage: sourceUrl,
+  });
 
   const observations: ObservationInput[] = [
     {
@@ -4829,6 +5008,7 @@ function entryToResearchEntityObservationsUnscreened(
       field: 'slug',
       value: slug,
       ...(labSlotIsEmpty ? { assertsNoValueFor: ['websiteUrl'] } : {}),
+      ...(refusedValues.length > 0 ? { refusedValues } : {}),
     },
     ...identityObservations,
     ...(dept.crossListedProgramme
@@ -4837,7 +5017,21 @@ function entryToResearchEntityObservationsUnscreened(
     ...(dept.affiliatesOnly || dept.schoolWideDirectory
       ? []
       : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
-    ...(labUrl ? [{ ...base, field: 'websiteUrl' as const, value: labUrl }] : []),
+    ...(labUrl
+      ? [
+          {
+            ...base,
+            field: 'websiteUrl' as const,
+            value: labUrl,
+            admittedUnder: [
+              {
+                classifier: ROSTER_LAB_WEBSITE_CLASSIFIER,
+                version: ROSTER_LAB_WEBSITE_CLASSIFIER_VERSION,
+              },
+            ],
+          },
+        ]
+      : []),
     {
       ...base,
       field: 'sourceUrls',
@@ -4905,7 +5099,41 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly rosterOwnerKeyRowLoader?: RosterOwnerKeyRowLoader,
     private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
     private readonly legacyKeyRowLoader: LegacyKeyRowLoader = loadLegacyKeyRows,
+    private readonly orgUnitCanonicalizerLoader: () => Promise<OrgUnitCanonicalizer> = getOrgUnitCanonicalizer,
   ) {}
+
+  private orgUnitCanonicalizer?: Promise<OrgUnitCanonicalizer | undefined>;
+
+  private departmentVocabulary?: Set<string>;
+
+  /**
+   * The context the home-department emit reads. The catalog is loaded only for a title that
+   * attaches a parenthetical to the roster's department, so a run with no such title never reads it.
+   */
+  private async homeDepartmentContext(
+    entry: FacultyEntry,
+    dept: DeptConfig,
+  ): Promise<RosterHomeDepartmentContext> {
+    this.departmentVocabulary ??= rosterDepartmentVocabulary(this.configs);
+    const departmentNames = this.departmentVocabulary;
+    if (!rosterTitleSectionParenthetical(entry.title, dept.deptName)) return { departmentNames };
+    this.orgUnitCanonicalizer ??= this.orgUnitCanonicalizerLoader().catch(() => undefined);
+    const canonicalizer = await this.orgUnitCanonicalizer;
+    if (!canonicalizer) return { departmentNames };
+    const parent = canonicalizer.canonicalizeDepartments(dept.deptName).values[0] ?? dept.deptName;
+    return {
+      departmentNames,
+      classifyUnit: (parenthetical) => {
+        const { values, unmatched } = canonicalizer.canonicalizeDepartments(parenthetical);
+        const units = values.filter((value) => !unmatched.includes(value));
+        const section = units.find((value) =>
+          canonicalizer.parentDepartmentsFor(value).includes(parent),
+        );
+        if (section) return { kind: 'section', value: section };
+        return units.length ? { kind: 'other-unit' } : { kind: 'not-a-unit' };
+      },
+    };
+  }
 
   private loadRosterOwnerKeyRows(): ReturnType<RosterOwnerKeyRowLoader> {
     if (this.rosterOwnerKeyRowLoader) return this.rosterOwnerKeyRowLoader();
@@ -5001,6 +5229,7 @@ export class DepartmentRosterScraper implements IScraper {
     let coLedSitesRead: Promise<CoLedSiteIndex> | undefined;
     const coLedSiteIndex = () => (coLedSitesRead ??= this.coLedSiteIndexLoader());
     let attachedToExistingRow = 0;
+    const titleTallies = new Map<string, RosterTitleTally>();
     let adoptedLegacyKeys = 0;
     let refusedLegacyKeys = 0;
     const processEntries = async (
@@ -5099,8 +5328,22 @@ export class DepartmentRosterScraper implements IScraper {
         }
         const currentSlug = rosterResearchEntitySlug(entry, dept);
         const legacySlug = legacyRosterResearchEntitySlug(entry, dept);
+        const tally = titleTallies.get(dept.deptKey) ?? {
+          deptKey: dept.deptKey,
+          assertsHomeDepartment: assertsHomeDepartment(dept),
+          entries: 0,
+          untitled: 0,
+        };
+        tally.entries += 1;
+        if (!entry.title?.trim()) tally.untitled += 1;
+        titleTallies.set(dept.deptKey, tally);
         const { observations: currentUserObs, entityKey: currentOwnerKey } =
-          entryToUserObservations(entry, dept, sourceUrl);
+          entryToUserObservations(
+            entry,
+            dept,
+            sourceUrl,
+            await this.homeDepartmentContext(entry, dept),
+          );
         const legacyOwnerKey = legacyRosterOwnerKey(currentOwnerKey, entry, dept);
         const adoption = decideLegacyKeyAdoption({
           currentSlug,
@@ -5586,6 +5829,10 @@ export class DepartmentRosterScraper implements IScraper {
           .join(', ')}`,
       );
     }
+    const silentPagesNote = silentRosterPagesNote(
+      silentRosterPagesAssertingHome([...titleTallies.values()]),
+    );
+    if (silentPagesNote) ctx.log(silentPagesNote);
     const partialSources = perDept.filter((d) => d.status === 'partial-read');
     if (partialSources.length > 0) {
       ctx.log(

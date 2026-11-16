@@ -9,11 +9,17 @@ import { ResearchEntity } from '../models/researchEntity';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   isAdoptableProbe,
+  originalProbeKeepReason,
   planLegacyPersonPageCandidates,
   type LegacyPersonPageCandidate,
 } from './repairLegacyPersonPageUrlsCore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
+import {
+  removalConfirmation,
+  type StoredRemovalVerdict,
+} from '../services/sourceLinkRemovalConfirmation';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -60,7 +66,6 @@ export async function probe(url: string): Promise<{ status: number; title: strin
   try {
     const response = await fetchPublicHttpUrl(url, {
       timeoutMs: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': 'ylabs-link-repair/1.0 (+internal link verification)' },
     });
     const ok = response.status >= 200 && response.status < 300;
     const body = ok ? response.body.slice(0, 4000) : '';
@@ -85,11 +90,14 @@ export async function loadPlannedRepairs(): Promise<PlannedRepair[]> {
     .lean();
 
   const verdicts = new Map<string, 'dead' | 'healthy'>();
+  const storedGoneVerdicts = new Map<string, StoredRemovalVerdict>();
   for (const entity of entities as any[]) {
     for (const health of entity.sourceLinkHealth || []) {
       if (typeof health?.url !== 'string') continue;
-      if (health.healthStatus === 'UNAVAILABLE') verdicts.set(health.url, 'dead');
-      else if (health.healthStatus === 'HEALTHY' && !verdicts.has(health.url)) {
+      if (health.healthStatus === 'UNAVAILABLE') {
+        verdicts.set(health.url, 'dead');
+        storedGoneVerdicts.set(health.url, health);
+      } else if (health.healthStatus === 'HEALTHY' && !verdicts.has(health.url)) {
         verdicts.set(health.url, 'healthy');
       }
     }
@@ -104,24 +112,28 @@ export async function loadPlannedRepairs(): Promise<PlannedRepair[]> {
 
   const planned: PlannedRepair[] = [];
   for (const candidate of candidates) {
-    // An unverified original must be confirmed dead before its citation is
-    // replaced: these hosts serve both prefixes, so many legacy URLs still work.
-    let originalStatus: number | undefined;
-    if (candidate.originalHealth === 'unverified') {
-      const original = await probe(candidate.deadUrl);
-      await sleep(FETCH_DELAY_MS);
-      originalStatus = original.status;
-      if (original.status >= 200 && original.status < 400) {
-        planned.push({
-          ...candidate,
-          originalStatus,
-          probeStatus: 0,
-          probeTitle: '',
-          adopted: false,
-          skippedReason: 'original still resolves',
-        });
-        continue;
-      }
+    // Every original is probed, a stored dead verdict included: these hosts serve both
+    // prefixes, so many legacy URLs still work, and a stored verdict alone is one
+    // observation rather than the two a removal needs.
+    const original = await probe(candidate.deadUrl);
+    await sleep(FETCH_DELAY_MS);
+    const originalStatus = original.status;
+    const storedVerdictAgrees = removalConfirmation(
+      storedGoneVerdicts.get(candidate.deadUrl),
+      { healthStatus: 'UNAVAILABLE', httpStatusCode: originalStatus },
+      new Date(),
+    ).confirmed;
+    const keepReason = originalProbeKeepReason(originalStatus, storedVerdictAgrees);
+    if (keepReason) {
+      planned.push({
+        ...candidate,
+        originalStatus,
+        probeStatus: 0,
+        probeTitle: '',
+        adopted: false,
+        skippedReason: keepReason,
+      });
+      continue;
     }
     const result = await probe(candidate.candidateUrl);
     await sleep(FETCH_DELAY_MS);
@@ -179,6 +191,7 @@ async function applyRepairs(planned: PlannedRepair[]): Promise<{
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
     apply: args.apply,
@@ -214,7 +227,15 @@ async function main() {
     candidates: planned.length,
     adopted: adopted.length,
     refusedByTitleGate: refused.filter((entry) => !entry.skippedReason).length,
-    skippedOriginalStillResolves: refused.filter((entry) => entry.skippedReason).length,
+    skippedOriginalStillResolves: refused.filter(
+      (entry) => entry.skippedReason === 'original still resolves',
+    ).length,
+    skippedOriginalNotConfirmedGone: refused.filter(
+      (entry) => entry.skippedReason === 'original not confirmed gone',
+    ).length,
+    skippedOriginalAwaitingConfirmation: refused.filter(
+      (entry) => entry.skippedReason === 'original awaiting confirmation',
+    ).length,
     plannedFromUnverifiedOriginal: planned.filter((e) => e.originalHealth === 'unverified').length,
     adoptedServedRows: new Set(
       adopted.filter((e) => e.studentVisibilityTier === 'student_ready').map((e) => e.entitySlug),

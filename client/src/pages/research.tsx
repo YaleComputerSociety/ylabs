@@ -57,6 +57,7 @@ import {
 } from '../types/researchEntity';
 import type {
   ResearchSearchAcronymRewrite,
+  ResearchSearchTopicRewrite,
   ResearchSearchFewCloseMatches,
   ResearchSearchQueryCorrection,
 } from '../types/researchGroup';
@@ -138,6 +139,42 @@ const readSearchParamList = <T extends string>(
     });
 };
 
+// A "Search instead for" choice rides in the URL so a reload or a shared link keeps
+// searching what was typed instead of re-applying the rewrite the student declined.
+const LITERAL_SEARCH_PARAM = 'literal';
+
+type LiteralSearchChoices = Pick<
+  ResearchEntitySearchOptions,
+  'exactSpelling' | 'literalAcronym' | 'literalTopic'
+>;
+
+const LITERAL_SEARCH_PARAM_VALUES = [
+  ['spelling', 'exactSpelling'],
+  ['acronym', 'literalAcronym'],
+  ['topic', 'literalTopic'],
+] as const;
+
+const readLiteralSearchParam = (params: URLSearchParams): LiteralSearchChoices => {
+  const chosen = new Set(
+    readSearchParamList(
+      params,
+      LITERAL_SEARCH_PARAM,
+      LITERAL_SEARCH_PARAM_VALUES.map(([value]) => value),
+    ),
+  );
+  return Object.fromEntries(
+    LITERAL_SEARCH_PARAM_VALUES.filter(([value]) => chosen.has(value)).map(([, option]) => [
+      option,
+      true,
+    ]),
+  );
+};
+
+const literalSearchParamValue = (choices: LiteralSearchChoices | undefined): string =>
+  LITERAL_SEARCH_PARAM_VALUES.filter(([, option]) => choices?.[option] === true)
+    .map(([value]) => value)
+    .join(',');
+
 const HOSTS_UNDERGRADS_PARAM = 'undergrad';
 
 const readHostsUndergradsParam = (params: URLSearchParams): boolean =>
@@ -184,6 +221,7 @@ interface ResearchEntitySearchPage {
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
   acronymRewrite?: ResearchSearchAcronymRewrite;
+  topicRewrite?: ResearchSearchTopicRewrite;
   fewCloseMatches?: ResearchSearchFewCloseMatches;
   appliedFilters?: ResearchEntitySearchResponse['appliedFilters'];
   moreTopicResults?: ResearchEntity[];
@@ -265,6 +303,7 @@ interface ResearchPageSnapshot {
   defaultSearchDegraded: boolean;
   queryCorrection: ResearchSearchQueryCorrection | null;
   acronymRewrite: ResearchSearchAcronymRewrite | null;
+  topicRewrite: ResearchSearchTopicRewrite | null;
   fewCloseMatches: ResearchSearchFewCloseMatches | null;
 }
 
@@ -280,6 +319,7 @@ interface ResearchEntitySearchOptions {
   suggestionProbe?: boolean;
   exactSpelling?: boolean;
   literalAcronym?: boolean;
+  literalTopic?: boolean;
   exactFilterValues?: boolean;
 }
 
@@ -318,6 +358,7 @@ const searchResearchEntities = async (
       ...(options.suggestionProbe ? { suggestionProbe: true } : {}),
       ...(options.exactSpelling ? { correctSpelling: false } : {}),
       ...(options.literalAcronym ? { rewriteAcronym: false } : {}),
+      ...(options.literalTopic ? { extractSentenceTopic: false } : {}),
       ...(options.exactFilterValues ? { resolveFilterValues: false } : {}),
     },
     { signal },
@@ -333,6 +374,7 @@ const searchResearchEntities = async (
     degraded: normalized.degraded === true,
     queryCorrection: normalized.queryCorrection,
     acronymRewrite: normalized.acronymRewrite,
+    topicRewrite: normalized.topicRewrite,
     fewCloseMatches: normalized.fewCloseMatches,
     appliedFilters: normalized.appliedFilters,
     moreTopicResults: normalized.moreTopicResults,
@@ -626,6 +668,9 @@ const Research = () => {
   const [acronymRewrite, setAcronymRewrite] = useState<ResearchSearchAcronymRewrite | null>(
     () => restoredSnapshot?.acronymRewrite ?? null,
   );
+  const [topicRewrite, setTopicRewrite] = useState<ResearchSearchTopicRewrite | null>(
+    () => restoredSnapshot?.topicRewrite ?? null,
+  );
   const [fewCloseMatches, setFewCloseMatches] = useState<ResearchSearchFewCloseMatches | null>(
     () => restoredSnapshot?.fewCloseMatches ?? null,
   );
@@ -707,6 +752,7 @@ const Research = () => {
       hostsUndergrads?: boolean;
       welcomesUndergrads?: boolean;
       mentorsUndergrads?: boolean;
+      literal?: LiteralSearchChoices;
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -721,6 +767,8 @@ const Research = () => {
     if (nextState.hostsUndergrads) params.set(HOSTS_UNDERGRADS_PARAM, '1');
     if (nextState.welcomesUndergrads) params.set(WELCOMES_UNDERGRADS_PARAM, '1');
     if (nextState.mentorsUndergrads) params.set(MENTORS_UNDERGRADS_PARAM, '1');
+    const literal = nextQuery ? literalSearchParamValue(nextState.literal) : '';
+    if (literal) params.set(LITERAL_SEARCH_PARAM, literal);
 
     if (isAdmin) {
       if (nextState.showWeakest) params.set('weak', '1');
@@ -835,6 +883,7 @@ const Research = () => {
       preserveDraftQuery?: boolean;
       exactSpelling?: boolean;
       literalAcronym?: boolean;
+      literalTopic?: boolean;
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
@@ -861,6 +910,7 @@ const Research = () => {
       sort: currentSortRequestOptions(),
       exactSpelling: options.exactSpelling === true,
       literalAcronym: options.literalAcronym === true,
+      literalTopic: options.literalTopic === true,
     });
     if (activeSearchKeyRef.current === requestKey) return;
     activeSearchKeyRef.current = requestKey;
@@ -891,6 +941,7 @@ const Research = () => {
         ...currentSortRequestOptions(),
         ...(options.exactSpelling ? { exactSpelling: true } : {}),
         ...(options.literalAcronym ? { literalAcronym: true } : {}),
+        ...(options.literalTopic ? { literalTopic: true } : {}),
         ...(options.departmentSearch ? { exactFilterValues: true } : {}),
       },
     });
@@ -911,6 +962,7 @@ const Research = () => {
     setSearchDegraded(false);
     setQueryCorrection(null);
     setAcronymRewrite(null);
+    setTopicRewrite(null);
     if (!options.preserveResults) {
       setFewCloseMatches(null);
       setGroupedResults(emptyGroupedResults(resultQueryLabel));
@@ -926,6 +978,7 @@ const Research = () => {
           hostsUndergrads: filters.hostsUndergrads === true,
           welcomesUndergrads: filters.welcomesUndergrads === true,
           mentorsUndergrads: filters.mentorsUndergrads === true,
+          literal: options,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -947,6 +1000,7 @@ const Research = () => {
           ...currentSortRequestOptions(),
           ...(options.exactSpelling ? { exactSpelling: true } : {}),
           ...(options.literalAcronym ? { literalAcronym: true } : {}),
+          ...(options.literalTopic ? { literalTopic: true } : {}),
           ...(options.departmentSearch ? { exactFilterValues: true } : {}),
         },
       );
@@ -1005,6 +1059,7 @@ const Research = () => {
             hostsUndergrads,
             welcomesUndergrads,
             mentorsUndergrads,
+            literal: options,
             showWeakest: showWeakestProfilesFirst,
             quality: qualityFilters,
             trustTiers: trustTierFilters,
@@ -1018,6 +1073,7 @@ const Research = () => {
       setSearchDegraded(researchEntitiesPage.degraded === true);
       setQueryCorrection(researchEntitiesPage.queryCorrection ?? null);
       setAcronymRewrite(researchEntitiesPage.acronymRewrite ?? null);
+      setTopicRewrite(researchEntitiesPage.topicRewrite ?? null);
       setFewCloseMatches(researchEntitiesPage.fewCloseMatches ?? null);
       setSearchResultSetId(requestId);
       setSearchResultResearchEntities(researchEntities);
@@ -1193,6 +1249,10 @@ const Research = () => {
     activeSearchRequest?.submittedText === text &&
     activeSearchRequest.options?.literalAcronym === true;
 
+  const activeSearchKeepsLiteralTopic = (text: string): boolean =>
+    activeSearchRequest?.submittedText === text &&
+    activeSearchRequest.options?.literalTopic === true;
+
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (
@@ -1242,6 +1302,7 @@ const Research = () => {
     setSearchDegraded(false);
     setQueryCorrection(null);
     setAcronymRewrite(null);
+    setTopicRewrite(null);
     setFewCloseMatches(null);
     setSearchLoading(false);
     setIsLoadingMore(false);
@@ -1326,6 +1387,7 @@ const Research = () => {
     const urlHostsUndergrads = readHostsUndergradsParam(searchParams);
     const urlWelcomesUndergrads = readWelcomesUndergradsParam(searchParams);
     const urlMentorsUndergrads = readMentorsUndergradsParam(searchParams);
+    const urlLiteral = readLiteralSearchParam(searchParams);
     const urlQualityFilters = urlQualityFiltersKey
       ? (urlQualityFiltersKey.split(',') as ResearchQualityFilter[])
       : [];
@@ -1420,7 +1482,9 @@ const Research = () => {
       if (
         !urlDepartmentLabel &&
         submittedQuery === urlQuery.trim() &&
-        JSON.stringify(activeSearchRequest?.filters || {}) === JSON.stringify(studentFilters)
+        JSON.stringify(activeSearchRequest?.filters || {}) === JSON.stringify(studentFilters) &&
+        literalSearchParamValue(activeSearchRequest?.options) ===
+          literalSearchParamValue(urlLiteral)
       ) {
         return;
       }
@@ -1428,6 +1492,7 @@ const Research = () => {
         filters: studentFilters,
         syncUrl: false,
         preserveResults: submittedQuery === urlQuery.trim(),
+        ...urlLiteral,
       });
       return;
     }
@@ -1544,6 +1609,7 @@ const Research = () => {
       defaultSearchDegraded,
       queryCorrection,
       acronymRewrite,
+      topicRewrite,
       fewCloseMatches,
     };
   }, [
@@ -1585,6 +1651,7 @@ const Research = () => {
     defaultSearchDegraded,
     queryCorrection,
     acronymRewrite,
+    topicRewrite,
     fewCloseMatches,
   ]);
 
@@ -1809,6 +1876,7 @@ const Research = () => {
       preserveResults: true,
       exactSpelling: activeSearchKeepsTypedSpelling(textQuery),
       literalAcronym: activeSearchKeepsLiteralAcronym(textQuery),
+      literalTopic: activeSearchKeepsLiteralTopic(textQuery),
     });
   };
   const clearSearchText = () => {
@@ -1851,6 +1919,7 @@ const Research = () => {
       syncUrl: false,
       exactSpelling: activeSearchRequest.options?.exactSpelling === true,
       literalAcronym: activeSearchRequest.options?.literalAcronym === true,
+      literalTopic: activeSearchRequest.options?.literalTopic === true,
     });
   };
   const reloadDefaultResearchHomes = () => {
@@ -1953,6 +2022,7 @@ const Research = () => {
     selectedMentorsUndergrads,
     isApplying: searchLoading,
     hasFacetError,
+    hasActiveQuery: hasSubmittedSearch,
     departmentLabel: departmentFacetLabel,
     onEntityTypeChange: (entityType: string) => applyStudentFilters({ entityType }),
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
@@ -1979,6 +2049,7 @@ const Research = () => {
   const browseFilterProps = {
     ...researchFilterProps,
     facetDistribution: browseFacetDistribution,
+    hasActiveQuery: false,
     isApplying: false,
     isLoadingOptions: defaultSearchLoading,
     hasFacetError: false,
@@ -2007,6 +2078,17 @@ const Research = () => {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
       exactSpelling: true,
+    });
+  };
+
+  const searchLiteralTopic = () => {
+    if (!topicRewrite) return;
+    focusResultSummary();
+    const filters = studentSearchFilters();
+    void runSearch(topicRewrite.originalQuery, {
+      filters,
+      hasFilterSelections: hasStructuredFilters(filters),
+      literalTopic: true,
     });
   };
 
@@ -2128,6 +2210,10 @@ const Research = () => {
     </>
   );
 
+  const searchedTopic = topicRewrite
+    ? (acronymRewrite?.rewrittenQuery ?? topicRewrite.topicQuery)
+    : undefined;
+
   const searchResultSummary = (layoutClassName: string) => (
     <p
       ref={resultSummaryRef}
@@ -2139,7 +2225,10 @@ const Research = () => {
     >
       {resultSummary(
         activeResults,
-        queryCorrection?.correctedQuery ?? acronymRewrite?.rewrittenQuery ?? submittedQuery,
+        searchedTopic ??
+          queryCorrection?.correctedQuery ??
+          acronymRewrite?.rewrittenQuery ??
+          submittedQuery,
         searchLoading,
         departmentSearch?.label,
         searchTotal,
@@ -2148,7 +2237,14 @@ const Research = () => {
     </p>
   );
 
-  const searchSpellingNotice = searchLoading ? null : queryCorrection ? (
+  const searchSpellingNotice = searchLoading ? null : topicRewrite && searchedTopic ? (
+    <SearchSpellingNotice
+      originalQuery={topicRewrite.originalQuery}
+      correctedQuery={searchedTopic}
+      searchedLabel="Searching for the topic"
+      onSearchOriginal={searchLiteralTopic}
+    />
+  ) : queryCorrection ? (
     <SearchSpellingNotice
       originalQuery={queryCorrection.originalQuery}
       onSearchOriginal={searchOriginalSpelling}

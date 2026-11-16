@@ -148,6 +148,7 @@ const observationSchema = new mongoose.Schema(
           reason: { type: String, required: true },
           classifier: { type: String, required: true },
           classifierVersion: { type: Number, required: true },
+          assertedUnder: { type: String, required: false },
         },
       ],
       default: undefined,

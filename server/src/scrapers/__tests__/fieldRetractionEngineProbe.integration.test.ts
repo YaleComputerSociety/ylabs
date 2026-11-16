@@ -13,6 +13,21 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The network is outside the chain under test. The lab site is modelled as a page that is
+// gone, so this probe is the second observation the lane's absence reads need (#6264); it
+// also keeps the suite from depending on live DNS or reaching a real host.
+vi.mock('../../services/sourceLinkHealth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/sourceLinkHealth')>();
+  return {
+    ...actual,
+    probeSourceLink: vi.fn(async (url: string) =>
+      url.replace(/\/+$/, '') === 'https://duchamplab.example.org'
+        ? { status: 404, requestedUrl: url, finalUrl: url }
+        : { status: 200, requestedUrl: url, finalUrl: url },
+    ),
+  };
+});
+
 vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
     '../../services/meiliSyncService',

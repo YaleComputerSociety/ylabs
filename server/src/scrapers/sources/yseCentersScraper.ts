@@ -12,7 +12,6 @@ import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 const PAGE_URL = 'https://environment.yale.edu/research/centers';
 const SOURCE_KEY = 'yse-centers-index';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30000;
 
 export type YseEntityKind = 'center' | 'program' | 'initiative' | 'institute' | 'group';
@@ -89,7 +88,6 @@ async function fetchPage(useCache: boolean): Promise<string> {
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrl.toString(), {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -112,7 +110,6 @@ async function fetchUrl(url: string, useCache: boolean): Promise<string> {
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

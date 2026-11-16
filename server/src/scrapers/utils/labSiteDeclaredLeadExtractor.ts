@@ -174,7 +174,6 @@ export function declaredLeadCandidateUrls(rootUrl: string, rootHtml: string): st
 const defaultFetchPage: LabSitePageFetcher = async (url) => {
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
       timeoutMs: 10_000,
     });
     return { url: page.url, html: page.html };

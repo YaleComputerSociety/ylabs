@@ -153,6 +153,31 @@ Note that the browse gate and the detail route disagree in both directions, so a
 The figures in the comment above `researchEntityServesPublicDetail` are a snapshot of that disagreement rather than a contract: it records 5 and 2, and 2026-09-13 measured 8 failing the gate of which 3 the route serves.
 Measure it rather than quoting it.
 
+## Readings unconfirmed since a sustained refusal
+
+`research-page-text` flags a host that has refused it for a sustained period: at least 3 attempted runs spanning at least 14 days, with no answer between (#6195, rule in `server/src/scrapers/utils/sustainedHostRefusal.ts`).
+The flag never retires a reading, so a row whose stored reading came from that host keeps serving it while nothing can re-read it.
+Every run prints one line, so the first time the flag fires is seen here rather than missed:
+
+```
+unconfirmed, sustained refusal | 3
+```
+
+```
+research-page-text hosts refusing for a sustained period, flagged by the run started <iso> (read-only, nothing served changes):
+  - <host>: 3 served readings draw only on it, unconfirmed since <firstRefusedAt> (3 refused runs, latest <confirmingRefusalAt>)
+```
+
+- The hosts come from `metrics.sustainedRefusalHosts` on the newest successful `research-page-text` run.
+The flag is recomputed from run history on every run, so a host missing from the newest run has answered again.
+- A served reading counts when it is the row's newest non-superseded `researchPageText` observation, every page it was built from sits on that host (`www.` ignored), the row is `student_ready` and not archived, and it was read before `firstRefusedAt`.
+A reading that also draws on another host is left out, because that other host can still confirm part of it.
+- The table reads `none flagged` when the newest run flags nothing, and the detail line says so when no `research-page-text` run has succeeded at all.
+
+It is a count, not a correction.
+What to do with an affected row is an operator judgement, per row, or a fix to the cause such as pacing or contact with the site owner; never a bulk retirement.
+The count lives here and not in `yarn served-check`, because that command reads served HTTP paths as an anonymous visitor and has no database read of its own.
+
 ## Cutting a second baseline
 
 **The 2026-08-31 hand-read is the pinned baseline and does not get updated.** Decided 2026-09-12.

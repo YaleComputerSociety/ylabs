@@ -102,7 +102,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['OFFICIAL_PROFILE'],
     defaultConfidence: 'MEDIUM',
     notes:
-      "Reads department emeritus faculty pages and records `emeritusListedLeadIds` on the row each listed person already leads, matched by a profile link exactly one live researcher holds, else by a name one researcher carries within the page's department. A lead whose stored title a live lane still asserts is left to that title. Never mints rows, edges or roster members.",
+      "Reads department emeritus faculty pages, and the stored own-profile-page titles of leads (#6081), and records `emeritusListedLeadIds` on the row each listed person already leads, matched by a profile link exactly one live researcher holds, else by a name one researcher carries within the page's department. A lead whose stored title a live lane still asserts is left to that title. Never mints rows, edges or roster members.",
   },
   'official-undergrad-lists': {
     priority: 2,

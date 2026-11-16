@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { Observation } from '../models/observation';
 import { ScrapeRun } from '../models/scrapeRun';
 import { isLocalProcessAlive } from '../scrapers/scrapeRunLiveness';
 import {
@@ -15,6 +16,10 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   assertReconcileStaleScrapeRunsApplyAllowed,
   planStaleScrapeRunReconciliation,
+  planWrittenCountRecount,
+  RECOUNTABLE_SCRAPE_RUN_STATUSES,
+  writtenCountRecountUpdate,
+  type RecountableScrapeRun,
   resolveStaleScrapeRunThresholds,
   staleScrapeRunUpdate,
   summarizeStaleScrapeRunPlan,
@@ -34,6 +39,7 @@ export interface ReconcileStaleScrapeRunsArgs {
   staleAfterMinutes?: number;
   legacyOlderThanHours?: number;
   heartbeatStaleOnly: boolean;
+  recountWritten: boolean;
   startedBefore?: Date;
   output?: string;
 }
@@ -59,6 +65,7 @@ export function parseReconcileStaleScrapeRunsArgs(argv: string[]): ReconcileStal
     apply: false,
     confirmed: false,
     heartbeatStaleOnly: false,
+    recountWritten: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -70,6 +77,7 @@ export function parseReconcileStaleScrapeRunsArgs(argv: string[]): ReconcileStal
     else if (arg === '--dry-run') options.apply = false;
     else if (arg === CONFIRM_FLAG) options.confirmed = true;
     else if (arg === '--heartbeat-stale-only') options.heartbeatStaleOnly = true;
+    else if (arg === '--recount-written') options.recountWritten = true;
     else if (arg === '--started-before') options.startedBefore = isoDate(arg, next());
     else if (arg.startsWith('--started-before=')) {
       options.startedBefore = isoDate('--started-before', arg.slice('--started-before='.length));
@@ -104,6 +112,12 @@ async function main(): Promise<void> {
     `Environment: ${guard.environment}; Mongo target: ${guard.dbLabel}; mode: ${options.apply ? 'apply' : 'dry-run'}`,
   );
   await initializeConnections();
+
+  if (options.recountWritten) {
+    await recountWrittenObservations(options);
+    await mongoose.disconnect();
+    return;
+  }
 
   const now = new Date();
   const [runs, heldLockSourceNames] = await Promise.all([
@@ -152,6 +166,70 @@ async function main(): Promise<void> {
     fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
   }
   await mongoose.disconnect();
+}
+
+export async function loadRecountableScrapeRuns(
+  sourceName?: string,
+): Promise<RecountableScrapeRun[]> {
+  const docs = (await ScrapeRun.find({
+    status: { $in: [...RECOUNTABLE_SCRAPE_RUN_STATUSES] },
+    reconciledAt: { $exists: false },
+    ...(sourceName ? { sourceName } : {}),
+  })
+    .select('_id sourceName status startedAt observationCount')
+    .sort({ startedAt: 1 })
+    .lean()) as unknown as Array<Record<string, any>>;
+  return docs.map((doc) => ({
+    id: String(doc._id),
+    sourceName: String(doc.sourceName),
+    status: String(doc.status),
+    startedAt: new Date(doc.startedAt),
+    observationCount: Number(doc.observationCount ?? 0),
+  }));
+}
+
+// `observations.scrapeRunId` is an ObjectId and an aggregation pipeline is not cast by the model,
+// so matching the id as a string counts 0 for every run, which reads exactly like "wrote nothing".
+export async function countStoredObservationsByRun(runIds: string[]): Promise<Map<string, number>> {
+  if (runIds.length === 0) return new Map();
+  const rows = (await Observation.aggregate([
+    { $match: { scrapeRunId: { $in: runIds.map((id) => new mongoose.Types.ObjectId(id)) } } },
+    { $group: { _id: '$scrapeRunId', count: { $sum: 1 } } },
+  ])) as Array<{ _id: unknown; count: number }>;
+  return new Map(rows.map((row) => [String(row._id), row.count]));
+}
+
+async function recountWrittenObservations(options: ReconcileStaleScrapeRunsArgs): Promise<void> {
+  const now = new Date();
+  const runs = await loadRecountableScrapeRuns(options.sourceName);
+  const plan = planWrittenCountRecount(
+    runs,
+    await countStoredObservationsByRun(runs.map((run) => run.id)),
+  );
+  let reconciled = 0;
+  if (options.apply) {
+    for (const recount of plan.recounts) {
+      const write = writtenCountRecountUpdate(recount, now);
+      if (!write) continue;
+      const result = await ScrapeRun.updateOne(write.filter, write.update);
+      if ((result.matchedCount ?? 0) > 0) reconciled += 1;
+    }
+  }
+  const report = {
+    script: SCRIPT_NAME,
+    mode: options.apply ? 'apply' : 'dry-run',
+    action: 'recount-written',
+    measuredAt: now.toISOString(),
+    reconciled: options.apply ? reconciled : null,
+    storedBelowRecordedNote:
+      'stored below recorded, likely rollback/retire/supersede; reported only, no field written',
+    ...plan,
+  };
+  console.log(JSON.stringify(report, null, 2));
+  if (options.output) {
+    fs.mkdirSync(path.dirname(options.output), { recursive: true });
+    fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
+  }
 }
 
 const invokedDirectly =

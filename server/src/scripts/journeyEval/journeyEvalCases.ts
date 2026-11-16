@@ -4,6 +4,7 @@ import {
   researchEntityListServedSource,
 } from '../../services/researchEntityDto';
 import { unattributedResearchAreaDrops } from '../../utils/servedResearchAreaGuards';
+import { getOrgUnitCanonicalizer } from '../../scrapers/orgUnitCanonicalization';
 import { maxReachableResearchSearchPage } from '../../services/researchSearchPagination';
 import { researchEntitySortTitle } from '../../utils/servedResearchEntityTitle';
 import {
@@ -701,6 +702,77 @@ const facetCountAgreement: JourneyCase = {
           degradedFilteredBrowses === 0,
           { checked: observations.length, degradedFilteredBrowses },
         ),
+      ],
+      rates: [],
+    };
+  },
+};
+
+// A researcher's primaryDepartment may be a catalog SECTION (#6202), so a row whose lead
+// stores one must still be found by a filter on the department the section sits under.
+const sectionRowsReachTheirDepartment: JourneyCase = {
+  id: 'section-rows-reach-their-department',
+  title: 'A row filed under a catalog section is also filed under the department above it',
+  run: async (context) => {
+    const canonicalizer = await getOrgUnitCanonicalizer();
+    const facet =
+      (await context.browse({ page: 1, pageSize: 1 })).facetDistribution?.departments ?? {};
+    const sections = Object.entries(facet)
+      .filter(([value]) => canonicalizer.parentDepartmentsFor(value).length > 0)
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, context.facetValuesChecked)
+      .map(([value]) => value);
+    const id = 'section-rows-carry-their-department';
+    const title = "Every row served under a section filter also carries the section's departments";
+    const degradedInvariantId = 'section-filtered-browse-is-not-degraded';
+    const degradedInvariantTitle =
+      'A browse filtered to a catalog section does not fall back to a degraded search path';
+    if (sections.length === 0) {
+      return {
+        invariants: [
+          buildInconclusiveInvariant(id, title, 'no catalog section in the department facet', {}),
+        ],
+        rates: [],
+      };
+    }
+    let rowsChecked = 0;
+    let degradedBrowses = 0;
+    const lacking: Array<{ section: string; departments: string[]; rows: number }> = [];
+    for (const section of sections) {
+      const departments = canonicalizer.parentDepartmentsFor(section);
+      const result = await context.browse({
+        filters: { departments: [section] },
+        page: 1,
+        pageSize: context.window,
+      });
+      if (result.degraded !== false) degradedBrowses += 1;
+      const rows = servedRows(result);
+      rowsChecked += rows.length;
+      const parentKeys = departments.map((department) => department.toLocaleLowerCase());
+      const missing = rows.filter((row) => {
+        const rowKeys = stringList(row.departments).map((value) => value.toLocaleLowerCase());
+        return !parentKeys.every((key) => rowKeys.includes(key));
+      }).length;
+      if (missing > 0) lacking.push({ section, departments, rows: missing });
+    }
+    const primaryInvariant =
+      rowsChecked === 0
+        ? buildInconclusiveInvariant(id, title, 'no rows were served under any section filter', {
+            sectionsChecked: sections.length,
+            rowsChecked,
+          })
+        : buildInvariant(id, title, lacking.length === 0, {
+            sectionsChecked: sections.length,
+            rowsChecked,
+            lacking,
+          });
+    return {
+      invariants: [
+        primaryInvariant,
+        buildInvariant(degradedInvariantId, degradedInvariantTitle, degradedBrowses === 0, {
+          sectionsChecked: sections.length,
+          degradedBrowses,
+        }),
       ],
       rates: [],
     };
@@ -1782,6 +1854,7 @@ export const journeyCases: readonly JourneyCase[] = [
   advisesFilterServesAMentorsEntry,
   undergradOptionCountAgreement,
   facetCountAgreement,
+  sectionRowsReachTheirDepartment,
   textQueryFacetCountAgreement,
   paginationServesDistinctRows,
   textQueryTotalIsStable,

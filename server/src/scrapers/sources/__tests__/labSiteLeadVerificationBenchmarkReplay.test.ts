@@ -64,6 +64,8 @@ async function replayReadings(
   return { readings, ...finishBenchmarkReplay() };
 }
 
+const NOT_OBSERVED_READING = { html: '', visitedUrls: [], notObserved: true };
+
 describe('lab-site lead verification replays only what its capture froze (#4251)', () => {
   const liveAdapter = axios.defaults.adapter;
 
@@ -95,13 +97,13 @@ describe('lab-site lead verification replays only what its capture froze (#4251)
 
   it('refuses on replay a site whose host the capture refused, instead of asking for a page it never froze', async () => {
     const capture = await captureReadings([PRIVATE_SITE]);
-    expect(capture.readings).toEqual([null]);
+    expect(capture.readings).toEqual([NOT_OBSERVED_READING]);
     expect(capture.unfrozenRequestCount).toBe(0);
 
     lookupMock.mockClear();
     const replay = await replayReadings([PRIVATE_SITE], capture.pages);
 
-    expect(replay.readings).toEqual([null]);
+    expect(replay.readings).toEqual([NOT_OBSERVED_READING]);
     expect(replay.pagesMissed).toBe(0);
     expect(replay.networkBlocks).toBe(0);
     expect(lookupMock).not.toHaveBeenCalled();
@@ -109,7 +111,7 @@ describe('lab-site lead verification replays only what its capture froze (#4251)
 
   it('never freezes a resolver failure, because it describes the moment rather than the host', async () => {
     const capture = await captureReadings([RESOLVER_OUTAGE_SITE]);
-    expect(capture.readings).toEqual([null]);
+    expect(capture.readings).toEqual([NOT_OBSERVED_READING]);
     expect(capture.pages).toEqual([]);
   });
 });

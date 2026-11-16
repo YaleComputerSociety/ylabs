@@ -31,15 +31,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { buildOrchestrator } from './registry';
-import {
-  ChainedHostSlotLimiter,
-  installScraperHostConcurrencyInterceptor,
-  type HostSlotLimiter,
-} from './utils/hostConcurrencyLimiter';
+import { ChainedHostSlotLimiter, type HostSlotLimiter } from './utils/hostConcurrencyLimiter';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
-import { installScraperHttpValidatorCache } from './utils/httpValidatorCache';
 import { installSweepPageReuse } from './utils/sweepPageReuse';
-import { installScraperFetchDeadlines } from './utils/scraperFetchDeadlines';
+import { installScraperFetchHooks } from './utils/scraperFetchHooks';
 import { materializeFromRun, withoutUserFieldScopeRows } from './entityMaterializer';
 import { ScrapeRun } from '../models/scrapeRun';
 import { getScrapeRunReport } from './runReport';
@@ -231,13 +226,12 @@ const devHostLeaseLimiter: HostSlotLimiter = {
 };
 
 export async function main(): Promise<void> {
-  installScraperFetchDeadlines();
-  installScraperHostConcurrencyInterceptor(
-    new ChainedHostSlotLimiter([devHostLeaseLimiter, scraperHostSlotLimiter()]),
-  );
   const { command, flags } = parseArgs(process.argv);
+  installScraperFetchHooks({
+    validatorCache: !flags.release,
+    hostSlotLimiter: new ChainedHostSlotLimiter([devHostLeaseLimiter, scraperHostSlotLimiter()]),
+  });
   if (!flags.release) {
-    installScraperHttpValidatorCache();
     // Must stay last: axios runs request interceptors in reverse, so a reused page is answered
     // before the host slot and validator interceptors run.
     installSweepPageReuse();
@@ -298,7 +292,8 @@ Materialize flags:
                        email, emailSupport, orcid, title, primaryDepartment, imageUrl,
                        websiteUrl. identifiers.orcid also writes only the ORCID
                        entries of profileLinks. Planned paths
-                       outside the scope are dropped and reported; other entity
+                       outside the scope are left as stored and reported as
+                       outOfScopePaths (not written, not deleted); other entity
                        types, mints, run reconciliations and the visibility gate
                        are skipped. Per-key paths go to --output only.
 

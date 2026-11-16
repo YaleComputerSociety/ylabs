@@ -1,4 +1,5 @@
 import {
+  CONNECTION_FAILURE_CONFIRMATION_GAP_MS,
   isStaleSourceLinkHealth,
   sourceLinkHealthAgeDays,
   type DatedSourceLinkHealth,
@@ -249,6 +250,12 @@ export interface StoredSourceLinkHealthEntry {
   redirectLandingUrl?: string;
   checkedAt?: Date;
   lastAttemptedAt?: Date;
+  pendingConnectionFailureAt?: Date;
+  pendingConnectionFailureProbedAt?: Date;
+  confirmingConnectionFailureAt?: Date;
+  connectionLevelFailure?: true;
+  nameNotFound?: true;
+  connectionRefused?: true;
 }
 
 /**
@@ -307,6 +314,114 @@ export interface ResolvedSourceLinkHealthEntry {
   entry: StoredSourceLinkHealthEntry;
   preservedDecisiveVerdict: boolean;
   preservedUnreachedVerdict?: boolean;
+  heldConnectionFailure?: boolean;
+}
+
+const VERDICTS_A_CONNECTION_FAILURE_WAITS_ON = new Set(['HEALTHY', 'REDIRECTED']);
+
+const instantOf = (value: unknown): number | undefined => {
+  if (!value) return undefined;
+  const instant = (value instanceof Date ? value : new Date(value as string)).getTime();
+  return Number.isFinite(instant) ? instant : undefined;
+};
+
+export { CONNECTION_FAILURE_CONFIRMATION_GAP_MS } from '../services/sourceLinkHealth';
+
+/**
+ * A refused or unroutable connection over a live verdict, held until a second run
+ * confirms it.
+ *
+ * A host that refuses connections for a few minutes is not a retired host, and the two
+ * attempts inside one probe are seconds apart, too close to tell the cases apart. The
+ * first such failure keeps the stored verdict and records the run that saw it in
+ * `pendingConnectionFailureAt`, and the probe that saw it in
+ * `pendingConnectionFailureProbedAt`. A later run confirms it as `UNAVAILABLE` only when
+ * both its start and its probe come `CONNECTION_FAILURE_CONFIRMATION_GAP_MS` or more after
+ * the first run's, because a resume minutes later, or a first probe late in a long run,
+ * is the same outage rather than a second observation, and the confirming run start is
+ * kept as `confirmingConnectionFailureAt` beside the first.
+ * A failure inside the gap keeps the first time, so repeated failures cannot reset it,
+ * and a missing or unreadable time never confirms. Any probe that reaches the host
+ * drops the marker (#6116). A confirmed DNS negative is not held: it is how a retired
+ * domain retires (#2726).
+ */
+function resolveConnectionFailure(
+  url: string,
+  fresh: { connectionLevelFailure?: true; httpsSpellingUrl?: string },
+  stored: StoredSourceLinkHealthEntry | undefined,
+  now: Date,
+  runStartedAt: Date,
+): ResolvedSourceLinkHealthEntry | undefined {
+  if (!fresh.connectionLevelFailure || !stored) return undefined;
+  const freshSpelling = fresh.httpsSpellingUrl ? { httpsSpellingUrl: fresh.httpsSpellingUrl } : {};
+  if (stored.healthStatus === 'UNAVAILABLE' && stored.confirmingConnectionFailureAt) {
+    return {
+      entry: {
+        url,
+        healthStatus: 'UNAVAILABLE',
+        ...(stored.privateAddressHost ? { privateAddressHost: true as const } : {}),
+        ...freshSpelling,
+        checkedAt: now,
+        pendingConnectionFailureAt: stored.pendingConnectionFailureAt,
+        ...(stored.pendingConnectionFailureProbedAt
+          ? { pendingConnectionFailureProbedAt: stored.pendingConnectionFailureProbedAt }
+          : {}),
+        confirmingConnectionFailureAt: stored.confirmingConnectionFailureAt,
+      },
+      preservedDecisiveVerdict: false,
+    };
+  }
+  if (!VERDICTS_A_CONNECTION_FAILURE_WAITS_ON.has(stored.healthStatus)) return undefined;
+  const firstFailureRun = instantOf(stored.pendingConnectionFailureAt);
+  const firstFailureProbe = instantOf(stored.pendingConnectionFailureProbedAt);
+  const thisRun = instantOf(runStartedAt);
+  const thisProbe = instantOf(now);
+  if (
+    firstFailureRun !== undefined &&
+    firstFailureProbe !== undefined &&
+    thisRun !== undefined &&
+    thisProbe !== undefined &&
+    thisRun - firstFailureRun >= CONNECTION_FAILURE_CONFIRMATION_GAP_MS &&
+    thisProbe - firstFailureProbe >= CONNECTION_FAILURE_CONFIRMATION_GAP_MS
+  ) {
+    return {
+      entry: {
+        url,
+        healthStatus: 'UNAVAILABLE',
+        ...(stored.privateAddressHost ? { privateAddressHost: true as const } : {}),
+        ...freshSpelling,
+        checkedAt: now,
+        pendingConnectionFailureAt: new Date(firstFailureRun),
+        pendingConnectionFailureProbedAt: new Date(firstFailureProbe),
+        confirmingConnectionFailureAt: new Date(thisRun),
+      },
+      preservedDecisiveVerdict: false,
+    };
+  }
+  return {
+    entry: {
+      ...stored,
+      url,
+      ...freshSpelling,
+      lastAttemptedAt: now,
+      pendingConnectionFailureAt:
+        firstFailureRun !== undefined ? new Date(firstFailureRun) : runStartedAt,
+      pendingConnectionFailureProbedAt:
+        firstFailureRun !== undefined && firstFailureProbe !== undefined
+          ? new Date(firstFailureProbe)
+          : now,
+    },
+    preservedDecisiveVerdict: true,
+    heldConnectionFailure: true,
+  };
+}
+
+export function storedVerdictSurvivesUnknownProbe(
+  fresh: { tlsVerificationFailed?: boolean },
+  stored: { healthStatus?: unknown } | undefined,
+): boolean {
+  if (!isDecisiveStoredVerdict(stored)) return false;
+  return !(fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY');
 }
 
 /**
@@ -359,10 +474,16 @@ export function resolveSourceLinkHealthEntry(
     httpsLandingUrl?: string;
     httpsSpellingUrl?: string;
     redirectLandingUrl?: string;
+    connectionLevelFailure?: true;
+    nameNotFound?: true;
+    connectionRefused?: true;
   },
   stored: StoredSourceLinkHealthEntry | undefined,
   now: Date,
+  runStartedAt: Date = now,
 ): ResolvedSourceLinkHealthEntry {
+  const connectionFailure = resolveConnectionFailure(url, fresh, stored, now, runStartedAt);
+  if (connectionFailure) return connectionFailure;
   const privateAddressHost = privateAddressHostForEntry(fresh, stored);
   const routing = {
     ...(privateAddressHost ? { privateAddressHost: true as const } : {}),
@@ -376,6 +497,9 @@ export function resolveSourceLinkHealthEntry(
     ...(fresh.httpsLandingUrl ? { httpsLandingUrl: fresh.httpsLandingUrl } : {}),
     ...(fresh.httpsSpellingUrl ? { httpsSpellingUrl: fresh.httpsSpellingUrl } : {}),
     ...(fresh.redirectLandingUrl ? { redirectLandingUrl: fresh.redirectLandingUrl } : {}),
+    ...(fresh.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
+    ...(fresh.nameNotFound ? { nameNotFound: true } : {}),
+    ...(fresh.connectionRefused ? { connectionRefused: true } : {}),
     checkedAt: now,
   };
 
@@ -394,12 +518,7 @@ export function resolveSourceLinkHealthEntry(
       preservedUnreachedVerdict: true,
     };
   }
-  if (!isDecisiveStoredVerdict(stored))
-    return { entry: freshEntry, preservedDecisiveVerdict: false };
-  // A certificate that fails verification contradicts a stored HEALTHY for this very
-  // URL, so that verdict is not preserved: it was written by a probe that never
-  // negotiated this spelling's TLS (#4080). A stored UNAVAILABLE still stands.
-  if (fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY')
+  if (!storedVerdictSurvivesUnknownProbe(fresh, stored))
     return { entry: freshEntry, preservedDecisiveVerdict: false };
 
   const kept = stored as StoredSourceLinkHealthEntry;
@@ -412,6 +531,12 @@ export function resolveSourceLinkHealthEntry(
       ...(kept.httpsLandingUrl ? { httpsLandingUrl: kept.httpsLandingUrl } : {}),
       ...(kept.httpsSpellingUrl ? { httpsSpellingUrl: kept.httpsSpellingUrl } : {}),
       ...(kept.redirectLandingUrl ? { redirectLandingUrl: kept.redirectLandingUrl } : {}),
+      ...(kept.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
+      ...(kept.nameNotFound ? { nameNotFound: true } : {}),
+      ...(kept.connectionRefused ? { connectionRefused: true } : {}),
+      ...(kept.confirmingConnectionFailureAt
+        ? { confirmingConnectionFailureAt: kept.confirmingConnectionFailureAt }
+        : {}),
       ...(kept.checkedAt ? { checkedAt: kept.checkedAt } : {}),
       lastAttemptedAt: now,
     },
@@ -426,7 +551,9 @@ export function resolveSourceLinkHealthEntry(
  * verdict never lapses into "unverified", and it is short because the gate and
  * `dead-research-website-clear` act on these verdicts: a site that dies is noticed
  * at most this many days late. Only `HEALTHY` earns the skip; every other verdict,
- * and every URL without one, is probed on every sweep (#3568).
+ * and every URL without one, is probed on every sweep (#3568). A `HEALTHY` verdict
+ * holding a pending connection failure is probed too, or the run that confirms or
+ * clears it would never come (#6116).
  */
 export const SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS = 7;
 
@@ -450,6 +577,7 @@ export function isFreshHealthySourceLinkVerdict(
   now: Date,
 ): boolean {
   if (stored?.healthStatus !== 'HEALTHY') return false;
+  if (stored.pendingConnectionFailureAt) return false;
   const ageDays = sourceLinkHealthAgeDays(stored, now);
   return ageDays !== undefined && ageDays >= 0 && ageDays <= reprobeHealthyAfterDays;
 }
@@ -493,8 +621,20 @@ export function carryForwardSourceLinkHealthEntry(
     ...(stored.httpsLandingUrl ? { httpsLandingUrl: stored.httpsLandingUrl } : {}),
     ...(stored.httpsSpellingUrl ? { httpsSpellingUrl: stored.httpsSpellingUrl } : {}),
     ...(stored.redirectLandingUrl ? { redirectLandingUrl: stored.redirectLandingUrl } : {}),
+    ...(stored.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
+    ...(stored.nameNotFound ? { nameNotFound: true } : {}),
+    ...(stored.connectionRefused ? { connectionRefused: true } : {}),
     ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
     ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
+    ...(stored.pendingConnectionFailureAt
+      ? { pendingConnectionFailureAt: stored.pendingConnectionFailureAt }
+      : {}),
+    ...(stored.pendingConnectionFailureProbedAt
+      ? { pendingConnectionFailureProbedAt: stored.pendingConnectionFailureProbedAt }
+      : {}),
+    ...(stored.confirmingConnectionFailureAt
+      ? { confirmingConnectionFailureAt: stored.confirmingConnectionFailureAt }
+      : {}),
   };
 }
 

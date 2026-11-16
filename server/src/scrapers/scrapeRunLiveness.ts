@@ -70,19 +70,37 @@ export function isLocalProcessAlive(pid: number): boolean {
   }
 }
 
+export interface ScrapeRunWriteCounts {
+  observationCount: number;
+  entitiesObserved: number;
+}
+
 export interface ScrapeRunHeartbeatDependencies {
-  beat: (runId: unknown, at: Date) => Promise<{ matched: boolean }>;
+  beat: (runId: unknown, at: Date, counts?: ScrapeRunWriteCounts) => Promise<{ matched: boolean }>;
   now?: () => number;
   lastProgressAtMs?: () => number;
 }
 
+// The counters ride on the heartbeat so a run killed mid-write still records roughly what it
+// wrote; finalising overwrites them, and $max keeps a late beat from lowering a newer value (#6269).
 export async function writeScrapeRunHeartbeat(
   runId: unknown,
   at: Date,
+  counts?: ScrapeRunWriteCounts,
 ): Promise<{ matched: boolean }> {
   const result = await ScrapeRun.updateOne(
     { _id: runId, status: 'running' },
-    { $set: { heartbeatAt: at } },
+    {
+      $set: { heartbeatAt: at },
+      ...(counts
+        ? {
+            $max: {
+              observationCount: counts.observationCount,
+              entitiesObserved: counts.entitiesObserved,
+            },
+          }
+        : {}),
+    },
   );
   return { matched: (result.matchedCount ?? 0) > 0 };
 }
@@ -94,6 +112,7 @@ export function startScrapeRunHeartbeat(
     intervalMs?: number;
     stallWindowMs?: number;
     onStall?: (stall: ScrapeRunStall) => void;
+    writeCounts?: () => ScrapeRunWriteCounts;
   },
   deps: ScrapeRunHeartbeatDependencies = { beat: writeScrapeRunHeartbeat },
 ): { stop: () => void } {
@@ -122,8 +141,11 @@ export function startScrapeRunHeartbeat(
       });
       return;
     }
-    deps
-      .beat(input.runId, new Date(nowMs))
+    const at = new Date(nowMs);
+    (input.writeCounts
+      ? deps.beat(input.runId, at, input.writeCounts())
+      : deps.beat(input.runId, at)
+    )
       .then(({ matched }) => {
         if (matched || stopped || reportedClosed) return;
         reportedClosed = true;

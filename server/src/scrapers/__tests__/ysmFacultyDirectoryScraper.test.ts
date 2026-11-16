@@ -5,6 +5,8 @@ import {
   extractProfile,
   facultyToUserObservations,
   facultyToResearchEntityObservations,
+  ysmHomeDepartment,
+  ysmPrimaryAppointmentSchool,
   REFUSED_PROFILE_RETRY_PAUSE_MS,
   type RawYsmFaculty,
 } from '../sources/ysmFacultyDirectoryScraper';
@@ -1189,5 +1191,224 @@ describe('YsmFacultyDirectoryScraper.run title-skip refusal (#4596)', () => {
   it('states nothing for a skipped profile with no lab link', async () => {
     const { emitted } = await runOne('Postdoctoral Associate');
     expect(emitted.filter((o) => o.entityType === 'researchEntity')).toEqual([]);
+  });
+});
+
+describe('the YSM home department comes only from a catalog-named appointment', () => {
+  const catalog = (name: string) =>
+    ['Surgery', 'Internal Medicine'].includes(name) ? name : undefined;
+  const html = profileHtml({
+    fullName: 'Jordan Rivers',
+    email: 'jordan.rivers@yale.edu',
+    appointments: [
+      { type: 'Primary', organizationName: 'Fixture Research Program' },
+      { type: 'Secondary', organizationName: 'Surgery' },
+    ],
+    organizations: [{ name: 'Fixture Center' }, { name: 'Internal Medicine' }],
+    meshKeywords: ['Heart Failure'],
+  });
+
+  it('keeps the organizations out of the appointments and in the departments label', () => {
+    const profile = extractProfile(html, RIVERS)!;
+    expect(profile.appointmentDepartments).toEqual(['Fixture Research Program', 'Surgery']);
+    expect(profile.departments).toEqual([
+      'Fixture Research Program',
+      'Surgery',
+      'Fixture Center',
+      'Internal Medicine',
+    ]);
+  });
+
+  it('never promotes a later appointment or an organization over a non-catalog first appointment', () => {
+    const profile = extractProfile(html, RIVERS)!;
+    const { observations } = facultyToUserObservations(profile, catalog);
+    expect(observations.some((o) => o.field === 'primaryDepartment')).toBe(false);
+    expect(observations.find((o) => o.field === 'departments')?.value).toEqual(profile.departments);
+  });
+
+  it('emits the catalog name for a first appointment the profile spells as an alias', () => {
+    const aliasCatalog = (name: string) =>
+      name === 'Rheumatology' ? 'Rheumatology, Allergy & Immunology' : undefined;
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        email: 'jordan.rivers@yale.edu',
+        appointments: [{ type: 'Primary', organizationName: 'Rheumatology' }],
+        meshKeywords: ['Heart Failure'],
+      }),
+      RIVERS,
+    )!;
+    const { observations } = facultyToUserObservations(profile, aliasCatalog);
+    expect(observations.filter((o) => o.field === 'primaryDepartment').map((o) => o.value)).toEqual(
+      ['Rheumatology, Allergy & Immunology'],
+    );
+  });
+
+  it('emits the first appointment when the catalog names it', () => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        email: 'jordan.rivers@yale.edu',
+        appointments: [
+          { type: 'Primary', organizationName: 'Surgery' },
+          { type: 'Secondary', organizationName: 'Internal Medicine' },
+        ],
+        organizations: [{ name: 'Fixture Center' }],
+        meshKeywords: ['Heart Failure'],
+      }),
+      RIVERS,
+    )!;
+    const { observations } = facultyToUserObservations(profile, catalog);
+    expect(observations.filter((o) => o.field === 'primaryDepartment').map((o) => o.value)).toEqual(
+      ['Surgery'],
+    );
+  });
+
+  it('emits no home department when no appointment is a catalog department', () => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        email: 'jordan.rivers@yale.edu',
+        appointments: [{ type: 'Primary', organizationName: 'Fixture Research Program' }],
+        organizations: [{ name: 'Internal Medicine' }],
+        meshKeywords: ['Heart Failure'],
+      }),
+      RIVERS,
+    )!;
+    const { observations } = facultyToUserObservations(profile, catalog);
+    expect(observations.some((o) => o.field === 'primaryDepartment')).toBe(false);
+  });
+
+  it('emits no home department when no catalog is available', () => {
+    expect(
+      ysmHomeDepartment({ appointmentDepartments: ['Fixture Research Program'] }, null),
+    ).toBeUndefined();
+    expect(ysmHomeDepartment({ appointmentDepartments: ['Surgery'] }, null)).toBeUndefined();
+  });
+});
+
+describe('the school a profile states through its Primary appointment (#6160)', () => {
+  const FIXTURE_SCHOOLS: Record<string, string> = {
+    Cardiology: 'School of Medicine',
+    'Fixture Epidemiology': 'School of Public Health',
+    'Fixture Economics': 'Faculty of Arts and Sciences',
+  };
+  const schoolForDepartment = (department: string) => FIXTURE_SCHOOLS[department];
+
+  const profileWith = (appointments: Array<{ type: string; organizationName: string }>) =>
+    extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        email: 'jordan.rivers@yale.edu',
+        meshKeywords: ['Heart Failure'],
+        appointments,
+      }),
+      RIVERS,
+    )!;
+
+  it('reads only the units of Primary appointments, never a Secondary one', () => {
+    const profile = profileWith([
+      { type: 'Secondary', organizationName: 'Cardiology' },
+      { type: 'Primary', organizationName: 'Fixture Epidemiology' },
+    ]);
+
+    expect(profile.primaryAppointmentUnits).toEqual(['Fixture Epidemiology']);
+    expect(ysmPrimaryAppointmentSchool(profile, schoolForDepartment)).toBe(
+      'School of Public Health',
+    );
+  });
+
+  it.each([
+    [
+      'only Secondary appointments',
+      [{ type: 'Secondary', organizationName: 'Fixture Epidemiology' }],
+    ],
+    [
+      'Primary appointments in two schools',
+      [
+        { type: 'Primary', organizationName: 'Fixture Epidemiology' },
+        { type: 'Primary', organizationName: 'Fixture Economics' },
+      ],
+    ],
+    [
+      'a Primary unit off the catalog beside one in another school',
+      [
+        { type: 'Primary', organizationName: 'Fixture Epidemiology' },
+        { type: 'Primary', organizationName: 'Fixture Unknown Unit' },
+      ],
+    ],
+    [
+      'a Primary unit off the catalog',
+      [{ type: 'Primary', organizationName: 'Fixture Unknown Unit' }],
+    ],
+  ])('states no school for %s', (_label, appointments) => {
+    expect(ysmPrimaryAppointmentSchool(profileWith(appointments), schoolForDepartment)).toBe(
+      undefined,
+    );
+  });
+
+  it('states no school without a catalog', () => {
+    const profile = profileWith([{ type: 'Primary', organizationName: 'Fixture Epidemiology' }]);
+    expect(ysmPrimaryAppointmentSchool(profile, null)).toBeUndefined();
+  });
+
+  const schoolObservation = (primaryAppointmentSchool?: string) =>
+    facultyToResearchEntityObservations(
+      { ...profileWith([]), primaryAppointmentSchool },
+      'netid:jordan.rivers',
+      NO_SURNAME_ROSTER,
+    ).find((observation) => observation.field === 'school');
+
+  it('cites the stated school of another school to the profile page', () => {
+    const observation = schoolObservation('School of Public Health');
+    expect(observation?.value).toBe('School of Public Health');
+    expect(observation?.sourceUrl).toBe(RIVERS.profileUrl);
+  });
+
+  it('keeps the lane school when the profile states Medicine or nothing', () => {
+    expect(schoolObservation('School of Medicine')?.value).toBe('Yale School of Medicine');
+    expect(schoolObservation(undefined)?.value).toBe('Yale School of Medicine');
+  });
+
+  it('carries the stated school from the page into the emitted research row', async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) {
+        return directoryHtml([
+          { id: 'R', items: [{ url: '/profile/jordan-rivers/', text: 'Rivers, Jordan' }] },
+        ]);
+      }
+      if (url === RIVERS.profileUrl) {
+        return profileHtml({
+          fullName: 'Jordan Rivers',
+          email: 'jordan.rivers@yale.edu',
+          meshKeywords: ['Heart Failure'],
+          appointments: [
+            { type: 'Primary', organizationName: 'Fixture Epidemiology' },
+            { type: 'Secondary', organizationName: 'Cardiology' },
+          ],
+        });
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+    const scraper = new YsmFacultyDirectoryScraper(
+      fetcher,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      async () => schoolForDepartment,
+    );
+    const { ctx, emitted } = makeContext();
+
+    await scraper.run(ctx);
+
+    const school = emitted.find(
+      (observation) =>
+        observation.entityType === 'researchEntity' && observation.field === 'school',
+    );
+    expect(school?.value).toBe('School of Public Health');
+    expect(school?.sourceUrl).toBe(RIVERS.profileUrl);
   });
 });

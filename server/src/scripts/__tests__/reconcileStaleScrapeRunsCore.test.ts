@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  planWrittenCountRecount,
+  writtenCountRecountUpdate,
   assertReconcileStaleScrapeRunsApplyAllowed,
   planStaleScrapeRunReconciliation,
   resolveStaleScrapeRunThresholds,
@@ -359,5 +361,84 @@ describe('a stalled run (#5086)', () => {
     const update = staleScrapeRunUpdate(outcome.reap[0]!, { now: NOW, detectedBy: 'sweep' });
     expect(update.filter).toEqual({ _id: 'stalled-run', status: 'running', heartbeatAt: lastBeat });
     expect(update.update).toMatchObject({ $set: { status: 'interrupted' } });
+  });
+});
+
+describe('planWrittenCountRecount (#6269)', () => {
+  const recountable = (id: string, observationCount: number, sourceName = 'fixture-source') => ({
+    id,
+    sourceName,
+    status: 'interrupted',
+    startedAt: new Date('2026-11-12T22:00:00Z'),
+    observationCount,
+  });
+  const now = new Date('2026-11-14T03:00:00Z');
+
+  it('sorts runs into under-recorded, matching and stored below recorded', () => {
+    const plan = planWrittenCountRecount(
+      [
+        recountable('a', 0),
+        recountable('b', 10),
+        recountable('c', 5),
+        recountable('d', 40, 'other-source'),
+      ],
+      new Map([
+        ['a', 900],
+        ['b', 10],
+        ['c', 12],
+        ['d', 3],
+      ]),
+    );
+    expect(plan).toMatchObject({
+      runs: 4,
+      underRecorded: 2,
+      matching: 1,
+      storedBelowRecorded: 1,
+      missingFromRecords: 907,
+      storedBelowRecordedBySource: { 'other-source': 1 },
+    });
+    expect(plan.recounts.map((recount) => [recount.id, recount.verdict])).toEqual([
+      ['a', 'under_recorded'],
+      ['c', 'under_recorded'],
+      ['b', 'matching'],
+      ['d', 'stored_below_recorded'],
+    ]);
+  });
+
+  it('counts a run with no stored observations as zero, not as missing', () => {
+    expect(planWrittenCountRecount([recountable('a', 0)], new Map()).recounts[0]).toMatchObject({
+      storedObservationCount: 0,
+      verdict: 'matching',
+    });
+  });
+
+  it('parses --recount-written as its own dry-run-first mode', () => {
+    expect(parseReconcileStaleScrapeRunsArgs(['--recount-written'])).toMatchObject({
+      recountWritten: true,
+      apply: false,
+    });
+    expect(() => parseReconcileStaleScrapeRunsArgs(['--recount-written', '--apply'])).toThrow(
+      '--confirm-reconcile-stale-scrape-runs',
+    );
+  });
+
+  it('writes the stored count only where it says more than the record', () => {
+    const [recount] = planWrittenCountRecount([recountable('a', 0)], new Map([['a', 7]])).recounts;
+    expect(writtenCountRecountUpdate(recount, now)).toEqual({
+      filter: { _id: 'a', status: { $in: ['interrupted', 'failure'] } },
+      update: { $set: { storedObservationCountAtReconcile: 7, reconciledAt: now } },
+    });
+  });
+
+  it('only stamps a matching run as reconciled', () => {
+    const [recount] = planWrittenCountRecount([recountable('a', 7)], new Map([['a', 7]])).recounts;
+    expect(writtenCountRecountUpdate(recount, now)?.update).toEqual({
+      $set: { reconciledAt: now },
+    });
+  });
+
+  it('writes nothing for a run that stores less than it recorded', () => {
+    const [recount] = planWrittenCountRecount([recountable('a', 40)], new Map([['a', 3]])).recounts;
+    expect(writtenCountRecountUpdate(recount, now)).toBeUndefined();
   });
 });

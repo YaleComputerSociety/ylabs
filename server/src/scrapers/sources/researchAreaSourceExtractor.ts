@@ -489,7 +489,6 @@ export function researchAreaObservationsFromExtraction(
 async function defaultFetchPage(url: string): Promise<FetchedAreaPage | null> {
   const page = await fetchPageWithPolicy(url, {
     timeoutMs: 10_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     maxRedirects: 5,
   });
   return { url: page.url, html: page.html };

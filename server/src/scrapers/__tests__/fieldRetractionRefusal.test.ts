@@ -14,6 +14,7 @@ import {
 
 const LISTING_PAGE = 'https://example.yale.edu/people/faculty';
 const OTHER_PAGE = 'https://example.yale.edu/people/emeriti';
+const PROFILE_ONLY_PAGE = 'https://example.yale.edu/people/synthetic-person';
 const STORED_LINK = 'https://synthetic-lab.example.org/';
 const OTHER_LINK = 'https://another-site.example.org/';
 const CLASSIFIER = 'roster-website-signal';
@@ -377,6 +378,50 @@ describe('the sole-holder liveness probe and a refusal (#5803)', () => {
 });
 
 describe('refusals loaded from witness rows', () => {
+  it('files a refusal under its named page only when the run read that page', () => {
+    const rows = [
+      {
+        sourceUrl: OTHER_PAGE,
+        refusedValues: [
+          {
+            field: 'websiteUrl',
+            value: STORED_LINK,
+            reason: 'r',
+            classifier: CLASSIFIER,
+            classifierVersion: 2,
+            assertedUnder: LISTING_PAGE,
+          },
+        ],
+      },
+    ];
+    expect(refusalsFromWitnessRows(rows, new Set([LISTING_PAGE]))[0].sourceUrl).toBe(LISTING_PAGE);
+    expect(refusalsFromWitnessRows(rows, new Set([PROFILE_ONLY_PAGE]))[0].sourceUrl).toBe(
+      OTHER_PAGE,
+    );
+    expect(refusalsFromWitnessRows(rows)[0].sourceUrl).toBe(OTHER_PAGE);
+  });
+
+  it('ignores a named page that is not an http address', () => {
+    const rows = [
+      {
+        sourceUrl: OTHER_PAGE,
+        refusedValues: [
+          {
+            field: 'websiteUrl',
+            value: STORED_LINK,
+            reason: 'r',
+            classifier: CLASSIFIER,
+            classifierVersion: 2,
+            assertedUnder: 'javascript:void(0)',
+          },
+        ],
+      },
+    ];
+    expect(refusalsFromWitnessRows(rows, new Set(['javascript:void(0)']))[0].sourceUrl).toBe(
+      OTHER_PAGE,
+    );
+  });
+
   it('files each refusal under the page of the row that carried it and drops malformed entries', () => {
     const loaded = refusalsFromWitnessRows([
       {

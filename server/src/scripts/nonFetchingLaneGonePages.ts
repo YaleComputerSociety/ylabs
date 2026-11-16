@@ -29,6 +29,7 @@ import {
   type RowObservation,
 } from './nonFetchingLaneGonePagesCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -224,6 +225,7 @@ async function recordBorrowingLaneVerdicts(
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseNonFetchingLaneGonePagesArgs(process.argv.slice(2));
   assertScriptApplyAllowed({
     apply: options.apply,

@@ -129,14 +129,14 @@ export interface ScopedUserRederiveRow {
   onlyFields: string[];
   fieldsWritten: number;
   plannedPaths: string[];
-  droppedPaths: string[];
+  outOfScopePaths: string[];
 }
 
 export function scopedUserRederiver(
   materialize: (
     entityKey: string,
     onlyFields: readonly string[],
-  ) => Promise<{ fieldsWritten?: number; plannedPaths?: string[]; droppedPaths?: string[] }>,
+  ) => Promise<{ fieldsWritten?: number; plannedPaths?: string[]; outOfScopePaths?: string[] }>,
   rows: ScopedUserRederiveRow[],
 ): UserSubjectRederiver {
   return async ({ entityKey }, retractedFields) => {
@@ -147,7 +147,7 @@ export function scopedUserRederiver(
       onlyFields,
       fieldsWritten: Number(result?.fieldsWritten ?? 0),
       plannedPaths: result?.plannedPaths ?? [],
-      droppedPaths: result?.droppedPaths ?? [],
+      outOfScopePaths: result?.outOfScopePaths ?? [],
     });
     return result;
   };
@@ -227,6 +227,7 @@ async function main() {
       plannedRetractions: result.retractions.length,
       plannedStoredValueClears: result.retractions.filter((entry) => entry.clearsStoredValue)
         .length,
+      soleHolderRemovalsByHost: result.soleHolderRemovalsByHost ?? [],
     })),
     applied: applied.map((result) => ({
       sourceName: result.sourceName,
@@ -234,6 +235,7 @@ async function main() {
       counts: result.counts,
       frozenFields: result.frozenFields,
       regatedEntities: result.regatedEntities,
+      soleHolderRemovalsByHost: result.soleHolderRemovalsByHost ?? [],
     })),
     retractions: planned.flatMap((result) => result.retractions),
     plannedUser: plannedUser.map((result) => ({

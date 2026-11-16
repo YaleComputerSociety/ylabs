@@ -137,7 +137,11 @@ describe('personToObservations', () => {
       orcid: syntheticPersonOrcid(),
     };
 
-    const obs = personToObservations(sample, 'https://api.yalies.io/v2/people');
+    const obs = personToObservations(sample, 'https://api.yalies.io/v2/people', (name) =>
+      name === 'Molecular Biophysics and Biochemistry'
+        ? 'Molecular Biophysics & Biochemistry'
+        : undefined,
+    );
 
     // Build a quick lookup by field for easy assertions.
     const byField: Record<string, ObservationInput> = {};
@@ -349,14 +353,18 @@ describe('YaleDirectoryScraper.run', () => {
   });
 
   it('reads the department from the unit class when the unit is an administrative bucket (#6028)', () => {
-    const obs = personToObservations({
-      netid: 'pp01',
-      first_name: 'Fixture',
-      last_name: 'Mind',
-      title: 'Professor of Psychology',
-      unit_class: 'FASPSY',
-      unit: 'Department Administration',
-    });
+    const obs = personToObservations(
+      {
+        netid: 'pp01',
+        first_name: 'Fixture',
+        last_name: 'Mind',
+        title: 'Professor of Psychology',
+        unit_class: 'FASPSY',
+        unit: 'Department Administration',
+      },
+      undefined,
+      (name) => (name === 'Psychology' ? name : undefined),
+    );
     expect(obs.find((o) => o.field === 'primaryDepartment')?.value).toBe('Psychology');
   });
 

@@ -3,8 +3,12 @@ import { useState, type ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ResearchFilterDisclosure from '../ResearchFilterDisclosure';
+import { candidatesIn, compileStylesheet } from '../../../testUtils/tailwind';
 
 const originalMatchMedia = window.matchMedia;
+
+const parsePercentOrNumber = (value: string): number =>
+  value.endsWith('%') ? Number(value.slice(0, -1)) / 100 : Number(value);
 
 const renderFilters = (
   overrides: Partial<ComponentProps<typeof ResearchFilterDisclosure>> = {},
@@ -137,7 +141,7 @@ describe('ResearchFilterDisclosure', () => {
     expect(props[handler]).toHaveBeenCalledWith(false);
   });
 
-  it('keeps an option that adding would empty in place, disabled, with the missing-evidence note (#5963)', () => {
+  it('keeps an option that adding would empty in place, unavailable, with the remove-a-filter tip (#5963, #6203)', () => {
     renderFilters({
       variant: 'sidebar',
       selectedWelcomesUndergrads: true,
@@ -150,14 +154,67 @@ describe('ResearchFilterDisclosure', () => {
 
     expect(screen.getByRole('checkbox', { name: 'Taking undergrads now (4)' })).toBeChecked();
     const hosted = screen.getByRole('checkbox', { name: 'Has had undergrads before (0)' });
-    expect(hosted).toBeDisabled();
-    expect(hosted).toHaveAccessibleDescription('Missing evidence is not proof there is none.');
-    const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (0)' });
-    expect(advises).toBeDisabled();
-    expect(advises).toHaveAccessibleDescription(
-      'e.g. supervised senior theses Missing evidence is not proof there is none.',
+    expect(hosted).toHaveAttribute('aria-disabled', 'true');
+    expect(hosted).toHaveAccessibleDescription(
+      'None match your other filters. Remove a filter to see more.',
     );
-    expect(screen.getAllByText('Missing evidence is not proof there is none.')).toHaveLength(1);
+    const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (0)' });
+    expect(advises).toHaveAttribute('aria-disabled', 'true');
+    expect(advises).toHaveAccessibleDescription(
+      'e.g. supervised senior theses None match your other filters. Remove a filter to see more.',
+    );
+  });
+
+  it.each([
+    [
+      'another filter is active',
+      { selectedDepartment: 'Computer Science' },
+      'None match your other filters. Remove a filter to see more.',
+    ],
+    [
+      'an Undergrads sibling is ticked',
+      { selectedHostsUndergrads: true },
+      'None match your other filters. Remove a filter to see more.',
+    ],
+    ['only a query is active', { hasActiveQuery: true }, 'None match this search.'],
+  ])('tells a zero option apart by what narrowed it when %s (#6203)', (_case, overrides, tip) => {
+    renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+      ...overrides,
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    expect(taking).toHaveAttribute('aria-disabled', 'true');
+    expect(taking).toHaveAccessibleDescription(tip);
+  });
+
+  // The served total being zero is neither a filter nor a search the student can widen,
+  // and its wording is still with the owner (#6203), so the option says only its count.
+  it('offers no reason for a zero option when neither a query nor a filter is active (#6203)', () => {
+    renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    expect(taking).toHaveAttribute('aria-disabled', 'true');
+    expect(taking).not.toHaveAccessibleDescription();
+    expect(
+      screen.queryByText('None match your other filters. Remove a filter to see more.'),
+    ).toBeNull();
+    expect(screen.queryByText('None match this search.')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Why Taking undergrads now is unavailable' }),
+    ).toBeNull();
   });
 
   it('keeps a ticked option checkable at zero, so it can always be removed', () => {
@@ -170,7 +227,10 @@ describe('ResearchFilterDisclosure', () => {
     const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (0)' });
     expect(advises).toBeChecked();
     expect(advises).toBeEnabled();
-    expect(screen.queryByText('Missing evidence is not proof there is none.')).toBeNull();
+    expect(advises).not.toHaveAttribute('aria-disabled');
+    expect(
+      screen.queryByText('None match your other filters. Remove a filter to see more.'),
+    ).toBeNull();
   });
 
   it('shows the option without a count when the counts could not load', () => {
@@ -197,7 +257,7 @@ describe('ResearchFilterDisclosure', () => {
     const dialog = screen.getByRole('dialog', { name: 'Research filters' });
     expect(
       within(dialog).getByRole('checkbox', { name: 'Has had undergrads before (0)' }),
-    ).toBeDisabled();
+    ).toHaveAttribute('aria-disabled', 'true');
     await waitFor(() =>
       expect(
         within(dialog).getByRole('checkbox', { name: 'Advises undergrad research (3)' }),
@@ -205,28 +265,113 @@ describe('ResearchFilterDisclosure', () => {
     );
   });
 
-  it('hides a zero option while nothing is ticked, except hosted, and drops the combination line for one option', () => {
+  it('always shows all three Undergrads options, an option at zero unavailable but focusable with its tip (#6203)', () => {
     renderFilters({
-      variant: 'sidebar',
+      selectedDepartment: 'Computer Science',
       facetDistribution: {
         welcomesUndergrads: { true: 0 },
         hostsUndergrads: { true: 3 },
         mentorsUndergrads: { true: 0 },
       },
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Filters, 1 active' }));
 
     const group = screen.getByRole('group', { name: 'Undergrads' });
-    expect(within(group).getAllByRole('checkbox')).toHaveLength(1);
-    expect(screen.getByRole('checkbox', { name: 'Has had undergrads before (3)' })).toBeEnabled();
-    expect(group).not.toHaveAccessibleDescription();
-    expect(screen.queryByText('Shows research matching every ticked option')).toBeNull();
+    expect(
+      within(group)
+        .getAllByRole('checkbox')
+        .map((box) => box.closest('label')?.textContent),
+    ).toEqual([
+      'Taking undergrads now (0)',
+      'Has had undergrads before (3)',
+      'Advises undergrad research (0)',
+    ]);
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    expect(taking).toHaveAttribute('aria-disabled', 'true');
+    expect(taking).not.toBeDisabled();
+    expect(taking).toHaveAccessibleDescription(
+      'None match your other filters. Remove a filter to see more.',
+    );
+    taking.focus();
+    expect(taking).toHaveFocus();
+    const hosted = screen.getByRole('checkbox', { name: 'Has had undergrads before (3)' });
+    expect(hosted).toBeEnabled();
+    expect(hosted).not.toHaveAttribute('aria-disabled');
+    expect(hosted).not.toHaveAccessibleDescription();
+  });
+
+  // A dim that only a class name proves is a dim nobody measured, so the control's own
+  // classes are compiled through the real Tailwind pipeline and the resolved opacity read.
+  it("dims an unavailable option's own control while its label keeps the muted token (#6203)", async () => {
+    renderFilters({
+      variant: 'sidebar',
+      selectedDepartment: 'Computer Science',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    const label = taking.closest('label');
+    const labelStylesheet = await compileStylesheet(
+      candidatesIn(`<span class="${label?.className}"></span>`),
+    );
+    const labelClassNames = (label?.className ?? '').split(' ').filter(Boolean);
+    const labelOpacity: string[] = [];
+    labelStylesheet.walkDecls('opacity', (declaration) => {
+      const selector = (declaration.parent as { selector?: string })?.selector || '';
+      if (labelClassNames.some((name) => selector.includes(`.${name}`))) {
+        labelOpacity.push(declaration.value);
+      }
+    });
+    expect(labelOpacity).toEqual([]);
+    const mutedColors: string[] = [];
+    labelStylesheet.walkRules((rule) => {
+      if (rule.selector !== '.text-muted') return;
+      rule.walkDecls('color', (declaration) => {
+        mutedColors.push(declaration.value);
+      });
+    });
+    expect(mutedColors).toEqual(['var(--yr-muted)']);
+
+    const stylesheet = await compileStylesheet(candidatesIn(taking.outerHTML));
+    const dimmed: number[] = [];
+    stylesheet.walkDecls('opacity', (declaration) => {
+      const selector = (declaration.parent as { selector?: string })?.selector || '';
+      if (selector.includes('aria-disabled')) dimmed.push(parsePercentOrNumber(declaration.value));
+    });
+    expect(dimmed).toEqual([0.6]);
+  });
+
+  it('ignores a press on an unavailable option and reports nothing', () => {
+    const { props } = renderFilters({
+      variant: 'sidebar',
+      selectedDepartment: 'Computer Science',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    fireEvent.click(taking);
+    expect(taking).not.toBeChecked();
+    expect(props.onWelcomesUndergradsChange).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: 'Why Taking undergrads now is unavailable' }),
+    ).toBeTruthy();
   });
 
   it('moves desktop focus to the first select when every Undergrads option is disabled', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     renderFilters({
       facetDistribution: {
+        welcomesUndergrads: { true: 0 },
         hostsUndergrads: { true: 0 },
+        mentorsUndergrads: { true: 0 },
         entityType: { LAB: 12, CORE_FACILITY: 4 },
       },
     });

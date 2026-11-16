@@ -5,6 +5,119 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-13: A Lead's Person Row Folds Into Their Lab Only When It Is The Same Research (#6206)
+
+Decision (owner, 2026-11-13).
+A lab lead's own person-scoped row that shares the lab's website merges into the lab only when it describes the same research as the lab and nothing outside it; otherwise both rows stay.
+When they merge, the lab survives, any evidence only the person row carries moves to it, and the lead stays named on the lab card, so the person is still found through the lab (2026-10-21 decisions).
+Stored evidence does not witness "the same research": in a blind three-grader check, a person row whose text was all read from the lab's own site, and which cited nothing else but the person's profile, was graded the same research in one case and broader research in another, and topic overlap did not separate the two.
+So this is a per-row operator judgement after a blind check, not a lane rule.
+
+One lab stored twice on its own site does fold by lane rule: the two rows name the same lab, their own websites are one identity (`www.` folded), and exactly one row anchors, so the other has no lead or is led only by people of the anchor row (`subjectTwinAnchor` in `scripts/mergeSameLeadDuplicateGroupsCore.ts`).
+A twin led by anyone who neither leads nor belongs to the anchor never folds under it, and a pair the URL-identity lanes plan or quarantine is left to them.
+
+## 2026-11-13: A Lead's Ruled Rank Is A Signal, Not A Serve-Time Gate (#6266)
+
+Decision (five-agent consensus under the owner's 2026-11-13 delegation, 4 of 5 keeping the rows served).
+The gate stops holding a row at `operator_review` because every lead states only a rank the owner ruled cannot host; `lead_title_ruled_non_hosting_rank` stays on the row as a soft signal.
+The vote turned on the 2026-10-20 decision (#5407) that whether someone could host a student is a signal rather than a gate, and that a title is evidence for those parts, never the rule; that decision postdates the 2026-10-04 rank rule.
+The serve-time hold reused the archive stage's predicate, where refusing on doubt is fail-safe because an archive is irreversible; at serve time the same predicate withheld a row on doubt instead of keeping it, which inverts that.
+The archive stage keeps the rank rule unchanged, as do `lead_is_staff_of_served_lab` and the duplicate and shell arms.
+It surfaced when #6146 let the YSM lane refresh screened profiles' own titles: for 11 researchers the corrected title would have tripped the hold on the one row each solely leads, and none of those rows carries a hosted-undergraduates signal.
+Measured on Development, 2026-11-13, gate dry run over 4,153 research rows: 2 rows change tier, both from `operator_review` to `student_ready`, and both were held by this reason alone; 1 more row carries it and stays `suppressed` as a duplicate; 0 rows leave `student_ready`.
+
+## 2026-11-14: A Removal Needs Two Observations That Agree (#6264)
+
+Decision (ylabs-manager, 2026-11-14, via the backlog agent on #6264).
+This extends the #6258 rule, that a fetch which observed nothing is never evidence, to an observation that is real but unconfirmed.
+A removal or downgrade of a stored value needs two observations that agree, which is the gone-twice contract of #4729, #4840 and #4862.
+`removalConfirmation` in `server/src/services/sourceLinkRemovalConfirmation.ts` is the one rule the callers below read.
+A `404` or `410` confirms when a stored gone verdict and a fresh probe both report it.
+A host-level failure counts as gone only under all three of the manager's conditions.
+First, nothing `isNotObserved` covers ever counts: not our own pause, not an SSRF guard refusal (including the #6123 case of a campus-only host that resolves privately), not a budget or slot refusal, and not a transient transport error.
+Second, the two observations are the same class, a DNS negative under #2726 or a refused connection (`ECONNREFUSED`), and at least `CONNECTION_FAILURE_CONFIRMATION_GAP_MS` (six hours) apart.
+An unroutable network or host (`ENETUNREACH`, `EHOSTUNREACH`) never counts toward a removal, because it can mean this machine had no route, the lid-close and network-drop failure, so two such moments would confirm a host that never saw a request (ylabs-manager, 2026-11-14, on yale worker 6's review of #6282).
+Those codes are still `UNAVAILABLE` to link health, and its own verdicts and `DEAD_LINK_ERROR_CODES` are unchanged; only the removal rule reads them as no evidence.
+Third, the run report lists removals per host (`RemovalsByHost`), so a lapsed domain reads as one line with its count.
+A host that resolves only into private address space never counts, on either observation.
+Each class is recorded positively on the stored verdict, `connectionRefused` for a refused connection and `nameNotFound` for a DNS negative, because #6116 records a refused connection with no marker when the verdict it replaced was not live, so a missing marker cannot be read as DNS; `connectionLevelFailure` still marks all three connection codes for the backfill's own second-run hold.
+A verdict written before these fields existed, including one marked only by #6116's `confirmingConnectionFailureAt`, has no recorded class and holds as `class-unknown` until the next link-health sweep rewrites it.
+The callers are the field-retraction sole-holder screen (`probeRetractionValueLiveness`), where the lane's own absence reads are the first observation, so a `404`, a `410` or an answer that lands away from the requested page confirms on the probe alone; `clearDeadLabResearchHomes`; and `repairLegacyPersonPageUrls`.
+The last two need a stored gone verdict plus an agreeing probe, so a single `404` now reports as awaiting confirmation.
+`clearDeadLabResearchHomes` never clears on a host-level failure, because every URL it reads sits on one school host.
+The YSE faculty-directory lab-website removal already met the contract: its `assertsNoValueFor` is a lane read, and field retraction needs two such reads plus the probe above before anything clears.
+The single probe there only withdraws the row's lab identity, which stays fail-closed because link health drops the dead verdict once the row stops citing the URL, and waiting would re-mint the lab (#3452).
+The YSM faculty-directory removal is a read of an empty lab slot, so it was never a probe-only removal.
+`lab-site-lead-verification` treats a read whose landing page or members page answered a status other than `404` or `410`, or whose landing host failed at the host level, as partial, and a partial read may raise a stored lead verdict but never lower it (`partialReadWouldDowngrade`), the rule `lab-site-undergrad-invitation` already applies.
+`lanePageHealth`'s per-page withdrawal is unchanged and still needs a status on both observations.
+Measured on Development on 2026-11-14 before the change, no served value differed on any of these paths, so the change is preventive.
+It governs the first `lab-site-lead-verification` run after hold 3g (the 37 rows on #6258), the first per-lane field-retraction lift under hold 5, and the next run of each script.
+
+## 2026-11-13: A Fetch That Observed Nothing Is Never Evidence (#6258)
+
+Decision (backlog agent, 2026-11-13, challenge upheld on #6258).
+A failed fetch is evidence about a page only when the page or its host answered.
+`isNotObserved` in `server/src/scrapers/utils/notObserved.ts` is the one line every lane and script draws, and no lane may turn a failure it covers into a verdict, an absence, a retraction, a cleared field or a lowered confidence.
+Not observed: a request our own code refused before sending (a host pause, the request budget, a slot wait, an excluded host, a write lease, and every SSRF guard refusal except `unresolvable`), a timeout, a reset, a temporary DNS failure, an abort, and any error that carries neither an HTTP status nor a host-level code.
+Observed: any HTTP status, the four host-level codes `ENOTFOUND`, `ECONNREFUSED`, `EHOSTUNREACH` and `ENETUNREACH`, the guard's `unresolvable` refusal (a name the resolver confirmed absent after asking again, the same fact as `ENOTFOUND`, #2709), and a TLS verification code.
+An observation still passes each lane's own confirmation rule: #2725 for DNS, #2751 for a second attempt agreeing on a refused connection, and #6116 for a second run before a refused connection retires a live link.
+Only a `404` or `410` says a page is gone; a `403`, `429` or `5xx` is observed but says nothing about absence, so `clearDeadLabResearchHomes` and `repairLegacyPersonPageUrls` clear or replace a stored value on a probe only for one of those two statuses.
+A lane that falls back to a stored value on a non-observation counts the row as deferred rather than writing.
+A lane may still record what an observed status told it, so a throttled or erroring page is a reachability observation rather than a deferral; whether a throttle should also defer, and whether one unconfirmed probe may remove a value, are #6264's question.
+A redirect loop is an observation rather than a non-observation, because the host answered every hop, and #3135 keeps it as evidence that the cited address no longer serves the resource.
+`server/src/scrapers/__tests__/notObservedNeverEvidenceGuard.test.ts` scans `scrapers/`, `scripts/` and `services/`: a file that both fetches and writes an absence must call `isNotObserved` (or `isTransientFetchFailure`, which delegates to it) or carry a reviewed reason naming its own confirmation rule.
+A stored status-less `UNAVAILABLE` is left as it is, because it is how a confirmed DNS negative retires a domain (#2726).
+
+## 2026-11-13: Correctly Withheld Programs Are Not Repair Work (#6204)
+
+Decision (owner request, 2026-11-13).
+The `/analytics` Decision Lanes group `non_research_program` and `external_award_cycle_stale` as "Correctly Withheld", apart from "Must Fix Before Promotion", because they are verdicts that the row should be hidden rather than evidence still to find.
+A row carrying either reason counts only under it, so its other reasons, such as a missing application route, no longer count as must-fix work either.
+A blind check of stored captures on Development (3 graders, 2 of 3 agreeing) confirmed both buckets.
+For `external_award_cycle_stale`, 19 of 20 sampled rows were correctly withheld; the 20th states rolling applications, but it is also not research, so it stays withheld.
+For `non_research_program`, 17 of 20 were plainly not research, and the other 3 were funded creative or journalism projects; a 5-agent consensus on #6216 (5 of 5) kept those withheld, because the programs surface stays research funding under #4675 and the creative-practice decision covers directory faculty only.
+The counts are derived when the board is read and nothing is stored, so if a later lane change removes a verdict, the other reasons on that row count as repair work again without any write.
+A reason joins the group only after a blind sample confirms it the same way; `prize_for_completed_work` and the other suppression verdicts have not been sampled and stay where they are.
+The set is `CORRECTLY_WITHHELD_REASONS` in `server/src/services/adminOperatorBoardService.ts`.
+
+## 2026-11-13: A Refused Connection Retires A Live Link Only Once A Second Run Agrees (#6116)
+
+This refines the #2751 rule that a reachability failure confirmed by a second attempt retires a link, and leaves the #2726 DNS rule as it was.
+Decision (ylabs-manager, 2026-11-13, scope ruling for #6116): an `ECONNREFUSED`, `EHOSTUNREACH` or `ENETUNREACH` probe failure over a stored `HEALTHY` or `REDIRECTED` verdict keeps that verdict on the first run that sees it, and records `UNAVAILABLE` only when a later, different run sees the same failure.
+The two attempts inside one probe are seconds apart, and on the 2026-11-13 Development dry run a cited page on a public university host went `HEALTHY` to `UNAVAILABLE` with no status code, then answered `200` minutes later.
+`ENOTFOUND` stays immediate, because a confirmed DNS negative is how a retired domain retires, and `404`, `410` and every connection failure over a verdict other than `HEALTHY` or `REDIRECTED` are unchanged.
+`classifyProbeOutcome` and `DEAD_LINK_ERROR_CODES` are unchanged too: the probe still calls the link `UNAVAILABLE`, and only the backfill decides when that verdict may replace a live one.
+The pending failure is stored on the link-health entry itself, as `pendingConnectionFailureAt` holding the start of the run that saw it, beside `lastAttemptedAt`.
+That is the least new shape: link health keeps its probe history on that entry already and has no observation lane, so an observation would add a collection vocabulary and a reader for one fact.
+It is not a field a lock makes stick, because the backfill writes it, reads it and re-derives it from every probe, so running the pass twice is what produces the answer.
+A probe that reaches the host, with any HTTP status or a certificate result, drops the marker; a probe that reaches nothing, such as a timeout, a reset or a guard refusal, keeps it, because it observed nothing about the host.
+The marker names the run rather than the probe, so re-resolving within one run never confirms itself, and a `HEALTHY` verdict holding it is re-probed rather than carried by the 7-day sweep window, or the confirming run would never come.
+The confirming run must start at least six hours after the first (`CONNECTION_FAILURE_CONFIRMATION_GAP_MS`, ylabs-manager, 2026-11-13), because a resume minutes later is the same outage rather than a second observation; a failure inside the gap keeps the first time, a missing or unreadable time never confirms, and the `UNAVAILABLE` entry keeps both run starts as `pendingConnectionFailureAt` and `confirmingConnectionFailureAt` so the retirement is auditable.
+The confirming probe must also come at least six hours after the first probe, recorded as `pendingConnectionFailureProbedAt`, because a run can reach a URL hours after it starts, and two run starts six hours apart could otherwise bracket two failures minutes apart.
+The cost is that a host which really is gone is recorded gone at least six hours and one sweep later.
+A connect-time guard refusal is a non-observation and the stored verdict stands, so it is not held: the guard's connect-time lookup reports a private address as `EHOSTUNREACH` with its own refusal message, the probe now recognises that refusal and reports `ERR_SSRF_BLOCKED`, and only a genuine connect failure is held under the six-hour rule (e3 review of #6187, 2026-11-13); this closes #6150.
+
+## 2026-11-13: After A PI-Dedupe Merge, Re-Pointed Identity Readings Are The Survivor's Own (#6183)
+
+Decision (ylabs-manager, 2026-11-13).
+A PI-dedupe merge re-points the merged-in row's observations at the survivor's id, and for identity fields (`school`, `entityType`, `kind`, `inferredPiUserKey`, as well as `name` and `websiteUrl`) those re-pointed readings compete as the survivor's own, so a higher-confidence reading from the merged-in row can win.
+This is deliberate, and it is why `RELINK_ORIGIN_ATTRIBUTED_FIELDS` stays limited to prose: only description fields are attributed back to the page they were read from (#4741).
+Attributing identity back was measured before it was refused.
+A blind check of the rows it would change found the current resolution right in 27 of 31, the attribution right in 3, and 1 unsure.
+The change would have touched 18 or 52 served rows, depending on the scope, and changed no row's visibility.
+"Identity is the survivor's own" still governs readings that stay keyed to the merged-in row's own id after the merge (#6096's 36): `school` and `kind` never resolve onto the survivor through a merged-in-keyed reading, while `entityType` is admitted only when it corroborates an unbacked stored type and `inferredPiUserKey`/`inferredPiUserId` only when the merged-in row names the lead of a lead-less survivor.
+`researchEntityDedupeMergedInIdentityReadings.integration.test.ts` holds both halves through the real merge path, and its twin keeps the name `Fixture Twin Lab` on purpose: a type-neutral variant measurably lost the name control to the survivor's own name, so the name assertion holds independent of the leaked `entityType`.
+
+## 2026-11-13: A Profile's Home Department Is Its First Appointment, Never A Promoted Later One (#6070)
+
+Decision (ylabs-manager, 2026-11-13).
+The `ysm-faculty-directory` lane takes a person's `primaryDepartment` from the profile's first appointment, and only when the department catalog names it; a later, secondary appointment is never promoted in its place, an organization never counts, and with no catalog the lane emits no department.
+That is the same fail-closed stance the official-profile backfill takes for its department (#6099), so neither profile lane promotes a later unit.
+The Yale directory lane takes the same stance (#6129): emit fails closed with no catalog; resolve-time screens treat a missing catalog as screen-nothing, so an outage can never drive the shared clear (#6065).
+Promotion was measured before it was refused: 47 researchers in the #6049 class (Otolaryngology spellings excluded) had a non-catalog first entry and a catalog department later in the stored list, and a seeded blind sample of 15 of them was graded by three graders against each person's live profile, 2-of-3 deciding which candidate was the home department.
+The promoted later unit won 6, the first entry won 2, 6 were unsure (most pages did not state the appointment in readable text) and 1 had no majority, short of the 12 of 15 the manager set as the bar for keeping promotion.
+A researcher whose first appointment is a program or center therefore states no department from this lane, and another lane's department or the directory fill decides the field.
+
 ## 2026-11-13: The Getting-Started Guide Is Offered On The Research Landing And On Mentor-First Programs (#6095)
 
 Decision (5-agent consensus 5/5, 2026-11-13, posted on #6095; the owner may veto).
@@ -27,6 +140,29 @@ All five agents chose a notice over trimming, because prior decisions keep weak-
 A cheap fitted similarity signal was measured and rejected: on 186 graded queries held out from the fit, 15 of its 31 firings were false alarms.
 The rule gated on the rerank cache's own measured relevance fired on 10 of 36 seeded Production queries, every one with 0 to 2 relevant rows in its top 10, with 0 false alarms.
 So it fires only from a seeded entry, never from a served, shadow or live-miss entry or from a guessed signal; `docs/search-rerank-cache.md` holds the contract.
+
+## 2026-11-13: A Center Roster's Emeritus Or Past Section Ends The Center Edge, And Omission Alone Retires Nothing (#6084)
+
+This extends the 2026-11-11 #5835 entry below to the Emeritus or Past section of an official Yale center roster; it does not apply #5835 unchanged, because a center section ends a membership edge where #5835 only labels a lead.
+Decision (5-agent consensus via the manager, 2026-11-13, posted on #6084; the owner may veto): `centers-institutes-index` records the section each listing sits under, and a listing under an Alumni, Former, Past, Previous, Retired or In Memoriam section, or under an Emeritus section, is positive evidence that the person is no longer a current member of that center.
+
+- **Emeritus section (3 of 5).** The listing ends the lane's current center edge as `HISTORICAL` and records the section label in `rosterProvenance.sectionLabel`.
+  The minority preferred keeping the edge with a label.
+  The person's own rows stay served and labelled under the 2026-10-02 emeritus rule (#4431), and the listing never mints a row, an edge or a roster member.
+  The #5835 rule that a fresh read of the person's own page as a current appointment wins is kept: an emeritus listing whose member page, read in the same run, states a current faculty appointment leaves the edge current.
+- **Past section, and former members stay unserved (Q1, 5 of 5).** A past listing ends the current edge as `HISTORICAL` the same way; the ended edge is not on the center's team, is not name-searchable, and is never a way in.
+- **Departed needs two reads (Q2, 5 of 5).** A person is departed only when two admitted reads in distinct runs list them under a past or emeritus section that was itself read to its end, after the last read that listed them as current.
+  One read withholds the edge's refresh and ends nothing, and a later current listing revives the edge through the ordinary upsert.
+- **Omission is not evidence (Q3, 5 of 5, #2647).** A person a contract read lists in no section is omitted, and an omitted claim retires only when the person's own page witnesses a departure (`personPageDeparture.ts`); otherwise it is held and counted as omitted-unwitnessed.
+  A listing under a past section that was not read to its end is omitted, never departed.
+- **A profile title alone ends nothing (Q6, 4 of 5).** A member-page `profileTitle` that holds only emeritus appointments never ends a center edge without a section that says so.
+
+Q4 (a center section as an official emeritus listing for `emeritusListedLeadIds`) and Q5 were not decided, so the change writes no `emeritusListedLeadIds`.
+Only `centers-institutes-index` adopts the contract; `bbs-research-track`, `center-affiliation-roster` and every snapshot written before the contract keep the plain two-read absence rule.
+The existing freeze guards cover departed and witnessed-omitted claims together, so a center whose whole roster flips to a past section freezes.
+Measured read-only on Development on 2026-11-13 from stored titles only, as a floor: 96 live edges this lane wrote sit on served center rows for people a stored title marks emeritus or former.
+This is a stored-data change: it is done when two lane re-runs in distinct runs, the verdict dry run, a scoped materialize and a served re-read have run on Development.
+`docs/research-data-pipeline.md` owns the mechanics.
 
 ## 2026-11-13: The Permanent-Resident Citizenship Option Includes Programs Open To Both Groups (#6092)
 
@@ -61,6 +197,12 @@ Each option shows the count ticking it would leave under the current selection, 
 The card and detail badges take the same words, so a filter and the badge it returns read alike: "Taking undergrads now" ("Taking undergrads now, recruiting" for the `actively_hiring` level, keeping the #5484 rule that both levels start with the filter's words), "Has had undergrads" and "Advises undergrad research" (coordinator, 2026-11-12).
 The owner kept #5449, no sidebar scrollbar at 1280x720, and kept the group open by default, so the wide sidebar compacts instead: 28px rows, the helper line and the advises hint as info tips, and tighter gaps, which brought the sidebar from 666px to 566px of a 590px budget on Development data (owner, 2026-11-12).
 The stored signals are unchanged; the server gained only a `mentorsUndergrads` request filter and facet on the index field #5603 already declared filterable, and it still accepts `worksWithUndergrads`, which an old link no longer ticks.
+All three options always show once their counts arrive, and an option whose count is 0 stays in place, unavailable but focusable, with a tip saying why (owner, 2026-11-13, #6203).
+The tip wording depends on what drove the count to zero, because a student can only widen what they narrowed: "None match your other filters. Remove a filter to see more." when another filter or an Undergrads option is active, and "None match this search." when only a query is active (owner, 2026-11-13, relayed on #6261 after a peer review found the first wording false on a query-only page).
+A zero with neither a query nor a filter active is the served total, which the student cannot widen at all, so that state shows no tip and says only its count (owner, 2026-11-13: final, no tip).
+An option whose count never arrives (an absent facet key, not a zero) stays hidden as it did before #6203, because an absent key is a server or loading state rather than a fact about the corpus (2026-11-13, following the existing behaviour).
+The tip replaces the "Missing evidence is not proof there is none." note rather than joining it: the owner answered on 2026-11-13 that the note is dropped, which overrode an earlier request to keep both.
+The sidebar stays at the 566px the line above records, inside the same budget, because the tip sits behind an info button there.
 
 ## 2026-11-12: The v2 Written-Description Contract (#5961)
 
@@ -119,6 +261,17 @@ After the lane run and a gate recompute, 12 more are admitted and none is withdr
 The existing 11 research guides keep their kind and tier, and the gate with the new code over the stored rows changes no tier.
 5 configured pages still earn neither kind: a labs list, two general undergraduate-program pages, a senior-essay registration form, and a capstone-faculty list.
 This is a stored-data change, delivered by a lane run and a programs gate recompute on Development and then a re-read of `/programs`.
+
+## 2026-11-13: A Lead Whose Own Profile Page Says Emeritus Is Emeritus (#6081)
+
+This extends the #5835 entry below: besides a department's emeritus page, the freshest first-hand read of the person's own profile page can mark a lead emeritus.
+A read counts as the person's own page when its source URL is one of their profile links, or when it is a roster member's profile title and the member's identity evidence (a netid or Yale email exactly one live researcher holds, with a name that agrees) names them.
+The freshest decisive read wins: an emeritus-only title marks the lead emeritus, and a newer read naming a current faculty appointment leaves them current, which keeps #5835's rule that a fresh read of the person's own page wins.
+The Yale directory's title never counts, and the profile lane's title read can only show a current appointment, never make a lead emeritus, because it still stores captured navigation menus on some school sites (#6177).
+A read counts only when the observation's own entity is the person, their netid-keyed user row or a row whose own profile URL is that page, so a colleague's card title on a shared page in the person's profile links never counts.
+The result is recorded in the same `emeritusListedLeadIds` field on the rows the person already leads, so it never mints a row, an edge or a roster member.
+It reads emeritus only: the deceased marker (#5721) is a separate signal that hides the row and wins, and an emeritus creative-practice lead is labelled the same way as any other.
+`skills/scrapers/SKILL.md` owns the mechanics.
 
 ## 2026-11-11: A Lead Their Department Lists As Emeritus Is Emeritus (#5835)
 
@@ -281,6 +434,7 @@ Both steps of the badge count, "Actively hiring" and "Welcomes undergrads", beca
 The `welcomesUndergrads` index field is derived from `publicUndergradInvitation`, the predicate that decides whether the badge is served, when the index document is built, so the filter and the badge cannot disagree.
 Hosting in the past and welcoming now stay separate filters, because the owner treats them as different questions; with both on, a row must satisfy both.
 The toggle is hidden when no result carries the badge, unlike the hosted toggle's disabled zero state, because reaching out is the default for every Yale lab and "Welcomes undergrads (0)" would read as no lab taking undergraduates.
+That hiding is retired: since #6203 all three Undergrads options always show once their counts arrive, and an option at zero is unavailable in place rather than hidden, under the 2026-11-13 line in the #5963 entry above.
 Measured on Development on 2026-10-29 through the search route, 79 served rows carry an invitation badge, 19 "Actively hiring" and 60 "Welcomes undergrads", and none of them is an emeritus row whose way in is withheld.
 An emeritus row whose way in is withheld drops the badge at serve time, which the index cannot see, so such a row would match the filter without showing its badge; there are none today.
 Since #5620 the index builder reads the same serve-time emeritus decision, so such a row no longer matches the filter; measured on Development on 2026-11-10 before that fix, the filter returned 117 rows, every one serving the badge, and none of them emeritus-led.

@@ -155,7 +155,7 @@ describe('official-profile-pi-backfill retires an implausible ORCID it asserted 
     expect(retired?.rollback?.reason).toBe(USER_ORCID_FIELD_RETRACTION_ROLLBACK_REASON);
 
     const again = await reconcileUserFieldRetractions({ sourceName: PI_SOURCE, rederive });
-    expect(again).toMatchObject({ outcome: 'no-candidates', retiredObservations: 0 });
+    expect(again).toMatchObject({ retiredObservations: 0, retractions: [] });
     expect(rederive).toHaveBeenCalledTimes(1);
   });
 

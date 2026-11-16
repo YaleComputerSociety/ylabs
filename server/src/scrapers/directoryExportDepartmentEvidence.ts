@@ -27,6 +27,18 @@ export async function catalogDepartment(): Promise<CanonicalDepartment | null> {
   };
 }
 
+export async function catalogSchoolForDepartment(): Promise<
+  ((department: string) => string | undefined) | null
+> {
+  const canonicalDepartment = await catalogDepartment();
+  if (!canonicalDepartment) return null;
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  return (department: string) => {
+    const canonical = canonicalDepartment(department);
+    return canonical ? canonicalizer.schoolForDepartment(canonical) || undefined : undefined;
+  };
+}
+
 interface DepartmentObservation {
   field?: string;
   value?: unknown;

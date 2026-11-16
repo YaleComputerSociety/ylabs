@@ -30,7 +30,6 @@ import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 export const DOE_PAMS_AWARD_SEARCH_URL =
   'https://pamspublic.science.energy.gov/WebPAMSExternal/Interface/Awards/AwardSearchExternal.aspx';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 120_000;
 const DEFAULT_LOOKBACK_YEARS = 6;
 const MAX_GRANTS_PER_ROW = 10;
@@ -335,7 +334,6 @@ async function pamsRequest(
       maxRedirects: 0,
       data: form ? new URLSearchParams(form).toString() : undefined,
       headers: {
-        'User-Agent': USER_AGENT,
         Accept: responseType === 'text' ? 'text/html,*/*' : '*/*',
         ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
         ...(jar.size > 0 ? { Cookie: cookieHeaderFrom(undefined, jar) } : {}),

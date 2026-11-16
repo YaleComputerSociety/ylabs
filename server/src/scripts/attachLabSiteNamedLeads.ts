@@ -19,6 +19,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
@@ -53,7 +54,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:attach-lab-site-named-leads';
-const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';
 const FETCH_SPACING_MS = 1100;
 const FETCH_TIMEOUT_MS = 25000;
 const LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
@@ -100,7 +100,7 @@ const researchHomeLimiter = new HostRateLimiter({
 async function readPage(url: string): Promise<LabSitePage | null> {
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+      headers: { Accept: 'text/html,application/xhtml+xml' },
       timeoutMs: FETCH_TIMEOUT_MS,
       limiter: researchHomeLimiter,
     });
@@ -301,6 +301,7 @@ export async function runLabSiteNamedLeadAttachment(options: {
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
     apply: args.apply,

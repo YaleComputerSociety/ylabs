@@ -46,7 +46,7 @@ const CLINICAL_SERVICE_SHAPES = [
   /\binterests?\s+include\s+(?:treating|managing|caring)\b/i,
   /\binterested\s+in\s+the\s+(?:management|treatment|care)\s+of\b/i,
   /\b(?:treats|treating)\s+patients\b/i,
-  /\bworks?\s+with\s+patients\s+to\b/i,
+  /\bworks?\s+with\s+patients\s+to\s+(?!(?:better\s+)?(?:understand|learn)\b)/i,
   /\beach\s+patient(?:['’]s)?\b/i,
   /\bhelp(?:s|ing)?\s+(?:each\s+)?(?:patients?|famil(?:y|ies))\b/i,
   /\bpartnering\s+with\s+patients\b/i,
@@ -54,7 +54,13 @@ const CLINICAL_SERVICE_SHAPES = [
 ];
 
 const NOT_AFTER_ANOTHER_CARE_GIVER =
-  '(?<!\\b(?:clinicians|physicians|providers|caregivers|doctors|nurses|surgeons|practitioners|teams|clinics|hospitals)\\s+(?:to\\s+)?)';
+  '(?<!\\b(?:clinicians|physicians|providers|caregivers|doctors|nurses|surgeons|practitioners|teams|clinics|hospitals)\\s+(?:(?:who|that)\\s+)?(?:(?:are|were|is|was|have|has|had|can|will)\\s+)?(?:to\\s+)?(?:(?:\\w+ly|better|more|also|still|best)\\s+){0,2})';
+
+// The service verbs #6151 added are accepted only after the bio's own person: a sentence
+// start, a pronoun, or a preposition or catenative verb directly before the verb. A noun
+// there (pharmacists, residents, a clinic that) is someone else's patients.
+const AFTER_THE_BIOS_OWN_PERSON =
+  '(?<=(?:^|[.;:!?]\\s+|\\b(?:he|she|they|i|we|to|for|in|on|at|by|with|while|after|before|enjoys?|loves?|likes?|committed|dedicated|devoted)\\s+)(?:(?:has|have|had|having|is|are|was|were|been|also|still|and|\\w+ly)\\s+){0,3})';
 
 const PATIENT_SERVICE_PURPOSE = new RegExp(
   `${NOT_AFTER_ANOTHER_CARE_GIVER}\\b(?:help|helps|helping|serve|serves|serving|benefit|benefits)\\s+(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
@@ -66,6 +72,18 @@ const PATIENT_SERVICE_SHAPES = [
     `${NOT_AFTER_ANOTHER_CARE_GIVER}\\b(?:treat(?:s|ing)?|cares?\\s+for|caring\\s+for|sees|seeing|provid(?:e|es|ed|ing)\\s+care\\s+(?:to|for)|help(?:s|ing)?|serv(?:e|es|ing))\\s+(?:all\\s+)?(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
     'i',
   ),
+  new RegExp(
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}${AFTER_THE_BIOS_OWN_PERSON}(?:manag(?:es|ing)|(?:has|have|had|having)\\s+(?:\\w+ly\\s+)?(?:treated|managed))\\s+patients\\b`,
+    'i',
+  ),
+  new RegExp(
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}${AFTER_THE_BIOS_OWN_PERSON}(?:manag(?:e|es|ing|ed)|support(?:s|ing|ed)?|giv(?:e|es|ing|en)|treated)\\s+(?:all\\s+)?(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
+    'i',
+  ),
+  new RegExp(
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}${AFTER_THE_BIOS_OWN_PERSON}(?:working|worked)\\s+with\\s+patients\\s+to\\s+(?!(?:better\\s+)?(?:understand|learn)\\b|(?:build|develop|design|create|co-create|co-design|co-produce|test|pilot|evaluate|study|record|measure|identify|map|document|adapt|reshape)\\b)`,
+    'i',
+  ),
   /\b(?:combat\w*|treat(?:s|ing)?|alleviat\w*|reliev\w*)\s+(?:the\s+)?symptoms\b/i,
 ];
 
@@ -73,13 +91,305 @@ const CLINICAL_VOCABULARY =
   /\b(?:patients?|care|clinical(?:ly)?|clinicians?|medical|medicine|disorders?|diseases?|conditions?|syndromes?|symptoms?|treatment|therap(?:y|ies)|diagnos\w*|surg(?:ery|eries|ical)|nutrition|pain|injur(?:y|ies)|infections?|cancers?|tumou?rs?|neurological|psychiatric|mental\s+health|pregnanc(?:y|ies)|asthma|allerg(?:y|ies)|dermatolog\w*|cardiolog\w*|skin|nerves?|spin(?:e|al)|stimulation|anesthe\w*|procedures?|trauma)\b/i;
 
 const STATES_INQUIRY =
-  /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|quality\s+of\s+care|health\s+services|disparit(?:y|ies)|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?|biolog\w*|genes?|genetic\w*|genomic\w*|why|whether|engineer\w*|benchmark\w*|machine\s+learning|build(?:s|ing)?\s+(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|software|robots?|systems?|platforms?)|software|robot\w*|sensors?|wearables?|survey\w*|assess\w*|pilot(?:s|ing|ed)?|prob(?:e|es|ing)|imaging|estimat\w*|registr(?:y|ies)|track(?:s|ing)|characteri[sz]\w*|quantif\w*|randomi[sz]\w*|predict\w*|catalog\w*|correlat\w*|compar(?:e|es|ing|ison|isons)|algorithms?|sequenc(?:e|es|ing)|(?:co-)?design(?:s|ing|ed)?|map(?:s|ping)?\s+(?:the|how|which|where)|improv(?:e|es|ing)\s+(?:the\s+)?(?:[\w-]+\s+){0,2}care|immunolog\w*|pharmacolog\w*|pathogenesis|microbiome|circuits?|prevention|screening|polic(?:y|ies)|decision[-\s]making|safety|implementation|develop\w*\s+(?:and\s+test\s+)?(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|therap\w*|methods?|models?|algorithms?|interventions?|measures?|assays?|drugs?|vaccines?|gene)|test(?:s|ing)?\b)\b/i;
+  /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|quality\s+of\s+care|health\s+services|disparit(?:y|ies)|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?|biolog\w*|genes?|genetic\w*|genomic\w*|why|whether|engineer\w*|benchmark\w*|machine\s+learning|build(?:s|ing)?\s+(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|software|robots?|systems?|platforms?)|software|robot\w*|sensors?|wearables?|survey\w*|assess\w*|pilot(?:s|ing|ed)?|prob(?:e|es|ing)|imaging|estimat\w*|registr(?:y|ies)|track(?:s|ing)|characteri[sz]\w*|quantif\w*|randomi[sz]\w*|predict\w*|catalog\w*|correlat\w*|compar(?:e|es|ing|ison|isons)|algorithms?|sequenc(?:e|es|ing)|(?:co-)?design(?:s|ing|ed)?|map(?:s|ping)?\s+(?:the|how|which|where)|improv(?:e|es|ing)\s+(?:the\s+)?(?:[\w-]+\s+){0,2}care|immunolog\w*|pharmacolog\w*|pathogenesis|microbiome|circuits?|prevention|screening|polic(?:y|ies)|decision[-\s]making|safety|implementation|develop\w*\s+(?:and\s+test\s+)?(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|therap\w*|methods?|strateg(?:y|ies)|approach(?:es)?|models?|algorithms?|interventions?|measures?|assays?|drugs?|vaccines?|gene)|test(?:s|ing)?\b)\b/i;
+
+const SCHOLAR_ROLE = '(?:historian|philosopher|anthropologist|sociologist|theologian|classicist)';
+
+const SCHOLAR_ROLE_FILLER =
+  '(?:(?!(?:for|to|of|on|in|with|at|among|by|from|and|or)\\b)[\\p{L}-]+\\s+){0,2}';
+
+const SENTENCE_OPENS_BY_NAMING_ITS_PERSON_A_SCHOLAR = new RegExp(
+  `^\\s*(?:As\\s+|(?:He|She)\\s+(?:is|was)\\s+(?:also\\s+)?)an?\\s+${SCHOLAR_ROLE_FILLER}${SCHOLAR_ROLE}\\b(?![\\p{L}'’-])`,
+  'u',
+);
+
+const NAMES_A_CLINICIAN_OR_CLINICAL_WORK =
+  /\b(?:physicians?|psychiatrists?|clinicians?|nurses?|practitioners?|doctors?|pediatricians?|therapists?|cardiologists?|dermatologists?|neurologists?|oncologists?|urologists?|laryngologists?|ophthalmologists?|rheumatologists?|radiologists?|anesthesiologists?|otolaryngologists?|dentists?|optometrists?|pharmacists?|midwi(?:fe|ves)|chiropractors?|clinics?|clinical|practi[cs](?:e|es|ed|ing)|surg\w*|repairs?|reconstruct\w*|procedures?|implants?|transplant\w*|biops\w*|injections?|\w+ectom(?:y|ies)|\w+plast(?:y|ies))\b/i;
+
+const DESCRIBES_PATIENT_CARE =
+  /\b(?:treat\w*|car(?:es?|ing|ed)\s+for|se(?:e|es|eing|en)|saw|manag\w*|perform\w*|operat\w*|consult\w*|provid\w*|deliver\w*|offer\w*)\b/i;
+
+const isFramedAsScholarship = (sentence: string): boolean =>
+  SENTENCE_OPENS_BY_NAMING_ITS_PERSON_A_SCHOLAR.test(sentence) &&
+  !NAMES_A_CLINICIAN_OR_CLINICAL_WORK.test(sentence) &&
+  !DESCRIBES_PATIENT_CARE.test(sentence);
 
 const CREATIVE_PRACTICE =
-  /\b(?:music\w*|compos(?:e|es|er|ers|ing|ition|itions)|choreograph\w*|danc(?:e|es|er|ers|ing)|plays?|playwright\w*|theat(?:er|re)\w*|performance\s+art|performers?|artists?|artwork|paint\w*|sculpt\w*|poe(?:t|ts|try|ms?)|fiction|novels?|writ(?:e|es|ing)\s+(?:plays|poems|fiction|novels|music)|film\w*|photograph\w*|portrait\w*|documentar\w*|opera|songs?|lullab\w*|murals?|memoirs?|essays?|textiles?|installations?|comed(?:y|ies|ian|ians)|stand-up)\b/i;
+  /\b(?:music\w*|compos(?:e|es|er|ers|ing|ition|itions)|choreograph\w*|danc(?:e|es|er|ers|ing)|(?<!to-)plays?|playwright\w*|theat(?:er|re)\w*|performance\s+art|performers?|artists?|artwork|paint\w*|sculpt\w*|poe(?:t|ts|try|ms?)|fiction|novels?|writ(?:e|es|ing)\s+(?:plays|poems|fiction|novels|music)|film\w*|photograph\w*|portrait\w*|documentar\w*|opera|songs?|lullab\w*|murals?|memoirs?|essays?|textiles?|installations?|comed(?:y|ies|ian|ians)|stand-up)\b/i;
+
+const CONDITION_HEAD_WORDS = new Set(
+  [
+    'acne rosacea eczema psoriasis scarring scars scar vitiligo melasma warts alopecia hyperhidrosis',
+    'hernia hernias contracture contractures fracture fractures arthritis osteoarthritis scoliosis',
+    'stenosis sciatica migraine migraines headache headaches epilepsy seizures diabetes obesity',
+    'hypertension asthma allergies allergy copd dementia glaucoma cataract cataracts incontinence',
+    'infertility endometriosis fibroids sepsis pneumonia anemia lupus gout ulcers ulcer reflux',
+    'constipation cirrhosis insomnia apnea cancer cancers tumor tumors tumour tumours lesion lesions',
+    'deformity deformities disease diseases disorder disorders syndrome syndromes injury injuries',
+    'infection infections malformation malformations aneurysm aneurysms carcinoma melanoma lymphoma',
+    'leukemia sarcoma metastases polyps cysts nodules stones keloids moles burns wounds wound',
+    'neuropathy retinopathy cardiomyopathy dysplasia instability tears tear sprains concussion',
+    'concussions spasticity tremor tremors dysphagia dysphonia vertigo tinnitus palsy paralysis',
+    'amputation amputations dermatology cardiology oncology neurology gastroenterology rheumatology',
+    'urology nephrology hematology endocrinology ophthalmology otolaryngology gynecology obstetrics',
+    'orthopedics orthopaedics pediatrics geriatrics surgery surgeries arthroplasty arthroscopy',
+    'endoscopy colonoscopy laparoscopy rhinoplasty ablation resection transplantation transplant',
+    'transplants implants implant injections fillers botox liposuction lift lifts cholera syphilis',
+    'tuberculosis malaria',
+  ]
+    .join(' ')
+    .split(' '),
+);
+
+const CONDITION_HEAD_SUFFIX =
+  /(?:itis|osis|ectomy|ostomy|plasty|oma|omas|emia|plegia|algia|pathy|pathies)$/;
+
+const WORDS_WITH_A_CONDITION_SUFFIX_THAT_ARE_NOT_CONDITIONS = new Set(
+  [
+    'diagnosis prognosis apoptosis symbiosis osmosis hypnosis metamorphosis neurosis hypothesis',
+    'synthesis thesis genesis diploma diplomas aroma stigma oklahoma empathy sympathy apathy',
+    'telepathy antipathy homeopathy nostalgia dichotomy anatomy',
+  ]
+    .join(' ')
+    .split(' '),
+);
+
+const HEADS_THAT_NAME_A_CONDITION_ONLY_WITH_A_MODIFIER = new Set(
+  'pain depression anxiety addiction trauma stroke strokes reconstruction repair release replacement loss'.split(
+    ' ',
+  ),
+);
+
+const CARE_ACTIVITY_HEADS = new Set(
+  'management treatment treatments care diagnosis evaluation therapy therapies repair prevention'.split(
+    ' ',
+  ),
+);
+
+const PATIENT_GROUP_HEAD =
+  /^(?:patients|children|adults|adolescents|athletes|women|men|individuals|people|infants)$/;
+
+const ANATOMY_WORDS =
+  '(?:hand|hands|wrist|wrists|finger|fingers|elbow|elbows|shoulder|shoulders|knee|knees|hip|hips|ankle|ankles|foot|feet|spine|spinal|back|neck|nerve|nerves|skin|hair|nail|nails|face|facial|breast|abdominal|wall|plexus|tendon|tendons|ligament|ligaments|joint|joints|bone|bones|cartilage|eye|eyes|ear|ears|nose|nasal|sinus|sinuses|throat|voice|vocal|heart|cardiac|lung|lungs|liver|kidney|kidneys|bladder|bowel|colon|pelvic|pelvis|uterine|prostate|thyroid|brain|memory|hearing|vision|weight|extremity|extremities|limb|limbs)';
+
+const ANATOMY_WORD = new RegExp(`\\b${ANATOMY_WORDS}\\b`, 'i');
+
+const BODY_SITE_TAIL = new RegExp(
+  `^\\s+of\\s+(?:the\\s+)?(?:(?:upper|lower|left|right|inner|outer|middle|small|large)\\s+)?${ANATOMY_WORDS}(?:\\s+and\\s+(?:the\\s+)?${ANATOMY_WORDS})*$`,
+  'i',
+);
+
+const BARE_BODY_SITE = new RegExp(`^(?:the\\s+)?${ANATOMY_WORDS}$`, 'i');
+
+const PATIENT_GROUP_TAIL =
+  /^\s+in\s+(?:(?:older|elderly|young|younger|adult|pediatric|paediatric|school-age|teenage|elite|competitive|female|male|high-school|college)\s+){0,2}(?:patients|children|adults|adolescents|teens|teenagers|athletes|women|men|infants|newborns|neonates|veterans|runners)$/i;
+
+const NAMED_CONDITION_PHRASE =
+  /\b(?:trigger\s+finger|tennis\s+elbow|golfer['’]?s\s+elbow|frozen\s+shoulder|carpal\s+tunnel|club\s*foot|cleft\s+(?:lip|palate)|hair\s+loss|memory\s+loss|hearing\s+loss|vision\s+loss|sleep\s+apnea)$/i;
+
+const SPECIAL_INTERESTS_LIST_FRAME =
+  /\b(?:(?:special|particular|clinical|subspecialty|surgical)\s+(?:areas?\s+of\s+)?interests?|areas?\s+of\s+(?:special|particular|clinical)\s+interest)\s+(?:include|includes|are|is)\s*:?\s+(?!(?:in|on|to|that|with|for|about)\b)(.+?)[.!?]?\s*$/i;
+
+const INTERESTS_IN_TREATING_FRAME =
+  /\binterests?\s+include\s+(?:treating|managing|caring\s+for)\s+(.+?)[.!?]?\s*$/i;
+
+const SPECIAL_INTEREST_IN_MANAGEMENT_OF_FRAME =
+  /\b(?:special|particular)\s+interests?\s+(?:is\s+|are\s+)?in\s+the\s+(?:(?:surgical|medical|clinical|operative|non-?operative|comprehensive|multidisciplinary)\s+)?(?:management|treatment|care|repair)\s+of\s+(.+?)[.!?]?\s*$/i;
+
+const PARTNERS_WITH_PATIENTS_TO_TREAT =
+  /\bpartner(?:s|ing)?\s+with\s+(?:patients|families|caregivers|parents)\s+to\s+(?:manage|treat|control|cope\s+with|live\s+with)\b/i;
+
+const CARES_FOR_PEOPLE_WITH =
+  /\b(?:caring|cares)\s+for\s+(?:[\w-]+\s+){0,3}(?:with|after|who\s+have)\s+(.+?)[.!?]?\s*$/i;
+
+const LEAD_THAT_MAKES_THE_BIOS_OWN_PERSON_THE_SUBJECT =
+  /(?:^|[.;:!?]\s+|\b(?:he|she|they|i|we|focus(?:es|ed)?\s+on|interests?\s+(?:include|includes|are|is)|enjoys?|loves?|dedicated\s+to|committed\s+to|devoted\s+to|passionate\s+about|involves|includes)\s+)(?:(?:also|still|especially|particularly|primarily|\w+ly)\s+)?$/i;
+
+const ITEM_HEAD_BOUNDARY =
+  /\s(?:of|in|with|for|among|after|during|through|across|at|on|from|to|within|including|such|related|involving|following|and\s+its|via|using|by)\b/i;
+
+const LEADING_DETERMINER = /^(?:the|a|an|all|various|complex|common|other|both|including)\s+/i;
+
+const LIST_ITEM_SEPARATOR =
+  /\s*[;,]\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+|\s+as\s+well\s+as\s+|\s+plus\s+/i;
+
+const LIST_FILLER_ITEM = /^(?:but\s+are\s+not\s+limited\s+to|among\s+others|etc)$/i;
+
+const LIST_LEAD_IN =
+  /^(?:,\s*)?(?:but\s+(?:are\s+)?not\s+limited\s+to|among\s+other\s+things),?\s*/i;
+
+const A_HISTORY_OF = /^a\s+history\s+of\s+/i;
+
+const PATIENT_GROUP_WITH_OBJECT = /^\s+(?:with|who\s+have|after)\s+(.+)$/i;
+
+const CARE_ACTIVITY_OF_OBJECT = /^\s+of\s+(.+)$/i;
+
+const MAX_NESTED_ITEM_DEPTH = 2;
+
+interface ListItemHead {
+  headPhrase: string;
+  head: string;
+  writtenHead: string;
+  modifiers: string[];
+  startsWithThe: boolean;
+  afterHead: string;
+}
+
+function listItemHead(item: string): ListItemHead {
+  const trimmed = item.trim().replace(/^(?:and|or)\s+/i, '');
+  const headPhrase = trimmed.split(ITEM_HEAD_BOUNDARY)[0];
+  const words = headPhrase
+    .replace(/[“”"()]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const writtenHead = (words[words.length - 1] || '')
+    .replace(/[’']s$/, '')
+    .replace(/[^\p{L}-]/gu, '');
+  return {
+    headPhrase: headPhrase.trim(),
+    head: writtenHead.toLowerCase().split('-').pop() || '',
+    writtenHead,
+    modifiers: words.slice(0, -1).filter((word) => !LEADING_DETERMINER.test(`${word} `)),
+    startsWithThe: /^the\s/i.test(trimmed),
+    afterHead: trimmed.slice(headPhrase.length),
+  };
+}
+
+function isConditionWord(word: string): boolean {
+  if (WORDS_WITH_A_CONDITION_SUFFIX_THAT_ARE_NOT_CONDITIONS.has(word)) return false;
+  return CONDITION_HEAD_WORDS.has(word) || (word.length > 5 && CONDITION_HEAD_SUFFIX.test(word));
+}
+
+function isAcronym(word: string): boolean {
+  return word === word.toUpperCase().replace(/[^A-Z]/g, '');
+}
+
+function listItems(list: string): string[] {
+  return list
+    .split(LIST_ITEM_SEPARATOR)
+    .map((item) => item.trim())
+    .filter((item) => item && !LIST_FILLER_ITEM.test(item));
+}
+
+function placesTheItemInClinicalCare(afterHead: string): boolean {
+  return !afterHead.trim() || BODY_SITE_TAIL.test(afterHead) || PATIENT_GROUP_TAIL.test(afterHead);
+}
+
+function rejoinBodySiteContinuations(items: string[]): string[] {
+  return items.reduce<string[]>((joined, item) => {
+    const previous = joined[joined.length - 1];
+    if (
+      previous &&
+      BARE_BODY_SITE.test(item) &&
+      BODY_SITE_TAIL.test(listItemHead(previous).afterHead)
+    ) {
+      joined[joined.length - 1] = `${previous} and ${item}`;
+    } else {
+      joined.push(item);
+    }
+    return joined;
+  }, []);
+}
+
+function everyItemIsACondition(list: string, depth: number): boolean {
+  const items = rejoinBodySiteContinuations(listItems(list));
+  return items.length > 0 && items.every((item) => isConditionOrProcedureItem(item, depth));
+}
+
+function headNamesAConditionOrProcedure({
+  headPhrase,
+  head,
+  writtenHead,
+  modifiers,
+  startsWithThe,
+  afterHead,
+}: ListItemHead): boolean {
+  if (NAMED_CONDITION_PHRASE.test(headPhrase)) return true;
+  if (!head) return false;
+  if (HEADS_THAT_NAME_A_CONDITION_ONLY_WITH_A_MODIFIER.has(head)) {
+    return (
+      afterHead.trim() !== '' &&
+      !startsWithThe &&
+      modifiers.length > 0 &&
+      writtenHead === writtenHead.toLowerCase()
+    );
+  }
+  if (CARE_ACTIVITY_HEADS.has(head)) {
+    return modifiers.some(
+      (modifier) =>
+        isConditionWord(modifier.toLowerCase().replace(/[^\p{L}]/gu, '')) ||
+        ANATOMY_WORD.test(modifier),
+    );
+  }
+  return isConditionWord(head) && !isAcronym(writtenHead);
+}
+
+function isConditionOrProcedureItem(item: string, depth = 0): boolean {
+  const trimmed = item.trim();
+  if (A_HISTORY_OF.test(trimmed)) {
+    return isConditionOrProcedureItem(trimmed.replace(A_HISTORY_OF, ''), depth + 1);
+  }
+  const itemHead = listItemHead(trimmed);
+  if (PATIENT_GROUP_HEAD.test(itemHead.head)) {
+    const withObject = PATIENT_GROUP_WITH_OBJECT.exec(itemHead.afterHead);
+    return Boolean(
+      withObject &&
+      depth < MAX_NESTED_ITEM_DEPTH &&
+      everyItemIsACondition(withObject[1], depth + 1),
+    );
+  }
+  if (CARE_ACTIVITY_HEADS.has(itemHead.head)) {
+    const ofObject = CARE_ACTIVITY_OF_OBJECT.exec(itemHead.afterHead);
+    if (ofObject && depth < MAX_NESTED_ITEM_DEPTH)
+      return everyItemIsACondition(ofObject[1], depth + 1);
+  }
+  return (
+    placesTheItemInClinicalCare(itemHead.afterHead) && headNamesAConditionOrProcedure(itemHead)
+  );
+}
+
+function isListOfConditionsOrProcedures(list: string): boolean {
+  return everyItemIsACondition(list.replace(LIST_LEAD_IN, ''), 0);
+}
+
+function framedListIsAllConditions(frame: RegExp, sentence: string): boolean {
+  const match = frame.exec(sentence);
+  return Boolean(match && isListOfConditionsOrProcedures(match[1]));
+}
+
+function isSaidOfTheBiosOwnPerson(sentence: string, verbIndex: number): boolean {
+  return LEAD_THAT_MAKES_THE_BIOS_OWN_PERSON_THE_SUBJECT.test(sentence.slice(0, verbIndex));
+}
+
+function isOwnPersonPartneringToTreat(sentence: string): boolean {
+  const match = PARTNERS_WITH_PATIENTS_TO_TREAT.exec(sentence);
+  return Boolean(match && isSaidOfTheBiosOwnPerson(sentence, match.index));
+}
+
+function isOwnPersonCaringForPeopleWithConditions(sentence: string): boolean {
+  const match = CARES_FOR_PEOPLE_WITH.exec(sentence);
+  return Boolean(
+    match &&
+    isSaidOfTheBiosOwnPerson(sentence, match.index) &&
+    isListOfConditionsOrProcedures(match[1]),
+  );
+}
+
+function isClinicalConditionListSentence(sentence: string): boolean {
+  if (STATES_INQUIRY.test(sentence)) return false;
+  return (
+    framedListIsAllConditions(SPECIAL_INTERESTS_LIST_FRAME, sentence) ||
+    framedListIsAllConditions(INTERESTS_IN_TREATING_FRAME, sentence) ||
+    framedListIsAllConditions(SPECIAL_INTEREST_IN_MANAGEMENT_OF_FRAME, sentence) ||
+    isOwnPersonPartneringToTreat(sentence) ||
+    isOwnPersonCaringForPeopleWithConditions(sentence)
+  );
+}
 
 export function isClinicalOnlyBiographySentence(sentence: string): boolean {
   if (CREATIVE_PRACTICE.test(sentence)) return false;
+  if (isClinicalConditionListSentence(sentence)) return true;
+  if (isFramedAsScholarship(sentence)) return false;
   return (
     [...CLINICAL_SERVICE_SHAPES, ...PATIENT_SERVICE_SHAPES, PATIENT_SERVICE_PURPOSE].some((shape) =>
       shape.test(sentence),

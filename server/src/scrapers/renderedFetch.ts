@@ -19,6 +19,7 @@ import {
 } from './snapshotBenchmarkMode';
 import { getCached, setCached } from './snapshotCache';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
+import { SCRAPER_USER_AGENT } from './utils/scraperUserAgent';
 import { acquireHostSlotWithin, hostnameForLimiter } from './utils/hostConcurrencyLimiter';
 import { retryOnRetryableResultStatus, type RetryPolicyOptions } from './utils/httpFetch';
 import {
@@ -199,7 +200,7 @@ const defaultRenderedSeedRedirectCheck = (url: URL, timeoutMs: number): Promise<
         timeout: boundMs,
         headers: {
           Range: 'bytes=0-0',
-          'User-Agent': 'YaleResearchRenderedFetchPreflight/1.0',
+          'User-Agent': SCRAPER_USER_AGENT,
         },
       },
       (response) => {

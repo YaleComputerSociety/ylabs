@@ -70,6 +70,7 @@ import {
   type FraProfileSynthesisEntity,
 } from './fraProfileSynthesisLane';
 import { connectScriptMongo } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 dotenv.config({ quiet: true });
 
@@ -188,6 +189,7 @@ function probeThatMattered(probes: readonly ProfileProbe[]): ProfileProbe {
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks();
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL must be set.');
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY must be set.');

@@ -68,7 +68,6 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 export const OSTI_ENDPOINT = 'https://www.osti.gov/api/v1/records';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 60_000;
 const PAGE_SIZE = 100;
 const MAX_PAGES = 20;
@@ -299,7 +298,7 @@ async function fetchPage(
         sort: 'publication_date desc',
       },
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
     }),
   );
   const records: OstiRecord[] = Array.isArray(res.data) ? res.data : res.data?.records || [];

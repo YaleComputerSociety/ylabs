@@ -19,6 +19,7 @@ import {
   leadDirectResearchHomeUrlsForUser,
   normalizeOfficialProfileUrl,
   OfficialProfilePiBackfillScraper,
+  officialProfilePageStatedFields,
   officialProfileUrlsForEntity,
   preferredOfficialProfileUrl,
   profileAttestsItsLabWebsiteIsGone,
@@ -109,7 +110,7 @@ const musicProfileHtml = `
       <main>
         <h1>Robin Fixture</h1>
         <div class="title">Professor of Composition</div>
-        <a href="mailto:robin.fixture@yale.edu">robin.fixture@yale.edu</a>
+        <a href="mailto:robin.fixture@example.org">robin.fixture@example.org</a>
         <div class="department">Composition</div>
         <section class="biography">
           Robin Fixture is a composer whose works span opera, orchestral music, and chamber music.
@@ -5994,5 +5995,219 @@ describe('a profile page that names its own netid or several ORCIDs (#4994)', ()
       entity,
     );
     expect(several?.orcid).toBeUndefined();
+  });
+});
+
+describe('the appointment on a Drupal contact-information profile template (#5874)', () => {
+  const navigationBlock = `
+    <nav class="block block-menu-block block-8 odd block-without-title">
+      <ul class="menu">
+        <li><a href="/faculty">Faculty Directory</a></li>
+        <li><a href="/emeritus">Emeritus Faculty</a></li>
+        <li><a href="/research">Faculty Research at the School</a></li>
+        <li><a href="/dean">Faculty Affairs for the Office of the Dean</a></li>
+      </ul>
+    </nav>`;
+  const profilePage = (contactField: string) => `<!doctype html><html><head>
+    <title>Robin Fixture | School Fixture</title></head><body>
+    ${navigationBlock}
+    <div class="block block-system block-without-title"><div class="content">
+      <h1 class="page-title">Robin Fixture</h1>
+      ${contactField}
+    </div></div>
+    </body></html>`;
+  const contactField = (paragraphs: string) => `
+    <div class="field field-name-field-person-contact-information field-type-text-long field-label-hidden">
+      <div class="field-items"><div class="field-item even">${paragraphs}</div></div>
+    </div>`;
+
+  it('reads the bold appointment line of the contact-information field as the title', () => {
+    const html = profilePage(
+      contactField(`
+        <p><strong>Associate Professor of Nursing</strong></p>
+        <p>School Fixture - Room 100</p>
+        <p><strong>email:</strong> <a href="mailto:robin.fixture@example.org">robin.fixture@example.org</a></p>`),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe('Associate Professor of Nursing');
+  });
+
+  it('reads an appointment the field states as a bold block line', () => {
+    const html = profilePage(
+      contactField(
+        '<div><strong>Assistant Professor, Director of the Fixture Program</strong></div><p>Room 100</p>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Assistant Professor, Director of the Fixture Program',
+    );
+  });
+
+  it.each([
+    ['a phone number', '<p><strong>Phone: 203-555-0100</strong></p>'],
+    ['a street address', '<p><strong>100 Fixture Street, Room 200</strong></p>'],
+    ['office hours', '<p><strong>Office hours: Tuesday 2-4 pm</strong></p>'],
+    ['an office line naming faculty', '<p><strong>Office of Faculty Affairs</strong></p>'],
+    [
+      'a department line naming research',
+      '<p><strong>Department of Research Programs</strong></p>',
+    ],
+  ])('never reads %s as the appointment', (_label, boldLine) => {
+    const html = profilePage(contactField(`${boldLine}<p>Room 100</p>`));
+    expect(officialProfilePageStatedFields(html).title).toBeUndefined();
+  });
+
+  it('stops at the first contact label, so a later bold line is never the title', () => {
+    const html = profilePage(
+      contactField(
+        '<p><strong>Phone:</strong> 203-555-0100</p><p><strong>Director of Faculty Affairs</strong></p>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBeUndefined();
+  });
+
+  it('reads past a bold office line to the appointment after it', () => {
+    const html = profilePage(
+      contactField(
+        '<p><strong>Office of Faculty Affairs</strong></p><p><strong>Senior Lecturer in Nursing</strong></p>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe('Senior Lecturer in Nursing');
+  });
+
+  it('keeps an appointment split across bold tags whole', () => {
+    const html = profilePage(
+      contactField(
+        '<p><strong>Lecturer in </strong><em>Fixture Studies</em><strong> and Nursing</strong></p>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Lecturer in Fixture Studies and Nursing',
+    );
+  });
+
+  it('keeps a role that names an office later in the line', () => {
+    const html = profilePage(
+      contactField('<p><strong>Director of the Office of Fixture Programs</strong></p>'),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Director of the Office of Fixture Programs',
+    );
+  });
+
+  it('reads only the bold tag when the field breaks its lines with <br>', () => {
+    const html = profilePage(
+      contactField(
+        '<strong>Associate Professor of Nursing</strong><br>100 Fixture Street<br>email: <a href="mailto:robin.fixture@example.org">robin.fixture@example.org</a>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe('Associate Professor of Nursing');
+  });
+
+  it('keeps a long genuine named-chair appointment whole (#5832)', () => {
+    const chair = 'Fixture Family and Fixture Foundation Professor of Nursing';
+    const html = profilePage(contactField(`<p><strong>${chair}</strong></p><p>Room 100</p>`));
+    expect(officialProfilePageStatedFields(html).title).toBe(chair);
+  });
+
+  it('never reads a navigation block classed block-without-title as the title (#5594)', () => {
+    const html = profilePage('<p>School Fixture - Room 100</p>');
+    expect(officialProfilePageStatedFields(html).title).toBeUndefined();
+  });
+
+  it('reads no title from a contact field whose bold lines are only labels', () => {
+    const html = profilePage(
+      contactField(
+        '<p>Room 100</p><p><strong>email:</strong> <a href="mailto:robin.fixture@example.org">robin.fixture@example.org</a></p>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBeUndefined();
+  });
+
+  it('reads no appointment from bold text outside the contact-information field', () => {
+    const html = profilePage(
+      '<div class="field field-name-body"><p><strong>Director of the Fixture Simulation Center</strong></p></div>',
+    );
+    expect(officialProfilePageStatedFields(html).title).toBeUndefined();
+  });
+});
+
+describe('profile content cards and section labels in the title read (#5594, #6198)', () => {
+  const page = (body: string) => `<!doctype html><html><head><title>Sam Fixture</title></head><body>
+    <main><h1>Sam Fixture</h1>${body}</main></body></html>`;
+
+  it.each([
+    [
+      'a news post',
+      '<div class="article-post"><div class="article-post__title-wrapper">Welcome New Faculty and Fellows (Fall 2026)</div></div>',
+    ],
+    [
+      'an award card',
+      '<div class="achievement-card"><div class="achievement-card__title">Young Investigator Award (2026)</div></div>',
+    ],
+    [
+      'a publication card',
+      '<div class="publication-card"><h3 class="publication-card__title">Faculty research advances in fixture science</h3></div>',
+    ],
+    [
+      'an event item',
+      '<ul><li class="event-list-item"><span class="event-list-item__title">Faculty Research Seminar</span></li></ul>',
+    ],
+    [
+      'a directory publication entry',
+      '<div class="pub--item"><span class="pub--title">Guide for students and faculty</span></div>',
+    ],
+  ])('never reads %s heading as the title', (_label, card) => {
+    expect(officialProfilePageStatedFields(page(card)).title).toBeUndefined();
+  });
+
+  it('reads the header appointment past a content card that precedes it', () => {
+    const html = page(
+      '<div class="article-post"><div class="article-post__title-wrapper">Welcome New Faculty (Fall 2026)</div></div><div class="profile-title">Associate Professor of Fixture Studies</div>',
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Associate Professor of Fixture Studies',
+    );
+  });
+
+  it('keeps an Education appointment that continues with its school abbreviation', () => {
+    const html = page(
+      '<div class="profile-title">Director of Clinical Education YSN Fixture Program</div>',
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Director of Clinical Education YSN Fixture Program',
+    );
+  });
+
+  it('keeps an appointment that ends in Education whole', () => {
+    const html = page('<div class="profile-title">Director of Clinical Education</div>');
+    expect(officialProfilePageStatedFields(html).title).toBe('Director of Clinical Education');
+  });
+
+  it.each([
+    ['Nursing', 'Associate Professor of Nursing Education MSN, Fixture University'],
+    ['Health', 'Professor of Public Health Education PhD, Fixture University'],
+    ['Medical', 'Professor of Medical Education MD 2004, Fixture School of Medicine'],
+    ['an unlisted degree', 'Associate Professor of Nursing Education DNSc, Fixture University'],
+    ['a School-of institution', 'Professor of Nursing Education Fixture School of Nursing, 2001'],
+    ['a lowercase degree', 'Professor of Health Education phd fixture university'],
+  ])('cuts a %s appointment before an Education section that lists a degree', (_label, glued) => {
+    const html = page(`<div class="profile-title">${glued}</div>`);
+    expect(officialProfilePageStatedFields(html).title).toBe(glued.split(' Education ')[0]);
+  });
+
+  it('keeps reading titles on a page whose own class names an article post', () => {
+    const html = `<!doctype html><html><body class="node-type-article-post"><main>
+      <h1>Sam Fixture</h1><div class="profile-title">Associate Professor of Fixture Studies</div>
+      </main></body></html>`;
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Associate Professor of Fixture Studies',
+    );
+  });
+
+  it('still cuts a glued Education section label after the appointment', () => {
+    const html = page(
+      '<div class="profile-title">Professor of Fixture Studies Education PhD, Fixture University</div>',
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe('Professor of Fixture Studies');
   });
 });

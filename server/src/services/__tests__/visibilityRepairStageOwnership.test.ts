@@ -10,7 +10,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   PI_IDENTITY_REPAIR_REASONS,
-  REVIEW_EXCEPTION_REPAIR_REASONS,
   SOURCE_DESCRIPTION_REPAIR_REASONS,
   SUPPRESSION_REPAIR_REASONS,
 } from '../studentVisibilityGateService';
@@ -194,7 +193,6 @@ describe('visibility repair stage has one owner (#2818 follow-through)', () => {
     const sets = {
       source_description: SOURCE_DESCRIPTION_REPAIR_REASONS,
       pi_identity: PI_IDENTITY_REPAIR_REASONS,
-      review_exception: REVIEW_EXCEPTION_REPAIR_REASONS,
     };
     const overlaps: string[] = [];
     for (const [leftName, left] of Object.entries(sets)) {

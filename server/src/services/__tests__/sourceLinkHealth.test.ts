@@ -14,28 +14,22 @@ vi.mock('../../utils/publicDnsResolution', () => ({
   classifyOffCampusAddressing: (hostname: string) => classifyOffCampusAddressingMock(hostname),
 }));
 
-const { MockSsrfBlockedError, assertPublicHttpUrlMock } = vi.hoisted(() => {
-  class HoistedSsrfBlockedError extends Error {
-    readonly reason: string;
+const { assertPublicHttpUrlMock } = vi.hoisted(() => ({
+  assertPublicHttpUrlMock: vi.fn(async (url: string) => new URL(url)),
+}));
 
-    constructor(message: string, reason: string) {
-      super(message);
-      this.name = 'SsrfBlockedError';
-      this.reason = reason;
-      Object.setPrototypeOf(this, HoistedSsrfBlockedError.prototype);
-    }
-  }
-  return {
-    MockSsrfBlockedError: HoistedSsrfBlockedError,
-    assertPublicHttpUrlMock: vi.fn(async (url: string) => new URL(url)),
-  };
-});
-
-vi.mock('../../utils/ssrfGuard', () => ({
+vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/ssrfGuard')>()),
   assertPublicHttpUrl: (url: string) => assertPublicHttpUrlMock(url),
-  SsrfBlockedError: MockSsrfBlockedError,
   ssrfSafeAgents: () => ({ httpAgent: undefined, httpsAgent: undefined }),
 }));
+
+import { SsrfBlockedError, type SsrfBlockedReason, ssrfSafeLookup } from '../../utils/ssrfGuard';
+
+const guardRefusalAtConnect = (): Promise<Error> =>
+  new Promise((resolve) => {
+    ssrfSafeLookup('127.0.0.1', {}, (error) => resolve(error as Error));
+  });
 
 import {
   SOURCE_LINK_HEALTH_FRESHNESS_DAYS,
@@ -54,6 +48,7 @@ import {
   hasLiveSourceCitation,
   httpsLandingOf,
 } from '../sourceLinkHealth';
+import { resolveSourceLinkHealthEntry } from '../../scripts/backfillSourceLinkHealthCore';
 
 const daysAgo = (days: number, now = new Date('2026-09-10T00:00:00.000Z')): Date =>
   new Date(now.getTime() - days * 86_400_000);
@@ -99,9 +94,12 @@ describe('classifySourceLinkHealth', () => {
   it('treats dead-domain network errors as unavailable without a status', () => {
     expect(classifySourceLinkHealth({ errorCode: 'ENOTFOUND' })).toEqual({
       healthStatus: 'UNAVAILABLE',
+      nameNotFound: true,
     });
     expect(classifySourceLinkHealth({ errorCode: 'ECONNREFUSED' })).toEqual({
       healthStatus: 'UNAVAILABLE',
+      connectionLevelFailure: true,
+      connectionRefused: true,
     });
   });
 
@@ -144,9 +142,9 @@ describe('probeSourceLink', () => {
     classifyOffCampusAddressingMock.mockResolvedValue('private-address');
   });
 
-  const blockedWith = (reason: string) => {
+  const blockedWith = (reason: SsrfBlockedReason) => {
     assertPublicHttpUrlMock.mockRejectedValueOnce(
-      new MockSsrfBlockedError('URL resolves to a private or non-public address', reason),
+      new SsrfBlockedError('URL resolves to a private or non-public address', reason),
     );
   };
 
@@ -154,7 +152,10 @@ describe('probeSourceLink', () => {
     blockedWith('unresolvable');
     const probe = await probeSourceLink('https://gone.example.edu/profile');
     expect(probe).toEqual({ errorCode: 'ENOTFOUND' });
-    expect(classifySourceLinkHealth(probe)).toEqual({ healthStatus: 'UNAVAILABLE' });
+    expect(classifySourceLinkHealth(probe)).toEqual({
+      healthStatus: 'UNAVAILABLE',
+      nameNotFound: true,
+    });
     expect(requestMock).not.toHaveBeenCalled();
   });
 
@@ -186,6 +187,94 @@ describe('probeSourceLink', () => {
     expect(requestMock).not.toHaveBeenCalled();
   });
 
+  const redirectingInto = (hostname: string) =>
+    requestMock.mockImplementation(
+      async (config: {
+        beforeRedirect?: (
+          options: { hostname: string; protocol: string },
+          details: { statusCode: number },
+        ) => void;
+      }) => {
+        try {
+          config.beforeRedirect?.({ hostname, protocol: 'https:' }, { statusCode: 301 });
+        } catch (hookError) {
+          throw Object.assign(new Error('Redirected request failed'), {
+            code: 'ERR_FR_REDIRECTION_FAILURE',
+            cause: Object.assign(new Error('Redirected request failed'), {
+              code: 'ERR_FR_REDIRECTION_FAILURE',
+              cause: hookError,
+            }),
+          });
+        }
+        return { status: 200, headers: {}, data: undefined };
+      },
+    );
+
+  it('never follows a redirect into an excluded host and reports the probe as not observed', async () => {
+    redirectingInto('economics.example.edu');
+    const probe = await probeSourceLink('https://alias.example.edu/econ', undefined, {
+      excludedHosts: ['economics.example.edu'],
+    });
+    expect(probe).toMatchObject({ errorCode: 'ERR_EXCLUDED_HOST', excludedHost: true });
+    expect(classifySourceLinkHealth(probe)).toEqual({
+      healthStatus: 'UNKNOWN',
+      excludedHost: true,
+    });
+  });
+
+  it('follows the same redirect when the host is not excluded', async () => {
+    redirectingInto('economics.example.edu');
+    const probe = await probeSourceLink('https://alias.example.edu/econ');
+    expect(probe.status).toBe(200);
+  });
+
+  it('never requests a URL that starts on an excluded host', async () => {
+    const probe = await probeSourceLink('https://www.economics.example.edu./x', undefined, {
+      excludedHosts: ['economics.example.edu'],
+    });
+    expect(probe.excludedHost).toBe(true);
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  const connectError = (code: string, message: string) =>
+    Object.assign(new Error(message), { code });
+
+  it('reports the guard refusing a private address at connect time as a refusal, not a dead host', async () => {
+    requestMock.mockRejectedValue(await guardRefusalAtConnect());
+    const probe = await probeSourceLink('https://redirects-inward.example.edu/profile');
+    expect(probe.errorCode).toBe('ERR_SSRF_BLOCKED');
+    expect(classifySourceLinkHealth(probe)).toEqual({ healthStatus: 'UNKNOWN' });
+  });
+
+  it('leaves a stored HEALTHY verdict untouched when the guard refuses at connect time', async () => {
+    requestMock.mockRejectedValue(await guardRefusalAtConnect());
+    const url = 'https://redirects-inward.example.edu/profile';
+    const stored = {
+      url,
+      healthStatus: 'HEALTHY' as const,
+      httpStatusCode: 200,
+      checkedAt: new Date('2026-11-01T00:00:00.000Z'),
+    };
+    const now = new Date('2026-11-13T00:00:00.000Z');
+
+    const health = classifySourceLinkHealth(await probeSourceLink(url));
+    const { entry } = resolveSourceLinkHealthEntry(url, health, stored, now);
+
+    expect(entry).toEqual({ ...stored, lastAttemptedAt: now });
+  });
+
+  it('still reports a genuine EHOSTUNREACH as a dead host', async () => {
+    requestMock.mockRejectedValue(
+      connectError('EHOSTUNREACH', 'connect EHOSTUNREACH 192.0.2.1:443'),
+    );
+    const probe = await probeSourceLink('https://gone-host.example.edu/profile');
+    expect(probe.errorCode).toBe('EHOSTUNREACH');
+    expect(classifySourceLinkHealth(probe)).toEqual({
+      healthStatus: 'UNAVAILABLE',
+      connectionLevelFailure: true,
+    });
+  });
+
   it('never asks public DNS about a refusal that is not a private address', async () => {
     blockedWith('resolver-failure');
     await probeSourceLink('https://slow-dns.example.edu/profile');
@@ -200,7 +289,7 @@ describe('probeSourceLink', () => {
   });
 
   it('keeps every other guard refusal inconclusive', async () => {
-    for (const reason of ['invalid-url', 'unsupported-scheme', 'credentials', 'port']) {
+    for (const reason of ['invalid-url', 'unsupported-scheme', 'credentials', 'port'] as const) {
       blockedWith(reason);
       const probe = await probeSourceLink('https://example.edu/profile');
       expect(probe, reason).toEqual({ errorCode: 'ERR_SSRF_BLOCKED' });
@@ -242,8 +331,8 @@ describe('probeSourceLink', () => {
       healthStatus: 'UNAVAILABLE',
       httpStatusCode: 404,
     });
-    // HEAD escalated to GET, and then stopped. A 404 settles on the first answer.
-    expect(requestMock).toHaveBeenCalledTimes(2);
+    // One GET, and then stopped. A 404 settles on the first answer.
+    expect(requestMock).toHaveBeenCalledTimes(1);
   });
 
   it('gives up after a bounded number of throttled answers and stays inconclusive', async () => {
@@ -311,7 +400,11 @@ describe('probeSourceLink', () => {
       requestMock.mockRejectedValueOnce(failure());
       requestMock.mockRejectedValueOnce(failure());
       const confirmed = await probeSourceLink('https://down.example.edu/');
-      expect(classifySourceLinkHealth(confirmed)).toEqual({ healthStatus: 'UNAVAILABLE' });
+      expect(classifySourceLinkHealth(confirmed)).toEqual({
+        healthStatus: 'UNAVAILABLE',
+        connectionLevelFailure: true,
+        ...(code === 'ECONNREFUSED' ? { connectionRefused: true } : {}),
+      });
       expect(requestMock).toHaveBeenCalledTimes(2);
 
       requestMock.mockReset();
@@ -332,48 +425,28 @@ describe('probeSourceLink', () => {
     });
   });
 
-  const headOnlyStatus = (status: number) => {
-    requestMock.mockResolvedValueOnce({ status });
-  };
-
-  it('uses the HEAD status directly when HEAD succeeds', async () => {
-    headOnlyStatus(200);
+  it('probes with exactly one GET and never a HEAD', async () => {
+    const destroy = vi.fn();
+    requestMock.mockResolvedValueOnce({ status: 200, data: { destroy } });
     await expect(probeSourceLink('https://example.com/paper')).resolves.toEqual({
       status: 200,
       requestedUrl: 'https://example.com/paper',
     });
     expect(requestMock).toHaveBeenCalledTimes(1);
-    expect(requestMock.mock.calls[0][0]).toMatchObject({ method: 'HEAD' });
+    expect(requestMock.mock.calls[0][0]).toMatchObject({ method: 'GET' });
+    expect(destroy).toHaveBeenCalledTimes(1);
   });
 
-  it.each([400, 403, 405, 501, 500])(
-    'falls back to GET when HEAD returns %i and reports the GET status',
-    async (headStatus) => {
-      const destroy = vi.fn();
-      requestMock
-        .mockResolvedValueOnce({ status: headStatus })
-        .mockResolvedValueOnce({ status: 200, data: { destroy } });
-
-      await expect(probeSourceLink('https://example.com/paper')).resolves.toEqual({
-        status: 200,
-        requestedUrl: 'https://example.com/paper',
-      });
-      expect(requestMock).toHaveBeenCalledTimes(2);
-      expect(requestMock.mock.calls[1][0]).toMatchObject({ method: 'GET' });
-      expect(destroy).toHaveBeenCalledTimes(1);
+  it.each([400, 404, 405, 501])(
+    'reports a %i from its single GET without a second request',
+    async (status) => {
+      requestMock.mockResolvedValueOnce({ status, data: { destroy: vi.fn() } });
+      const probe = await probeSourceLink('https://example.com/paper');
+      expect(probe.status).toBe(status);
+      expect(requestMock).toHaveBeenCalledTimes(1);
+      expect(requestMock.mock.calls[0][0]).toMatchObject({ method: 'GET' });
     },
   );
-
-  it('reports the GET status when the GET fallback also fails', async () => {
-    requestMock
-      .mockResolvedValueOnce({ status: 501 })
-      .mockResolvedValueOnce({ status: 404, data: { destroy: vi.fn() } });
-
-    await expect(probeSourceLink('https://example.com/paper')).resolves.toEqual({
-      status: 404,
-      requestedUrl: 'https://example.com/paper',
-    });
-  });
 
   // The property name is the whole point of this test. `follow-redirects` sets
   // `responseUrl`; the upper-case `responseURL` is the browser XHR spelling and
@@ -446,7 +519,7 @@ describe('probeSourceLink', () => {
   });
 
   it('raises the timeout past the 7s that turned slow legacy hosts into UNKNOWN', async () => {
-    headOnlyStatus(200);
+    requestMock.mockResolvedValueOnce({ status: 200 });
     await probeSourceLink('https://www.astro.yale.edu/someone/');
     expect(requestMock.mock.calls[0][0].timeout).toBeGreaterThan(7000);
   });

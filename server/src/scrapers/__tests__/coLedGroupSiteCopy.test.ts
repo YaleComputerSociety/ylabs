@@ -90,6 +90,7 @@ describe('ysm-faculty-directory on a co-led group site', () => {
     slug: 'jordan-rivers',
     email: RIVERS_EMAIL,
     departments: ['Neurology'],
+    appointmentDepartments: ['Neurology'],
     researchAreas: ['Epilepsy'],
     labUrl: GROUP_SITE,
     labName: 'Rivers Lab/FG',

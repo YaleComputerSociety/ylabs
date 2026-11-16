@@ -3,6 +3,7 @@ import {
   ROSTER_BIO_EVIDENCE_FIELD,
   planRosterBioResearchRows,
   rosterBioPersonName,
+  rosterBioRereadObservation,
   rosterBioResearchObservations,
   rosterBioTitleVerdict,
   type RosterBioCoveredIdentities,
@@ -202,6 +203,53 @@ describe('roster biography research evidence', () => {
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(true);
     }
+  });
+
+  describe('re-reading the rows the lane minted (#6107)', () => {
+    const OWN_SLUG = 'dept-synthetic-alex-example';
+    const ownCoverage = (): RosterBioCoveredIdentities => ({
+      ...emptyCovered(),
+      personKeys: new Set(['dept:synthetic:alex-example']),
+      slugs: new Set([OWN_SLUG]),
+      ownRowSlugsByPersonKey: new Map([['dept:synthetic:alex-example', OWN_SLUG]]),
+    });
+
+    it('re-reads its own row instead of skipping it as covered, and mints nothing new', () => {
+      const { planned, reread, skipped } = planRosterBioResearchRows(
+        [person()],
+        ownCoverage(),
+        resolver,
+      );
+      expect(planned).toEqual([]);
+      expect(skipped.already_covered).toBeUndefined();
+      expect(reread).toHaveLength(1);
+      const observation = rosterBioRereadObservation(reread[0]);
+      expect(observation).toMatchObject({ entityKey: OWN_SLUG, field: ROSTER_BIO_EVIDENCE_FIELD });
+      expect(observation.value).toContain('synthetic proteins fold');
+      expect(observation.assertsNoValueFor).toBeUndefined();
+    });
+
+    it('asserts no value on its own row when the biography no longer states research', () => {
+      const clinicalOnly = person({
+        bio: 'Their work focuses on supporting patients after synthetic hip repair.',
+      });
+      const { reread } = planRosterBioResearchRows([clinicalOnly], ownCoverage(), resolver);
+      expect(reread).toHaveLength(1);
+      expect(rosterBioRereadObservation(reread[0])).toMatchObject({
+        entityKey: OWN_SLUG,
+        field: ROSTER_BIO_EVIDENCE_FIELD,
+        value: '',
+        assertsNoValueFor: [ROSTER_BIO_EVIDENCE_FIELD],
+      });
+    });
+
+    it('still skips a person another lane covers', () => {
+      const covered = { ...emptyCovered(), personKeys: new Set(['dept:synthetic:alex-example']) };
+      const { planned, reread, skipped } = planRosterBioResearchRows([person()], covered, resolver);
+      expect(planned).toEqual([]);
+      expect(reread).toEqual([]);
+      expect(skipped.already_covered).toBe(1);
+    });
   });
 
   it('reads the given name from the profile URL when the roster put a credential there', () => {

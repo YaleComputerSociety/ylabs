@@ -29,6 +29,37 @@ describe('classifyRunYield', () => {
     expect(classifyRunYield(productiveRun)).toBe('productive');
   });
 
+  it('counts an interrupted run that wrote, by its reconciled count, as productive (#6291)', () => {
+    expect(
+      classifyRunYield({
+        status: 'interrupted',
+        observationCount: 0,
+        storedObservationCountAtReconcile: 2784,
+      }),
+    ).toBe('productive');
+  });
+
+  it('counts a failed run that wrote, by its reconciled count, as productive (#6291)', () => {
+    expect(
+      classifyRunYield({
+        status: 'failure',
+        observationCount: 0,
+        storedObservationCountAtReconcile: 2,
+      }),
+    ).toBe('productive');
+  });
+
+  it('breaks a barren streak at a crashed run that wrote (#6291)', () => {
+    expect(
+      barrenRunStreak([
+        { status: 'success', observationCount: 0 },
+        { status: 'interrupted', observationCount: 0, storedObservationCountAtReconcile: 9790 },
+        { status: 'success', observationCount: 0 },
+        { status: 'success', observationCount: 0 },
+      ]),
+    ).toBe(1);
+  });
+
   it('does not require recorded fetch metrics, because the dead lanes record none', () => {
     expect(classifyRunYield({ status: 'success', observationCount: 0, metrics: undefined })).toBe(
       'barren',

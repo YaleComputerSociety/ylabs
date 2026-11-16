@@ -21,6 +21,7 @@ import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { resetKnownPersonSurnameRosterCache } from '../../utils/researchHomeNameIdentityRoster';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import { materializeEntity } from '../entityMaterializer';
 
 const ENTITY_KEY = 'faculty-research-area-rafferty-duchamp';
@@ -336,6 +337,41 @@ describe('materializeEntity derives the faculty research name when nothing asser
     expect(stored.name).toBe('Computational Vision Lab');
     expect(stored.entityType).toBe('LAB');
   });
+
+  const refusing = (field: 'entityType' | 'kind', value: string) => ({
+    fieldValueRefusals: {
+      [field]: [
+        {
+          valueKey: fieldValueRefusalKey(field, value),
+          rule: 'superseded_by_better_source',
+          refusedBy: 'test',
+          refusedAt: new Date('2026-01-02T00:00:00Z'),
+          note: 'synthetic refusal',
+        },
+      ],
+    },
+  });
+
+  it.each([
+    ['entityType', 'FACULTY_RESEARCH_AREA'],
+    ['kind', 'individual'],
+  ] as const)(
+    'never reclassifies a LAB row into faculty research when the row refuses %s %s',
+    async (field, value) => {
+      await seedLead(
+        (await seedEntity({ kind: 'lab', entityType: 'LAB', ...refusing(field, value) }))._id,
+      );
+      await seedObservation({ field: 'departments', value: ['Mathematics'] });
+
+      await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+      await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+      const entity = await persisted();
+      expect(entity.entityType).toBe('LAB');
+      expect(entity.kind).toBe('lab');
+      expect(entity.name).toBe(LAB_NAME);
+    },
+  );
 
   it('leaves a LAB row with a locked type alone', async () => {
     await seedLead(

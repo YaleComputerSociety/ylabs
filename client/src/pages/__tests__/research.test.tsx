@@ -74,6 +74,7 @@ const mockSearchResponses = (
       qualityFilters?: string[];
       correctSpelling?: boolean;
       rewriteAcronym?: boolean;
+      extractSentenceTopic?: boolean;
     },
   ) => unknown,
 ) => {
@@ -200,6 +201,32 @@ const LocationDisplay = () => {
   const location = useLocation();
   return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
 };
+
+const renderResearchWithLocation = (initialEntries: string[]) =>
+  render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <ConfigContext.Provider
+        value={{
+          ...defaultConfigContext,
+          isLoading: false,
+          isLoaded: true,
+          departments,
+          departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+        }}
+      >
+        <LocationDisplay />
+        <Research />
+      </ConfigContext.Provider>
+    </MemoryRouter>,
+  );
+
+const reloadResearchAt = (url: string) => {
+  cleanup();
+  __resetResearchPageSnapshotForTests();
+  renderResearchWithLocation([url]);
+};
+
+const currentLocation = () => screen.getByTestId('location').textContent ?? '';
 
 const ClearResearchLocation = () => {
   const navigate = useNavigate();
@@ -4249,6 +4276,39 @@ describe('Research acronym rewrite notice (#5169)', () => {
     expect(document.body.textContent).not.toContain('Searching for natural language processing');
   });
 
+  it('keeps the typed acronym after a reload and in a shared link', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveAcronymSearch(searchRequests);
+
+    renderResearchWithLocation(['/research?q=NLP']);
+    expect(await screen.findByRole('heading', { name: 'Synthetic Language Lab' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'NLP' }));
+    expect(await screen.findByRole('heading', { name: 'Synthetic Acronym Lab' })).toBeTruthy();
+    await waitFor(() => expect(currentLocation()).toBe('/research?q=NLP&literal=acronym'));
+
+    searchRequests.length = 0;
+    reloadResearchAt(currentLocation());
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Acronym Lab' })).toBeTruthy();
+    expect(searchRequests).toHaveLength(1);
+    expect(searchRequests[0]).toEqual(expect.objectContaining({ q: 'NLP', rewriteAcronym: false }));
+    expect(document.body.textContent).not.toContain('Searching for natural language processing');
+  });
+
+  it('opens a shared link that chose the typed spelling without correcting it', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveAcronymSearch(searchRequests);
+
+    renderResearchWithLocation(['/research?q=NLP&literal=spelling,acronym,unknown']);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Acronym Lab' })).toBeTruthy();
+    expect(searchRequests[0]).toEqual(
+      expect.objectContaining({ q: 'NLP', correctSpelling: false, rewriteAcronym: false }),
+    );
+    expect(searchRequests[0]).not.toHaveProperty('extractSentenceTopic');
+  });
+
   it('shows no rewrite notice for a search that was not rewritten', async () => {
     const searchRequests: Array<Record<string, unknown>> = [];
     serveAcronymSearch(searchRequests);
@@ -4417,5 +4477,236 @@ describe('Research few close matches notice (#6094)', () => {
     expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search')).toHaveLength(
       searchCalls,
     );
+  });
+});
+
+describe('Research sentence topic rewrite notice (#6223)', () => {
+  const SENTENCE = 'design a better prosthetic hand';
+  const topicEntity = {
+    ...researchEntity,
+    _id: 'topic-1',
+    slug: 'synthetic-prosthetics-lab',
+    name: 'Synthetic Prosthetics Lab',
+    displayName: 'Synthetic Prosthetics Lab',
+  };
+  const typedEntity = {
+    ...researchEntity,
+    _id: 'typed-1',
+    slug: 'synthetic-design-lab',
+    name: 'Synthetic Design Lab',
+    displayName: 'Synthetic Design Lab',
+  };
+
+  const facetDistribution = { entityType: { LAB: 3, CORE_FACILITY: 1 } };
+
+  const serveSentenceSearch = (searchRequests: Array<Record<string, unknown>>) =>
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      searchRequests.push(body as Record<string, unknown>);
+      if (body.q !== SENTENCE) return researchSearchResponse([topicEntity], { facetDistribution });
+      if (body.extractSentenceTopic === false) {
+        return researchSearchResponse([typedEntity], { estimatedTotalHits: 1, facetDistribution });
+      }
+      return researchSearchResponse([topicEntity], {
+        estimatedTotalHits: 1,
+        facetDistribution,
+        topicRewrite: { originalQuery: SENTENCE, topicQuery: 'prosthetic hand' },
+      });
+    });
+
+  it('names the topic searched and lets the student search the sentence as typed', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearch(departments, [`/research?q=${encodeURIComponent(SENTENCE)}`]);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain("result for 'prosthetic hand'");
+    expect(document.body.textContent).toContain(
+      `Searching for the topic prosthetic hand. Search instead for ${SENTENCE}`,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: SENTENCE }));
+
+    expect(document.activeElement).toBe(screen.getByRole('status'));
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+    expect(searchRequests.at(-1)).toEqual(
+      expect.objectContaining({ q: SENTENCE, extractSentenceTopic: false }),
+    );
+    expect(document.body.textContent).not.toContain('Searching for the topic');
+
+    fireEvent.click(screen.getByRole('combobox', { name: /Sort research/ }));
+    fireEvent.click(screen.getByRole('option', { name: 'Name' }));
+
+    await waitFor(() => {
+      expect(searchRequests.at(-1)).toEqual(
+        expect.objectContaining({ q: SENTENCE, sortBy: 'name', extractSentenceTopic: false }),
+      );
+    });
+  });
+
+  it('keeps the typed sentence when a filter changes after choosing it', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearch(departments, [`/research?q=${encodeURIComponent(SENTENCE)}`]);
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: SENTENCE }));
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.change(screen.getByLabelText('Filter by type'), {
+      target: { value: 'CORE_FACILITY' },
+    });
+
+    await waitFor(() => {
+      expect(searchRequests.at(-1)).toEqual(
+        expect.objectContaining({ q: SENTENCE, extractSentenceTopic: false }),
+      );
+    });
+    expect(document.body.textContent).not.toContain('Searching for the topic');
+  });
+
+  it('keeps the typed sentence after a reload', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearchWithLocation([`/research?q=${encodeURIComponent(SENTENCE)}`]);
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: SENTENCE }));
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+    await waitFor(() => expect(currentLocation()).toContain('literal=topic'));
+
+    const chosenUrl = currentLocation();
+    searchRequests.length = 0;
+    reloadResearchAt(chosenUrl);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+    expect(searchRequests[0]).toEqual(
+      expect.objectContaining({ q: SENTENCE, extractSentenceTopic: false }),
+    );
+    expect(document.body.textContent).not.toContain('Searching for the topic');
+  });
+
+  it('opens a shared link that chose the typed sentence on the typed sentence', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearchWithLocation([`/research?q=${encodeURIComponent(SENTENCE)}&literal=topic`]);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+    expect(searchRequests).toHaveLength(1);
+    expect(searchRequests[0]).toEqual(
+      expect.objectContaining({ q: SENTENCE, extractSentenceTopic: false }),
+    );
+    expect(document.body.textContent).not.toContain('Searching for the topic');
+    expect(currentLocation()).toContain('literal=topic');
+  });
+
+  it('searches the topic again when the URL goes back to the rewritten search', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+    const rewrittenSearchUrl = `/research?q=${encodeURIComponent(SENTENCE)}`;
+
+    render(
+      <MemoryRouter initialEntries={[`/research?q=${encodeURIComponent(SENTENCE)}&literal=topic`]}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <NavigateToResearchUrl to={rewrittenSearchUrl} label="Open the rewritten search" />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open the rewritten search' }));
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+    expect(searchRequests.at(-1)).toEqual(expect.objectContaining({ q: SENTENCE }));
+    expect(searchRequests.at(-1)).not.toHaveProperty('extractSentenceTopic');
+    expect(document.body.textContent).toContain('Searching for the topic prosthetic hand');
+  });
+
+  it('drops the typed-sentence choice from the URL when a new query is searched', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearchWithLocation([`/research?q=${encodeURIComponent(SENTENCE)}&literal=topic`]);
+    expect(await screen.findByRole('heading', { name: 'Synthetic Design Lab' })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Search y/labs'), {
+      target: { value: 'coastal ecology' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() => expect(currentLocation()).toBe('/research?q=coastal+ecology'));
+    expect(searchRequests.at(-1)).toEqual(expect.objectContaining({ q: 'coastal ecology' }));
+    expect(searchRequests.at(-1)).not.toHaveProperty('extractSentenceTopic');
+  });
+
+  it('clears the topic notice when the next search was not rewritten', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearch(departments, [`/research?q=${encodeURIComponent(SENTENCE)}`]);
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+    expect(document.body.textContent).toContain('Searching for the topic prosthetic hand');
+
+    fireEvent.change(screen.getByLabelText('Search y/labs'), {
+      target: { value: 'coastal ecology' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() => {
+      expect(searchRequests.at(-1)).toEqual(expect.objectContaining({ q: 'coastal ecology' }));
+    });
+    await waitFor(() => {
+      expect(document.body.textContent).not.toContain('Searching for the topic');
+    });
+  });
+
+  it('names the topic searched when the sentence was also spelling-corrected', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([topicEntity], {
+        estimatedTotalHits: 1,
+        queryCorrection: {
+          originalQuery: 'design a beter prosthetic hand',
+          correctedQuery: 'design a better prosthetic hand',
+        },
+        topicRewrite: {
+          originalQuery: 'design a beter prosthetic hand',
+          topicQuery: 'prosthetic hand',
+        },
+      });
+    });
+
+    renderResearch(departments, [
+      `/research?q=${encodeURIComponent('design a beter prosthetic hand')}`,
+    ]);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain("result for 'prosthetic hand'");
+    expect(document.body.textContent).toContain('Searching for the topic prosthetic hand');
+    expect(document.body.textContent).not.toContain('Spelling corrected');
+  });
+
+  it('shows no topic notice for a search that was not rewritten', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveSentenceSearch(searchRequests);
+
+    renderResearch(departments, ['/research?q=coastal%20ecology']);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Prosthetics Lab' })).toBeTruthy();
+    expect(document.body.textContent).not.toContain('Searching for the topic');
   });
 });

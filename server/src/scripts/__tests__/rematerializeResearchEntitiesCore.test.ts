@@ -564,6 +564,14 @@ describe('REMATERIALIZE_TRACKED_FIELDS', () => {
     ]);
   });
 
+  it('can scope a pass to the emeritus-listed leads alone (#6239)', () => {
+    const args = parseRematerializeResearchEntitiesArgs([
+      '--slugs=a',
+      '--only-fields=emeritusListedLeadIds',
+    ]);
+    expect(args.onlyFields).toEqual(['emeritusListedLeadIds']);
+  });
+
   it('has no duplicate entries', () => {
     expect(new Set(REMATERIALIZE_TRACKED_FIELDS).size).toBe(REMATERIALIZE_TRACKED_FIELDS.length);
   });

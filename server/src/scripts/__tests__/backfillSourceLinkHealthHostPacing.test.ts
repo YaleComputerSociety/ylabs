@@ -325,7 +325,11 @@ describe('probeUncachedUrlsByHost', () => {
         concurrency: 2,
         minIntervalMs: 400,
       });
-      expect(measuredHostBudget('economics.yale.edu')).toBeUndefined();
+      expect(measuredHostBudget('economics.yale.edu')).toEqual({
+        concurrency: 1,
+        minIntervalMs: 1_500,
+      });
+      expect(measuredHostBudget('physics.yale.edu')).toBeUndefined();
       expect(measuredHostBudget('constructor')).toBeUndefined();
     });
   });

@@ -15,7 +15,10 @@ import {
   getResearchGroupDetail,
   resolveArchivedResearchEntityCanonicalSlug,
 } from '../services/researchGroupService';
-import { SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON } from '../models/entityArchival';
+import {
+  SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+  SUBJECT_TWIN_MERGE_ARCHIVE_REASON,
+} from '../models/entityArchival';
 import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { partitionMergeGroupsByDistinctPeopleVerdict } from '../services/distinctPeopleVerdicts';
 import { materializeEntity } from '../scrapers/entityMaterializer';
@@ -30,7 +33,9 @@ import { SAME_LEAD_MERGE_CARRIED_FIELDS } from './mergeSameLeadDuplicateGroupsCo
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  isPersonsOwnResearchRow,
   isShellSlug,
+  ownSiteIdentityPairs,
   planSameLeadCorroboratedMerges,
   sameLeadUrlLaneHoldFlags,
   sameLeadUrlLaneHolds,
@@ -39,6 +44,14 @@ import {
   type SameLeadMergeMember,
 } from './mergeSameLeadDuplicateGroupsCore';
 import { planUrlIdentityLaneVerdicts } from './dedupeResearchEntitiesByPi';
+import {
+  MERGE_SURVIVOR_ONLY_FIELDS_FLAG,
+  assertScopedSurvivorApply,
+  parseMergeSurvivorOnlyFields,
+  planScopedSurvivorRematerialize,
+  rematerializeMergeSurvivors,
+  type ScopedSurvivorPlan,
+} from './mergeSameLeadSurvivorScope';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -69,12 +82,20 @@ async function main(): Promise<void> {
   let output: string | undefined;
   let dryRun = true;
   let confirmed = false;
+  let onlyFields: string[] | undefined;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--output') {
       output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
     } else if (argv[i].startsWith('--output=')) {
       output = resolveSafeJsonReportOutputPath(argv[i].slice('--output='.length));
+    } else if (argv[i] === MERGE_SURVIVOR_ONLY_FIELDS_FLAG) {
+      onlyFields = parseMergeSurvivorOnlyFields(argv[i + 1]);
+      i += 1;
+    } else if (argv[i].startsWith(`${MERGE_SURVIVOR_ONLY_FIELDS_FLAG}=`)) {
+      onlyFields = parseMergeSurvivorOnlyFields(
+        argv[i].slice(`${MERGE_SURVIVOR_ONLY_FIELDS_FLAG}=`.length),
+      );
     } else if (argv[i] === '--apply') dryRun = false;
     else if (argv[i] === CONFIRM_FLAG) confirmed = true;
     else if (argv[i] !== '--dry-run')
@@ -86,16 +107,17 @@ async function main(): Promise<void> {
     mongoUrl: process.env.MONGODBURL,
   });
   if (!dryRun && !confirmed) throw new Error(`${SCRIPT_NAME} apply requires ${CONFIRM_FLAG}`);
+  assertScopedSurvivorApply({ apply: !dryRun, onlyFields, scriptName: SCRIPT_NAME });
   console.log(
     `Environment: ${guard.environment}; target: ${guard.dbLabel}; mode: ${
       dryRun ? 'dry-run' : 'apply'
-    }`,
+    }; survivor rematerialize scope: ${onlyFields ? onlyFields.join(',') : 'none given'}`,
   );
   await initializeConnections();
 
   const rows = (await ResearchEntity.find({ archived: { $ne: true } })
     .select(
-      '_id slug name displayName entityType websiteUrl website sourceUrls fieldProvenance studentVisibilityTier recentGrants recentGrantCount fundingAgencies',
+      '_id slug name displayName entityType kind websiteUrl website sourceUrls fieldProvenance studentVisibilityTier recentGrants recentGrantCount fundingAgencies',
     )
     .lean()) as unknown as Array<Record<string, any>>;
   const byId = new Map(rows.map((row) => [String(row._id), row]));
@@ -107,6 +129,21 @@ async function main(): Promise<void> {
   })
     .select('personId target')
     .lean()) as unknown as Array<Record<string, any>>;
+  const memberDocs = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    role: { $nin: LEAD_ROLE_CANONICAL_VALUES as unknown as string[] },
+    archived: { $ne: true },
+    state: { $ne: 'HISTORICAL' },
+  })
+    .select('personId target')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const membersByEntity = new Map<string, Set<string>>();
+  for (const doc of memberDocs) {
+    const entityId = String(doc.target?.id ?? '');
+    if (!entityId) continue;
+    if (!membersByEntity.has(entityId)) membersByEntity.set(entityId, new Set());
+    membersByEntity.get(entityId)!.add(String(doc.personId ?? ''));
+  }
   const leadsByEntity = new Map<string, Set<string>>();
   for (const doc of leadDocs) {
     const entityId = String(doc.target?.id ?? '');
@@ -118,7 +155,19 @@ async function main(): Promise<void> {
   const urlLaneVerdicts = await planUrlIdentityLaneVerdicts();
   const urlLaneHolds = sameLeadUrlLaneHolds(urlLaneVerdicts);
 
-  const groups = exactDuplicateUrlGroups(rows as any[])
+  const exactGroups = exactDuplicateUrlGroups(rows as any[]);
+  const exactPairKeys = new Set(
+    exactGroups.map((group: any) =>
+      ((group.members ?? []) as any[])
+        .map((member) => String(member._id))
+        .sort()
+        .join('|'),
+    ),
+  );
+  const groups = [
+    ...exactGroups,
+    ...ownSiteIdentityPairs(rows as Array<{ _id: unknown; websiteUrl?: unknown }>, exactPairKeys),
+  ]
     .map((group) => {
       const members = ((group as any).members ?? [])
         .map((member: any) => byId.get(String(member._id)))
@@ -146,6 +195,9 @@ async function main(): Promise<void> {
           (Array.isArray(member.recentGrants) ? member.recentGrants.length : 0) +
           (Array.isArray(member.fundingAgencies) ? member.fundingAgencies.length : 0),
         isShell: isShellSlug(String(member.slug)),
+        leadPersonIds: [...(leadsByEntity.get(String(member._id)) ?? [])],
+        memberPersonIds: [...(membersByEntity.get(String(member._id)) ?? [])],
+        isPersonsOwnRow: isPersonsOwnResearchRow(member),
       }));
       return {
         url: String((group as any).url ?? ''),
@@ -196,6 +248,20 @@ async function main(): Promise<void> {
   };
   let researchPlanCarry = emptyResearchPlanCarryReport();
 
+  const survivorSlugs = outcome.merges
+    .map((merge) => byId.get(merge.survivorId))
+    .filter((survivor): survivor is Record<string, any> => Boolean(survivor))
+    .map((survivor) => String(survivor.slug));
+  let scopedSurvivorPlan: ScopedSurvivorPlan[] | null = null;
+  if (dryRun && onlyFields) {
+    scopedSurvivorPlan = await planScopedSurvivorRematerialize({
+      survivorSlugs,
+      onlyFields,
+      materialize: materializeEntity,
+      loadCurrent: async (slug) =>
+        (await ResearchEntity.findOne({ slug }).lean()) as Record<string, unknown> | null,
+    });
+  }
   if (dryRun) {
     for (const merge of outcome.merges) {
       researchPlanCarry = addResearchPlanCarryReports(
@@ -267,7 +333,10 @@ async function main(): Promise<void> {
       for (const loser of losers) {
         const archivedLoser = await archiveResearchEntities({
           ids: [loser._id],
-          archivedReason: SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+          archivedReason:
+            merge.corroboration === 'leadless-or-member-led-twin'
+              ? SUBJECT_TWIN_MERGE_ARCHIVE_REASON
+              : SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
           set: { canonicalGroupId: survivor._id, lastObservedAt: now },
           survivorId: survivor._id,
           now,
@@ -289,14 +358,11 @@ async function main(): Promise<void> {
 
     // Two re-materializations. The second is the durability check: a merge that only holds
     // for one pass is not finished.
-    for (let pass = 0; pass < 2; pass += 1) {
-      for (const merge of outcome.merges) {
-        const survivor = byId.get(merge.survivorId);
-        if (!survivor) continue;
-        await materializeEntity('researchEntity', { entityKey: String(survivor.slug) }, {});
-        applied.rematerializations += 1;
-      }
-    }
+    applied.rematerializations += await rematerializeMergeSurvivors({
+      survivorSlugs,
+      onlyFields: onlyFields ?? [],
+      materialize: materializeEntity,
+    });
 
     // Read BOTH sides, and the redirect, rather than trusting the write. About 45% of
     // archived slugs 404 and the resolver walks canonicalGroupId, so the repointed path is
@@ -353,6 +419,8 @@ async function main(): Promise<void> {
       {
         script: SCRIPT_NAME,
         mode: dryRun ? 'dry-run' : 'apply',
+        survivorRematerializeScope: onlyFields ?? null,
+        scopedSurvivorPlan,
         applied,
         researchPlanCarry,
         researchPlansThatWouldMove: researchPlansThatWouldMove(researchPlanCarry),

@@ -34,22 +34,54 @@ describe('classifyLabHome', () => {
     ).toBe('in-index');
   });
 
-  it('clears a dead url that the index does not list', () => {
+  it('clears a dead url the index does not list once a stored gone verdict agrees', () => {
+    expect(
+      classifyLabHome(
+        { websiteUrl: 'https://medicine.yale.edu/lab/mccormick/' },
+        index('iwasaki'),
+        404,
+        true,
+      ),
+    ).toBe('clear');
+  });
+
+  it('waits on a single 404 with no stored gone verdict to agree with it (#6264)', () => {
     expect(
       classifyLabHome(
         { websiteUrl: 'https://medicine.yale.edu/lab/mccormick/' },
         index('iwasaki'),
         404,
       ),
-    ).toBe('clear');
+    ).toBe('awaiting-confirmation');
   });
 
-  it('clears when the probe could not complete, since an unreachable home is not a way in', () => {
+  it('keeps the home when the probe observed nothing, such as a timeout or a host pause (#6258)', () => {
     expect(
       classifyLabHome(
         { websiteUrl: 'https://medicine.yale.edu/lab/gone/' },
         index('iwasaki'),
         undefined,
+      ),
+    ).toBe('not-confirmed-gone');
+  });
+
+  it.each([403, 429, 500, 503])('keeps the home on a %s, which is not a gone page', (status) => {
+    expect(
+      classifyLabHome(
+        { websiteUrl: 'https://medicine.yale.edu/lab/gone/' },
+        index('iwasaki'),
+        status,
+      ),
+    ).toBe('not-confirmed-gone');
+  });
+
+  it('clears on a 410 once a stored gone verdict agrees', () => {
+    expect(
+      classifyLabHome(
+        { websiteUrl: 'https://medicine.yale.edu/lab/gone/' },
+        index('iwasaki'),
+        410,
+        true,
       ),
     ).toBe('clear');
   });

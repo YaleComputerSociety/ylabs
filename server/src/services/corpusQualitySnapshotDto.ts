@@ -35,6 +35,7 @@ export interface CorpusQualitySnapshotDto {
   };
   integrity: {
     publicDescriptionInvariantFails: CorpusQualityRatio;
+    personTitleFromSiteChromeReading: CorpusQualityRatio;
   };
 }
 
@@ -81,7 +82,10 @@ const DESCRIPTION_KEYS = [
   'nameIsGenericFacultyResearchTitle',
 ] as const;
 
-const INTEGRITY_KEYS = ['publicDescriptionInvariantFails'] as const;
+const INTEGRITY_KEYS = [
+  'publicDescriptionInvariantFails',
+  'personTitleFromSiteChromeReading',
+] as const;
 
 const isoString = (value: unknown): string => {
   if (value instanceof Date) return value.toISOString();

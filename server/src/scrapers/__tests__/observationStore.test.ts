@@ -1577,6 +1577,23 @@ describe('a roster member profile link is latest-wins only on a roster member (#
   });
 });
 
+describe('roster-bio evidence is latest-wins only for its own source and field (#6107)', () => {
+  it('drops the value from the fingerprint for this source and field and keeps it elsewhere', () => {
+    const own = { sourceName: 'roster-bio-research-evidence', entityType: 'researchEntity' };
+    expect(usesLatestWinsFingerprint({ ...own, field: 'researchInterestSummary' })).toBe(true);
+    for (const field of ['name', 'departments', 'inferredPiUserKey']) {
+      expect(usesLatestWinsFingerprint({ ...own, field })).toBe(false);
+    }
+    expect(
+      usesLatestWinsFingerprint({
+        sourceName: 'center-profile-research-rows',
+        entityType: 'researchEntity',
+        field: 'researchInterestSummary',
+      }),
+    ).toBe(false);
+  });
+});
+
 describe('collapseLatestWins on a profile-linked home retyped by a re-read (#4884)', () => {
   const typing = (sourceName: string, field: string, value: string, observedAt: string) => ({
     field,

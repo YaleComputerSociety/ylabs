@@ -72,7 +72,7 @@ Owner: `fieldValueRefusalSchema` in `server/src/models/modelPrimitives.ts`.
 
 **Lane refusal (`refusedValues`).**
 Not the operator refusal above: a lane's own record, on a witness observation, that it saw one value on a page and refused it under a versioned classifier.
-It never blocks a write; field retraction uses it to retire the lane's older assertion of that identical value from the same page (#5803).
+It never blocks a write; field retraction uses it to retire the lane's older assertion of that identical value from the same page, or from the page the refusal names as `assertedUnder` when the same run read it (#5803).
 Owner: `ObservationRefusedValue` in `server/src/scrapers/observationRefusals.ts`.
 
 **Suppression.**

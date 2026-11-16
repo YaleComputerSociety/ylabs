@@ -20,7 +20,7 @@ import type { ScrapeRunInterruptionReason } from '../models/storedVocabularies';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
 import { reapDeadScrapeRuns } from './staleScrapeRunReaper';
-import { installScraperFetchDeadlines } from './utils/scraperFetchDeadlines';
+import { installScraperFetchHooks } from './utils/scraperFetchHooks';
 import {
   installAxiosScrapeRunProgress,
   recordScrapeRunProgress,
@@ -41,6 +41,7 @@ import {
 } from './sourceYieldGuard';
 import { withHttpCacheFetchMetrics, withHttpValidatorCacheScope } from './utils/httpValidatorCache';
 import { withSweepPageReuseFetchMetrics, withSweepPageReuseScope } from './utils/sweepPageReuse';
+import { withKnownDeadUrlFetchMetrics, withKnownDeadUrlScope } from './utils/knownDeadUrls';
 import { withThrottleRetryFetchMetrics, withThrottleRetryScope } from './utils/throttleRetryStats';
 import {
   withDatabaseWriteRetryFetchMetrics,
@@ -213,7 +214,7 @@ export class ScraperOrchestrator {
       },
     };
 
-    installScraperFetchDeadlines();
+    installScraperFetchHooks();
     installAxiosScrapeRunProgress();
     recordScrapeRunProgress();
     let stall: ScrapeRunStall | undefined;
@@ -231,6 +232,7 @@ export class ScraperOrchestrator {
         stall = detected;
         reportStall(new ScrapeRunStalledError(detected));
       },
+      writeCounts: options.dryRun ? undefined : () => ({ observationCount, entitiesObserved }),
     });
     let interrupted = false;
     const detachStopClose = registerDevWriteStopCleanup({
@@ -306,15 +308,21 @@ export class ScraperOrchestrator {
     const completeRun = async () => {
       const databaseWrites = await withDatabaseWriteRetryScope(() =>
         withThrottleRetryScope(() =>
-          withSweepPageReuseScope(() => withHttpValidatorCacheScope(() => scraper.run(ctx))),
+          withSweepPageReuseScope(() =>
+            withHttpValidatorCacheScope(() => withKnownDeadUrlScope(() => scraper.run(ctx))),
+          ),
         ),
       );
       const throttled = databaseWrites.value;
       const reused = throttled.value;
+      const knownDead = reused.value.value;
       const result = withDatabaseWriteRetryFetchMetrics(
         withThrottleRetryFetchMetrics(
           withSweepPageReuseFetchMetrics(
-            withHttpCacheFetchMetrics(reused.value.value as ScraperResult, reused.value.stats),
+            withHttpCacheFetchMetrics(
+              withKnownDeadUrlFetchMetrics(knownDead.value as ScraperResult, knownDead.stats),
+              reused.value.stats,
+            ),
             reused.stats,
           ),
           throttled.stats,

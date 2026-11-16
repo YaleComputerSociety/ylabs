@@ -43,6 +43,7 @@ const PROFILE: YsmFacultyProfile = {
   profileUrl: PROFILE_URL,
   slug: 'jordan-rivers',
   departments: ['Internal Medicine'],
+  appointmentDepartments: ['Internal Medicine'],
   researchAreas: ['Heart Failure'],
   description:
     'Professor Rivers studies cardiac remodeling and the molecular drivers of heart failure in adults.',

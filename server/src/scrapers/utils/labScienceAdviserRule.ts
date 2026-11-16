@@ -91,14 +91,18 @@ export function isLabScienceDepartment(department: string): boolean {
 
 // A config with no rule predates #5473 and reads a science fellowship, so it keeps counting.
 // A primary department decides alone, so a primary-Linguistics adviser whose row also lists
-// Computer Science does not count (owner, 2026-11-08).
+// Computer Science does not count (owner, 2026-11-08). A primary section decides through the
+// departments it sits under, which are the same appointment (#6202).
 export function adviserPairCountsTowardHosting(
   rule: UndergradHostingRule | undefined,
   researcherOwnDepartments: readonly string[],
   primaryDepartment?: string,
+  primaryDepartmentAncestors: readonly string[] = [],
 ): boolean {
   if (rule !== 'lab-science-adviser-department') return true;
   const primary = primaryDepartment?.trim();
-  if (primary) return isLabScienceDepartment(primary);
+  if (primary) {
+    return [primary, ...primaryDepartmentAncestors].some(isLabScienceDepartment);
+  }
   return researcherOwnDepartments.some(isLabScienceDepartment);
 }

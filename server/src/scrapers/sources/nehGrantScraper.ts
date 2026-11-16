@@ -46,7 +46,6 @@ import { retryOnRetryableStatus } from '../utils/httpFetch';
 import { awardDateOfCalendarDay } from '../../utils/awardCalendarDay';
 
 export const NEH_AWARD_SEARCH_BASE = 'https://awardsearch.neh.gov';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 60_000;
 const DEFAULT_LOOKBACK_YEARS = 6;
 const MAX_GRANTS_PER_PI = 10;
@@ -385,7 +384,7 @@ async function fetchAwardSearchYear(
       responseType: 'text',
       transformResponse: [(data) => data],
       maxRedirects: 0,
-      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
+      headers: { Accept: 'text/html,*/*' },
     }),
   );
   const html = typeof res.data === 'string' ? res.data : String(res.data ?? '');

@@ -116,6 +116,7 @@ import {
 } from '../services/researchEntityCanonicalTombstone';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { REDIRECT_LOOP_ERROR_CODES } from './utils/notObserved';
 import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
@@ -123,9 +124,16 @@ import {
 import { normalizeWebsiteUrlIdentityKey } from '../scripts/researchEntityPiDedupeCore';
 import {
   classifySourceLinkHealth,
+  findSourceLinkHealth,
   probeSourceLink,
+  RESOURCE_GONE_HTTP_STATUS_CODES,
   type SourceLinkProbeResult,
 } from '../services/sourceLinkHealth';
+import {
+  RemovalsByHost,
+  removalConfirmation,
+  type RemovalBasis,
+} from '../services/sourceLinkRemovalConfirmation';
 import { gitCommitIsAncestor, isFullCommitSha } from './scrapeRunCodeIdentity';
 import { userRederiveOnlyFields } from './userMaterializerFieldScope';
 import {
@@ -1087,9 +1095,21 @@ export function classifyRetractionValueOwnership(
   return entitiesSharingTheValue > 1 ? 'shared-boilerplate' : 'sole-holder';
 }
 
+export type RetractionRemovalBasis = RemovalBasis | 'address-no-longer-serves';
+
 export interface RetractionProbeVerdict {
   positivelyDead: boolean;
+  basis?: RetractionRemovalBasis;
 }
+
+export type RetractionValueProbe = (
+  value: string,
+  retraction: Pick<PlannedFieldRetraction, 'entityId'>,
+) => Promise<RetractionProbeVerdict>;
+
+export type SoleHolderRemovalsByHost = ReturnType<
+  RemovalsByHost<RetractionRemovalBasis>['toReport']
+>;
 
 export interface WithheldFieldRetraction {
   entityKey: string;
@@ -1116,16 +1136,18 @@ export interface WithheldFieldRetraction {
  */
 export async function withholdSoleHolderRetractionsThatStillAnswer(
   retractions: readonly PlannedFieldRetraction[],
-  probeValue: (value: string) => Promise<RetractionProbeVerdict>,
+  probeValue: RetractionValueProbe,
 ): Promise<{
   retained: PlannedFieldRetraction[];
   withheld: WithheldFieldRetraction[];
   probedValues: number;
+  removalsByHost: SoleHolderRemovalsByHost;
 }> {
   const retained: PlannedFieldRetraction[] = [];
   const withheld: WithheldFieldRetraction[] = [];
   const withheldStoredRowFields = new Set<string>();
   let probedValues = 0;
+  const removalsByHost = new RemovalsByHost<RetractionRemovalBasis>();
   for (const retraction of retractions) {
     if (
       classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) ===
@@ -1136,16 +1158,20 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
       continue;
     }
     let everyValueIsDead = retraction.retractedValues.length > 0;
+    const confirmedBases: Array<[string, RetractionRemovalBasis]> = [];
     for (const value of retraction.retractedValues) {
       probedValues += 1;
-      const verdict = await probeValue(value);
+      const verdict = await probeValue(value, retraction);
       if (!verdict.positivelyDead) {
         everyValueIsDead = false;
         break;
       }
+      if (verdict.basis) confirmedBases.push([value, verdict.basis]);
     }
-    if (everyValueIsDead) retained.push(retraction);
-    else {
+    if (everyValueIsDead) {
+      retained.push(retraction);
+      for (const [value, basis] of confirmedBases) removalsByHost.record(value, basis);
+    } else {
       withheldStoredRowFields.add(`${retraction.entityId}\u0000${retraction.field}`);
       withheld.push({
         entityKey: retraction.entityKey,
@@ -1164,6 +1190,7 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
     ),
     withheld,
     probedValues,
+    removalsByHost: removalsByHost.toReport(),
   };
 }
 
@@ -1190,6 +1217,7 @@ export interface FieldRetractionResult {
   regatedEntities: number;
   retractions: PlannedFieldRetraction[];
   withheld?: WithheldFieldRetraction[];
+  soleHolderRemovalsByHost?: SoleHolderRemovalsByHost;
   userFieldRetraction?: UserFieldRetractionResult;
 }
 
@@ -1274,6 +1302,17 @@ export async function loadCompleteReads(
     refusalRows?: Array<{ refusedValues?: unknown; sourceUrl?: unknown }>;
   }>;
 
+  const namedPagesByRun = new Map<string, Set<string>>();
+  for (const group of groups) {
+    const scrapeRunId = serializedDocumentId(group._id.scrapeRunId) || '';
+    const named = namedAssertedUnderPages(group.refusalRows);
+    if (!scrapeRunId || named.length === 0) continue;
+    const pages = namedPagesByRun.get(scrapeRunId) ?? new Set<string>();
+    for (const page of named) pages.add(page);
+    namedPagesByRun.set(scrapeRunId, pages);
+  }
+  const pagesReadByRun = await loadPagesReadByRuns(sourceName, witnessFields, namedPagesByRun);
+
   const reads: FieldRetractionCompleteRead[] = [];
   for (const group of groups) {
     const observed = new Set(group.fields);
@@ -1289,7 +1328,7 @@ export async function loadCompleteReads(
       if (!Array.isArray(entry)) continue;
       for (const field of entry) if (typeof field === 'string' && field) asserted.add(field);
     }
-    const refusals = refusalsFromWitnessRows(group.refusalRows);
+    const refusals = refusalsFromWitnessRows(group.refusalRows, pagesReadByRun.get(scrapeRunId));
     reads.push({
       entityKey,
       scrapeRunId,
@@ -1301,18 +1340,74 @@ export async function loadCompleteReads(
   return reads;
 }
 
+/**
+ * A refusal is filed under the page its witness row was read from, unless it names the page
+ * the lane would have filed the assertion under (`assertedUnder`) and the same run filed a
+ * research-entity witness row under that page in a run that fetched live (#5803). Any other
+ * row citing it (a user row filed after a failed fetch, a rival source sharing the run id, a
+ * `--use-cache` replay) is not that record, so a lane cannot reach an assertion on a page it
+ * did not read.
+ */
 export function refusalsFromWitnessRows(
   rows: ReadonlyArray<{ refusedValues?: unknown; sourceUrl?: unknown }> | undefined,
+  pagesReadByRun: ReadonlySet<string> = new Set(),
 ): FieldRetractionRefusal[] {
   const refusals: FieldRetractionRefusal[] = [];
   for (const row of rows ?? []) {
-    const sourceUrl = typeof row.sourceUrl === 'string' ? row.sourceUrl.trim() : '';
-    if (!sourceUrl) continue;
-    for (const refusal of sanitizeRefusedValues(row.refusedValues)) {
+    const rowPage = typeof row.sourceUrl === 'string' ? row.sourceUrl.trim() : '';
+    if (!rowPage) continue;
+    for (const { assertedUnder, ...refusal } of sanitizeRefusedValues(row.refusedValues)) {
+      const sourceUrl =
+        assertedUnder && pagesReadByRun.has(assertedUnder) ? assertedUnder : rowPage;
       refusals.push({ ...refusal, sourceUrl });
     }
   }
   return unionRefusals(refusals, undefined);
+}
+
+function namedAssertedUnderPages(
+  rows: ReadonlyArray<{ refusedValues?: unknown }> | undefined,
+): string[] {
+  return (rows ?? []).flatMap((row) =>
+    sanitizeRefusedValues(row.refusedValues).flatMap((refusal) =>
+      refusal.assertedUnder ? [refusal.assertedUnder] : [],
+    ),
+  );
+}
+
+async function liveFetchRunIds(scrapeRunIds: readonly string[]): Promise<Set<string>> {
+  const ids = scrapeRunIds
+    .filter((id) => mongoose.isValidObjectId(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  if (ids.length === 0) return new Set();
+  const runs = (await ScrapeRun.find({ _id: { $in: ids }, 'options.useCache': false })
+    .select('_id')
+    .lean()) as Array<{ _id: unknown }>;
+  return new Set(runs.map((run) => serializedDocumentId(run._id) || '').filter(Boolean));
+}
+
+async function loadPagesReadByRuns(
+  sourceName: string,
+  witnessFields: readonly string[],
+  pagesByRun: ReadonlyMap<string, ReadonlySet<string>>,
+): Promise<Map<string, Set<string>>> {
+  const read = new Map<string, Set<string>>();
+  const liveRunIds = await liveFetchRunIds([...pagesByRun.keys()]);
+  for (const [scrapeRunId, pages] of pagesByRun) {
+    if (!liveRunIds.has(scrapeRunId) || pages.size === 0) continue;
+    const found = (await Observation.distinct('sourceUrl', {
+      sourceName,
+      entityType: 'researchEntity',
+      field: { $in: [...witnessFields] },
+      scrapeRunId: new mongoose.Types.ObjectId(scrapeRunId),
+      sourceUrl: { $in: [...pages] },
+    })) as unknown[];
+    read.set(
+      scrapeRunId,
+      new Set(found.filter((page): page is string => typeof page === 'string')),
+    );
+  }
+  return read;
 }
 
 async function loadRunProvenance(
@@ -1510,8 +1605,6 @@ async function loadEntityStates(
  * the operator path by the script's own apply guard plus confirm flag, so the same
  * action never has two switches that can disagree.
  */
-const REDIRECT_LOOP_ERROR_CODES = new Set(['ERR_FR_TOO_MANY_REDIRECTS', 'ERR_TOO_MANY_REDIRECTS']);
-
 const comparableRegistrableHost = (url: string | undefined): string | null => {
   if (!url) return null;
   try {
@@ -1544,23 +1637,61 @@ export function citedAddressNoLongerServesTheResource(probe: SourceLinkProbeResu
 }
 
 /**
- * `UNAVAILABLE` is the only health verdict that licenses removal. `UNKNOWN` covers a
- * throttle, a timeout and a TLS failure, all of which mean a server may well be
- * serving the page, so they are not evidence of absence (#2751).
+ * The lane's own reads already found the value absent, so a probe here is the second of
+ * the two observations a removal needs (#4729). `UNKNOWN` covers a throttle, a timeout and
+ * a TLS failure, all of which mean a server may well be serving the page (#2751). A `404`,
+ * a `410`, or an answer that lands away from the requested page confirms on its own; a
+ * host-level failure confirms only against a stored host-level verdict of the same class
+ * at least six hours older, because one bad minute on a host must not retire a value (#6264).
  */
-export async function probeRetractionValueLiveness(value: string): Promise<RetractionProbeVerdict> {
+export async function probeRetractionValueLiveness(
+  value: string,
+  context: { storedHealth?: unknown; now?: Date } = {},
+): Promise<RetractionProbeVerdict> {
   const probe = await probeSourceLink(value);
+  if (citedAddressNoLongerServesTheResource(probe)) {
+    return { positivelyDead: true, basis: 'address-no-longer-serves' };
+  }
   const health = classifySourceLinkHealth(probe);
-  return {
-    positivelyDead:
-      health.healthStatus === 'UNAVAILABLE' || citedAddressNoLongerServesTheResource(probe),
-  };
+  if (health.healthStatus !== 'UNAVAILABLE') return { positivelyDead: false };
+  if (typeof health.httpStatusCode === 'number') {
+    return {
+      positivelyDead: true,
+      basis: RESOURCE_GONE_HTTP_STATUS_CODES.has(health.httpStatusCode)
+        ? 'gone-status'
+        : 'address-no-longer-serves',
+    };
+  }
+  const confirmation = removalConfirmation(
+    findSourceLinkHealth(context.storedHealth, value),
+    health,
+    context.now ?? new Date(),
+  );
+  return confirmation.confirmed
+    ? { positivelyDead: true, basis: confirmation.basis }
+    : { positivelyDead: false };
 }
+
+async function storedSourceLinkHealthFor(entityId: string): Promise<unknown> {
+  if (!mongoose.isValidObjectId(entityId)) return undefined;
+  const row = await ResearchEntity.findById(entityId).select('sourceLinkHealth').lean<{
+    sourceLinkHealth?: unknown;
+  }>();
+  return row?.sourceLinkHealth;
+}
+
+export const probeRetractionValueAgainstStoredHealth: RetractionValueProbe = async (
+  value,
+  retraction,
+) =>
+  probeRetractionValueLiveness(value, {
+    storedHealth: await storedSourceLinkHealthFor(retraction.entityId),
+  });
 
 export async function reconcileFieldRetractions(options: {
   sourceName: string;
   dryRun?: boolean;
-  probeValue?: (value: string) => Promise<RetractionProbeVerdict>;
+  probeValue?: RetractionValueProbe;
   commitIsAncestor?: CommitIsAncestor;
   contract?: SourceFieldRetractionContract;
 }): Promise<FieldRetractionResult> {
@@ -1617,7 +1748,7 @@ export async function reconcileFieldRetractions(options: {
 
   const screened = await withholdSoleHolderRetractionsThatStillAnswer(
     plan.retractions,
-    options.probeValue ?? probeRetractionValueLiveness,
+    options.probeValue ?? probeRetractionValueAgainstStoredHealth,
   );
   plan.counts.soleHolderValueWithheld = screened.withheld.length;
   plan.counts.storedValuesCleared = screened.retained.filter(
@@ -1644,6 +1775,7 @@ export async function reconcileFieldRetractions(options: {
       regatedEntities: 0,
       retractions: screened.retained,
       withheld: screened.withheld,
+      soleHolderRemovalsByHost: screened.removalsByHost,
     };
   }
 
@@ -1700,6 +1832,7 @@ export async function reconcileFieldRetractions(options: {
     regatedEntities,
     retractions: screened.retained,
     withheld: screened.withheld,
+    soleHolderRemovalsByHost: screened.removalsByHost,
   };
 }
 
@@ -1728,17 +1861,25 @@ export const USER_FIELD_RETRACTION_ROLLBACK_REASON =
 export const USER_ORCID_FIELD_RETRACTION_ROLLBACK_REASON =
   'field retraction: the same lane re-read this page for this person and stated it carries no ORCID (#5991)';
 
+export const USER_TITLE_FIELD_RETRACTION_ROLLBACK_REASON =
+  'field retraction: the same lane re-read this page for this person and found no admissible title on it (#6233)';
+
 const USER_FIELD_RETRACTION_ROLLBACK_REASONS: Readonly<Record<string, string>> = {
   email: USER_FIELD_RETRACTION_ROLLBACK_REASON,
   orcid: USER_ORCID_FIELD_RETRACTION_ROLLBACK_REASON,
+  title: USER_TITLE_FIELD_RETRACTION_ROLLBACK_REASON,
 };
 
 /**
  * The user fields a lane may claim absent from a page it read in full. `orcid` joined
  * `email` in #5991: a lane states `assertsNoValueFor: ['orcid']` only when the subject node
  * of the person's own page states no ORCID link and nothing labelled ORCID.
+ *
+ * `title` joined in #6233, for `official-profile-pi-backfill` only: a lane states
+ * `assertsNoValueFor: ['title']` only when the person's own, identity-confirmed page leaves no
+ * admissible title after the extractor's rules.
  */
-const PAGE_SCOPED_USER_ABSENCE_FIELDS: ReadonlySet<string> = new Set(['email', 'orcid']);
+const PAGE_SCOPED_USER_ABSENCE_FIELDS: ReadonlySet<string> = new Set(['email', 'orcid', 'title']);
 
 export interface UserFieldRetractionContract {
   retractableFields: readonly string[];
@@ -1747,9 +1888,9 @@ export interface UserFieldRetractionContract {
 
 export const userFieldRetractionContracts: Readonly<Record<string, UserFieldRetractionContract>> = {
   'official-profile-pi-backfill': {
-    retractableFields: ['email', 'orcid'],
+    retractableFields: ['email', 'orcid', 'title'],
     notes:
-      'States assertsNoValueFor: [email] on every identity row of a full read only when the profile yielded no person-specific address and the page states no address of any kind, in a link, text, script or attribute, plain or obfuscated. An address its person-specific filter refused is still on the page, so it claims nothing. States assertsNoValueFor: [orcid] on every row of a read that emits profile enrichment, the only reads that emit an orcid, only when the page body states no ORCID link and nothing labelled ORCID (#6003); a page whose ORCID the reader refused, as several namesakes or as an implausible labelled iD, still states one, so it claims nothing.',
+      'States assertsNoValueFor: [email] on every identity row of a full read only when the profile yielded no person-specific address and the page states no address of any kind, in a link, text, script or attribute, plain or obfuscated. An address its person-specific filter refused is still on the page, so it claims nothing. States assertsNoValueFor: [orcid] on every row of a read that emits profile enrichment, the only reads that emit an orcid, only when the page body states no ORCID link and nothing labelled ORCID (#6003); a page whose ORCID the reader refused, as several namesakes or as an implausible labelled iD, still states one, so it claims nothing. States assertsNoValueFor: [title] on every row of a read that emits profile enrichment only when the page passed every identity check for this person and no admissible title remains after the extractor rules (#6233); a page with no title that also states no address of the person yields no identity, and a refused, mismatched or failed read yields no rows, so neither claims anything.',
   },
   'dept-faculty-roster': {
     retractableFields: ['email', 'orcid'],
@@ -1757,6 +1898,9 @@ export const userFieldRetractionContracts: Readonly<Record<string, UserFieldRetr
       "States assertsNoValueFor: [email] on the profileUrls row, filed under the profile page its email rows use, only when the person's own profile was read and named them, that page states no address of any kind, and the roster card yielded none. A shared roster address it withheld records refused, and an unread or refused profile claims nothing. States assertsNoValueFor: [orcid] on the same row only when that read page's subject node states no ORCID link and nothing labelled ORCID (#5991); a page whose ORCID the reader refused still states one, so it claims nothing.",
   },
 };
+
+const listedFields = (fields: readonly string[]): string =>
+  fields.length > 1 ? `${fields.slice(0, -1).join(', ')} and ${fields.at(-1)}` : (fields[0] ?? '');
 
 export function assertUserFieldRetractionContractsAreDeclarable(
   contracts: Readonly<Record<string, UserFieldRetractionContract>> = userFieldRetractionContracts,
@@ -1768,7 +1912,7 @@ export function assertUserFieldRetractionContractsAreDeclarable(
     for (const field of contract.retractableFields) {
       if (!PAGE_SCOPED_USER_ABSENCE_FIELDS.has(field)) {
         throw new Error(
-          `${sourceName} declares user field ${JSON.stringify(field)}; only ${[...PAGE_SCOPED_USER_ABSENCE_FIELDS].join(' and ')} have a page-scoped absence claim.`,
+          `${sourceName} declares user field ${JSON.stringify(field)}; only ${listedFields([...PAGE_SCOPED_USER_ABSENCE_FIELDS])} have a page-scoped absence claim.`,
         );
       }
       assertDeclarableRetractionField(field, 'retractable');

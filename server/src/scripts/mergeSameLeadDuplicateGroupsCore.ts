@@ -3,6 +3,8 @@ import {
   type UrlIdentityLaneName,
   type UrlIdentityLaneVerdict,
 } from './researchEntityPiDedupeCore';
+import { normalizeWebsiteUrlIdentityKey } from '../utils/websiteUrlIdentityKey';
+import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 
 /**
  * Merge the duplicate-URL groups whose members share a lead person AND carry something
@@ -33,9 +35,11 @@ export type SameLeadMergeHold =
   | 'only-a-shared-url-and-a-shared-lead'
   | 'already-planned-by-the-url-identity-lane'
   | 'quarantined-by-the-conflation-guard'
+  | 'shares-a-row-with-an-earlier-merge'
   | 'no-ownership-evidence-on-either-side';
 
-export type SameLeadCorroboration = 'name-agrees' | 'shell-versus-concrete';
+export type SameLeadCorroboration =
+  'name-agrees' | 'shell-versus-concrete' | 'leadless-or-member-led-twin';
 
 export interface SameLeadMergeMember {
   id: string;
@@ -45,6 +49,9 @@ export interface SameLeadMergeMember {
   hasIndexUrlAuthority: boolean;
   fundingRichness: number;
   isShell: boolean;
+  leadPersonIds?: readonly string[];
+  memberPersonIds?: readonly string[];
+  isPersonsOwnRow?: boolean;
 }
 
 export interface SameLeadMergePlan {
@@ -90,6 +97,33 @@ export function corroborationFor(
   return null;
 }
 
+const leadsSitInside = (twin: SameLeadMergeMember, anchor: SameLeadMergeMember): boolean => {
+  const within = new Set([...(anchor.leadPersonIds ?? []), ...(anchor.memberPersonIds ?? [])]);
+  return (twin.leadPersonIds ?? []).every((personId) => within.has(personId));
+};
+
+/**
+ * One lab stored twice on its own site, where the twin has no lead or is led only
+ * by people of the anchor row (#6206). The name must agree and exactly one row may anchor,
+ * so two rows of two different PIs never fold here.
+ */
+export function subjectTwinAnchor(
+  members: readonly SameLeadMergeMember[],
+): SameLeadMergeMember | null {
+  if (members.length !== 2) return null;
+  // A person's own row normalizes to its lab's name, and an archived or detached lead edge makes
+  // it read as leadless, so that pair is the owner's per-row judgement, never this lane (#6206).
+  if (members.some((member) => member.isPersonsOwnRow)) return null;
+  const names = members.map((member) => normalizedMergeName(member.name));
+  if (!names[0] || names[0] !== names[1]) return null;
+  const anchors = members.filter(
+    (member) =>
+      (member.leadPersonIds?.length ?? 0) > 0 &&
+      members.every((other) => other === member || leadsSitInside(other, member)),
+  );
+  return anchors.length === 1 ? anchors[0] : null;
+}
+
 /**
  * The survivor, or null when the evidence does not choose one.
  *
@@ -129,8 +163,28 @@ export function planSameLeadCorroboratedMerges(
 ): SameLeadMergeOutcome {
   const merges: SameLeadMergePlan[] = [];
   const held: Array<{ url: string; reason: SameLeadMergeHold }> = [];
+  const claimedIds = new Set<string>();
 
   for (const group of groups) {
+    if (group.members.some((member) => claimedIds.has(member.id))) {
+      held.push({ url: group.url, reason: 'shares-a-row-with-an-earlier-merge' });
+      continue;
+    }
+    const excludedUpstream = group.alreadyPlannedByUrlLane || group.quarantinedByConflationGuard;
+    const twinAnchor = excludedUpstream ? null : subjectTwinAnchor(group.members);
+    if (twinAnchor) {
+      const losers = group.members.filter((member) => member.id !== twinAnchor.id);
+      merges.push({
+        url: group.url,
+        corroboration: 'leadless-or-member-led-twin',
+        survivorId: twinAnchor.id,
+        loserIds: losers.map((member) => member.id),
+        survivorGainsFunding:
+          twinAnchor.fundingRichness === 0 && losers.some((member) => member.fundingRichness > 0),
+      });
+      group.members.forEach((member) => claimedIds.add(member.id));
+      continue;
+    }
     if (!group.everyMemberHasALead) {
       held.push({ url: group.url, reason: 'a-member-has-no-lead-so-the-test-is-vacuous' });
       continue;
@@ -168,6 +222,7 @@ export function planSameLeadCorroboratedMerges(
       survivorGainsFunding:
         survivor.fundingRichness === 0 && losers.some((member) => member.fundingRichness > 0),
     });
+    group.members.forEach((member) => claimedIds.add(member.id));
   }
 
   return { merges, held };
@@ -182,6 +237,7 @@ export function summarizeSameLeadMergeHolds(
     'only-a-shared-url-and-a-shared-lead': 0,
     'already-planned-by-the-url-identity-lane': 0,
     'quarantined-by-the-conflation-guard': 0,
+    'shares-a-row-with-an-earlier-merge': 0,
     'no-ownership-evidence-on-either-side': 0,
   };
   for (const row of held) counts[row.reason] += 1;
@@ -241,3 +297,44 @@ export function sameLeadUrlLaneInputsReport(verdicts: readonly UrlIdentityLaneVe
     quarantinedGroups,
   }));
 }
+
+/**
+ * Pairs whose own websites differ only by `www.` or another spelling the identity key folds,
+ * which the gate's exact-URL groups never pair (#6206). Only two-row collisions are returned.
+ */
+export const ownSiteIdentityPairs = <Row extends { _id: unknown; websiteUrl?: unknown }>(
+  rows: readonly Row[],
+  alreadyGrouped: ReadonlySet<string>,
+): Array<{ url: string; members: Row[] }> => {
+  const byKey = new Map<string, Row[]>();
+  for (const row of rows) {
+    const key = normalizeWebsiteUrlIdentityKey(
+      typeof row.websiteUrl === 'string' ? row.websiteUrl.trim() : '',
+    );
+    if (key) byKey.set(key, [...(byKey.get(key) ?? []), row]);
+  }
+  return [...byKey.entries()]
+    .filter(([, members]) => members.length === 2)
+    .filter(
+      ([, members]) =>
+        !alreadyGrouped.has(
+          members
+            .map((m) => String(m._id))
+            .sort()
+            .join('|'),
+        ),
+    )
+    .map(([url, members]) => ({ url, members }));
+};
+
+const textOf = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+/**
+ * A person's own research row, never a lab. `entityType` decides when present, because `kind`
+ * defaults to `lab` and a person's row can keep that default (#6206).
+ */
+export const isPersonsOwnResearchRow = (row: { entityType?: unknown; kind?: unknown }): boolean => {
+  const entityType = textOf(row.entityType).toUpperCase();
+  if (entityType) return entityType !== 'LAB' && isPersonScopedResearchEntityShape(row);
+  return isPersonScopedResearchEntityShape(row) && textOf(row.kind).toLowerCase() !== 'lab';
+};

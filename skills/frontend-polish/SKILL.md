@@ -164,7 +164,8 @@ The student-journey smoke fails when the first result title starts below 390x664
 - The wide-layout `/research` sidebar carries no active-filter chips, because each of its controls already shows its own state, and "Clear all filters" sits in its header row beside the active count: a chip row, a clear-all row and the "Search with the selected filters." helper line, which no layout shows any more because a filter applies as soon as it is chosen, made it 717px of a 590px sidebar at 1280x720 with one filter on (#5449).
 The student-journey smoke checks the sidebar fits for a signed-in student and for a guest, with a filter active as well as while browsing.
 The Undergrads group pays for itself in the wide sidebar only (#5963): its rows are 28px, its "Shows research matching every ticked option" line and the advises hint are `InfoTip` buttons (`components/shared/InfoTip.tsx`) that describe their controls through `aria-describedby` while closed, and the header and gaps are tighter at `xl`.
-Measured as a guest on Development data at 1280x720 on 2026-11-12, the sidebar holds 566px of content in 590px browsing or ticked, and 583px in the tallest real state, with the missing-evidence line showing; before the compaction it held 666px.
+Measured as a guest on Development data at 1280x720 on 2026-11-12, the sidebar holds 566px of content in 590px browsing or ticked, and 583px in the tallest real state, when a note line still sat under an option; before the compaction it held 666px.
+Since #6203 all three options always show and an option at zero carries its unavailable tip behind an info button instead of a line, so it costs the sidebar no height.
 The filter sheet keeps 44px rows and visible lines, because touch targets there come first and the sheet scrolls.
 - Public pages paint before the session check answers, so UI that mounts only for a resolved session must not land above content that is already painted.
 Reserve its slot when every viewer needs it, or place it where nothing follows it.
@@ -207,6 +208,30 @@ The route fade's `translateY(6px)` did exactly that to a deep-linked program mod
 `/research` is the only eager content page (the tiny root redirect and not-found page stay eager too); every other page in `client/src/App.tsx` is a `React.lazy` behind the shared `Suspense` fallback, and a library that only runs on a failure path or behind a lazy route is fetched at its call site (`utils/warningDialog.ts`, which loads the shared `utils/appDialogs.tsx` dialog on first use, and the deferred SDK load in `utils/errorTracking.ts`).
 `client/src/__tests__/entryChunkGuard.test.ts` runs a real Vite build and fails when one of those returns to the emitted entry chunk, because a reviewer cannot see a chunk boundary in a diff.
 Take a number from the build (`yarn --cwd client build` prints per-chunk raw and gzip sizes) rather than from the module count.
+
+### Programs board load budget (#5160)
+
+The `/programs` board meets four lines, measured at p90 over 5 runs per condition, where p90 over 5 runs is the slowest run:
+
+- The first program card waits on at most 1 API round trip.
+- Once the search response lands, the first card paints within 400ms at 375px wide with 4x CPU slowdown.
+- With 2.5s added to every API call, the first card paints within 4.5s, which is one delay plus 2.0s.
+- The search response is at most 100KB compressed, measured as the brotli body served to current browsers.
+  A gzip-only client is outside this line.
+
+On 2026-11-13, on beta at 5a3f8163b, the board measured 1 round trip, 282ms, at most 4.38s, and 69KB brotli (105KB for a gzip-only client), so the card projection #5160 proposed was not built.
+
+Measure the board the same way so the numbers stay comparable:
+
+- Use the production client build (`vite build` and `vite preview`), headless Chromium through the repo's Playwright, and a fresh browser per run.
+- Time to the first card runs from navigation start until the first `section[aria-labelledby] .grid > *` element has a non-zero box.
+  The page's LCP element is its intro paragraph, so read the first card, not LCP.
+- `/programs` is sign-in only, so a guest never sees a card.
+  Mount the real programs router against Development with a synthetic student principal and no session.
+  Stub `/api/check` to return a synthetic student session and `/api/users/*` to return an empty watch list, as the student-journey smoke does.
+  Do not use `dev-login`, because it writes an account and a login event.
+- Apply the 2.5s condition as a Playwright route that delays every API response.
+  Playwright's own interception adds a local cost that grows with body size, so treat a smaller-body gain under that condition as an upper bound.
 
 ## Accessibility harness
 

@@ -52,7 +52,6 @@ export const CROSSREF_GRANT_WORKS_URL = 'https://api.crossref.org/types/grant/wo
 const DOI_RESOLVER = 'https://doi.org/';
 const YALE_ROR = 'https://ror.org/03v76x132';
 const AFFILIATION_QUERY = 'yale';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 60_000;
 const PAGE_ROWS = 1000;
 const MAX_PAGES = 20;
@@ -370,7 +369,7 @@ async function fetchCrossrefGrantPage(
       responseType: 'text',
       transformResponse: [(data) => data],
       maxRedirects: 0,
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
     }),
   );
   const text = typeof res.data === 'string' ? res.data : String(res.data ?? '');

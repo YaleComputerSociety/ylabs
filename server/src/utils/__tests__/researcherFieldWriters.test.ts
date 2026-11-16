@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   decideResearcherFieldWrite,
   isFillOnlyFieldValue,
+  isFillOnlyIdentityJoin,
   researcherFieldWriter,
   storedValueBackingDecidesPresence,
   storedValueCountsAsPresent,
+  writerHeldOnFillOnlyEvidence,
   writerOutranks,
 } from '../researcherFieldWriters';
 
@@ -125,5 +127,175 @@ describe('researcher field writer precedence (#5706)', () => {
     ).toBe(false);
     expect(isFillOnlyFieldValue('primaryDepartment', [])).toBe(false);
     expect(isFillOnlyFieldValue('title', ['yale-directory'])).toBe(false);
+  });
+
+  it('treats a name only the directory backs as fill-only, and one a page backs as not (#6035)', () => {
+    expect(isFillOnlyFieldValue('displayName', ['yale-directory'])).toBe(true);
+    expect(isFillOnlyFieldValue('displayName', ['yale-directory', 'yale-directory-csv'])).toBe(
+      true,
+    );
+    expect(isFillOnlyFieldValue('displayName', ['yale-directory', 'dept-faculty-roster'])).toBe(
+      false,
+    );
+    expect(isFillOnlyFieldValue('displayName', ['official-profile-pi-backfill'])).toBe(false);
+  });
+
+  it('fills an empty name from the directory but never replaces a stored one (#6035)', () => {
+    const directory = researcherFieldWriter(
+      'fx1',
+      'account-netid',
+      1,
+      isFillOnlyFieldValue('displayName', ['yale-directory']),
+    );
+    expect(decideResearcherFieldWrite(undefined, 'displayName', directory, true, false)).toEqual({
+      write: true,
+      writer: directory,
+      writerChanged: true,
+    });
+    expect(decideResearcherFieldWrite(undefined, 'displayName', directory, true, true)).toEqual({
+      write: false,
+      releaseWriter: false,
+    });
+  });
+
+  it('treats a name from a key joined on the name alone as fill-only (#6035)', () => {
+    expect(isFillOnlyIdentityJoin('displayName', 'person-name')).toBe(true);
+    expect(isFillOnlyIdentityJoin('displayName', 'minted-from-pi-attribution')).toBe(true);
+    expect(isFillOnlyIdentityJoin('displayName', undefined)).toBe(true);
+    expect(isFillOnlyIdentityJoin('displayName', 'account-email')).toBe(false);
+    expect(isFillOnlyIdentityJoin('displayName', 'official-profile-page')).toBe(false);
+    expect(isFillOnlyIdentityJoin('displayName', 'account-netid')).toBe(false);
+    for (const field of ['imageUrl', 'websiteUrl'] as const) {
+      expect(isFillOnlyIdentityJoin(field, 'person-name')).toBe(true);
+      expect(isFillOnlyIdentityJoin(field, 'minted-from-pi-attribution')).toBe(true);
+      expect(isFillOnlyIdentityJoin(field, 'account-netid')).toBe(false);
+    }
+    expect(isFillOnlyIdentityJoin('title', 'person-name')).toBe(false);
+    expect(isFillOnlyIdentityJoin('primaryDepartment', 'person-name')).toBe(false);
+  });
+
+  it('counts a name-joined holder recorded before the fill-only flag as fill-only evidence (#6035)', () => {
+    const staleNameJoined = { userKey: 'dept:a', joinRank: 1, confidence: 0.7 };
+    const unrecognisedJoin = { userKey: 'dept:a', joinRank: 0, confidence: 0.7 };
+    const netidJoined = { userKey: 'netid:a', joinRank: 4, confidence: 0.9 };
+    expect(writerHeldOnFillOnlyEvidence('websiteUrl', staleNameJoined)).toBe(true);
+    expect(writerHeldOnFillOnlyEvidence('websiteUrl', unrecognisedJoin)).toBe(true);
+    expect(writerHeldOnFillOnlyEvidence('websiteUrl', netidJoined)).toBe(false);
+    expect(writerHeldOnFillOnlyEvidence('websiteUrl', { ...netidJoined, fillOnly: true })).toBe(
+      true,
+    );
+    expect(writerHeldOnFillOnlyEvidence('primaryDepartment', staleNameJoined)).toBe(false);
+    expect(writerHeldOnFillOnlyEvidence('websiteUrl', undefined)).toBe(false);
+  });
+
+  it('lets a name-joined key fill an empty image or website but never replace a stored one (#6035)', () => {
+    for (const field of ['imageUrl', 'websiteUrl'] as const) {
+      const byName = researcherFieldWriter(
+        'dept:a:fx',
+        'person-name',
+        1,
+        isFillOnlyIdentityJoin(field, 'person-name'),
+      );
+      expect(decideResearcherFieldWrite(undefined, field, byName, true, false)).toMatchObject({
+        write: true,
+      });
+      expect(decideResearcherFieldWrite(undefined, field, byName, true, true)).toEqual({
+        write: false,
+        releaseWriter: false,
+      });
+    }
+  });
+
+  it('lets a name-joined key fill an empty name but never replace a stored one (#6035)', () => {
+    const byName = researcherFieldWriter(
+      'dept:a:fx',
+      'person-name',
+      1,
+      isFillOnlyIdentityJoin('displayName', 'person-name'),
+    );
+    expect(decideResearcherFieldWrite(undefined, 'displayName', byName, true, false)).toEqual({
+      write: true,
+      writer: byName,
+      writerChanged: true,
+    });
+    expect(decideResearcherFieldWrite(undefined, 'displayName', byName, true, true)).toEqual({
+      write: false,
+      releaseWriter: false,
+    });
+    const byNetid = researcherFieldWriter('fx1', 'account-netid', 0.5);
+    expect(
+      decideResearcherFieldWrite(
+        new Map([['displayName', byNetid]]),
+        'displayName',
+        byName,
+        true,
+        true,
+      ),
+    ).toEqual({ write: false, releaseWriter: false });
+  });
+
+  it('ranks a fill-only key against a fill-only holder, in either direction (#6035)', () => {
+    const rosterByName = researcherFieldWriter('dept:a:fx', 'person-name', 0.6, true);
+    const grantByName = researcherFieldWriter('nih:a:fx', 'person-name', 0.9, true);
+    expect(
+      decideResearcherFieldWrite(
+        new Map([['imageUrl', rosterByName]]),
+        'imageUrl',
+        grantByName,
+        true,
+        true,
+      ),
+    ).toMatchObject({ write: true, writer: grantByName });
+    expect(
+      decideResearcherFieldWrite(
+        new Map([['imageUrl', grantByName]]),
+        'imageUrl',
+        rosterByName,
+        true,
+        true,
+      ),
+    ).toEqual({ write: false, releaseWriter: false });
+  });
+
+  it('ranks against a holder recorded before the flag as fill-only when its join makes it one', () => {
+    const legacyByName = { userKey: 'dept:a:fx', joinRank: 1, confidence: 0.6 };
+    const grantByName = researcherFieldWriter('nih:a:fx', 'person-name', 0.9, true);
+    expect(
+      decideResearcherFieldWrite(
+        new Map([['imageUrl', legacyByName]]),
+        'imageUrl',
+        grantByName,
+        true,
+        true,
+      ),
+    ).toMatchObject({ write: true, writer: grantByName });
+  });
+
+  it('never lets a fill-only key replace a value a key that is not fill-only holds (#6035)', () => {
+    const officialByNetid = researcherFieldWriter('fx2', 'account-netid', 0.5);
+    const directoryByNetid = researcherFieldWriter('fx1', 'account-netid', 1, true);
+    const grantByName = researcherFieldWriter('nih:a:fx', 'person-name', 1, true);
+    for (const candidate of [directoryByNetid, grantByName]) {
+      expect(
+        decideResearcherFieldWrite(
+          new Map([['displayName', officialByNetid]]),
+          'displayName',
+          candidate,
+          true,
+          true,
+          true,
+        ),
+      ).toEqual({ write: false, releaseWriter: false });
+    }
+  });
+
+  it('never lets a fill-only key replace a stored value no writer is recorded for (#6035)', () => {
+    const grantByName = researcherFieldWriter('nih:a:fx', 'person-name', 1, true);
+    for (const field of ['displayName', 'imageUrl', 'websiteUrl'] as const) {
+      expect(decideResearcherFieldWrite(undefined, field, grantByName, true, true, true)).toEqual({
+        write: false,
+        releaseWriter: false,
+      });
+    }
   });
 });

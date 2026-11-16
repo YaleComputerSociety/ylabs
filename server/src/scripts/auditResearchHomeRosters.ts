@@ -50,6 +50,7 @@ import {
   summarizeResearchHomeRosterAudit,
   type OfficialRosterLaneEvidence,
 } from './auditResearchHomeRostersCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -247,6 +248,7 @@ export async function auditOfficialRosterLane(
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseResearchHomeRosterAuditArgs(process.argv.slice(2));
   const configs = selectRosterConfigs(OFFICIAL_ROSTER_CONFIGS, options.only);
   if (configs.length === 0) throw new Error('--only matched no roster config');

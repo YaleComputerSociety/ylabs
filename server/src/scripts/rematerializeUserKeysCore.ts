@@ -66,7 +66,7 @@ export interface UserKeyPassRow {
   entityKey: string;
   fieldsWritten: number;
   plannedPaths: string[];
-  droppedPaths?: string[];
+  outOfScopePaths?: string[];
   skipped?: string;
   error?: string;
 }
@@ -79,7 +79,7 @@ export interface UserKeyPassSummary {
   skipped: Record<string, number>;
   errors: number;
   plannedPathSet: string[];
-  droppedPathSet: string[];
+  outOfScopePathSet: string[];
 }
 
 const pathSet = (lists: ReadonlyArray<readonly string[] | undefined>): string[] =>
@@ -99,6 +99,6 @@ export function summarizeUserKeyPass(
     skipped,
     errors: rows.filter((row) => row.error).length,
     plannedPathSet: pathSet(rows.map((row) => row.plannedPaths)),
-    droppedPathSet: pathSet(rows.map((row) => row.droppedPaths)),
+    outOfScopePathSet: pathSet(rows.map((row) => row.outOfScopePaths)),
   };
 }

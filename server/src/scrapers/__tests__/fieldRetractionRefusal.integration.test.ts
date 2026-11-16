@@ -47,12 +47,17 @@ const CONTRACT: SourceFieldRetractionContract = {
 
 const deadProbe = async () => ({ positivelyDead: true });
 
-async function appendRun(observations: ObservationInput[], observedAt: Date) {
+async function appendRun(
+  observations: ObservationInput[],
+  observedAt: Date,
+  options: { useCache?: boolean; recordsCacheUse?: boolean } = {},
+): Promise<string> {
   const run = await ScrapeRun.create({
     sourceId: SOURCE_ID,
     sourceName: SOURCE_NAME,
     status: 'success',
     startedAt: observedAt,
+    options: options.recordsCacheUse === false ? {} : { useCache: options.useCache ?? false },
   });
   await appendObservations(
     observations.map((observation) => ({ ...observation, observedAt })),
@@ -60,6 +65,25 @@ async function appendRun(observations: ObservationInput[], observedAt: Date) {
       scrapeRunId: String(run._id),
       sourceId: String(SOURCE_ID),
       sourceName: SOURCE_NAME,
+      sourceWeight: 0.8,
+      dryRun: false,
+    },
+  );
+  return String(run._id);
+}
+
+async function appendUnderRun(
+  scrapeRunId: string,
+  sourceName: string,
+  observations: ObservationInput[],
+  observedAt: Date,
+) {
+  await appendObservations(
+    observations.map((observation) => ({ ...observation, observedAt })),
+    {
+      scrapeRunId,
+      sourceId: String(new mongoose.Types.ObjectId()),
+      sourceName,
       sourceWeight: 0.8,
       dryRun: false,
     },
@@ -278,6 +302,133 @@ describe('a newer-version refusal retires the stale assertion end to end (#5803)
     expect((await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean())?.websiteUrl).toBe(
       STORED_LINK,
     );
+  });
+
+  describe('a refusal that names the page its assertion was filed under (#5803)', () => {
+    const PROFILE_PAGE = 'https://example.yale.edu/people/synthetic-person';
+    const OTHER_ENTITY_KEY = 'synthetic-other-roster-entity';
+    const refusalFiledUnderProfile = (readsListing: boolean): ObservationInput[] => [
+      ...witness([{ ...refusedStoredLink[0], assertedUnder: LISTING_PAGE }]).map((row) => ({
+        ...row,
+        sourceUrl: PROFILE_PAGE,
+      })),
+      ...(readsListing
+        ? [
+            {
+              entityType: 'researchEntity' as const,
+              entityKey: OTHER_ENTITY_KEY,
+              field: 'slug',
+              value: OTHER_ENTITY_KEY,
+              sourceUrl: LISTING_PAGE,
+            },
+          ]
+        : []),
+    ];
+
+    it('retracts the assertion on the named page when the same run read that page', async () => {
+      await appendRun(refusalFiledUnderProfile(true), new Date('2026-11-10T00:00:00Z'));
+      await appendRun(refusalFiledUnderProfile(true), new Date('2026-11-12T00:00:00Z'));
+      const result = await reconcileFieldRetractions({
+        sourceName: SOURCE_NAME,
+        contract: CONTRACT,
+        dryRun: true,
+        probeValue: deadProbe,
+      });
+      expect(result.counts.refusalSupportedObservations).toBe(1);
+      expect(result.retractions).toHaveLength(1);
+    });
+
+    const plannedRetractions = async () =>
+      (
+        await reconcileFieldRetractions({
+          sourceName: SOURCE_NAME,
+          contract: CONTRACT,
+          dryRun: true,
+          probeValue: deadProbe,
+        })
+      ).retractions;
+
+    it('does not count another source sharing the run id as having read the page', async () => {
+      for (const iso of ['2026-11-10T00:00:00Z', '2026-11-12T00:00:00Z']) {
+        const runId = await appendRun(refusalFiledUnderProfile(false), new Date(iso));
+        await appendUnderRun(
+          runId,
+          'synthetic-rival-source',
+          [
+            {
+              entityType: 'researchEntity',
+              entityKey: OTHER_ENTITY_KEY,
+              field: 'slug',
+              value: OTHER_ENTITY_KEY,
+              sourceUrl: LISTING_PAGE,
+            },
+          ],
+          new Date(iso),
+        );
+      }
+      expect(await plannedRetractions()).toEqual([]);
+    });
+
+    it('does not count a user row or a non-witness field citing the page as a read', async () => {
+      for (const iso of ['2026-11-10T00:00:00Z', '2026-11-12T00:00:00Z']) {
+        const runId = await appendRun(refusalFiledUnderProfile(false), new Date(iso));
+        await appendUnderRun(
+          runId,
+          SOURCE_NAME,
+          [
+            {
+              entityType: 'user',
+              entityKey: 'netid:synthetic9',
+              field: 'slug',
+              value: 'netid:synthetic9',
+              sourceUrl: LISTING_PAGE,
+            },
+            {
+              entityType: 'researchEntity',
+              entityKey: OTHER_ENTITY_KEY,
+              field: 'name',
+              value: 'Synthetic Other Research',
+              sourceUrl: LISTING_PAGE,
+            },
+          ],
+          new Date(iso),
+        );
+      }
+      expect(await plannedRetractions()).toEqual([]);
+    });
+
+    it('does not honour a named page in a run that recorded no cache setting', async () => {
+      await appendRun(refusalFiledUnderProfile(true), new Date('2026-11-10T00:00:00Z'), {
+        recordsCacheUse: false,
+      });
+      await appendRun(refusalFiledUnderProfile(true), new Date('2026-11-12T00:00:00Z'), {
+        recordsCacheUse: false,
+      });
+      expect(await plannedRetractions()).toEqual([]);
+    });
+
+    it('does not honour a named page in a run replayed from the cache', async () => {
+      await appendRun(refusalFiledUnderProfile(true), new Date('2026-11-10T00:00:00Z'), {
+        useCache: true,
+      });
+      await appendRun(refusalFiledUnderProfile(true), new Date('2026-11-12T00:00:00Z'), {
+        useCache: true,
+      });
+      expect(await plannedRetractions()).toEqual([]);
+    });
+
+    it('retracts nothing when the run never read the page the refusal names', async () => {
+      await appendRun(refusalFiledUnderProfile(false), new Date('2026-11-10T00:00:00Z'));
+      await appendRun(refusalFiledUnderProfile(false), new Date('2026-11-12T00:00:00Z'));
+      const result = await reconcileFieldRetractions({
+        sourceName: SOURCE_NAME,
+        contract: CONTRACT,
+        dryRun: true,
+        probeValue: deadProbe,
+      });
+      expect(result.counts.refusalSupportedObservations).toBe(0);
+      expect(result.retractions).toEqual([]);
+    });
   });
 
   it('treats an unregistered source with no injected contract as not retraction-capable', async () => {

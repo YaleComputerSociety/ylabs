@@ -2,6 +2,7 @@ import {
   applyResearchEntityOrgUnitCanonicalization,
   SCHOOL_PROFILE_HOSTS,
 } from '../scrapers/orgUnitCanonicalization';
+import { schoolIsRefused, withoutRefusedSchools } from '../scrapers/refusedSchools';
 
 /**
  * Schools with no plausible biomedical overlap, so a recorded value here next
@@ -42,6 +43,7 @@ export interface SchoolHostMismatchEntity {
   sourceUrls?: unknown;
   fullDescription?: unknown;
   researchAreas?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 const asStringArray = (value: unknown): string[] =>
@@ -114,7 +116,7 @@ export async function planSchoolHostMismatchRow(
   entity: SchoolHostMismatchEntity,
 ): Promise<SchoolHostMismatchPlanRow | null> {
   const correctedSchool = findMismatchedHostSchool(entity);
-  if (!correctedSchool) return null;
+  if (!correctedSchool || schoolIsRefused(entity.fieldValueRefusals, correctedSchool)) return null;
 
   const set: Record<string, unknown> = { school: correctedSchool };
   const canonicalization = await applyResearchEntityOrgUnitCanonicalization(set, {
@@ -122,6 +124,7 @@ export async function planSchoolHostMismatchRow(
     departments: entity.departments,
   });
   if (canonicalization.clearedSchoolLabel) return null;
+  withoutRefusedSchools(set, entity.fieldValueRefusals);
 
   const evidenceUrl =
     candidateUrls(entity).find((url) => SCHOOL_HOST_MAP[hostnameOf(url)] === correctedSchool) || '';

@@ -4722,7 +4722,7 @@ test('shared microsite fetch policy enforces the SSRF guard before requesting un
 
   assert.match(
     source,
-    /import \{ assertPublicHttpUrl, ssrfSafeAgents \} from '\.\.\/\.\.\/utils\/ssrfGuard'/,
+    /import \{ assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents \} from '\.\.\/\.\.\/utils\/ssrfGuard'/,
   );
   assert.match(source, /const assertUrl = options\.assertUrl \?\? assertPublicHttpUrl/);
   assert.match(source, /const safeUrl = \(await assertUrl\(url\)\)\.toString\(\)/);
@@ -4747,7 +4747,18 @@ test('shared form post goes through the same SSRF guard, agents, and host limite
     source,
     /await axios\.request\(\{\n\s+url,\n\s+method: 'POST',[^}]*?httpAgent: agents\.httpAgent,\n\s+httpsAgent: agents\.httpsAgent,/,
   );
-  assert.match(source, /result = await limiter\.run\(host, \(\) => request\(safeUrl, config\)\)/);
+  assert.match(
+    source,
+    /followRedirectsWithinBudget\(safeUrl, config, \{ limiter, request, assertUrl \}\)/,
+  );
+  assert.match(
+    source,
+    /await deps\.limiter\.run\(\s*hostOf\(target\),\s*\(\) => deps\.request\(target, sent\),\s*isReusedResponse,\s*\)/,
+  );
+  assert.match(
+    source,
+    /current = \(await deps\.assertUrl\(new URL\(result\.location, target\)\.toString\(\)\)\)\.toString\(\)/,
+  );
 });
 
 test('student grants fund search enumerates only through the SSRF-guarded shared fetch policy', () => {
@@ -4970,7 +4981,10 @@ test('link-health maps only a non-resolving host to a dead-link error code', () 
     source,
     /error instanceof SsrfBlockedError && error\.reason === 'unresolvable'\s*\?\s*'ENOTFOUND'\s*:\s*'ERR_SSRF_BLOCKED'/,
   );
-  assert.match(source, /DEAD_LINK_ERROR_CODES = new Set\(\[\s*'ENOTFOUND',/);
+  assert.match(
+    source,
+    /export const DEAD_LINK_ERROR_CODES: ReadonlySet<string> = new Set\(\[\s*'ENOTFOUND',/,
+  );
   assert.match(source, /RESOURCE_GONE_HTTP_STATUS_CODES = new Set\(\[404, 410\]\)/);
 
   // #2766: a throttled answer arrives as a status, so it must be re-asked with
@@ -4994,7 +5008,10 @@ test('link-health maps only a non-resolving host to a dead-link error code', () 
   // server's TLS configuration, never about whether the page exists, and no retry
   // changes that. Listing it retired six live Yale vanity hosts, three of them on
   // student_ready rows, so it must never rejoin the dead set.
-  const deadSet = source.match(/const DEAD_LINK_ERROR_CODES = new Set\(\[[^\]]*\]\)/s)?.[0] ?? '';
+  const deadSet =
+    source.match(
+      /export const DEAD_LINK_ERROR_CODES: ReadonlySet<string> = new Set\(\[[^\]]*\]\)/s,
+    )?.[0] ?? '';
   assert.ok(deadSet, 'DEAD_LINK_ERROR_CODES declaration not found');
   assert.ok(
     !deadSet.includes('ERR_TLS_CERT_ALTNAME_INVALID'),

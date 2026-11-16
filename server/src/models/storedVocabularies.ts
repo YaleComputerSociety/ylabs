@@ -44,6 +44,7 @@ export const undergradListSources = [
   'yibs-summer-research-fellows',
   'cognitive-science-senior-essays',
   'eps-senior-theses',
+  'theater-performance-studies-senior-projects',
 ] as const;
 export type UndergradListSource = (typeof undergradListSources)[number];
 
@@ -65,6 +66,7 @@ export const UNDERGRAD_EVIDENCE_SIGNAL: Record<UndergradListSource, UndergradEvi
   'german-senior-essays': 'mentors',
   'cognitive-science-senior-essays': 'mentors',
   'eps-senior-theses': 'mentors',
+  'theater-performance-studies-senior-projects': 'mentors',
   'tobin-research-assistantships': 'hosted',
   'wu-tsai-undergraduate-fellows': 'hosted',
   'yibs-summer-research-fellows': 'hosted',

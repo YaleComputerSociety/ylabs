@@ -42,6 +42,7 @@ import {
   uncoveredSiblingTabs,
   type RosterLaneEvidence,
 } from './auditRosterLanesCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const DEFAULT_LANE_CONCURRENCY = 8;
 
@@ -206,6 +207,7 @@ async function resolveSiblingTabAliases(
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseRosterLaneAuditArgs(process.argv.slice(2));
   const configuredUrls = DEFAULT_DEPT_CONFIGS.map((config) => config.url);
   const lanes = options.only

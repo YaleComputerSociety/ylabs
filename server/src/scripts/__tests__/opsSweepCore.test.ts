@@ -225,6 +225,15 @@ describe('compareRerunWithBaseline', () => {
     expect(comparison.problem).toBe(false);
   });
 
+  it('compares a run by its reconciled write count, not a false zero (#6291)', () => {
+    const comparison = compareRerunWithBaseline({
+      sourceName: 'nih-reporter',
+      baseline,
+      current: run({ observationCount: 0, storedObservationCountAtReconcile: 4500 }),
+    });
+    expect(comparison.verdict).toBe('ok');
+  });
+
   it('flags an observation drop over 25%', () => {
     const comparison = compareRerunWithBaseline({
       sourceName: 'nih-reporter',

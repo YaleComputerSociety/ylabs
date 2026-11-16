@@ -5,6 +5,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import type { LoginSignalBucket } from '../models/storedVocabularies';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 
 dotenv.config({ quiet: true });
 
@@ -60,7 +61,6 @@ export interface ListYaliesOptions {
   page?: number;
   pageSize?: number;
   filters?: Record<string, unknown>;
-  userAgent?: string;
 }
 
 export async function listYalies(options: ListYaliesOptions = {}): Promise<YaliesPerson[]> {
@@ -80,7 +80,7 @@ export async function listYalies(options: ListYaliesOptions = {}): Promise<Yalie
       {
         headers: {
           Authorization: `Bearer ${apiKey}`,
-          ...(options.userAgent ? { 'User-Agent': options.userAgent } : {}),
+          'User-Agent': SCRAPER_USER_AGENT,
         },
         timeout: YALIES_API_TIMEOUT_MS,
       },

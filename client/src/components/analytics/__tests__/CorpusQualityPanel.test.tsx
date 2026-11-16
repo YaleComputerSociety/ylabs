@@ -25,7 +25,10 @@ const measurement = (measuredAt: string, served: number): CorpusQualitySnapshotR
     fullDescriptionIsBiography: { n: 3, of: 100 },
     nameIsGenericFacultyResearchTitle: { n: 10, of: 100 },
   },
-  integrity: { publicDescriptionInvariantFails: { n: 0, of: 100 } },
+  integrity: {
+    publicDescriptionInvariantFails: { n: 0, of: 100 },
+    personTitleFromSiteChromeReading: { n: 0, of: 80 },
+  },
 });
 
 const storedRichness = {
@@ -58,6 +61,7 @@ const response = (): CorpusQualityResponse => {
       'shortDescriptionIsAreaEchoOnly',
       'fullDescriptionIsBiography',
       'publicDescriptionInvariantFails',
+      'personTitleFromSiteChromeReading',
       'hasTopic',
       'topicTotal',
       'noResearchWebsiteAndNoTopics',

@@ -23,6 +23,9 @@ import {
 } from './clearDeadLabResearchHomesCore';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import { isSsrfGuardRefusal } from '../utils/ssrfGuard';
+import { findSourceLinkHealth } from '../services/sourceLinkHealth';
+import { RemovalsByHost, removalConfirmation } from '../services/sourceLinkRemovalConfirmation';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,7 +33,6 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:clear-dead-lab-homes';
 const INDEX_URL = 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/';
-const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';
 
 interface Args {
   apply: boolean;
@@ -61,7 +63,7 @@ export function parseArgs(argv: string[]): Args {
 
 export async function httpStatus(url: string): Promise<LabHomeProbeStatus> {
   try {
-    const response = await fetchPublicHttpUrl(url, { headers: { 'user-agent': UA } });
+    const response = await fetchPublicHttpUrl(url, {});
     return response.status;
   } catch (error) {
     return isSsrfGuardRefusal(error) ? SSRF_REFUSED_PROBE : undefined;
@@ -70,7 +72,6 @@ export async function httpStatus(url: string): Promise<LabHomeProbeStatus> {
 
 async function loadIndexSegments(): Promise<Set<string>> {
   const response = await fetchPublicHttpUrl(INDEX_URL, {
-    headers: { 'user-agent': UA },
     timeoutMs: 30_000,
   });
   if (response.status !== 200) {
@@ -86,6 +87,7 @@ async function loadIndexSegments(): Promise<Set<string>> {
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
     apply: args.apply,
@@ -99,7 +101,7 @@ async function main() {
     archived: { $ne: true },
     websiteUrl: { $regex: YSM_LAB_HOME },
   })
-    .select('_id slug name entityType studentVisibilityTier websiteUrl sourceUrls')
+    .select('_id slug name entityType studentVisibilityTier websiteUrl sourceUrls sourceLinkHealth')
     .lean();
 
   const rows: Array<{
@@ -108,6 +110,7 @@ async function main() {
     entityType?: string;
     studentVisibilityTier?: string;
     segment: string;
+    websiteUrl: string;
     httpStatus?: LabHomeProbeStatus;
     verdict: DeadLabHomeVerdict;
   }> = [];
@@ -116,6 +119,13 @@ async function main() {
     const segment = labSegment(entity.websiteUrl);
     const needsProbe = !indexSegments.has(segment);
     const status = needsProbe ? await httpStatus(String(entity.websiteUrl)) : undefined;
+    const storedVerdictAgrees =
+      typeof status === 'number' &&
+      removalConfirmation(
+        findSourceLinkHealth(entity.sourceLinkHealth, String(entity.websiteUrl)),
+        { healthStatus: 'UNAVAILABLE', httpStatusCode: status },
+        new Date(),
+      ).confirmed;
     const entityId = serializedDocumentId(entity._id);
     if (!entityId) continue;
     rows.push({
@@ -124,12 +134,15 @@ async function main() {
       entityType: entity.entityType,
       studentVisibilityTier: entity.studentVisibilityTier,
       segment,
+      websiteUrl: String(entity.websiteUrl),
       httpStatus: status,
-      verdict: classifyLabHome(entity, indexSegments, status),
+      verdict: classifyLabHome(entity, indexSegments, status, storedVerdictAgrees),
     });
   }
 
   const toClear = rows.filter((row) => row.verdict === 'clear');
+  const clearedByHost = new RemovalsByHost();
+  for (const row of toClear) clearedByHost.record(row.websiteUrl, 'gone-status');
 
   if (args.apply) {
     if (!args.confirm) {
@@ -173,6 +186,9 @@ async function main() {
     inIndex: tally('in-index'),
     liveNotInIndex: tally('live-not-in-index'),
     addressRefused: tally('address-refused'),
+    notConfirmedGone: tally('not-confirmed-gone'),
+    awaitingConfirmation: tally('awaiting-confirmation'),
+    clearedByHost: clearedByHost.toReport(),
     plannedClears: toClear.length,
     plannedClearsServed: toClear.filter((row) => row.studentVisibilityTier === 'student_ready')
       .length,

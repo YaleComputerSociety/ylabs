@@ -65,6 +65,9 @@ const member = (first: string, role: CenterMember['role'] = 'core-faculty'): Cen
 });
 
 const ROSTER = ['Avery', 'Blair', 'Casey', 'Devon'].map((first) => member(first));
+const ROSTER_WITH_SECOND_DIRECTOR = ROSTER.map((entry) =>
+  entry.name === 'Blair Synthetic' ? member('Blair', 'director') : entry,
+);
 
 const config: CenterConfig = {
   centerKey: 'fixture-identity',
@@ -697,6 +700,8 @@ describe(
       expect(after.map((edge) => edge.role)).toEqual(before.map((edge) => edge.role));
     });
 
+    // Blair is a second director, so Avery's stale lead may end; a center's last lead
+    // survives a role change instead (#6308 decision).
     it('still runs center roster retirement when center rows are skipped (#5890)', async () => {
       const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
       const staleLead = await edgeOn(avery, 'DIRECTOR');
@@ -705,8 +710,8 @@ describe(
       };
       const skip = { skipEntityTypes: ['researchEntity'] };
 
-      await runLane(pages, ROSTER, skip);
-      await runLane(pages, ROSTER, skip);
+      await runLane(pages, ROSTER_WITH_SECOND_DIRECTOR, skip);
+      await runLane(pages, ROSTER_WITH_SECOND_DIRECTOR, skip);
 
       expect((await edgeById(staleLead))?.state).toBe('HISTORICAL');
       expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['CORE_FACULTY']);
@@ -918,6 +923,8 @@ describe(
       expect(await liveEdgesOf(labShell)).toHaveLength(0);
     });
 
+    // Blair is a second director, so Avery's stale lead may end; a center's last lead
+    // survives a role change instead (#6308 decision).
     it('adopts the holder edge of an unlisted role and retires it after two complete reads', async () => {
       const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
       const staleLead = await edgeOn(avery, 'DIRECTOR');
@@ -925,13 +932,13 @@ describe(
         [centerProfileUrl('Avery')]: profilePage({ canonical: officialProfileUrl('Avery') }),
       };
 
-      await runLane(pages);
+      await runLane(pages, ROSTER_WITH_SECOND_DIRECTOR);
       expect((await edgeById(staleLead))?.rosterProvenance).toMatchObject({
         sourceName: SOURCE_NAME,
         membershipKey: `official-profile:${centerProfileUrl('Avery')}|director`,
       });
 
-      await runLane(pages);
+      await runLane(pages, ROSTER_WITH_SECOND_DIRECTOR);
       expect((await edgeById(staleLead))?.state).toBe('HISTORICAL');
       expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['CORE_FACULTY']);
     });

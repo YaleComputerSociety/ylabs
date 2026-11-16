@@ -24,6 +24,7 @@ export interface RosterBioCoveredIdentities {
   personKeys: ReadonlySet<string>;
   personNames: ReadonlySet<string>;
   slugs: ReadonlySet<string>;
+  ownRowSlugsByPersonKey?: ReadonlyMap<string, string>;
 }
 
 export type RosterBioSkipReason =
@@ -48,6 +49,13 @@ export interface RosterBioPlannedRow {
   profileUrl: string;
   department: string;
   school: string;
+  evidenceSentences: string[];
+}
+
+export interface RosterBioRereadRow {
+  personKey: string;
+  slug: string;
+  profileUrl: string;
   evidenceSentences: string[];
 }
 
@@ -188,16 +196,32 @@ export function planRosterBioResearchRows(
   people: readonly RosterBioPerson[],
   covered: RosterBioCoveredIdentities,
   resolveDepartment: RosterBioDepartmentResolver,
-): { planned: RosterBioPlannedRow[]; skipped: Record<RosterBioSkipReason, number> } {
+): {
+  planned: RosterBioPlannedRow[];
+  reread: RosterBioRereadRow[];
+  skipped: Record<RosterBioSkipReason, number>;
+} {
   const skipped = {} as Record<RosterBioSkipReason, number>;
   const skip = (reason: RosterBioSkipReason) => {
     skipped[reason] = (skipped[reason] || 0) + 1;
   };
   const planned: RosterBioPlannedRow[] = [];
+  const reread: RosterBioRereadRow[] = [];
   const plannedSlugs = new Set<string>();
   const plannedNames = new Set<string>();
   for (const person of people) {
     const profileUrl = rosterBioProfileUrl(person);
+    const ownSlug = covered.ownRowSlugsByPersonKey?.get(person.key);
+    if (ownSlug) {
+      const derived = deriveBioResearchStatement(person.bio, { name: rosterBioPersonName(person) });
+      reread.push({
+        personKey: person.key,
+        slug: ownSlug,
+        profileUrl,
+        evidenceSentences: derived.rejection ? [] : derived.evidenceSentences,
+      });
+      continue;
+    }
     if (
       covered.personKeys.has(person.key) ||
       (profileUrl && covered.urls.has(normalizeRosterBioUrl(profileUrl)))
@@ -254,12 +278,25 @@ export function planRosterBioResearchRows(
       evidenceSentences: derived.evidenceSentences,
     });
   }
-  return { planned, skipped };
+  return { planned, reread, skipped };
 }
 
 // A writer evidence field that is not a stored research-entity path, so the bio's own
 // sentences reach the writer but can never be served as the description.
 export const ROSTER_BIO_EVIDENCE_FIELD = 'researchInterestSummary';
+
+export function rosterBioRereadObservation(row: RosterBioRereadRow): ObservationInput {
+  const base = {
+    entityType: 'researchEntity' as const,
+    entityKey: row.slug,
+    sourceUrl: row.profileUrl,
+    field: ROSTER_BIO_EVIDENCE_FIELD,
+  };
+  if (row.evidenceSentences.length === 0) {
+    return { ...base, value: '', assertsNoValueFor: [ROSTER_BIO_EVIDENCE_FIELD] };
+  }
+  return { ...base, value: row.evidenceSentences.join(' ') };
+}
 
 export function rosterBioResearchObservations(row: RosterBioPlannedRow): ObservationInput[] {
   const base = {

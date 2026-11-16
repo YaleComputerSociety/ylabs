@@ -147,6 +147,11 @@ Neither script takes `--apply` or records an apply intent, so neither can take t
 Measure with the flag unset, which is the default.
 To write the rerank cache on purpose, use the committed writer with the lease: `DEV_WRITE_OWNER=<your session name> yarn --cwd server research-search:seed-rerank-cache --apply`, whose apply guard takes the lease, or run the write from a process that already holds or joined the lease (`holdDevApplyLeaseForRun`, or a child launched by a lease holder that records its own apply intent).
 
+## A section row is filed under its department
+
+The `section-rows-reach-their-department` case browses each of the most frequent department facet values that the catalog places under a parent department, and asserts that every served row also carries each of those parent departments, so a filter on the parent reaches a row whose only stated department is the section (#6202).
+It reads the catalog through `getOrgUnitCanonicalizer`, and reports inconclusive when the facet holds no section.
+
 ## What this harness does not cover
 
 The research cases call `searchResearchGroupsViaMeili` directly rather than the HTTP route, so real Meilisearch, real Mongo, the ranking, the filters, the visibility gate, and the index-time guards are all exercised, but everything the Express layer adds is not: the oversized-request rejection, parameter coercion, the `includeFacets` policy, JSON serialization, auth, and rate limits.

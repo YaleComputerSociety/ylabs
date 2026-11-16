@@ -15,6 +15,7 @@ import {
 } from '../../snapshotBenchmarkMode';
 import { fetchDescriptionPageWithTlsFallback } from '../../sources/labMicrositeDescriptionLLMExtractor';
 import { isTlsVerificationError } from '../../../utils/tlsVerificationErrors';
+import { SCRAPER_USER_AGENT } from '../scraperUserAgent';
 
 const passthroughAssert = async (url: string) => ({ toString: () => url });
 const noSleep = vi.fn(async () => {});
@@ -207,19 +208,22 @@ describe('fetchPageWithPolicy', () => {
     expect(sleep).toHaveBeenCalledWith(4321);
   });
 
-  it('clamps a pathological Retry-After to maxBackoff', async () => {
+  it('pauses the host for a Retry-After longer than its quick retries would wait, never shortening it', async () => {
     const sleep = vi.fn(async () => {});
     const request = vi
       .fn<HttpRequestFn>()
       .mockResolvedValueOnce({ status: 429, data: '', finalUrl: 'u', retryAfterMs: 86_400_000 })
       .mockResolvedValueOnce({ status: 200, data: 'body', finalUrl: 'u' });
-    await fetchPageWithPolicy('https://lab.example.edu/x', {
-      ...base,
-      request,
-      sleep,
-      maxBackoffMs: 8_000,
-    });
-    expect(sleep).toHaveBeenCalledWith(8_000);
+    await expect(
+      fetchPageWithPolicy('https://lab.example.edu/x', {
+        ...base,
+        request,
+        sleep,
+        maxBackoffMs: 8_000,
+      }),
+    ).rejects.toMatchObject({ name: 'HostPausedError' });
+    expect(sleep).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it('throws after exhausting retries on a persistent 403', async () => {
@@ -417,11 +421,11 @@ describe('postFormWithPolicy', () => {
     expect(assertUrl).toHaveBeenCalledWith('https://portal.example.edu/search');
     expect(request).toHaveBeenCalledWith('https://portal.example.edu/search', {
       timeoutMs: 10_000,
-      maxRedirects: 5,
+      maxRedirects: 0,
       method: 'POST',
       body: '__VIEWSTATE=state&button=View+all',
       headers: {
-        'User-Agent': 'fixture-agent',
+        'User-Agent': SCRAPER_USER_AGENT,
         Cookie: 'Session=old',
         'Content-Type': 'application/x-www-form-urlencoded',
       },
