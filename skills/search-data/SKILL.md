@@ -319,7 +319,7 @@ A canonical name that contains a filler word (`ecology and evolutionary biology`
 ### Decide an empty topic reading the way the materializer does (#6360)
 
 Decide whether a row's page-topic reading is empty by calling `researchPageTopicsStateFor` with the row's evidence row, as the materializer does, and never by hashing the raw page text.
-A person-scoped row's reading is keyed on its page text after the lead-name page filter (#5882), so a raw-text hash finds a different reading or none.
+A person-scoped row's reading is keyed on its page text after the lead-name page filter (#6120), so a raw-text hash finds a different reading or none.
 Measured on the #6360 part-2 set, 3 of 7 disagreeing rows were person rows read under the wrong hash and 3 more had a non-empty reading for their current text, so a list built from raw hashes overstated the empty-reading set.
 
 ## Default `/research` ordering
