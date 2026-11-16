@@ -596,6 +596,7 @@ import {
   type CanonicalMemberFacts,
   resolveCanonicalResearcherId,
   type CanonicalMemberIdentity,
+  type KeyedListingStatement,
 } from './canonicalMembershipMaterializer';
 import {
   getResearchEntityRoster,
@@ -3759,6 +3760,26 @@ const SOURCES_THAT_REFUSE_A_NAMESAKE_MINT: ReadonlySet<string> = new Set([
   CENTERS_INSTITUTES_SOURCE_NAME,
 ]);
 
+/**
+ * What an unresolved keyed listing states about the person, so a name-only shell holding its
+ * edge can follow the fold to a survivor only when the survivor contradicts none of it (#6019).
+ * A conflicted evidence field states nothing readable, so it follows no fold.
+ */
+function keyedListingStatement(
+  plan: RosterMemberCanonicalPlan,
+  resolved: Record<string, ResolvedField>,
+): KeyedListingStatement | undefined {
+  if (!textValue(plan.facts.rosterProvenance?.membershipKey)) return undefined;
+  const evidenceField = resolved[ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD];
+  if (evidenceField?.hasConflict) return undefined;
+  const evidence = parseRosterMemberIdentityEvidence(evidenceField?.value);
+  return {
+    emails: evidence?.emails ?? [],
+    netids: evidence?.netids ?? [],
+    orcids: evidence?.orcid ? [evidence.orcid] : [],
+  };
+}
+
 async function endMisattributedProfileUrlHolderEdges(
   researchEntityId: string,
   plan: RosterMemberCanonicalPlan,
@@ -4402,6 +4423,7 @@ async function materializeRosterMember(
       'basis' in identity && identity.basis === 'identity-evidence'
         ? toMaterializerObjectId(plan.personReferenceId)
         : undefined,
+    keyedListingStatement: 'basis' in identity ? undefined : keyedListingStatement(plan, resolved),
   });
   await adoptListedPersonUnprovenancedEdges(researchEntityId, plan, personId);
   if (personId) {

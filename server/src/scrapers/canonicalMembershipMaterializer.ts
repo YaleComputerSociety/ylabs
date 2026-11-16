@@ -231,6 +231,13 @@ export interface CanonicalMemberIdentity {
   displayName?: unknown;
   hasCanonicalSourceReference?: boolean;
   resolvedPersonId?: mongoose.Types.ObjectId;
+  keyedListingStatement?: KeyedListingStatement;
+}
+
+export interface KeyedListingStatement {
+  emails: readonly string[];
+  netids: readonly string[];
+  orcids: readonly string[];
 }
 
 export interface CanonicalMemberFacts {
@@ -450,7 +457,8 @@ async function resolveOrCreateResearcherId(
   }
 
   if (!displayName) return undefined;
-  return resolveOrCreateNameOnlyResearcherId(displayName);
+  const nameHolderId = await resolveOrCreateNameOnlyResearcherId(displayName);
+  return (await survivorOfFoldedNameOnlyShell(nameHolderId, identity)) ?? nameHolderId;
 }
 
 const nameOnlyResolutionLocks = new Map<string, Promise<mongoose.Types.ObjectId | undefined>>();
@@ -552,6 +560,75 @@ async function findOrCreateNameOnlyResearcherId(
     }
     throw error;
   }
+}
+
+interface ResearcherIdentityShape {
+  displayName?: unknown;
+  identifiers?: { netid?: unknown; email?: unknown; orcid?: unknown };
+  profileLinks?: unknown[];
+}
+
+const isNameOnlyShell = (record: ResearcherIdentityShape): boolean =>
+  !trimmed(record.identifiers?.netid) &&
+  !trimmed(record.identifiers?.email) &&
+  !trimmed(record.identifiers?.orcid) &&
+  (record.profileLinks ?? []).length === 0;
+
+const normalizedValues = (
+  values: readonly unknown[],
+  normalize: (value: unknown) => string | undefined,
+): string[] => values.map(normalize).filter((value): value is string => Boolean(value));
+
+const holdsAnotherValue = (held: string | undefined, stated: readonly string[]): boolean =>
+  Boolean(held) && stated.length > 0 && !stated.includes(held as string);
+
+function survivorContradictsListing(
+  survivor: ResearcherIdentityShape,
+  identity: CanonicalMemberIdentity,
+  statement: KeyedListingStatement,
+): boolean {
+  const stated = (values: readonly unknown[], extra: unknown, normalize: typeof normalizedEmail) =>
+    normalizedValues([...values, extra], normalize);
+  return (
+    holdsAnotherValue(
+      normalizedEmail(survivor.identifiers?.email),
+      stated(statement.emails, identity.email, normalizedEmail),
+    ) ||
+    holdsAnotherValue(
+      normalizedNetid(survivor.identifiers?.netid),
+      stated(statement.netids, identity.netid, normalizedNetid),
+    ) ||
+    holdsAnotherValue(
+      normalizedOrcid(survivor.identifiers?.orcid),
+      stated(statement.orcids, identity.orcid, normalizedOrcid),
+    )
+  );
+}
+
+/**
+ * A keyed listing whose edge a name-only shell already holds keeps reaching that shell by name,
+ * so the follow-the-fold step above never runs for it and the edge stays on the shell (#6019).
+ * The fold lineage of the shell's exact name is the identity evidence the shell lacks, so the
+ * listing follows it to the one live survivor, unless the survivor holds an identifier the
+ * listing states a different value of.
+ */
+async function survivorOfFoldedNameOnlyShell(
+  holderId: mongoose.Types.ObjectId | undefined,
+  identity: CanonicalMemberIdentity,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  const statement = identity.keyedListingStatement;
+  if (!holderId || !statement) return undefined;
+  const holder = (await Researcher.findOne({ _id: holderId, archived: { $ne: true } })
+    .select('displayName identifiers profileLinks')
+    .lean()) as ResearcherIdentityShape | null;
+  if (!holder || !isNameOnlyShell(holder)) return undefined;
+  const survivorId = await liveSurvivorOfFoldedNamesake(trimmed(holder.displayName));
+  if (!survivorId || survivorId.equals(holderId)) return undefined;
+  const survivor = (await Researcher.findById(survivorId)
+    .select('identifiers')
+    .lean()) as ResearcherIdentityShape | null;
+  if (!survivor || survivorContradictsListing(survivor, identity, statement)) return undefined;
+  return survivorId;
 }
 
 /**
