@@ -1,3 +1,5 @@
+import { naturalOrderMeshHeading } from '../../scrapers/meshNaturalOrder';
+
 export const SERVED_FACET_SNAPSHOT_MIN_RESEARCH_AREA_ROWS = 3;
 
 export interface ServedFacetSnapshot {
@@ -21,10 +23,11 @@ const stringValues = (value: unknown): string[] =>
 const countValues = (
   documents: readonly ServedFacetDocument[],
   field: keyof ServedFacetDocument,
+  spelling: (value: string) => string = (value) => value,
 ) => {
   const counts = new Map<string, number>();
   for (const document of documents) {
-    for (const value of new Set(stringValues(document[field]))) {
+    for (const value of new Set(stringValues(document[field]).map(spelling))) {
       counts.set(value, (counts.get(value) ?? 0) + 1);
     }
   }
@@ -47,7 +50,10 @@ export function buildServedFacetSnapshot(
     capturedOn,
     servedRowCount: documents.length,
     minResearchAreaRows,
-    researchAreas: sortedRecord(countValues(documents, 'researchAreas'), minResearchAreaRows),
+    researchAreas: sortedRecord(
+      countValues(documents, 'researchAreas', naturalOrderMeshHeading),
+      minResearchAreaRows,
+    ),
     departments: sortedRecord(countValues(documents, 'departments'), 1),
   };
 }

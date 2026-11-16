@@ -142,6 +142,7 @@
     "research-entity:archived-visibility-verdicts": "tsx src/scripts/repairArchivedStudentVisibilityVerdicts.ts",
     "taxonomy:review-term": "tsx src/scripts/taxonomyReviewTerm.ts",
     "taxonomy:review-queue": "tsx src/scripts/taxonomyReviewQueue.ts",
+    "mesh:natural-order-map": "tsx src/scripts/generateMeshNaturalOrderMap.ts",
     "corpus:snapshot": "tsx src/scripts/corpusQualitySnapshot.ts",
     "model-usage:report": "tsx src/scripts/modelUsageReport.ts",
     "lane:benchmark-capture": "tsx src/scripts/laneBenchmarkCapture.ts",

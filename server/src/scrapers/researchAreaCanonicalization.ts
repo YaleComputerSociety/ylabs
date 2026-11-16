@@ -1,6 +1,7 @@
 import { TaxonomyTerm } from '../models/taxonomyTerm';
 import { stripProfileRoleLabelSuffix } from '../utils/researchAreaLabelHygiene';
 import { slugify } from './utils/scraperHelpers';
+import { naturalOrderMeshHeading } from './meshNaturalOrder';
 
 export interface ResearchAreaResolverRow {
   name: string;
@@ -299,18 +300,21 @@ export function buildResearchAreaResolverIndex(
   const exact = new Map<string, string>();
   const phrases: ResearchAreaPhrase[] = [];
   for (const row of rows) {
+    const canonical = naturalOrderMeshHeading(row.name);
     const aliases = [...(row.aliases || []), ...(RESEARCH_AREA_ALIASES[row.name] || [])];
     for (const value of [row.name, ...aliases]) {
-      const key = researchAreaMatchKey(value);
-      if (key && !exact.has(key)) exact.set(key, row.name);
+      for (const spelling of [value, naturalOrderMeshHeading(value)]) {
+        const key = researchAreaMatchKey(spelling);
+        if (key && !exact.has(key)) exact.set(key, canonical);
+      }
     }
     const nameAllowsSingleWord = !AMBIGUOUS_SINGLE_WORD_AREA_KEYS.has(
       researchAreaMatchKey(row.name),
     );
-    const namePhrase = phraseFromSlug(row.name, row.name, nameAllowsSingleWord);
+    const namePhrase = phraseFromSlug(canonical, canonical, nameAllowsSingleWord);
     if (namePhrase) phrases.push(namePhrase);
     for (const alias of aliases) {
-      const aliasPhrase = phraseFromSlug(row.name, alias, false);
+      const aliasPhrase = phraseFromSlug(canonical, alias, false);
       if (aliasPhrase) phrases.push(aliasPhrase);
     }
   }
@@ -394,10 +398,16 @@ export function splitGluedRoleTrackLabels(raw: unknown): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Every raw value is read in MeSH natural order before it is resolved, deduped or filtered, so the
+ * stored value, the catalog match key and the #6361 non-subject check all see one form, and a row
+ * listing both "Carcinoma, Hepatocellular" and "Hepatocellular Carcinoma" keeps one topic (#6358).
+ */
 function expandRawResearchAreaEntries(raw: unknown): string[] {
   return toRawList(raw)
     .flatMap((entry) => stripResearchAreaSourceChrome(entry))
-    .flatMap((entry) => splitGluedRoleTrackLabels(entry));
+    .flatMap((entry) => splitGluedRoleTrackLabels(entry))
+    .map((entry) => naturalOrderMeshHeading(entry));
 }
 
 export function createResearchAreaCanonicalizer(

@@ -620,6 +620,7 @@ import {
   OFFICIAL_PROFILE_DIRECTOR_LANE,
   reconcileOfficialProfileDirectorRetirementsFromRun,
 } from './officialProfileDirectorRetirement';
+import { naturalOrderMeshHeading } from './meshNaturalOrder';
 import {
   CENTER_AFFILIATION_CODE_ROSTER_LANE,
   CENTER_AFFILIATION_ROSTER_LANE,
@@ -2093,7 +2094,7 @@ async function rederiveUnbackedResearchAreas(input: {
         : []
       : input.storedEvidenceRetired
         ? []
-        : stored;
+        : stored.map((area) => (typeof area === 'string' ? naturalOrderMeshHeading(area) : area));
   const trial: Record<string, unknown> = { ...set };
   delete trial.researchAreas;
   await input.derive(trial, { ...(entityDoc ?? {}), researchAreas: [] });

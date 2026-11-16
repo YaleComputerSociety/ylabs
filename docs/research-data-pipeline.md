@@ -1104,6 +1104,7 @@ The write is conditioned on the review status the decision was read from, so a t
 `reviewedBy`, `reviewNote` and `reviewedAt` are optional in the schema and required by the writer, deliberately: 4,619 Development terms predate the writer and carry none, so a schema requirement would make every one of them unwritable.
 
 `canonicalizeResearchAreas` fails open, returning an unrecognised input inside `values` as well as inside `unmatched`, so it is not a catalog-membership test; `matchCanonicalResearchAreas` is.
+Both read each value in MeSH natural order first, through `naturalOrderMeshHeading` (#6358), which rewrites an inverted MeSH heading to its descriptor's own natural-order entry term and leaves anything the committed map does not name unchanged, so the rewrite is a derivation on every resolve rather than a row patch.
 
 ### Re-keyed person keys are superseded, not retracted (#5817)
 

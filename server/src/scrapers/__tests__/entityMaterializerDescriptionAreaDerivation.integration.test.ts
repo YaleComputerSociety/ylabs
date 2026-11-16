@@ -476,6 +476,20 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
         expect(planned.plannedSet).not.toHaveProperty('researchAreas');
       });
 
+      it('rewrites a kept inverted MeSH chip to its natural order beside a derived one (#6358)', async () => {
+        await seedEntity({ researchAreas: ['Carcinoma, Hepatocellular', 'Epidemiology'] });
+        await seedField('fullDescription', 'The cohort study examines metabolic disorders.');
+
+        const result = await resolve();
+
+        expect(result.unbackedResearchAreas).toBe('added-derived');
+        expect((await readRow())?.researchAreas).toEqual([
+          'Hepatocellular Carcinoma',
+          'Epidemiology',
+          'Metabolic Disorders',
+        ]);
+      });
+
       it('fills an empty stored list with the derived chips and attributes them', async () => {
         await seedEntity({ researchAreas: [] });
         await seedField('fullDescription', 'The group applies data mining to its records.');
