@@ -156,22 +156,28 @@ export function citationStateIsReadable(entity: unknown): entity is CitationGuar
 
 const withoutPaths = (
   record: Record<string, unknown>,
-  drop: (path: string) => boolean,
+  drop: (path: string, value: unknown) => boolean,
   withheld: string[],
 ): Record<string, unknown> =>
   Object.fromEntries(
-    Object.entries(record).filter(([path]) => {
-      if (!drop(path)) return true;
+    Object.entries(record).filter(([path, value]) => {
+      if (!drop(path, value)) return true;
       withheld.push(path);
       return false;
     }),
   );
 
+const setLeavesSourceUrlsUncited = (path: string, value: unknown): boolean => {
+  if (path === SOURCE_URLS) return citationUrlsOf({ sourceUrls: value }).length === 0;
+  return isSourceUrlsPath(path) && !(typeof value === 'string' && value.trim() !== '');
+};
+
 /**
  * `change` with its citation-removing parts withheld when it would remove a served row's last
  * citation: the `fieldProvenance.*` unsets first, so the stamps stay; then, only if the row
  * would still cite nothing, the `sourceUrls` change; then any `fieldProvenance` set. Field
- * values are never withheld. An unreadable entity has its provenance unsets withheld outright.
+ * values are never withheld. An unreadable entity has every citation removal withheld outright:
+ * its provenance unsets, its `sourceUrls` unsets and pulls, and any `sourceUrls` set that cites nothing.
  */
 export function withholdLastCitationRemovals(
   entity: unknown,
@@ -182,7 +188,9 @@ export function withholdLastCitationRemovals(
   let pull = { ...(change.pull ?? {}) };
   const withheld: string[] = [];
   if (!citationStateIsReadable(entity)) {
-    unset = withoutPaths(unset, isProvenancePath, withheld);
+    unset = withoutPaths(unset, (p) => isProvenancePath(p) || isSourceUrlsPath(p), withheld);
+    set = withoutPaths(set, setLeavesSourceUrlsUncited, withheld);
+    pull = withoutPaths(pull, isSourceUrlsPath, withheld);
     return { set, unset, pull, withheld };
   }
   const fires = () => wouldRemoveLastCitation(entity, { set, unset, pull });
@@ -233,11 +241,48 @@ export const storedCitationState = (
       }
     : null;
 
+const isCitationStatePath = (path: string): boolean =>
+  isProvenancePath(path) ||
+  isSourceUrlsPath(path) ||
+  (TIER_FIELDS as readonly string[]).includes(path);
+
+const touchesCitationState = (update: MongoUpdate): boolean =>
+  [update.$set, update.$unset, update.$pull].some((operator) =>
+    Object.keys(operator ?? {}).some(isCitationStatePath),
+  );
+
+const matchAsRead = (value: unknown): unknown => (value === undefined ? { $exists: false } : value);
+
+/**
+ * A filter that matches the row only while every citation-bearing value the guard decided on
+ * is still as read: `sourceUrls` exactly, each `fieldProvenance.<field>.sourceUrl`, and both
+ * tier fields. A stamp added since the read only adds a citation, so it is not pinned.
+ */
+export function citationStateUnchangedFilter(
+  row: CitationGuardedEntity & { _id?: unknown },
+): Record<string, unknown> {
+  const filter: Record<string, unknown> = {
+    _id: row._id,
+    [SOURCE_URLS]: matchAsRead(row.sourceUrls),
+  };
+  for (const [field, record] of Object.entries(plainRecord(row.fieldProvenance))) {
+    const sourceUrl =
+      record && typeof record === 'object'
+        ? (record as { sourceUrl?: unknown }).sourceUrl
+        : undefined;
+    filter[`${PROVENANCE}.${field}.sourceUrl`] = matchAsRead(sourceUrl);
+  }
+  for (const tierField of TIER_FIELDS) filter[tierField] = matchAsRead(row[tierField]);
+  return filter;
+}
+
 /**
  * `Model.updateOne(filter, update)` with the last-citation rule applied against the row as
  * it stands now. Reading it fresh is what keeps a writer that clears several stamps on one
- * row in turn from removing the last one on the final write. A write left with nothing to
- * do is skipped.
+ * row in turn from removing the last one on the final write. A write that touches citation
+ * state lands only if that state is still as read, so a concurrent change makes it a no-op
+ * reporting `modifiedCount: 0` rather than a write decided on stale citations. A write left
+ * with nothing to do is skipped.
  */
 export async function updateOneKeepingLastCitation(
   model: mongoose.Model<any>,
@@ -249,12 +294,15 @@ export async function updateOneKeepingLastCitation(
     .findOne(filter)
     .select(LAST_CITATION_GUARD_PROJECTION)
     .session(options.session ?? null)
-    .lean<CitationGuardedEntity | null>();
+    .lean<(CitationGuardedEntity & { _id?: unknown }) | null>();
   if (!current) return { modifiedCount: 0, withheld: [] };
   const guarded = withholdLastCitationRemovalsFromUpdate(storedCitationState(current), update);
   if (Object.keys(guarded.update).length === 0) {
     return { modifiedCount: 0, withheld: guarded.withheld };
   }
-  const result = await model.updateOne(filter, guarded.update, options);
+  const writeFilter = touchesCitationState(guarded.update)
+    ? { $and: [filter, citationStateUnchangedFilter(current)] }
+    : { $and: [filter, { _id: current._id }] };
+  const result = await model.updateOne(writeFilter, guarded.update, { ...options, upsert: false });
   return { modifiedCount: result.modifiedCount ?? 0, withheld: guarded.withheld };
 }

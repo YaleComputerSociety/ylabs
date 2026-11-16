@@ -165,6 +165,30 @@ describe('withholdLastCitationRemovals (#6320)', () => {
     ]);
   });
 
+  it('fails closed on a partial read by withholding every sourceUrls removal too', () => {
+    const removals = {
+      set: { sourceUrls: [], name: 'Synthetic Lab' },
+      unset: { 'sourceUrls.0': '' },
+      pull: { sourceUrls: LIVE },
+    };
+    for (const entity of [null, { fieldProvenance: {} }, { sourceUrls: [LIVE] }]) {
+      const guarded = withholdLastCitationRemovals(entity, removals);
+      expect(guarded.set).toEqual({ name: 'Synthetic Lab' });
+      expect(guarded.unset).toEqual({});
+      expect(guarded.pull).toEqual({});
+      expect(guarded.withheld.sort()).toEqual(['sourceUrls', 'sourceUrls', 'sourceUrls.0']);
+    }
+    expect(withholdLastCitationRemovals(null, { unset: { sourceUrls: '' } }).withheld).toEqual([
+      'sourceUrls',
+    ]);
+  });
+
+  it('lets a partial read still set a sourceUrls list that cites something', () => {
+    const guarded = withholdLastCitationRemovals(null, { set: { sourceUrls: [LIVE] } });
+    expect(guarded.set).toEqual({ sourceUrls: [LIVE] });
+    expect(guarded.withheld).toEqual([]);
+  });
+
   it('rebuilds a Mongo update and passes other operators through', () => {
     const { update, withheld } = withholdLastCitationRemovalsFromUpdate(servedRow(), {
       $unset: { 'fieldProvenance.websiteUrl': '' },

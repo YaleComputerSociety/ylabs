@@ -424,6 +424,61 @@ describe('writers keep a served row last citation stamp and still clear the valu
     expect((await stored()).fieldProvenance.websiteUrl.sourceUrl).toBe(ONLY_CITATION);
   });
 
+  it('a row whose citations change between the read and the write is left alone', async () => {
+    await seedRow({
+      websiteUrl: ONLY_CITATION,
+      sourceUrls: [LIVE_ELSEWHERE],
+      fieldProvenance: { websiteUrl: stamp() },
+    });
+    const concurrentWriterDropsTheOtherCitation = {
+      findOne: (filter: Record<string, unknown>) => {
+        const query = ResearchEntity.findOne(filter);
+        const lean = query.lean.bind(query);
+        return Object.assign(query, {
+          lean: async () => {
+            const read = await lean();
+            await mongoose.connection
+              .db!.collection('research_entities')
+              .updateOne({ slug: SLUG }, { $set: { sourceUrls: [] } });
+            return read;
+          },
+        });
+      },
+      updateOne: ResearchEntity.updateOne.bind(ResearchEntity),
+    } as unknown as typeof ResearchEntity;
+
+    const result = await updateOneKeepingLastCitation(
+      concurrentWriterDropsTheOtherCitation,
+      { slug: SLUG },
+      { $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' } },
+    );
+
+    expect(result).toEqual({ modifiedCount: 0, withheld: [] });
+    const after = await stored();
+    expect(after.websiteUrl).toBe(ONLY_CITATION);
+    expect(after.fieldProvenance.websiteUrl.sourceUrl).toBe(ONLY_CITATION);
+  });
+
+  it('a row whose citations are still as read takes the write', async () => {
+    await seedRow({
+      websiteUrl: ONLY_CITATION,
+      sourceUrls: [LIVE_ELSEWHERE],
+      fieldProvenance: { websiteUrl: stamp(), name: stamp(LIVE_ELSEWHERE) },
+      studentVisibilityOverrideTier: 'student_ready',
+    });
+
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
+      { slug: SLUG },
+      { $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' } },
+    );
+
+    expect(result).toEqual({ modifiedCount: 1, withheld: [] });
+    const after = await stored();
+    expect(after.websiteUrl).toBeUndefined();
+    expect(after.fieldProvenance.websiteUrl).toBeUndefined();
+  });
+
   it('an unserved row still loses the stamp, so the guard is scoped to served rows', async () => {
     const _id = await seedRow({
       studentVisibilityTier: 'operator_review',

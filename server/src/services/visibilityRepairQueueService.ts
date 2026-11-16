@@ -49,6 +49,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isUncitableHostUrl } from '../utils/urlSafety';
 import { withResearchEntityWriteTransaction } from './researchEntityWriteTransaction';
+import { updateOneKeepingLastCitation } from './lastCitationGuard';
 import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
 import type { RecoverabilityBucket } from '../scripts/visibilityRecoverabilityAuditCore';
 
@@ -1745,7 +1746,12 @@ export const defaultRepairDeps: RepairDeps = {
     const safeId = normalizeVisibilityRepairObjectId(id);
     if (!safeId) return;
     await withResearchEntityWriteTransaction((session) =>
-      ResearchEntity.updateOne({ _id: safeId }, { $set: patch }, { session }).then(() => undefined),
+      updateOneKeepingLastCitation(
+        ResearchEntity,
+        { _id: safeId },
+        { $set: patch },
+        { session },
+      ).then(() => undefined),
     );
   },
   async findProgram(id) {

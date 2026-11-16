@@ -27,6 +27,7 @@ import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -153,7 +154,8 @@ async function main(): Promise<void> {
     });
     if (options.apply) {
       for (const rowPlan of targets) {
-        const result = await ResearchEntity.updateOne(
+        const result = await updateOneKeepingLastCitation(
+          ResearchEntity,
           { slug: rowPlan.slug },
           {
             $set: { sourceUrls: rowPlan.sourceUrls, ...rowPlan.provenanceRepoint },

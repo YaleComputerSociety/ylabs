@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { Signal } from '../models/signal';
 import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
@@ -297,7 +298,8 @@ export async function runRepairSupersededEntitySourceUrls(options: {
       row.before,
       row.after,
     );
-    const entityResult = await ResearchEntity.updateOne(
+    const entityResult = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { _id: target.entityId },
       {
         $set: {
@@ -312,7 +314,7 @@ export async function runRepairSupersededEntitySourceUrls(options: {
       },
     );
     citationsRewritten += entityResult.modifiedCount || 0;
-    if (entity) entity.sourceUrls = rewritten;
+    if (entity && entityResult.modifiedCount > 0) entity.sourceUrls = rewritten;
 
     const signals = await Signal.find({
       researchEntityId: target.entityId,
