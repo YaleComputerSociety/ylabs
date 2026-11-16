@@ -1075,10 +1075,9 @@ const NAME_COMPARISON_STOP_WORDS = new Set([
 ]);
 
 const comparableNameWord = (word: string): string => {
-  const spelled = word === 'centre' ? 'center' : word;
-  return spelled.length > 3 && spelled.endsWith('s') && !spelled.endsWith('ss')
-    ? spelled.slice(0, -1)
-    : spelled;
+  const singular =
+    word.length > 3 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word;
+  return singular === 'centre' ? 'center' : singular;
 };
 
 const comparableEntityName = (entity: any): string =>

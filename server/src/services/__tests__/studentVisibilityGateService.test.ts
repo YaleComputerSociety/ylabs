@@ -954,6 +954,7 @@ describe('studentVisibilityGateService', () => {
       ['Fixture Imaging Lab', 'Fixture Imaging Labs'],
       ['Center for Fixture Imaging', 'Fixture Imaging Center'],
       ['Fixture Imaging Center', 'Fixture Imaging Centre'],
+      ['Fixture Imaging Centres', 'Fixture Imaging Centers'],
       ['Fixture Imaging & Repair Lab', 'Fixture Imaging and Repair Lab'],
     ])('still calls %s and %s duplicates whatever their leads', (aName, bName) => {
       const entities = [labRow('lab-a', aName), labRow('lab-b', bName)];
