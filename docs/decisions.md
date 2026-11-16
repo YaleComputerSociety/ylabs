@@ -5,6 +5,18 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-16: An Official Center's Emeritus Section Marks A Lead Emeritus (#6162)
+
+This extends the 2026-11-11 #5835 entry to the Emeritus section of an official Yale center roster, and answers Q4 that the 2026-11-13 #6084 entry left open.
+Decision (5-agent consensus via the manager, 4 of 5, 2026-11-13, recorded on #6162; the owner may veto): a lead whom an official Yale center's roster lists under its Emeritus section is emeritus for the 2026-10-02 rule, exactly as if their department's official emeritus page listed them.
+The source is the section `centers-institutes-index` already records on each member observation (`currentStatus: emeritus` with its `sectionLabel`), read from a yale.edu page, and the lane reads it from stored observations without a fetch.
+Every #5835 constraint carries over unchanged.
+A fresh read of the person's own page wins: a listing whose own page states a current appointment is already recorded as current by the roster lane, and a lead whose stored title a live lane other than the Yale directory still asserts is left to that title.
+The listing is evidence about a lead only, recorded as `emeritusListedLeadIds` on rows the person already leads, and it never mints a row, an edge or a roster member.
+The member is bound to a person only by the identity evidence its own profile page states, or by a profile link exactly one live researcher holds under the listed name.
+The new evidence is the section alone: a center member-page title that holds only emeritus appointments still ends no center edge (#6084 Q6) and marks a lead only through the existing #6081 own-profile rule.
+The mark is a serve-time label, so it changes no row's tier; it ends no edge, which stays the #6084 two-read rule, and it is independent of the #6025 lead-change rules, which govern edges and are not built.
+
 ## 2026-11-16: A Site's Stated Change Of Lead Is A Rule On Hold Until A Real Case Exists (#6025)
 
 Decision (manager, 2026-11-16).
