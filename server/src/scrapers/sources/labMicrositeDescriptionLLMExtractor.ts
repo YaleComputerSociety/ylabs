@@ -1329,6 +1329,25 @@ function laterSegmentNamesSomeoneElse(pageUrl: string, personName: string): bool
     );
 }
 
+const MIN_LATER_NAME_TOKEN_LENGTH = 3;
+
+/**
+ * Whether an official profile's slug carries the given name and any later token of the
+ * person's name, so a split compound, hyphenated or extra-token surname still matches its own
+ * profile (#6316). A slug that shares only the given name is someone else.
+ */
+function profileSlugNamesPersonVariant(pageUrl: string, personName: string): boolean {
+  const tokens = personTokensOf(personName);
+  if (tokens.length < 2) return false;
+  const segments = pathSegmentsOf(pageUrl);
+  const leaf = segments[segments.length - 1] ?? '';
+  const parts = segmentParts(leaf);
+  if (!parts.includes(tokens[0])) return false;
+  return tokens
+    .slice(1)
+    .some((token) => token.length >= MIN_LATER_NAME_TOKEN_LENGTH && parts.includes(token));
+}
+
 /** Whether a path segment names the person in full (given name and surname, a trailing digit allowed). */
 function pathNamesPersonInFull(pageUrl: string, personName: string): boolean {
   const tokens = personTokensOf(personName);
@@ -1372,6 +1391,13 @@ export function descriptionPageIsRowLeadsOwn(
   if (
     isLikelyOfficialPersonProfileUrl(input.pageUrl) &&
     urlCarriesPersonSurname(profileLeaf(input.pageUrl), personName)
+  ) {
+    return true;
+  }
+  if (
+    !input.leadFullNameShared &&
+    isLikelyOfficialPersonProfileUrl(input.pageUrl) &&
+    profileSlugNamesPersonVariant(input.pageUrl, personName)
   ) {
     return true;
   }

@@ -217,6 +217,47 @@ describe("a page is the person's own only by role, name or subject, never by pre
     expect(texts([researchPage('https://medicine.yale.edu/profile/qv4/')], withNetid)).toEqual([]);
   });
 
+  it.each([
+    [
+      'a split compound surname',
+      'Quillon Abdel Varnadore',
+      'https://medicine.yale.edu/profile/quillon-abdel/',
+    ],
+    [
+      'a hyphenated surname',
+      'Quillon Varnadore-Okafor',
+      'https://medicine.yale.edu/profile/quillon-varnadore/',
+    ],
+    [
+      'an extra name token',
+      'Quillon Teo Varnadore',
+      'https://medicine.yale.edu/profile/quillon-teo/',
+    ],
+  ])("admits the person's own profile under %s", (_shape, lead, profile) => {
+    expect(texts([researchPage(profile)], { ...PERSON_ROW, leadNames: [lead] })).toEqual([
+      RESEARCH,
+    ]);
+  });
+
+  it('refuses a profile whose slug shares only the given name', () => {
+    expect(
+      texts([researchPage('https://medicine.yale.edu/profile/quillon-halvorsen/')], {
+        ...PERSON_ROW,
+        leadNames: ['Quillon Abdel Varnadore'],
+      }),
+    ).toEqual([]);
+  });
+
+  it('refuses the compound-surname profile when another live person shares the name', () => {
+    expect(
+      texts([researchPage('https://medicine.yale.edu/profile/quillon-abdel/')], {
+        ...PERSON_ROW,
+        leadNames: ['Quillon Abdel Varnadore'],
+        leadFullNameShared: true,
+      }),
+    ).toEqual([]);
+  });
+
   it('carries the shared-name flag through a captured evidence file', () => {
     const row = {
       slug: 'estuary-fixture',
