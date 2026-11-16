@@ -171,8 +171,7 @@ export async function startSsrfGuardedForwardProxy(
    * only slot. The budget keys a `www.` variant with the seed host (`normalizeExcludedHost`), so a
    * subresource on either reads only the cached policy (the variant's own entry, else the seed's)
    * and never sends a robots.txt read that would wait on the held slot. A robots.txt read refused
-   * by a pause or the budget is left to
-   * `charge`, which refuses the request for the same reason.
+   * by a pause or the budget is left to `charge`, which refuses the request for the same reason.
    */
   const robotsRefusalFor = async (
     target: ForwardTarget & { path: string },
