@@ -950,6 +950,41 @@ describe('studentVisibilityGateService', () => {
       expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
     });
 
+    it.each([
+      ['Fixture Imaging Lab', 'Fixture Imaging Labs'],
+      ['Center for Fixture Imaging', 'Fixture Imaging Center'],
+      ['Fixture Imaging Center', 'Fixture Imaging Centre'],
+      ['Fixture Imaging & Repair Lab', 'Fixture Imaging and Repair Lab'],
+    ])('still calls %s and %s duplicates whatever their leads', (aName, bName) => {
+      const entities = [labRow('lab-a', aName), labRow('lab-b', bName)];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+
+    it("leaves a person's own profile page to the usual contest", () => {
+      const profileUrl = 'https://medicine.yale.edu/profile/ana-fixture/';
+      const entities = [
+        labRow('lab-a', 'Ana Fixture Faculty Research', {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: [profileUrl],
+        }),
+        labRow('lab-b', 'Ben Placeholder Faculty Research', {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: [profileUrl],
+        }),
+      ];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+
     it('leaves the contest to the usual rules when a row publishes the page as its own home', () => {
       const entities = [
         labRow('lab-a', 'Fixture Imaging Lab', { websiteUrl: sharedCenterUrl }),

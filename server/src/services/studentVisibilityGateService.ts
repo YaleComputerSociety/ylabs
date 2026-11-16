@@ -1059,8 +1059,38 @@ const leadIdsByEntityIdFrom = (leadRows: any[]): LeadIdsByEntityId => {
   return leadIdsByEntityId;
 };
 
+const NAME_COMPARISON_STOP_WORDS = new Set([
+  'and',
+  'of',
+  'for',
+  'at',
+  'in',
+  'on',
+  'the',
+  'lab',
+  'laboratory',
+  'faculty',
+  'research',
+  'group',
+]);
+
+const comparableNameWord = (word: string): string => {
+  const spelled = word === 'centre' ? 'center' : word;
+  return spelled.length > 3 && spelled.endsWith('s') && !spelled.endsWith('ss')
+    ? spelled.slice(0, -1)
+    : spelled;
+};
+
 const comparableEntityName = (entity: any): string =>
-  entityNameWordsWithoutKindNouns(String(entity?.name ?? '')).join(' ');
+  [
+    ...new Set(
+      entityNameWordsWithoutKindNouns(String(entity?.name ?? '').replace(/&/g, ' and '))
+        .map(comparableNameWord)
+        .filter((word) => word && !NAME_COMPARISON_STOP_WORDS.has(word)),
+    ),
+  ]
+    .sort()
+    .join(' ');
 
 /**
  * On a page none of them publishes as its own home (a center, clinic, core or program
@@ -1074,7 +1104,7 @@ const independentlyLedContestSets = (
   members: any[],
   leadIdsByEntityId: LeadIdsByEntityId,
 ): any[][] => {
-  if (members.length < 2) return [members];
+  if (members.length < 2 || isPersonPageCitation(url)) return [members];
   if (members.some((entity) => entityPublishesUrlAsItsOwnHome(entity, url))) return [members];
   const leadsOf = (entity: any) =>
     leadIdsByEntityId.get(studentVisibilityGateEntityIdKey(entity)) ?? new Set<string>();
