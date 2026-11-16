@@ -19,7 +19,7 @@ describe('the production server build carries no served-check student hook (#607
 
   beforeAll(async () => {
     bundle = await buildServerBundle('served-check-student-hook');
-  }, 180_000);
+  });
 
   afterAll(() => bundle?.remove());
 
