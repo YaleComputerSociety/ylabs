@@ -104,7 +104,7 @@ Run each command through the machine's heavy-command slot.
    A round is imported only when it scores at least 10 queries, the mean change has a 95% bootstrap interval above 0, the queries it makes worse lose no more on average than the queries it makes better gain, and every pair is graded.
    It prints the means, the interval, and the better and worse counts, exits 2 on a refusal, and writes the seeder input only when the round passes.
 6. Import with the seeder above into Development as a new `full-v<n>-<date>` version, then dry-run again and re-read the served result.
-   Beta and Production receive it through the promotion runbook.
+   The cache is never copied, so Beta and Production receive it only when the promotion runbook seeds them from each file Development was seeded from, in the same order (`docs/release-process.md`, "Seed the search rerank cache after the copy and the reindex"); record the new file there.
 
 Issue and pull request text reports a round by these counts only, never a query or a row.
 
