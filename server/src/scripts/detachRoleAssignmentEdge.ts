@@ -29,7 +29,7 @@ import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS, RoleAssignment } from '../model
 import { LIVE_ROLE_EDGE_FILTER } from '../services/archivedResearchEntityRoleEdges';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportPath } from './scriptWriteGuards';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -103,7 +103,7 @@ export function parseDetachRoleAssignmentEdgeArgs(
     ...(endAsHistorical ? { endAsHistorical } : {}),
     ...(actor ? { actor } : {}),
     ...(decidedBy ? { decidedBy: decidedBy as DetachmentDecidedBy } : {}),
-    ...(snapshot ? { snapshot: resolveSafeJsonReportOutputPath(snapshot) } : {}),
+    ...(snapshot ? { snapshot: resolveSafeJsonReportPath(snapshot, '--snapshot') } : {}),
     apply,
     confirmed: argv.includes(CONFIRM_FLAG),
   };

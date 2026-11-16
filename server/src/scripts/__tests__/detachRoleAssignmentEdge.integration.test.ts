@@ -171,7 +171,7 @@ describe('role-assignments:detach-edge (#5614)', () => {
       parseDetachRoleAssignmentEdgeArgs([
         `--edge=${id}`,
         '--note=x',
-        `--snapshot=${path.join(os.tmpdir(), 'x.json')}`,
+        '--snapshot=./tmp/x.json',
         '--apply',
       ]),
     ).toThrow(/--decided-by/);
@@ -180,13 +180,7 @@ describe('role-assignments:detach-edge (#5614)', () => {
     ).toThrow(/owner or agent/);
     expect(
       parseDetachRoleAssignmentEdgeArgs(
-        [
-          `--edge=${id}`,
-          '--note=x',
-          `--snapshot=${path.join(os.tmpdir(), 'x.json')}`,
-          '--decided-by=agent',
-          '--apply',
-        ],
+        [`--edge=${id}`, '--note=x', '--snapshot=./tmp/x.json', '--decided-by=agent', '--apply'],
         {},
       ),
     ).toMatchObject({ decidedBy: 'agent', apply: true });

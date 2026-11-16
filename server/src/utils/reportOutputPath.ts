@@ -91,7 +91,13 @@ function assertParentWritable(resolved: string, flag: string): void {
   }
 }
 
-export function resolveSafeJsonReportOutputPath(
+/**
+ * Where a script may read or write one of its JSON artifacts, without touching the file system
+ * beyond resolving symlinks. A read of an existing artifact, or a pre-image snapshot the script
+ * writes before any database write, takes this; a report written after the writes takes
+ * `resolveSafeJsonReportOutputPath`, which also proves its directory is writable.
+ */
+export function resolveSafeJsonReportPath(
   value: string | undefined,
   flag = '--output',
   options: ReportOutputPathOptions = {},
@@ -135,9 +141,19 @@ export function resolveSafeJsonReportOutputPath(
   ) {
     throw new Error(`${flag} under ${REPORT_ROOT_ENV} resolves into the repository checkout`);
   }
+  return resolved;
+}
 
+export function resolveSafeJsonReportOutputPath(
+  value: string | undefined,
+  flag = '--output',
+  options: ReportOutputPathOptions = {},
+): string {
+  const resolved = resolveSafeJsonReportPath(value, flag, options);
   assertParentWritable(resolved, flag);
 
+  const realTarget = resolveRealPath(resolved);
+  const tempRoots = options.tempRoots ?? defaultTempRoots();
   if (
     tempRoots.some((root) => hasPathPrefix(realTarget, resolveRealPath(root))) &&
     !warnedPaths.has(resolved)

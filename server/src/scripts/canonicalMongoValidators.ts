@@ -36,7 +36,7 @@ import {
   parseOperatorDatabaseEnvironment,
   type OperatorDatabaseEnvironment,
 } from './operatorDatabaseEnvironment';
-import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { resolveSafeJsonReportOutputPath, resolveSafeJsonReportPath } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -739,7 +739,7 @@ export async function runCanonicalMongoValidators(
 }
 
 export function readCanonicalMongoValidatorArtifact(target: string): unknown {
-  const safeTarget = resolveSafeJsonReportOutputPath(target, '--apply-from');
+  const safeTarget = resolveSafeJsonReportPath(target, '--apply-from');
   return JSON.parse(fs.readFileSync(safeTarget, 'utf8')) as unknown;
 }
 
@@ -808,7 +808,7 @@ async function main(): Promise<void> {
     resolveSafeJsonReportOutputPath(args.output);
   }
   if (args.applyFrom) {
-    resolveSafeJsonReportOutputPath(args.applyFrom, '--apply-from');
+    resolveSafeJsonReportPath(args.applyFrom, '--apply-from');
   }
   if (args.applyFrom && args.output && pathsReferToSameFile(args.applyFrom, args.output)) {
     throw new Error('--output must not overwrite the reviewed --apply-from artifact.');

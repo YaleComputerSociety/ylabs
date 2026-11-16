@@ -18,7 +18,7 @@ import { Observation } from '../models/observation';
 import { ScrapeRun } from '../models/scrapeRun';
 import { resetInvalidatedScrapeRunCache } from '../scrapers/invalidatedScrapeRuns';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportPath } from './scriptWriteGuards';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -59,7 +59,7 @@ export function parseRollbackScrapeRunArgs(argv: string[]): RollbackScrapeRunArg
   return {
     runId: runId.toLowerCase(),
     note,
-    ...(snapshot ? { snapshot: resolveSafeJsonReportOutputPath(snapshot) } : {}),
+    ...(snapshot ? { snapshot: resolveSafeJsonReportPath(snapshot, '--snapshot') } : {}),
     apply,
     confirmed: argv.includes(CONFIRM_FLAG),
   };

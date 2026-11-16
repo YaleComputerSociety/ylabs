@@ -31,7 +31,7 @@ import {
   type Phase0ResearchSearchBaselineReport,
   type Phase0ResearchSearchSample,
 } from './phase0ResearchSearchBaselineCore';
-import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { resolveSafeJsonReportPath } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -357,7 +357,7 @@ export function writePhase0ResearchSearchBaseline(
   report: Phase0ResearchSearchBaselineReport,
   outputValue: string,
 ): { output: string; sha256: string; bytes: number } {
-  const output = resolveSafeJsonReportOutputPath(outputValue);
+  const output = resolveSafeJsonReportPath(outputValue);
   assertPrivateArtifactParent(output);
   const body = `${JSON.stringify(report, null, 2)}\n`;
   const noFollow = fsConstants.O_NOFOLLOW || 0;

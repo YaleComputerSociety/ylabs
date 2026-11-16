@@ -75,4 +75,5 @@ export {
   REPORT_ROOT_ENV,
   resolveReportRoot,
   resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
 } from '../utils/reportOutputPath';

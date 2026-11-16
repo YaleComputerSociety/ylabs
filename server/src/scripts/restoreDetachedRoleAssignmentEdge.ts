@@ -19,7 +19,7 @@ import {
   type DetachmentDecider,
   type UnfoldAuditTie,
 } from './restoreDetachedRoleAssignmentEdgeCore';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportPath } from './scriptWriteGuards';
 import {
   UNFOLD_SHELL_AUDIT_ACTION,
   UNFOLD_SHELL_AUDIT_TARGET_TYPE,
@@ -117,7 +117,7 @@ export function parseRestoreDetachedRoleAssignmentEdgeArgs(
     ...(expectedPersonId ? { expectedPersonId } : {}),
     ...(expectedTargetId ? { expectedTargetId } : {}),
     ...(unfoldAuditId ? { unfoldAuditId } : {}),
-    ...(snapshot ? { snapshot: resolveSafeJsonReportOutputPath(snapshot, '--snapshot') } : {}),
+    ...(snapshot ? { snapshot: resolveSafeJsonReportPath(snapshot, '--snapshot') } : {}),
     apply,
     confirmed: argv.includes(CONFIRM_FLAG),
   };
