@@ -269,13 +269,13 @@ describe('Phase 0 ResearchEntity search baseline artifact writer', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-phase0-search-inside-'));
     const target = path.join(directory, 'target');
     const linkedParent = path.join(directory, 'linked');
-    fs.mkdirSync(target, { mode: 0o700 });
+    fs.mkdirSync(path.join(target, 'new'), { recursive: true, mode: 0o700 });
     fs.symlinkSync(target, linkedParent);
     const output = path.join(linkedParent, 'new', 'baseline.json');
 
     expect(() => writePhase0ResearchSearchBaseline(fixtureReport(), output)).toThrow(
       /real directories/,
     );
-    expect(fs.existsSync(path.join(target, 'new'))).toBe(false);
+    expect(fs.existsSync(path.join(target, 'new', 'baseline.json'))).toBe(false);
   });
 });

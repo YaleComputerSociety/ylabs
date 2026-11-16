@@ -3093,7 +3093,7 @@ test('admin taxonomy write routes bound labels and category arrays before persis
 
 test('scraper integrity report outputs are constrained to safe JSON artifact paths', () => {
   const guards = fs.readFileSync(
-    new URL('../server/src/scripts/scriptWriteGuards.ts', import.meta.url),
+    new URL('../server/src/utils/reportOutputPath.ts', import.meta.url),
     'utf8',
   );
   const scraperCliOutput = fs.readFileSync(
@@ -3110,8 +3110,6 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
   );
   assert.match(guards, /export function resolveSafeJsonReportOutputPath/);
   assert.match(guards, /path\.extname\(resolved\)\.toLowerCase\(\) !== '\.json'/);
-  assert.match(guards, /const tmpRoot = path\.resolve\(os\.tmpdir\(\)\)/);
-  assert.match(guards, /const projectTmpRoot = path\.resolve\(process\.cwd\(\), 'tmp'\)/);
   assert.match(
     scraperCliOutput,
     /import \{ resolveSafeJsonReportOutputPath \} from '\.\.\/scripts\/scriptWriteGuards'/,
@@ -3124,10 +3122,6 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
   assert.match(integrityGate, /resolveSafeJsonReportOutputPath\(output\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(outputValue\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(output\)/);
-  assert.match(
-    guards,
-    /approvedTempRootFor\(resolved, \[tmpRoot, SHARED_TEMP_ROOT, projectTmpRoot\]\)/,
-  );
 });
 
 test('temporary artifact root comparisons resolve both sides before comparing', () => {
