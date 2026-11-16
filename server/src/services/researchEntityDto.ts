@@ -650,6 +650,21 @@ function publicTextValue(value: unknown, keepContacts = false): unknown {
 /**
  * Public DTO for the canonical ResearchEntity API.
  */
+function servedNameFields(
+  group: Record<string, any>,
+  served: Record<string, any>,
+): { name: string; displayName: string | undefined } {
+  return {
+    name:
+      publicResearchEntityName(served.name) ||
+      servedPersonScopedDisplayName(group, served.displayName),
+    displayName:
+      group.displayName === undefined
+        ? undefined
+        : servedPersonScopedDisplayName(group, served.displayName),
+  };
+}
+
 export function toPublicResearchEntityDto(
   group: Record<string, any>,
   options: PublicResearchEntityDtoOptions = {},
@@ -681,13 +696,7 @@ function derivePublicResearchEntityDto(
     _id: id,
     id,
     slug: publicTextString(group.slug || ''),
-    name:
-      publicResearchEntityName(served.name) ||
-      servedPersonScopedDisplayName(group, served.displayName),
-    displayName:
-      group.displayName === undefined
-        ? undefined
-        : servedPersonScopedDisplayName(group, served.displayName),
+    ...servedNameFields(group, served),
     kind,
     entityKind: kind,
     entityType,
@@ -926,6 +935,70 @@ export function researchEntityListServedSource(
   );
 }
 
+export interface ServedResearchEntityLeadContext {
+  leadMemberNames?: readonly string[];
+  leadMemberNamesUnavailable?: boolean;
+  identityLeadDirectsOrganization?: boolean;
+  emeritusWayIn?: Pick<EmeritusWayInDecision, 'emeritusLed' | 'wayInWithheld'>;
+}
+
+function servedSourceForLead(
+  row: Record<string, any>,
+  lead: ServedResearchEntityLeadContext,
+): Record<string, any> {
+  const hit = lead.identityLeadDirectsOrganization
+    ? { ...row, [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true }
+    : row;
+  return {
+    ...researchEntityListServedSource(hit, lead.leadMemberNames, lead.leadMemberNamesUnavailable),
+    ...servedEmeritusWayInFlags(lead.emeritusWayIn),
+  };
+}
+
+/** The served DTO of a row given its lead read, composed the way browse serves a hit. */
+export function toServedResearchEntityDto(
+  row: Record<string, any>,
+  lead: ServedResearchEntityLeadContext = {},
+  options: Omit<PublicResearchEntityDtoOptions, 'leadMemberNames'> = {},
+): PublicResearchEntityDto {
+  return toPublicResearchEntityDto(servedSourceForLead(row, lead), {
+    ...options,
+    leadMemberNames: lead.leadMemberNames,
+  });
+}
+
+export interface ServedResearchEntitySearchCopy {
+  name: string;
+  displayName: string | undefined;
+  shortDescription: string | undefined;
+  fullDescription: string | undefined;
+  methods: string[];
+}
+
+/**
+ * The copy the search index matches and ranks on, from the same sanitizer pass and name
+ * and method rules the DTO serves, so indexed copy cannot drift from served copy (#6390).
+ *
+ * `shortDescription` is the sanitized stored short rather than the DTO's card, because
+ * the card falls back to a summary built from the topics, and indexing that as prose
+ * would feed the topics back into their own coherence check.
+ */
+export function servedResearchEntitySearchCopy(
+  row: Record<string, any>,
+  lead: ServedResearchEntityLeadContext = {},
+): ServedResearchEntitySearchCopy {
+  const source = servedSourceForLead(row, lead);
+  const { served, topics } = servedCopyAndTopics(source, lead.leadMemberNames);
+  return {
+    ...servedNameFields(source, served),
+    shortDescription:
+      typeof served.shortDescription === 'string' ? served.shortDescription : undefined,
+    fullDescription:
+      typeof served.fullDescription === 'string' ? served.fullDescription : undefined,
+    methods: source.methods === undefined ? [] : publicMethodsArray(source.methods, topics.served),
+  };
+}
+
 export function addResearchEntitySearchAliases<T extends { hits: Record<string, any>[] }>(
   result: T,
   options: ResearchEntitySearchAliasOptions = {},
@@ -945,22 +1018,18 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
     (result.hits || []).map((hit) => {
       const hitKey = String(hit?._id || hit?.id || '');
       const leadMemberNames = leadMemberNamesByEntityId?.get(hitKey);
-      const servedHit = identityLeadDirectorEntityIds?.has(hitKey)
-        ? { ...hit, [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true }
-        : hit;
       const leadName = leadMemberNames?.[0];
       const matchedMember = matchedMemberNameByEntityId?.get(hitKey);
       return {
-        ...toPublicResearchEntityDto(
+        ...toServedResearchEntityDto(
+          hit,
           {
-            ...researchEntityListServedSource(
-              servedHit,
-              leadMemberNames,
-              leadMemberNamesUnavailable,
-            ),
-            ...servedEmeritusWayInFlags(emeritusWayInByEntityId?.get(hitKey)),
+            leadMemberNames,
+            leadMemberNamesUnavailable,
+            identityLeadDirectsOrganization: identityLeadDirectorEntityIds?.has(hitKey),
+            emeritusWayIn: emeritusWayInByEntityId?.get(hitKey),
           },
-          { ...listOptions, leadMemberNames },
+          listOptions,
         ),
         ...(leadName ? { leadName } : {}),
         ...(matchedMember

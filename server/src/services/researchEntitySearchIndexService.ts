@@ -12,12 +12,6 @@ import {
 } from './directoryRemovalServing';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizePersonName } from '../utils/personNameHygiene';
-import {
-  isStudiesResearchAreaEchoDescription,
-  isStudiesSentenceNestingTopicsUnderTheFirst,
-  sanitizeResearchEntityDescription,
-  sanitizeResearchEntityShortDescription,
-} from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { researchEntityBrowseTiebreakKey } from '../utils/researchEntityBrowseTiebreakKey';
 import {
@@ -37,8 +31,6 @@ import {
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { usableOpenAiApiKey } from '../utils/openAiApiKey';
 import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
-import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
-import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
@@ -48,19 +40,14 @@ import {
   entityWelcomesUndergraduates,
   researchEntityListServedSource,
   servedUndergradInvitationLevel,
+  servedResearchEntitySearchCopy,
 } from './researchEntityDto';
 import { CREATIVE_PRACTICE_RESEARCH_TYPE, RESEARCH_TYPE_INDEX_FIELD } from './researchGroupFilters';
 import { entityMentorsUndergraduates } from './undergradListEvidenceServing';
 import { isExcludedFromSearchIndex, RESEARCHER_REMOVED_REASON } from './directoryRemovalReason';
-import {
-  isSyntheticResearchHomeMetadataDescription,
-  revoiceFirstPersonResearchLead,
-} from '../utils/researchEntityDescriptionText';
+import { isSyntheticResearchHomeMetadataDescription } from '../utils/researchEntityDescriptionText';
 import {
   isPlaceholderEntityName,
-  personScopedResearchEntityNameFromPersonName,
-  servedResearchEntityNameWithoutPageFurniture,
-  personScopedResearchEntityNameNamesSomethingElseByUrlPath,
   isExternalScholarlyPlatformLinkLabelName,
   namesAResearchGroupRatherThanAPerson,
   IDENTITY_LEAD_DIRECTS_ORGANIZATION,
@@ -251,8 +238,6 @@ export function getResearchEntitySearchIndexSettings() {
     },
   };
 }
-
-const SEARCH_INDEX_NAME_FIELDS = ['name', 'displayName'] as const;
 
 const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
   'contactEmail',
@@ -527,97 +512,51 @@ export async function fetchResearchEntitySearchServedLeads(
   );
 }
 
-const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
+const withServedSearchCopy = (
+  out: Record<string, any>,
+  doc: Record<string, any>,
+  servedLead: ResearchEntitySearchServedLead | undefined,
+) => {
+  const served = servedResearchEntitySearchCopy(doc, servedLead ?? {});
+  for (const field of ['name', 'displayName'] as const) {
+    if (served[field]) out[field] = served[field];
+    else delete out[field];
+  }
+  for (const field of ['shortDescription', 'fullDescription'] as const) {
+    if (typeof doc[field] === 'string') out[field] = served[field] ?? '';
+    else delete out[field];
+  }
+  if (served.methods.length > 0) out.methods = served.methods;
+  else delete out.methods;
+};
+
+const sanitizeResearchEntityIndexDocument = (
+  out: Record<string, any>,
+  doc: Record<string, any>,
+  servedLead: ResearchEntitySearchServedLead | undefined,
+) => {
   for (const field of SEARCH_INDEX_DIRECT_CONTACT_FIELDS) {
     delete out[field];
   }
 
-  // This withhold is a matching guard, not a display guard: browse and search
-  // re-read the Mongo row and spread it over the hit (`researchGroupService.ts`),
-  // so the indexed `displayName` never titles a card. It still has to drop
-  // placeholder filler or an umbrella-organization / foreign-lab graft on the same
-  // terms the detail-page DTO does, because `displayName` is a
-  // `searchableAttributes` entry and filler left in it keyword matches a record
-  // whose served title is its real `name` (#2351/#2367).
+  withServedSearchCopy(out, doc, servedLead);
+
+  // Matching guards on top of the served copy. `displayName` and both descriptions are
+  // `searchableAttributes`, so a placeholder or platform-link alias, a synthetic metadata
+  // blurb, or an endowed chair title would keyword match copy no card leads with
+  // (#2351/#2367/#1466/#2396). The served path does not apply the last two yet.
   if (
     isPlaceholderEntityName(out.displayName) ||
-    isExternalScholarlyPlatformLinkLabelName(out.displayName) ||
-    personScopedResearchEntityNameNamesSomethingElseByUrlPath({
-      candidateName: out.displayName,
-      entityType: out.entityType,
-      kind: out.kind,
-      slug: out.slug,
-      websiteUrl: out.fieldProvenance?.displayName?.sourceUrl || out.websiteUrl || out.website,
-      recordCitedUrls: [out.websiteUrl, out.website, out.sourceUrls],
-      siteDeclaredOwnNames: out.siteDeclaredOwnNames,
-    })
+    isExternalScholarlyPlatformLinkLabelName(out.displayName)
   ) {
     delete out.displayName;
   }
-
-  // The same bare-person-name substitution the serve sanitizer makes, so the
-  // indexed title cannot drift from the served one on a row whose stored name the
-  // repair has not reached yet (#2373/#2507).
-  for (const field of ['name', 'displayName'] as const) {
-    const entity = { entityType: out.entityType, kind: out.kind };
-    const withoutFurniture = servedResearchEntityNameWithoutPageFurniture({
-      ...entity,
-      candidateName: out[field],
-    });
-    if (withoutFurniture) out[field] = withoutFurniture;
-    const derived = personScopedResearchEntityNameFromPersonName({
-      ...entity,
-      candidateName: out[field],
-    });
-    if (derived) out[field] = derived;
-  }
-
-  for (const field of SEARCH_INDEX_NAME_FIELDS) {
-    if (typeof out[field] === 'string') {
-      out[field] = redactDirectContactInfo(out[field]);
-    }
-  }
-
-  /**
-   * The same revoice the detail path applies, so ranking is computed over the copy a
-   * student is shown rather than the harvested first person underneath it.
-   *
-   * Only the detail chokepoint ran it, so the index stored "I have been heavily
-   * involved ..." while the card displayed the third-person form: 1,245 of 4,908
-   * indexed documents carried a first-person pronoun against 2.9% carrying the
-   * placeholder the served representation puts on 26% of rows (#3418). The
-   * embedder template is built from these fields, so the vectors inherited it too.
-   *
-   * Wired here rather than at materialize time because a stored description no live
-   * observation asserts gets no planned value, so a write-time derivation cannot
-   * reach the stale rows that most need it. #1640 is the precedent for one pure
-   * function wired into both chokepoints.
-   *
-   * Runs before the hygiene chain, which is where the detail path runs it too, so a
-   * description already revoiced upstream is unchanged by this second pass.
-   */
-  const revoiceSubject = out as Record<string, any>;
-  if (typeof out.fullDescription === 'string') {
-    let cleaned = sanitizeResearchEntityDescription(
-      revoiceFirstPersonResearchLead(out.fullDescription, revoiceSubject),
-    );
-    const hasOtherBody =
-      typeof out.profileSynthesisDescription === 'string' &&
-      out.profileSynthesisDescription.trim().length > 0;
-    const blanksEcho = hasOtherBody || isStudiesSentenceNestingTopicsUnderTheFirst(cleaned);
-    if (blanksEcho && isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) {
-      cleaned = '';
-    }
-    if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
-    out.fullDescription = stripEndowedChairTitles(cleaned);
-  }
-  if (typeof out.shortDescription === 'string') {
-    let cleaned = sanitizeResearchEntityShortDescription(
-      revoiceFirstPersonResearchLead(out.shortDescription, revoiceSubject),
-    );
-    if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
-    if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
-    out.shortDescription = stripEndowedChairTitles(cleaned);
+  for (const field of ['shortDescription', 'fullDescription'] as const) {
+    if (typeof out[field] !== 'string') continue;
+    const synthetic =
+      isSyntheticResearchHomeMetadataDescription(doc[field]) ||
+      isSyntheticResearchHomeMetadataDescription(out[field]);
+    out[field] = synthetic ? '' : stripEndowedChairTitles(out[field]);
   }
 
   for (const field of SEARCH_INDEX_PERSON_NAME_FIELDS) {
@@ -640,14 +579,6 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     }).served;
     if (researchAreas.length > 0) out.researchAreas = researchAreas;
     else delete out.researchAreas;
-  }
-
-  if (Array.isArray(out.methods)) {
-    const methods = normalizeResearchAreaList(
-      out.methods.map((method: unknown) => sanitizeMethodChipLabel(method)).filter(Boolean),
-    );
-    if (methods.length > 0) out.methods = methods;
-    else delete out.methods;
   }
 };
 
@@ -729,7 +660,7 @@ export function buildResearchEntitySearchIndexDocument(
     out.professorNames = memberNames.professorNames;
     out.memberNames = memberNames.memberNames;
   }
-  sanitizeResearchEntityIndexDocument(out);
+  sanitizeResearchEntityIndexDocument(out, doc, servedLead);
 
   /**
    * Index the title a student actually reads. `name` carries a synthesized
