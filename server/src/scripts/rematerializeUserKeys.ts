@@ -45,11 +45,18 @@ import { initializeConnections, runScriptMain } from '../db/connections';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { resetPrimaryDepartmentStatingKeysCache } from '../scrapers/primaryDepartmentStatingKeys';
 import { expandUserMaterializerScope } from '../scrapers/userMaterializerFieldScope';
+import { researchEntityIdsLinkedToResearchers } from '../services/researcherLinkedSearchResync';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { createChunkedRegater } from './rematerializeResearchEntitiesCore';
+import {
+  mergeRematerializeRegateSummaries,
+  regateRematerializedEntities,
+} from './rematerializeResearchEntities';
 import {
   parseRematerializeUserKeysArgs,
   summarizeUserKeyPass,
   userKeysFromJson,
+  visitUserKeysRegatingLinkedRows,
   type UserKeyPassRow,
 } from './rematerializeUserKeysCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -77,6 +84,7 @@ async function visit(
     );
     return {
       entityKey,
+      ...(typeof result?.entityId === 'string' ? { researcherId: result.entityId } : {}),
       fieldsWritten: Number(result?.fieldsWritten ?? 0),
       plannedPaths: Array.isArray(result?.plannedPaths) ? result.plannedPaths : [],
       ...(onlyFields.length > 0
@@ -108,24 +116,28 @@ async function main(): Promise<void> {
   await initializeConnections();
   try {
     const passes: UserKeyPassRow[][] = [];
+    const regater = args.apply ? createChunkedRegater(regateRematerializedEntities) : undefined;
     for (let pass = 1; pass <= args.passes; pass += 1) {
       resetPrimaryDepartmentStatingKeysCache();
-      const rows: UserKeyPassRow[] = [];
       const progress = startLongRunProgress(
         `rematerialize-user-keys pass ${pass}/${args.passes}`,
         keys.length,
       );
       try {
-        for (const key of keys) {
-          const row = await visit(key, args.apply, args.onlyFields, mintListedUserKeys);
-          rows.push(row);
-          progress.tick(Boolean(row.error));
-        }
+        passes.push(
+          await visitUserKeysRegatingLinkedRows({
+            keys,
+            visit: (key) => visit(key, args.apply, args.onlyFields, mintListedUserKeys),
+            linkedResearchEntityIds: researchEntityIdsLinkedToResearchers,
+            regater,
+            onRow: (row) => progress.tick(Boolean(row.error)),
+          }),
+        );
       } finally {
         progress.stop();
       }
-      passes.push(rows);
     }
+    const regated = regater ? await regater.finish() : undefined;
     const summaries = passes.map((rows, index) => summarizeUserKeyPass(index + 1, rows));
     const report = {
       generatedAt: new Date().toISOString(),
@@ -136,6 +148,12 @@ async function main(): Promise<void> {
       keys: keys.length,
       ...(args.mintListedKeys ? { mintListedKeys: true } : {}),
       passes: summaries,
+      ...(regated
+        ? {
+            regate: mergeRematerializeRegateSummaries(regated.summaries) ?? null,
+            ...(regated.error ? { regateError: regated.error } : {}),
+          }
+        : {}),
     };
     fs.writeFileSync(outputPath, JSON.stringify({ ...report, rows: passes }, null, 2));
     console.log(JSON.stringify(report, null, 2));

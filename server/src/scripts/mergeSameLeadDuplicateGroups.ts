@@ -54,9 +54,15 @@ import {
   assertScopedSurvivorApply,
   parseMergeSurvivorOnlyFields,
   planScopedSurvivorRematerialize,
-  rematerializeMergeSurvivors,
+  settleMergedSurvivor,
   type ScopedSurvivorPlan,
 } from './mergeSameLeadSurvivorScope';
+import {
+  mergeRematerializeRegateSummaries,
+  regateRematerializedEntities,
+  type RematerializeRegateSummary,
+} from './rematerializeResearchEntities';
+import { createChunkedRegater } from './rematerializeResearchEntitiesCore';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -290,8 +296,11 @@ async function main(): Promise<void> {
     }
   }
 
+  let survivorRegate: RematerializeRegateSummary | null = null;
+  let survivorRegateError: string | undefined;
   if (!dryRun && outcome.merges.length > 0) {
     const now = new Date();
+    const survivorRegater = createChunkedRegater(regateRematerializedEntities, 1);
     for (const merge of outcome.merges) {
       const survivor = byId.get(merge.survivorId);
       const losers = merge.loserIds.map((id) => byId.get(id)).filter(Boolean) as Array<
@@ -369,15 +378,19 @@ async function main(): Promise<void> {
           now,
         }),
       );
-    }
 
-    // Two re-materializations. The second is the durability check: a merge that only holds
-    // for one pass is not finished.
-    applied.rematerializations += await rematerializeMergeSurvivors({
-      survivorSlugs,
-      onlyFields: onlyFields ?? [],
-      materialize: materializeEntity,
-    });
+      // Two re-materializations. The second is the durability check: a merge that only holds
+      // for one pass is not finished.
+      applied.rematerializations += await settleMergedSurvivor({
+        survivor,
+        onlyFields: onlyFields ?? [],
+        materialize: materializeEntity,
+        regater: survivorRegater,
+      });
+    }
+    const regated = await survivorRegater.finish();
+    survivorRegate = mergeRematerializeRegateSummaries(regated.summaries) ?? null;
+    survivorRegateError = regated.error;
 
     // Read BOTH sides, and the redirect, rather than trusting the write. About 45% of
     // archived slugs 404 and the resolver walks canonicalGroupId, so the repointed path is
@@ -437,6 +450,9 @@ async function main(): Promise<void> {
         survivorRematerializeScope: onlyFields ?? null,
         scopedSurvivorPlan,
         applied,
+        ...(dryRun
+          ? {}
+          : { survivorRegate, ...(survivorRegateError ? { survivorRegateError } : {}) }),
         researchPlanCarry,
         researchPlansThatWouldMove: researchPlansThatWouldMove(researchPlanCarry),
         duplicateUrlGroupsScanned: groups.length,

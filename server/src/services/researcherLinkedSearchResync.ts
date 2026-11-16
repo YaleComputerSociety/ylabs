@@ -53,6 +53,12 @@ async function researchEntityIdsWithLiveEdgeTo(
   });
 }
 
+export async function researchEntityIdsLinkedToResearchers(
+  researcherIds: Iterable<string>,
+): Promise<string[]> {
+  return (await researchEntityIdsWithLiveEdgeTo([...new Set(researcherIds)])).map(String);
+}
+
 export async function resyncResearchRowsLinkedToResearchers(
   researcherIds: Iterable<string>,
 ): Promise<string[]> {
