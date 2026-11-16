@@ -12,6 +12,7 @@ export interface ScraperRequestLogEntry {
   error?: string;
   durationMs: number;
   attempt: number;
+  tunnel?: true;
   headers?: Record<string, string>;
   bodyPrefix?: string;
 }
@@ -19,6 +20,7 @@ export interface ScraperRequestLogEntry {
 export interface ScraperRequestOutcome {
   status?: number;
   error?: string;
+  tunnel?: true;
   headers?: Record<string, string>;
   bodyPrefix?: string;
 }
@@ -82,6 +84,7 @@ export function createScraperRequestLog(write: (line: string) => void): ScraperR
         ...(outcome.error !== undefined ? { error: outcome.error } : {}),
         durationMs: Math.max(0, Math.round(durationMs)),
         attempt,
+        ...(outcome.tunnel ? { tunnel: true as const } : {}),
         ...(outcome.headers !== undefined ? { headers: outcome.headers } : {}),
         ...(outcome.bodyPrefix !== undefined ? { bodyPrefix: outcome.bodyPrefix } : {}),
       };

@@ -635,7 +635,7 @@ Token-looking values are redacted too, both inside a query string and in a body 
 The log is a local diagnostic rather than a publishable artefact, and two limits are why: a secret under a field name the pattern does not know, or an address written in a form the decode does not cover (a different encoding, or digits spelled out), would be kept.
 Read it locally, and quote a line into an issue or a PR only after checking it by eye.
 Every process that installs the fetch hooks is logged through the process-wide `processScraperRequestLog()`, which since #6193 includes every script that fetches.
-The browser fetches in `renderedFetch.ts` are not logged.
+The rendered fetch logs its seed preflight, and its forward proxy logs every request the browser sends through it (#6255): a plain HTTP request with its status, and an HTTPS tunnel once, when it connects, as `tunnel: true` with no status, because the requests inside a tunnel are encrypted.
 A log path that cannot be opened prints one warning naming only the error code and the run continues unlogged.
 A failed log write drops that line and never changes the request's response or error.
 Use it when a run has to be lined up against a host incident, such as a ban or a burst-limit hold.
@@ -658,6 +658,13 @@ The list holds `api.openai.com`, the only model API host the codebase calls, sin
 The match is the exact hostname from `hostnameForLimiter`, with no config flag and no suffix match, so a scraped host, or a lookalike such as `api.openai.com.evil.example`, always takes a slot and has its refusals recorded.
 A new model provider host must be added to the list, or its calls queue behind the page budget.
 The rendered fetch is the documented exception: its headless browser runs in a Python child that no axios hook reaches, and it takes its own host slot before each render.
+Its pacing is its own, to the same rules (#6255, the owner's condition for keeping the browser User-Agent):
+- `renderOnce` refuses a paused seed host with `HostPausedError` before the preflight or the render, so the lane skips the row as not observed.
+- The seed page's answer is recorded in the shared backoff store: a 2xx as a success, and a 403, 429 or 503 through `recordHostRefusal` (a stated date pauses at once), then `recordTierOneExhausted` once the quick re-renders run out.
+- The SSRF forward proxy charges each request the browser sends to its receiving host's budget, and refuses a paused host, or a slot that never comes free within the render's timeout, before anything is sent.
+The slot is released once the host answers, so it spaces requests without being held for the life of a keep-alive connection, and an HTTPS tunnel is charged once per connection.
+The seed host's own requests are charged to the slot the render already holds, because a second one would wait on the render's own slot where the host's limit is one.
+- A render during which the proxy refused any request throws that refusal, so a page missing a refused subresource is never read as evidence, and no refusal is recorded against the seed host.
 #### One User-Agent (#6211)
 
 Every fetch path sends exactly `SCRAPER_USER_AGENT` from `utils/scraperUserAgent.ts`, which is `ylabs-scraper/1.0 (+https://yalelabs.io; ycs.maintenance.ylabs@gmail.com)`, naming the information page and the owner's project role address (a role address, never a person's).
