@@ -28,7 +28,12 @@ import { SEARCH_RERANK_WINDOW } from '../services/searchRerankCache';
 import { searchRerankPromptExcerpts } from '../services/searchRerankCandidateText';
 import { searchRerankCandidatesWithServedText } from '../services/searchRerankLiveMissJob';
 import { isEnglishDictionaryWord } from '../services/englishDictionaryWords';
-import { warmResearchSearchSpellingVocabulary } from '../services/researchSearchSpellingVocabulary';
+import {
+  RESEARCH_SEARCH_SPELLING_BODY_FIELDS,
+  warmResearchSearchSpellingVocabulary,
+} from '../services/researchSearchSpellingVocabulary';
+import { servesStudentVisibilityTier } from '../models/studentVisibility';
+import { getMeiliSearchIndex } from '../utils/meiliClient';
 import {
   ROUND_SCRIPT_NAME,
   ROUND_SOURCE_URL_ENV,
@@ -37,6 +42,7 @@ import {
   type ServedCandidates,
   assertReadOnlySourcePrivileges,
   collectRoundQueries,
+  corpusSymbolsFrom,
   gateRound,
   judgePacket,
   ndcgOutcomes,
@@ -84,6 +90,35 @@ async function readProductionQueryAggregates(since: Date): Promise<SearchQueryAg
   }
 }
 
+const CORPUS_PAGE_SIZE = 1000;
+const CORPUS_MAX_DOCUMENTS = 100000;
+
+async function developmentCorpusSymbols(): Promise<ReadonlySet<string>> {
+  const index = await getMeiliSearchIndex('researchentities');
+  const documents: Array<{ bodyText: unknown[]; served: boolean }> = [];
+  for (let offset = 0; offset < CORPUS_MAX_DOCUMENTS; offset += CORPUS_PAGE_SIZE) {
+    const page = await index.search('', {
+      filter: 'archived = false',
+      limit: CORPUS_PAGE_SIZE,
+      offset,
+      attributesToRetrieve: [
+        ...RESEARCH_SEARCH_SPELLING_BODY_FIELDS,
+        'studentVisibilityTier',
+        'studentVisibilityOverrideTier',
+      ],
+    });
+    const hits = page.hits as Array<Record<string, unknown>>;
+    documents.push(
+      ...hits.map((hit) => ({
+        bodyText: RESEARCH_SEARCH_SPELLING_BODY_FIELDS.map((field) => hit[field]),
+        served: servesStudentVisibilityTier(hit),
+      })),
+    );
+    if (hits.length < CORPUS_PAGE_SIZE) break;
+  }
+  return corpusSymbolsFrom(documents);
+}
+
 async function developmentServedCandidates(query: string): Promise<ServedCandidates> {
   const searched = await searchResearchGroupsForRerankCandidates(query, {}, SEARCH_RERANK_WINDOW);
   if (searched.rerankLiveMissGate !== 'eligible') {
@@ -128,10 +163,11 @@ async function collect(args: RoundArgs): Promise<void> {
     if (!vocabulary) {
       throw new Error(`${ROUND_SCRIPT_NAME} collect needs the Development search vocabulary`);
     }
+    const corpusSymbols = await developmentCorpusSymbols();
     const { queries, report } = await collectRoundQueries({
       aggregates,
       existingEntries,
-      topicVocabulary: topicVocabularyFrom(vocabulary, isEnglishDictionaryWord),
+      topicVocabulary: topicVocabularyFrom(vocabulary, isEnglishDictionaryWord, corpusSymbols),
       searchCandidates: developmentServedCandidates,
     });
     const written = args.out
@@ -156,6 +192,7 @@ async function collect(args: RoundArgs): Promise<void> {
           source: aggregatesFile ? 'aggregates-file' : ROUND_SOURCE_URL_ENV,
           since: args.since!.toISOString(),
           dryRun: written === null,
+          corpusSymbols: corpusSymbols.size,
           ...report,
           wroteFiles: written !== null,
         },

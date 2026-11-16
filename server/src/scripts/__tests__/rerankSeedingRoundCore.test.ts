@@ -15,6 +15,8 @@ import {
   parseJudgeGrades,
   parseQueryAggregates,
   queryIsNameShaped,
+  queryHasUnknownSymbol,
+  corpusSymbolsFrom,
   topicVocabularyFrom,
   parseRoundArgs,
   queryNamesATopic,
@@ -206,7 +208,9 @@ const TOPIC_WORDS = new Set([
   'word',
   'x',
 ]);
-const topicVocabulary = { isTopicTerm: (word: string) => TOPIC_WORDS.has(word) };
+const CORPUS_SYMBOLS = new Set(['tp53', 'cd19', 'il6', 'h1n1', 'brca1']);
+const isCorpusSymbol = (token: string) => CORPUS_SYMBOLS.has(token);
+const topicVocabulary = { isTopicTerm: (word: string) => TOPIC_WORDS.has(word), isCorpusSymbol };
 
 describe('queryIsNameShaped', () => {
   it('reads a name with digits beside or inside its words as the name it carries', () => {
@@ -220,14 +224,11 @@ describe('queryIsNameShaped', () => {
     expect(queryIsNameShaped('soil2 chemistry', topicVocabulary)).toBe(false);
   });
 
-  it('keeps a gene or virus symbol mixing letters and digits as a topic', () => {
-    const geneVocabulary = {
-      isTopicTerm: (word: string) => TOPIC_WORDS.has(word) || word === 'brca',
-    };
-    for (const query of ['tp53', 'cd19', 'il6', 'h1n1', 'brca1', 'tp53 cd19', 'brca1 Tqxa']) {
-      expect(queryIsNameShaped(query, geneVocabulary)).toBe(false);
+  it('keeps a gene or virus symbol the corpus states as a topic', () => {
+    for (const query of ['tp53', 'CD19', 'il6', 'h1n1', 'brca1', 'tp53 cd19']) {
+      expect(queryIsNameShaped(query, topicVocabulary)).toBe(false);
     }
-    expect(queryIsNameShaped('Tqxa2', geneVocabulary)).toBe(true);
+    expect(queryIsNameShaped('Tqxa2', topicVocabulary)).toBe(true);
   });
 
   it('reads a name beside a short letter-prefixed year as the name it carries', () => {
@@ -236,12 +237,11 @@ describe('queryIsNameShaped', () => {
     }
   });
 
-  it('keeps a mixed word next to a name only when the corpus knows the whole word', () => {
-    const corpusVocabulary = {
-      isTopicTerm: (word: string) => TOPIC_WORDS.has(word) || word === 'tp53',
-    };
-    expect(queryIsNameShaped('tp53 Tqxa', corpusVocabulary)).toBe(false);
-    expect(queryIsNameShaped('tp53 Tqxa', topicVocabulary)).toBe(true);
+  it('keeps a mixed word next to a name only when the corpus states the whole word', () => {
+    expect(queryIsNameShaped('tp53 Tqxa', topicVocabulary)).toBe(false);
+    expect(
+      queryIsNameShaped('tp53 Tqxa', { ...topicVocabulary, isCorpusSymbol: () => false }),
+    ).toBe(true);
   });
 
   it('reads a name written with a comma or parentheses as the name it carries', () => {
@@ -270,12 +270,61 @@ describe('queryIsNameShaped', () => {
     const vocabularyKnowingFilterWords = {
       isTopicTerm: (word: string) =>
         TOPIC_WORDS.has(word) || ['research', 'labs', 'mentor', 'yale'].includes(word),
+      isCorpusSymbol,
     };
     expect(queryIsNameShaped('research Tqxa Vrnbe', vocabularyKnowingFilterWords)).toBe(true);
     expect(
       queryIsNameShaped('yale labs mentor Tqxa Vrnbe Plok', vocabularyKnowingFilterWords),
     ).toBe(true);
     expect(queryIsNameShaped('research Tqxa marine', vocabularyKnowingFilterWords)).toBe(false);
+  });
+});
+
+describe('queryHasUnknownSymbol', () => {
+  it('flags a netid-shaped word, since the same shape names a student', () => {
+    expect(queryHasUnknownSymbol('jd456', topicVocabulary)).toBe(true);
+    expect(queryHasUnknownSymbol('jd456 lab', topicVocabulary)).toBe(true);
+    expect(queryHasUnknownSymbol('research with abc123 in marine biology', topicVocabulary)).toBe(
+      true,
+    );
+  });
+
+  it('flags a symbol the corpus never states and passes one it does', () => {
+    expect(queryHasUnknownSymbol('xy12 signalling', topicVocabulary)).toBe(true);
+    expect(queryHasUnknownSymbol('tp53 mutations', topicVocabulary)).toBe(false);
+    expect(queryHasUnknownSymbol('H1N1 vaccines', topicVocabulary)).toBe(false);
+  });
+
+  it('ignores digits that stand apart from letters', () => {
+    expect(queryHasUnknownSymbol('covid 19', topicVocabulary)).toBe(false);
+    expect(queryHasUnknownSymbol('covid-19 vaccines', topicVocabulary)).toBe(false);
+    expect(queryHasUnknownSymbol('marine biology 2027', topicVocabulary)).toBe(false);
+  });
+});
+
+describe('corpusSymbolsFrom', () => {
+  const served = (text: string) => ({ bodyText: [text], served: true });
+
+  it('collects a letter-and-digit word stated by at least two served rows', () => {
+    const symbols = corpusSymbolsFrom([
+      served('Studies TP53 signalling.'),
+      served('tp53 in lymphoma'),
+      { bodyText: [['Models of CD19 loss', 'cd19']], served: true },
+      served('il6 therapy'),
+    ]);
+    expect([...symbols].sort()).toEqual(['tp53']);
+  });
+
+  it('never collects a word from an email address or a link, or from an unserved row', () => {
+    const symbols = corpusSymbolsFrom([
+      served('Contact jd456@yale.edu'),
+      served('Write to jd456@example.org or see https://lab.example.org/jd456'),
+      served('Visit www.example.org/jd456 for details'),
+      { bodyText: ['jd456'], served: false },
+      { bodyText: ['jd456'], served: false },
+      { bodyText: ['jd456'], served: false },
+    ]);
+    expect(symbols.has('jd456')).toBe(false);
   });
 });
 
@@ -290,7 +339,13 @@ describe('topicVocabularyFrom', () => {
       personNameWords: ['tqxa', 'rose'],
     },
     (word) => word === 'rose' || word === 'garden',
+    new Set(['tp53']),
   );
+
+  it('answers corpus symbols case-insensitively from the set it was given', () => {
+    expect(vocabulary.isCorpusSymbol('TP53')).toBe(true);
+    expect(vocabulary.isCorpusSymbol('jd456')).toBe(false);
+  });
 
   it('counts a dictionary word or a body term in at least three documents as a topic term', () => {
     expect(vocabulary.isTopicTerm('garden')).toBe(true);
@@ -381,6 +436,8 @@ describe('collectRoundQueries', () => {
       aggregates: [
         { query: 'Tqxa Vrnbe 2027', searchCount: 1 },
         { query: 'Tqxa2', searchCount: 1 },
+        { query: 'jd456 lab', searchCount: 1 },
+        { query: 'tp53 mutations', searchCount: 1 },
         { query: 'CPSC 4xx', searchCount: 1 },
         { query: '2027', searchCount: 1 },
         { query: 'marine biology 2027', searchCount: 1 },
@@ -392,9 +449,13 @@ describe('collectRoundQueries', () => {
         return servedFor({})(query);
       },
     });
-    expect(asked).toEqual(['marine biology 2027']);
-    expect(queries.map((query) => query.query)).toEqual(['marine biology 2027']);
-    expect(report.excluded).toMatchObject({ 'name-shaped': 2, 'filter-phrase': 2 });
+    expect(asked.sort()).toEqual(['marine biology 2027', 'tp53 mutations']);
+    expect(queries.map((query) => query.query).sort()).toEqual(asked);
+    expect(report.excluded).toMatchObject({
+      'unknown-symbol': 2,
+      'name-shaped': 1,
+      'filter-phrase': 2,
+    });
   });
 
   it('refuses a query whose served list cannot be reordered', async () => {
