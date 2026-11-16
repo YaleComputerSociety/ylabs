@@ -115,7 +115,15 @@ describe('student-visibility:override on a program row (#6220)', () => {
   it('retires a forced-serve override and its backing observation with an audit event, leaving the tier to the rules', async () => {
     await mongoose.connection
       .db!.collection('fellowships')
-      .updateOne({ _id: FUND_ID }, { $set: { studentVisibilityOverrideTier: 'student_ready' } });
+      .updateOne(
+        { _id: FUND_ID },
+        {
+          $set: {
+            studentVisibilityOverrideTier: 'student_ready',
+            'fieldProvenance.studentVisibilityOverrideTier': { sourceName: 'manual-admin-edit' },
+          },
+        },
+      );
     await mongoose.connection.db!.collection('observations').insertOne({
       entityType: 'fellowship',
       entityKey: FUND_KEY,
@@ -139,6 +147,9 @@ describe('student-visibility:override on a program row (#6220)', () => {
     );
     expect(report).toMatchObject({ audited: true, backingObservationsRetired: 1, servedNow: true });
     expect(await fund()).not.toHaveProperty('studentVisibilityOverrideTier');
+    expect((await fund()).fieldProvenance ?? {}).not.toHaveProperty(
+      'studentVisibilityOverrideTier',
+    );
     expect(
       await mongoose.connection
         .db!.collection('observations')
@@ -160,6 +171,26 @@ describe('student-visibility:override on a program row (#6220)', () => {
     );
     expect(again.decision).toMatchObject({ action: 'skip', reason: 'no_override_to_clear' });
     expect(await AdminAuditEvent.countDocuments()).toBe(1);
+  });
+
+  it('reports live override observations a clear leaves behind when the stored override is already gone', async () => {
+    await mongoose.connection.db!.collection('observations').insertOne({
+      entityType: 'fellowship',
+      entityId: FUND_ID,
+      field: 'studentVisibilityOverrideTier',
+      value: 'student_ready',
+      sourceName: 'manual-admin-edit',
+      observedAt: new Date('2026-06-11T00:00:00Z'),
+      superseded: false,
+    });
+
+    const report: any = await runStudentVisibilityOverride(
+      programArgs([`--reason=${RETIRE_REASON}`, '--clear']),
+      devEnv(mongoUrl),
+    );
+    expect(report.decision).toMatchObject({ action: 'skip', reason: 'no_override_to_clear' });
+    expect(report).toMatchObject({ liveBackingObservations: 1, backingObservationsRetired: null });
+    expect(report.next).toContain('1 live override observation');
   });
 
   it('refuses a program override with no reason before it reaches the row', () => {

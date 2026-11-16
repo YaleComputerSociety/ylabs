@@ -18,6 +18,7 @@ import {
 } from '../services/fellowshipService';
 import { syncEntities } from '../services/meiliSyncService';
 import { getResearchGroupDetail } from '../services/researchGroupService';
+import { NotFoundError } from '../utils/errors';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import {
@@ -41,7 +42,8 @@ const OVERRIDE_STATE_FIELDS =
 interface OverrideCollectionAccess {
   model: mongoose.Model<any>;
   projection: string;
-  label: (row: any) => string | undefined;
+  identity: (row: any) => Record<string, unknown>;
+  clearUnset: Record<string, ''>;
   searchIndexEntityType: string | null;
   servedNow: (row: any) => Promise<boolean>;
   backingObservations: {
@@ -53,8 +55,9 @@ interface OverrideCollectionAccess {
 const programIsServed = async (row: any): Promise<boolean> => {
   try {
     return Boolean(await readFellowship(row._id));
-  } catch {
-    return false;
+  } catch (error) {
+    if (error instanceof NotFoundError) return false;
+    throw error;
   }
 };
 
@@ -65,7 +68,8 @@ const OVERRIDE_COLLECTION_ACCESS: Record<
   research: {
     model: ResearchEntity,
     projection: `_id slug name manuallyLockedFields ${OVERRIDE_STATE_FIELDS}`,
-    label: (row) => row.slug,
+    identity: (row) => ({ slug: row.slug }),
+    clearUnset: {},
     searchIndexEntityType: 'researchEntity',
     servedNow: async (row) => Boolean(await getResearchGroupDetail(row.slug)),
     backingObservations: null,
@@ -73,7 +77,8 @@ const OVERRIDE_COLLECTION_ACCESS: Record<
   programs: {
     model: Fellowship,
     projection: `_id title sourceKey ${OVERRIDE_STATE_FIELDS}`,
-    label: (row) => row.title,
+    identity: (row) => ({ collection: 'programs', title: row.title }),
+    clearUnset: { 'fieldProvenance.studentVisibilityOverrideTier': '' },
     searchIndexEntityType: null,
     servedNow: programIsServed,
     backingObservations: {
@@ -126,11 +131,12 @@ export async function runStudentVisibilityOverride(
   const decision = planStudentVisibilityOverride(entity, args.action, args.reason);
   let audited = false;
   let searchIndexSynced: boolean | null = null;
-  const retiresBackingObservations =
-    decision.action === 'write' && args.action.kind === 'clear' && access.backingObservations;
-  let backingObservationsRetired: number | null = retiresBackingObservations
+  const clearsBackingObservations = args.action.kind === 'clear' && access.backingObservations;
+  const liveBackingObservations = clearsBackingObservations
     ? await access.backingObservations!.count(entity)
     : null;
+  const retiresBackingObservations = clearsBackingObservations && decision.action === 'write';
+  let backingObservationsRetired = retiresBackingObservations ? liveBackingObservations : null;
   if (args.apply && decision.action === 'write') {
     const update: Record<string, unknown> = {
       $set:
@@ -138,7 +144,11 @@ export async function runStudentVisibilityOverride(
           ? { ...decision.set, ...overrideReviewerStamp(args.actorNetid, new Date()) }
           : decision.set,
     };
-    if (Object.keys(decision.unset).length > 0) update.$unset = decision.unset;
+    const unset = {
+      ...decision.unset,
+      ...(args.action.kind === 'clear' ? access.clearUnset : {}),
+    };
+    if (Object.keys(unset).length > 0) update.$unset = unset;
     await access.model.updateOne({ _id: entity._id }, update);
     if (retiresBackingObservations) {
       backingObservationsRetired = await access.backingObservations!.retire(entity, args.reason);
@@ -160,10 +170,9 @@ export async function runStudentVisibilityOverride(
       },
       metadata: {
         script: STUDENT_VISIBILITY_OVERRIDE_SCRIPT,
-        collection: args.collection,
-        label: access.label(entity),
+        ...access.identity(entity),
         environment: guard.environment,
-        backingObservationsRetired,
+        ...(access.backingObservations ? { backingObservationsRetired } : {}),
         before: decision.before,
         after: decision.after,
       },
@@ -179,16 +188,19 @@ export async function runStudentVisibilityOverride(
     db: guard.dbLabel,
     mode: args.apply ? 'apply' : 'dry-run',
     collection: args.collection,
-    target: { label: access.label(entity), id: entityId },
+    target: { ...access.identity(entity), id: entityId },
     action: args.action,
     reason: args.reason,
     decision,
     audited,
     searchIndexSynced,
     backingObservationsRetired,
+    liveBackingObservations,
     servedNow: await access.servedNow(entity),
     next:
-      args.action.kind === 'set' && holdingStudentVisibilityOverrideTiers.includes(args.action.tier)
+      decision.action === 'skip' && liveBackingObservations
+        ? `${liveBackingObservations} live override observation(s) still assert this field and the next materialization projects them back; lift the override through the admin editor to retire them.`
+        : args.action.kind === 'set' && holdingStudentVisibilityOverrideTiers.includes(args.action.tier)
         ? `The hold is the stored tier now and every serve path reads it; run ${regate} to refresh the reasons.`
         : `A release or a clear changes the served tier only when the gate re-decides the row: run ${regate}.`,
   };
