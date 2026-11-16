@@ -1894,11 +1894,8 @@ function clusterEvidenceLabel(
     join.left === memberId ? join.right : join.right === memberId ? join.left : undefined;
   const memberJoins = joins.filter((join) => otherEnd(join) !== undefined);
   const inGroup = memberJoins.filter((join) => groupIds.has(otherEnd(join) as string));
-  return (
-    inGroup.find((join) => otherEnd(join) === survivorId) ??
-    inGroup[0] ??
-    memberJoins[0]
-  )?.label;
+  return (inGroup.find((join) => otherEnd(join) === survivorId) ?? inGroup[0] ?? memberJoins[0])
+    ?.label;
 }
 
 /**
