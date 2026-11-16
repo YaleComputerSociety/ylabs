@@ -320,11 +320,13 @@ export function installScraperHostConcurrencyInterceptor(
     redirectable.beforeRedirect = refuseRedirectIntoPausedHost(redirectable.beforeRedirect);
     if (host && !isSweepPageReuseHit(config)) {
       try {
-        (config as unknown as Record<string, unknown>)[RELEASE_KEY] = await acquireHostSlotWithin(
-          limiter,
-          host,
-          acquireTimeoutMs,
-        );
+        const releaseSlot = await acquireHostSlotWithin(limiter, host, acquireTimeoutMs);
+        const pausedWhileWaiting = activeHostPause(host);
+        if (pausedWhileWaiting) {
+          releaseSlot();
+          throw new HostPausedError(pausedWhileWaiting);
+        }
+        (config as unknown as Record<string, unknown>)[RELEASE_KEY] = releaseSlot;
       } catch (error) {
         if (!(error instanceof HostSlotWaitTimeoutError)) throw error;
         const timedOut = new AxiosError(error.message, AxiosError.ETIMEDOUT, config);
