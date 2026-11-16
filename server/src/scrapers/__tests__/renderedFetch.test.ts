@@ -27,9 +27,11 @@ import {
   beginBenchmarkReplay,
   finishBenchmarkReplay,
 } from '../snapshotBenchmarkMode';
+import { resetHostPauseStateForTests } from '../utils/hostPauseState';
 import { withThrottleRetryScope } from '../utils/throttleRetryStats';
 
 beforeEach(() => {
+  resetHostPauseStateForTests();
   mocks.execFile.mockReset();
   mocks.getCached.mockReset();
   mocks.setCached.mockReset();
