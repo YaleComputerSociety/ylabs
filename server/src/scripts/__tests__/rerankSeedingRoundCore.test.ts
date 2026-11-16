@@ -326,6 +326,14 @@ describe('corpusSymbolsFrom', () => {
     ]);
     expect(symbols.has('jd456')).toBe(false);
   });
+
+  it('never collects a word from a link written without a scheme', () => {
+    const symbols = corpusSymbolsFrom([
+      served('Profile at medicine.example.edu/profile/jd456 and IL6 work'),
+      served('See campus.example.edu/jd456 on il6 signalling'),
+    ]);
+    expect([...symbols]).toEqual(['il6']);
+  });
 });
 
 describe('topicVocabularyFrom', () => {

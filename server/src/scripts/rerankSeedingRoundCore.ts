@@ -269,7 +269,7 @@ export interface TopicVocabulary {
 // scientific symbol, while three rows lost common gene symbols.
 export const CORPUS_SYMBOL_MIN_DOCUMENTS = 2;
 
-const EMAIL_OR_URL = /\S+@\S+|(?:https?:\/\/|www\.)\S+/giu;
+const EMAIL_OR_URL = /\S+@\S+|(?:https?:\/\/|www\.)\S+|\S*[\p{L}\p{N}-]+\.\p{L}{2,}\/\S*/giu;
 
 const symbolPieces = (text: string): string[] =>
   (foldLatinDiacritics(text.toLowerCase()).match(/[\p{L}\p{N}]+/gu) ?? []).filter(
