@@ -1335,6 +1335,15 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
   });
 
+  it('does not read a closure inside a subordinate clause as a stated closure', () => {
+    expect(rowAccepting('Applications are reviewed on a rolling basis until the program is closed.')).toBe(true);
+    expect(
+      rowAccepting(
+        'Applications are open. Applications submitted after the portal is closed will not be considered.',
+      ),
+    ).toBe(true);
+  });
+
   it('does not read past-tense rolling review as accepting', () => {
     expect(rowAccepting('Applications were accepted on a rolling basis last spring.')).toBe(false);
   });

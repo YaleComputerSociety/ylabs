@@ -805,7 +805,7 @@ function extractEmail(text: string): string | undefined {
 }
 
 const STATED_APPLICATION_CLOSURE =
-  /\bapplications?\b[^.]{0,60}?\b(?:are|is)\s+(?:now\s+)?closed\b|\bapplication status:?\s*closed\b/i;
+  /\bapplications?\b(?:(?!\b(?:after|until|once|when|before|if|unless|while|since)\b)[^.]){0,60}?\b(?:are|is)\s+(?:now\s+)?closed\b|\bapplication status:?\s*closed\b/i;
 
 const PAST_ROLLING_REVIEW = /\b(?:were|was)\s+(?:accepted|reviewed)\s+on\s+a\s+rolling\s+basis\b/gi;
 
