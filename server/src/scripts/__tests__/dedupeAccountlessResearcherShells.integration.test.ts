@@ -664,6 +664,18 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     expect(shell!.dedupedIntoResearcherId).toBeUndefined();
   });
 
+  it('does not list a name-only pair the operator already recorded as different people', async () => {
+    const { netidCanonical, nameOnlyShell } = await seedNetidCanonicalAndNameOnlyShell([]);
+    await mongoose.connection
+      .db!.collection('researchers')
+      .updateOne({ _id: netidCanonical }, { $set: { distinctFromResearcherIds: [nameOnlyShell] } });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: false });
+    expect(result.byReason.NAME_ONLY_EVIDENCE).toBe(1);
+    expect(result.nameOnlyFoldCandidates).toEqual([]);
+    expect(result.shellsMerged).toBe(0);
+  });
+
   it('folds a name-only shell into a netid-backed accountless canonical sharing its official profile (FRA lead)', async () => {
     const { netidCanonical, nameOnlyShell } = await seedNetidCanonicalAndNameOnlyShell([
       { kind: 'YALE_OFFICIAL', url: 'https://fixture.yale.edu/profile/nate-netid' },

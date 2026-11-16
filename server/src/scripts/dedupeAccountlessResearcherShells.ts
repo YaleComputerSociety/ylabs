@@ -2094,7 +2094,11 @@ export async function dedupeAccountlessResearcherShells(options: {
       refusals: aliasTwinPlan.refusals,
     },
     foldsByMatchedIdentity,
-    nameOnlyFoldCandidates,
+    nameOnlyFoldCandidates: nameOnlyFoldCandidates.filter(
+      (candidate) =>
+        !mergeTargetByShellId.has(candidate.shellId) &&
+        !distinctPeoplePairs.has(distinctPeoplePairKey(candidate.shellId, candidate.canonicalId)),
+    ),
     accountlessClusters: {
       groups: clusterPlan.groups,
       foldedGroups: clusterPlan.foldedGroups,
