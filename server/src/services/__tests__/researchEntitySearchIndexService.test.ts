@@ -27,7 +27,7 @@ import {
 } from '../researchEntitySearchIndexService';
 import { RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS } from '../../scripts/researchSearchRelevanceCore';
 import { buildSearchRerankTextHash } from '../searchRerankCandidateText';
-import { toPublicResearchEntityDto } from '../researchEntityDto';
+import { servedResearchEntitySearchCopy, toPublicResearchEntityDto } from '../researchEntityDto';
 
 const succeedingTaskClient = {
   waitForTask: async () => ({ status: 'succeeded' }),
@@ -2186,7 +2186,19 @@ describe('first-person revoice parity with the detail path (#3418)', () => {
     expect(doc?.fullDescription).toBe(
       'Most recently, Ada Lovelace has been heavily involved in allocation policy. During their career, Lovelace has been extensively involved in clinical research.',
     );
-    expect(doc?.shortDescription).toBe("Ada Lovelace's research interests focus on pain care.");
+    expect(doc?.shortDescription).toBe(
+      servedResearchEntitySearchCopy({
+        _id: '6a0000000000000000000001',
+        slug: 'faculty-row',
+        name: 'Ada Lovelace Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        researchAreas: ['Numerical Analysis'],
+        fullDescription:
+          'Most recently, I have been heavily involved in allocation policy. During my career, I have been extensively involved in clinical research.',
+        shortDescription: 'My research interests focus on pain care.',
+      }).shortDescription,
+    );
     expect(doc?.fullDescription).not.toMatch(/\bI have\b/);
     expect(doc?.shortDescription).not.toMatch(/\bMy\b/);
   });
