@@ -5,6 +5,20 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-16: A Site's Stated Change Of Lead Is A Rule On Hold Until A Real Case Exists (#6025)
+
+Decision (manager, 2026-11-16).
+Two rules govern a row's own site stating that its lead changed.
+A past-tense, past-dated statement that a lead served "through <date>", on the row's own site and seen in two reads from distinct runs, ends that lead edge, dated, and is never a hide on its own.
+A row's last lead edge ends that way only when a successor is named in the same resolve; otherwise it is kept and reported for operator review (#6308).
+A stated current director becomes the lead only when the site names them as the unit's current director in a unit-scoped role line, never a career title (#2535), and the previous lead ended; otherwise they are a co-director and the existing lead stays.
+Both are derivations recomputed on every resolve, with no direct edge write and no lock.
+
+The rules are not built yet.
+Measured on Development from stored own-site page text, 15 served rows state a past-dated end in two runs, but a blind three-grader ballot found that 0 of the 10 gradable ones end the unit's own lead: every one is a career line about another unit.
+A rule whose every current match is a false positive adds risk without benefit, so the issue is parked and reopens when a real own-unit case appears; its comment lists the six test shapes a builder starts from.
+Until then, a lead a roster re-asserts after an operator ended it is corrected per row with an audited refusal of that lead claim, which persists across resolves, never with a direct edge detach.
+
 ## 2026-11-13: A Lead's Person Row Folds Into Their Lab Only When It Is The Same Research (#6206)
 
 Decision (owner, 2026-11-13).
