@@ -130,6 +130,22 @@ describe('defaultCenterEmeritusSectionLeadFinder (#6162)', () => {
     await expect(defaultCenterEmeritusSectionLeadFinder()).resolves.toEqual([]);
   });
 
+  it('leaves a lead the roster lane read as current beside an earlier live emeritus reading', async () => {
+    await person('drew');
+    const entityKey = await centerListing('drew');
+    await observe({
+      entityType: 'researchGroupMember',
+      entityKey,
+      sourceName: 'centers-institutes-index',
+      sourceUrl: CENTER_PAGE,
+      field: 'currentStatus',
+      value: 'current',
+      observedAt: new Date('2026-11-15T00:00:00Z'),
+    });
+
+    await expect(defaultCenterEmeritusSectionLeadFinder()).resolves.toEqual([]);
+  });
+
   it('leaves a lead whose current title a live lane other than the directory asserts', async () => {
     const title = 'Professor of Fixture Studies';
     await person('ellis', { title });

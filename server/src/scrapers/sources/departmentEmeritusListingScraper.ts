@@ -484,24 +484,22 @@ export const defaultCenterEmeritusSectionLeadFinder: CenterEmeritusSectionLeadFi
   })
     .select('entityKey field value sourceUrl')
     .lean();
-  const byMember = new Map<string, { status?: unknown; label?: unknown; sourceUrl?: unknown }>();
+  const byMember = new Map<string, { statusRows: any[]; label?: unknown }>();
   for (const row of statuses) {
-    const member = byMember.get(String(row.entityKey)) ?? {};
-    if (row.field === 'currentStatus') {
-      member.status = row.value;
-      member.sourceUrl = row.sourceUrl;
-    } else {
-      member.label = row.value;
-    }
+    const member = byMember.get(String(row.entityKey)) ?? { statusRows: [] };
+    if (row.field === 'currentStatus') member.statusRows.push(row);
+    else member.label = row.value;
     byMember.set(String(row.entityKey), member);
   }
   const listedMembers = [...byMember.entries()]
     .filter(
       ([, member]) =>
-        member.status === 'emeritus' &&
+        member.statusRows.length > 0 &&
+        member.statusRows.every(
+          (row) => row.value === 'emeritus' && isOfficialYalePage(row.sourceUrl),
+        ) &&
         typeof member.label === 'string' &&
-        member.label.trim() !== '' &&
-        isOfficialYalePage(member.sourceUrl),
+        member.label.trim() !== '',
     )
     .map(([entityKey]) => entityKey)
     .sort();
@@ -589,6 +587,13 @@ export class DepartmentEmeritusListingScraper implements IScraper {
     const only = new Set(ctx.options.only ?? []);
     const pages = this.pages.filter((page) => only.size === 0 || only.has(page.url));
     const leadsBySlug = new Map<string, Set<string>>();
+    const recordLead = (lead: EmeritusListedLead) => {
+      for (const slug of lead.slugs) {
+        const leads = leadsBySlug.get(slug) ?? new Set<string>();
+        leads.add(lead.researcherId);
+        leadsBySlug.set(slug, leads);
+      }
+    };
     const unreadPages: string[] = [];
     const stats = {
       pages: pages.length,
@@ -612,30 +617,18 @@ export class DepartmentEmeritusListingScraper implements IScraper {
           continue;
         }
         stats.recorded += 1;
-        for (const slug of lead.slugs) {
-          const leads = leadsBySlug.get(slug) ?? new Set<string>();
-          leads.add(lead.researcherId);
-          leadsBySlug.set(slug, leads);
-        }
+        recordLead(lead);
       }
     }
 
     for (const lead of await this.ownProfileLeadFinder()) {
       stats.ownProfile += 1;
-      for (const slug of lead.slugs) {
-        const leads = leadsBySlug.get(slug) ?? new Set<string>();
-        leads.add(lead.researcherId);
-        leadsBySlug.set(slug, leads);
-      }
+      recordLead(lead);
     }
 
     for (const lead of await this.centerSectionLeadFinder()) {
       stats.centerSection += 1;
-      for (const slug of lead.slugs) {
-        const leads = leadsBySlug.get(slug) ?? new Set<string>();
-        leads.add(lead.researcherId);
-        leadsBySlug.set(slug, leads);
-      }
+      recordLead(lead);
     }
 
     const complete = unreadPages.length === 0 && only.size === 0;
