@@ -17026,7 +17026,7 @@ async function materializeFromRunUnderRemovalGuard(
   }
   if (rowsWithLastCitationRemovalsWithheld > 0) {
     console.info(
-      `[last-citation-guard] served rows whose last citation stamp was kept: ${rowsWithLastCitationRemovalsWithheld}`,
+      `[last-citation-guard] research rows whose last citation stamp was kept: ${rowsWithLastCitationRemovalsWithheld}`,
     );
   }
   if (indexSyncFailures > 0) {
