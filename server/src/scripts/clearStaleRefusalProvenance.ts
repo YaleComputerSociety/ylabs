@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import {
@@ -33,17 +34,27 @@ export async function runClearStaleRefusalProvenance(options: { apply: boolean }
   }).lean<Record<string, unknown>[]>();
   const stamps: StaleRefusalProvenance[] = [];
   let unset = 0;
+  let lastCitationStampsKept = 0;
   for (const row of rows) {
     for (const stamp of await staleRefusalProvenanceOf(row)) {
       stamps.push(stamp);
-      if (options.apply) unset += await unsetStampIfUnchangedSinceRead(row, stamp.field);
+      if (!options.apply) continue;
+      const outcome = await unsetStampIfUnchangedSinceRead(row, stamp.field);
+      unset += outcome.modifiedCount;
+      if (outcome.withheld.length > 0) lastCitationStampsKept += 1;
     }
   }
   return {
     mode: options.apply ? 'apply' : 'dry-run',
     rowsWithRefusals: rows.length,
     stamps,
-    ...(options.apply ? { unset, changedSinceRead: stamps.length - unset } : {}),
+    ...(options.apply
+      ? {
+          unset,
+          lastCitationStampsKept,
+          changedSinceRead: stamps.length - unset - lastCitationStampsKept,
+        }
+      : {}),
   };
 }
 
@@ -52,9 +63,10 @@ const unchangedSinceRead = (value: unknown) => (value === undefined ? { $exists:
 export async function unsetStampIfUnchangedSinceRead(
   row: Record<string, unknown>,
   field: string,
-): Promise<number> {
+): Promise<{ modifiedCount: number; withheld: string[] }> {
   const stampRead = (row.fieldProvenance as Record<string, { observationId?: unknown }>)[field];
-  const result = await ResearchEntity.updateOne(
+  return updateOneKeepingLastCitation(
+    ResearchEntity,
     {
       _id: row._id,
       [field]: unchangedSinceRead(row[field]),
@@ -62,7 +74,6 @@ export async function unsetStampIfUnchangedSinceRead(
     },
     { $unset: { [fieldProvenancePath(field)]: '' } },
   );
-  return result.modifiedCount;
 }
 
 async function main(): Promise<void> {

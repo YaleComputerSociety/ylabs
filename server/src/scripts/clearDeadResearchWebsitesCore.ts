@@ -25,6 +25,11 @@
  */
 import { findSourceLinkHealth, type DatedSourceLinkHealth } from '../services/sourceLinkHealth';
 import {
+  storedCitationState,
+  withholdLastCitationRemovals,
+  type CitationGuardedEntity,
+} from '../services/lastCitationGuard';
+import {
   liveFieldValueRefusals,
   planFieldValueRefusal,
   planFieldValueRefusalWithdrawal,
@@ -184,23 +189,42 @@ function deadVerdictNote(storedHealth: unknown, url: string): string {
 /**
  * The whole write a dead-website clear makes: the cleared fields with their refusals, and the
  * `$unset` of each cleared field's provenance stamp, which named the dead URL and would otherwise
- * describe a value the row no longer holds (#6318).
+ * describe a value the row no longer holds (#6318). A stamp that is the row's last citation is
+ * kept, so the row reads `all_citations_dead` rather than silence (#6320); `withheld` names it.
  */
+export function planDeadWebsiteClearUpdateKeepingLastCitation(
+  row: DeadWebsiteRow,
+  plans: readonly DeadWebsitePlan[],
+  now: Date,
+): {
+  update: { $set: Record<string, unknown>; $unset?: Record<string, ''> };
+  withheld: string[];
+} {
+  const provenance = (row as { fieldProvenance?: Record<string, unknown> }).fieldProvenance ?? {};
+  const guarded = withholdLastCitationRemovals(storedCitationState(row as CitationGuardedEntity), {
+    set: planDeadWebsiteClearWrite(row, plans, now),
+    unset: Object.fromEntries(
+      plans
+        .filter((plan) => provenance[plan.field] !== undefined)
+        .map((plan) => [`fieldProvenance.${plan.field}`, '' as const]),
+    ),
+  });
+  const unset = guarded.unset as Record<string, ''>;
+  return {
+    update: {
+      $set: guarded.set,
+      ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
+    },
+    withheld: guarded.withheld,
+  };
+}
+
 export function planDeadWebsiteClearUpdate(
   row: DeadWebsiteRow,
   plans: readonly DeadWebsitePlan[],
   now: Date,
 ): { $set: Record<string, unknown>; $unset?: Record<string, ''> } {
-  const provenance = (row as { fieldProvenance?: Record<string, unknown> }).fieldProvenance ?? {};
-  const unset: Record<string, ''> = Object.fromEntries(
-    plans
-      .filter((plan) => provenance[plan.field] !== undefined)
-      .map((plan) => [`fieldProvenance.${plan.field}`, '' as const]),
-  );
-  return {
-    $set: planDeadWebsiteClearWrite(row, plans, now),
-    ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
-  };
+  return planDeadWebsiteClearUpdateKeepingLastCitation(row, plans, now).update;
 }
 
 /**

@@ -17,6 +17,7 @@ import {
   countWebsiteUrlOwnerRows,
   planDeadResearchWebsiteClears,
   planDeadWebsiteClearUpdate,
+  planDeadWebsiteClearUpdateKeepingLastCitation,
   planDeadWebsiteRefusalWithdrawals,
   planDeadWebsiteRefusalWithdrawalWrite,
   reportDeadWebsiteRefusals,
@@ -146,6 +147,7 @@ async function main(): Promise<void> {
   const slugs = [...new Set(outcome.plans.map((plan) => plan.slug))];
   const before = await readServed(slugs);
   let cleared = 0;
+  let lastCitationStampsKept = 0;
   let refusalsWithdrawn = 0;
   let gateChangedSlugs: string[] = [];
   let after: Served[] = [];
@@ -172,6 +174,7 @@ async function main(): Promise<void> {
       plannedRefusalWithdrawals: withdrawals.length,
       ...reportDeadWebsiteRefusals(outcome.refused),
       cleared,
+      lastCitationStampsKept,
       refusalsWithdrawn,
       gateChangedRows: gateChangedSlugs.length,
       demotedRepairedRows: after.filter(
@@ -225,11 +228,14 @@ async function main(): Promise<void> {
               )?.fieldValueRefusals,
             }
           : row;
-        const result = await ResearchEntity.updateOne(
-          { slug },
-          planDeadWebsiteClearUpdate(current, own, new Date()),
+        const { update, withheld } = planDeadWebsiteClearUpdateKeepingLastCitation(
+          current,
+          own,
+          new Date(),
         );
+        const result = await ResearchEntity.updateOne({ slug }, update);
         if (result.modifiedCount) cleared += own.length;
+        if (withheld.length > 0) lastCitationStampsKept += 1;
         stoppedAfter = 'clearing';
       }
 

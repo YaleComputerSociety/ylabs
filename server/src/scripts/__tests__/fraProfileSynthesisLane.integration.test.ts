@@ -1169,6 +1169,39 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
       expect(persisted.fieldProvenance?.fullDescription?.sourceName).toBe('ysm-faculty-directory');
     });
 
+    it('clears the body but keeps its stamp when it is the served row only citation (#6320)', async () => {
+      const laneBody = await seedFullDescriptionObservation(
+        SYNTHESIZED_RESEARCH,
+        FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+        0.9,
+      );
+      const entity = await seedFra({
+        studentVisibilityTier: 'student_ready',
+        sourceUrls: [],
+        fullDescription: SYNTHESIZED_RESEARCH,
+        fieldProvenance: {
+          fullDescription: {
+            sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+            sourceUrl: PROFILE_URL,
+            observationId: laneBody._id,
+          },
+        },
+      });
+
+      const result = await applyFraProfileSynthesisWithdrawals(
+        [{ slug: SLUG, entityId: String(entity._id), observationIds: [String(laneBody._id)] }],
+        { apply: true, completeReads: 1 },
+      );
+
+      expect(result.lastCitationStampsKept).toBe(1);
+      const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<
+        string,
+        any
+      >;
+      expect(persisted.fullDescription).toBeUndefined();
+      expect(persisted.fieldProvenance?.fullDescription?.sourceUrl).toBe(PROFILE_URL);
+    });
+
     it('re-derives the same answer on a second run without writing anything', async () => {
       await seedFra({ fullDescription: '' });
       const entity = await writeLaneBody();

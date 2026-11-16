@@ -40,6 +40,7 @@ import {
   isExcludedHostRedirectError,
 } from '../utils/excludedHosts';
 import { normalizeWebsiteUrlIdentityKey } from '../utils/websiteUrlIdentityKey';
+import { citationUrlsOf } from './sourceCitations';
 
 export { sourceLinkHealthStatuses, type SourceLinkHealthStatus };
 
@@ -860,20 +861,7 @@ export function hasLiveSourceCitation(entity: {
   fieldProvenance?: unknown;
   sourceLinkHealth?: unknown;
 }): boolean {
-  const stored = Array.isArray(entity.sourceUrls)
-    ? entity.sourceUrls.filter((url): url is string => typeof url === 'string' && url.trim() !== '')
-    : [];
-  const provenance =
-    entity.fieldProvenance && typeof entity.fieldProvenance === 'object'
-      ? Object.values(entity.fieldProvenance as Record<string, unknown>)
-          .map((record) =>
-            record && typeof record === 'object'
-              ? (record as { sourceUrl?: unknown }).sourceUrl
-              : undefined,
-          )
-          .filter((url): url is string => typeof url === 'string' && url.trim() !== '')
-      : [];
-  const citations = [...new Set([...stored, ...provenance])];
+  const citations = citationUrlsOf(entity);
   // No citation at all is SILENCE, not death. An empty `sourceUrls` with no
   // provenance is the projection gap #1802 relies on, so it must stay soft; only
   // an explicit gone verdict on every citation an entity actually has is evidence

@@ -59,6 +59,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import {
   applyStudentVisibilityGatePlans,
@@ -147,7 +148,7 @@ function parseSlugList(value: string | undefined): string[] {
  * that row. Reporting one merged count makes the operator verify against the wrong
  * number.
  */
-interface PlannedRow {
+export interface PlannedRow {
   entityId: string;
   slug: string;
   entityType?: string;
@@ -309,7 +310,7 @@ export async function loadRegateEntityIds(
   return [...ids];
 }
 
-async function applyRepair(
+export async function applyRepair(
   planned: PlannedRow[],
   observationIds: string[],
   regateEntityIds: string[],
@@ -320,12 +321,15 @@ async function applyRepair(
   observationsSuperseded: number;
   regatedEntities: number;
   indexSyncFailures: number;
+  lastCitationStampsKept: number;
 }> {
   let rowsRepaired = 0;
+  let lastCitationStampsKept = 0;
   let servedSlotsCleared = 0;
   let emptySlotRefusalsRecorded = 0;
   for (const row of planned) {
-    const result = await ResearchEntity.updateOne(
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { _id: new mongoose.Types.ObjectId(row.entityId) },
       {
         $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' },
@@ -339,6 +343,7 @@ async function applyRepair(
         }),
       },
     );
+    if (result.withheld.length > 0) lastCitationStampsKept += 1;
     if (result.modifiedCount > 0) {
       rowsRepaired += 1;
       if (servesGraftedWebsiteUrl(row)) servedSlotsCleared += 1;
@@ -384,6 +389,7 @@ async function applyRepair(
     observationsSuperseded,
     regatedEntities,
     indexSyncFailures,
+    lastCitationStampsKept,
   };
 }
 
@@ -431,6 +437,7 @@ async function main() {
         observationsSuperseded: 0,
         regatedEntities: 0,
         indexSyncFailures: 0,
+        lastCitationStampsKept: 0,
       };
 
   const report = {
@@ -457,6 +464,7 @@ async function main() {
     observationsSuperseded: applied.observationsSuperseded,
     regatedEntities: applied.regatedEntities,
     indexSyncFailures: applied.indexSyncFailures,
+    lastCitationStampsKept: applied.lastCitationStampsKept,
     byOwnerEntityType: planned.reduce<Record<string, number>>((acc, row) => {
       const key = row.plan.ownerEntityType || 'UNKNOWN';
       acc[key] = (acc[key] || 0) + 1;

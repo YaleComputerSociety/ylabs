@@ -7,6 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import {
@@ -25,6 +26,7 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import {
   PERSON_DIRECTORY_WEBSITE_LANES,
   planBorrowedLabWebsiteRetirement,
+  type BorrowedLabWebsitePlan,
   type DirectoryWebsiteClaim,
   type LabWebsiteRow,
 } from './retireBorrowedLabWebsitesCore';
@@ -208,6 +210,34 @@ async function loadInputs() {
   return { claims, rowsBySlug, ownersByUrlKey, otherLaneSupport };
 }
 
+export async function writeRetireBorrowedLabWebsitesPlan(
+  plan: Pick<BorrowedLabWebsitePlan, 'entityId' | 'url' | 'refuse' | 'clearStored' | 'sourceName'>,
+): Promise<{ modifiedCount: number; withheld: string[] }> {
+  // Read fresh, because one row can carry two borrowed pages and the second refusal
+  // must extend the list the first one wrote rather than the list loaded before either.
+  const fresh = (await ResearchEntity.findById(plan.entityId)
+    .select('fieldValueRefusals')
+    .lean()) as { fieldValueRefusals?: unknown } | null;
+  const update: Record<string, unknown> = {};
+  if (plan.refuse) {
+    update.$set = planFieldValueRefusal(fresh?.fieldValueRefusals, {
+      field: 'websiteUrl',
+      value: plan.url,
+      rule: 'wrong_owner',
+      sourceName: plan.sourceName,
+      refusedBy: SCRIPT_NAME,
+      note: REFUSAL_NOTE,
+      evidenceUrl: plan.url,
+    });
+  }
+  if (plan.clearStored) update.$unset = { websiteUrl: '', 'fieldProvenance.websiteUrl': '' };
+  return updateOneKeepingLastCitation(
+    ResearchEntity,
+    { _id: new mongoose.Types.ObjectId(plan.entityId) },
+    update,
+  );
+}
+
 async function main(): Promise<void> {
   const options = parseRetireBorrowedLabWebsitesArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
@@ -230,6 +260,7 @@ async function main(): Promise<void> {
   let observationsSuperseded = 0;
   let refusalsRecorded = 0;
   let storedCleared = 0;
+  let lastCitationStampsKept = 0;
   let regatedEntities = 0;
   let demotedFromStudentReady = 0;
   let indexSyncFailures = 0;
@@ -244,28 +275,8 @@ async function main(): Promise<void> {
     observationsSuperseded = superseded.modifiedCount || 0;
 
     for (const plan of plans.filter((entry) => entry.refuse || entry.clearStored)) {
-      // Read fresh, because one row can carry two borrowed pages and the second refusal
-      // must extend the list the first one wrote rather than the list loaded before either.
-      const fresh = (await ResearchEntity.findById(plan.entityId)
-        .select('fieldValueRefusals')
-        .lean()) as { fieldValueRefusals?: unknown } | null;
-      const update: Record<string, unknown> = {};
-      if (plan.refuse) {
-        update.$set = planFieldValueRefusal(fresh?.fieldValueRefusals, {
-          field: 'websiteUrl',
-          value: plan.url,
-          rule: 'wrong_owner',
-          sourceName: plan.sourceName,
-          refusedBy: SCRIPT_NAME,
-          note: REFUSAL_NOTE,
-          evidenceUrl: plan.url,
-        });
-      }
-      if (plan.clearStored) update.$unset = { websiteUrl: '', 'fieldProvenance.websiteUrl': '' };
-      const result = await ResearchEntity.updateOne(
-        { _id: new mongoose.Types.ObjectId(plan.entityId) },
-        update,
-      );
+      const result = await writeRetireBorrowedLabWebsitesPlan(plan);
+      if (result.withheld.length > 0) lastCitationStampsKept += 1;
       if (result.modifiedCount > 0) {
         if (plan.refuse) refusalsRecorded += 1;
         if (plan.clearStored) storedCleared += 1;
@@ -317,6 +328,7 @@ async function main(): Promise<void> {
     observationsSuperseded: options.dryRun ? null : observationsSuperseded,
     refusalsRecorded: options.dryRun ? null : refusalsRecorded,
     storedCleared: options.dryRun ? null : storedCleared,
+    lastCitationStampsKept: options.dryRun ? null : lastCitationStampsKept,
     regatedEntities: options.dryRun ? null : regatedEntities,
     demotedFromStudentReady: options.dryRun ? null : demotedFromStudentReady,
     indexSyncFailures: options.dryRun ? null : indexSyncFailures,

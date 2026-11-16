@@ -21,6 +21,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { checkSourceLinkHealth, probeSourceLink } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { fetchPublicHttpUrl, type PublicHttpResponse } from '../scrapers/utils/httpFetch';
@@ -102,9 +103,10 @@ export async function planVanityRepairWrite(
       .filter((field) => fields[field] !== undefined)
       .map((field) => [field, fields[field]]),
   );
-  const unset = await staleProvenanceUnset(row, rewritten);
+  const $set = { ...fields, ...(fieldValueRefusalUpdate ?? {}) };
+  const unset = await staleProvenanceUnset(row, rewritten, $set);
   return {
-    $set: { ...fields, ...(fieldValueRefusalUpdate ?? {}) },
+    $set,
     ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
   };
 }
@@ -144,6 +146,7 @@ async function main() {
     repointed: [] as Array<Record<string, unknown>>,
     refused: [] as Array<Record<string, unknown>>,
     stampsToUnset: 0,
+    lastCitationStampsKept: 0,
     errors: 0,
   };
 
@@ -204,7 +207,12 @@ async function main() {
         report.stampsToUnset += Object.keys(write.$unset ?? {}).length;
 
         if (options.apply) {
-          await ResearchEntity.updateOne({ _id: row._id }, write);
+          const applied = await updateOneKeepingLastCitation(
+            ResearchEntity,
+            { _id: row._id },
+            write,
+          );
+          if (applied.withheld.length > 0) report.lastCitationStampsKept += 1;
         }
       } catch (error) {
         report.errors += 1;

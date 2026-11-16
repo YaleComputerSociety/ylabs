@@ -9,6 +9,7 @@ import {
   type CitationObservationRetirement,
 } from './retireCitationValueObservations';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   isRetiredLabMicrositeDrop,
@@ -69,10 +70,13 @@ export async function loadPlans(): Promise<DeadCitationDropPlan[]> {
   return plans.sort((a, b) => a.entitySlug.localeCompare(b.entitySlug));
 }
 
-async function applyPlans(
-  plans: DeadCitationDropPlan[],
-): Promise<{ updated: number; observations: CitationObservationRetirement }> {
+export async function applyPlans(plans: DeadCitationDropPlan[]): Promise<{
+  updated: number;
+  lastCitationStampsKept: number;
+  observations: CitationObservationRetirement;
+}> {
   let updated = 0;
+  let lastCitationStampsKept = 0;
   // Retire the assertions before stripping the fields. Stripping alone left the
   // observation asserting the dead URL standing, so the next projection put it back; the
   // two sibling lanes have always done both in one operation (#3362).
@@ -98,10 +102,15 @@ async function applyPlans(
     if (plan.clearsWebsiteUrl) {
       update.$unset = { websiteUrl: '', 'fieldProvenance.websiteUrl': '' };
     }
-    const result = await ResearchEntity.updateOne({ slug: plan.entitySlug }, update);
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
+      { slug: plan.entitySlug },
+      update,
+    );
     if (result.modifiedCount > 0) updated += 1;
+    if (result.withheld.length > 0) lastCitationStampsKept += 1;
   }
-  return { updated, observations };
+  return { updated, lastCitationStampsKept, observations };
 }
 
 async function main() {
@@ -130,6 +139,7 @@ async function main() {
     ? await applyPlans(plans)
     : {
         updated: 0,
+        lastCitationStampsKept: 0,
         observations: await retireCitationValueObservations({
           entityKeys: plans.map((plan) => plan.entitySlug),
           // The cleared `websiteUrl` belongs here too, not only the dropped citations. A row whose
@@ -160,6 +170,7 @@ async function main() {
     plannedWebsiteUrlClears: plans.filter((p) => p.clearsWebsiteUrl).length,
     retiredLabMicrositeDrops: plans.filter(isRetiredLabMicrositeDrop).length,
     entitiesUpdated: applied.updated,
+    lastCitationStampsKept: applied.lastCitationStampsKept,
     // Reported because an entity-level zero hides them: observations merely CITED TO a
     // withdrawn URL are left alone, since a page that has since died still said what it
     // said when it was read.

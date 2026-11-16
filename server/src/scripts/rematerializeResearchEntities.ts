@@ -198,6 +198,7 @@ export async function rematerializeSlug(
     changes,
     foreignContact,
     unbackedResearchAreas: result.unbackedResearchAreas,
+    lastCitationRemovalsWithheld: result.lastCitationRemovalsWithheld,
     cardSynthesisPending: cardSynthesis.requested,
     skipped: result.skipped ?? (cardSynthesis.requested ? undefined : result.plannedWriteSkip),
   });
@@ -570,6 +571,7 @@ async function main() {
     unbackedResearchAreas: summary.unbackedResearchAreas,
     researchAreaChips: summary.researchAreaChips,
     entitiesAwaitingCardSynthesis: summary.entitiesAwaitingCardSynthesis,
+    entitiesWithLastCitationKept: summary.entitiesWithLastCitationKept,
     entitiesSkipped: entities.filter((entity) => entity.skipped).length,
     entitiesFailed: failed.map((entity) => ({ slug: entity.slug, error: entity.error })),
     regate,

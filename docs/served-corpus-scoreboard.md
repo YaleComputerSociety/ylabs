@@ -153,6 +153,14 @@ Note that the browse gate and the detail route disagree in both directions, so a
 The figures in the comment above `researchEntityServesPublicDetail` are a snapshot of that disagreement rather than a contract: it records 5 and 2, and 2026-09-13 measured 8 failing the gate of which 3 the route serves.
 Measure it rather than quoting it.
 
+## Served rows that cite nothing
+
+`cites nothing` counts the `student_ready` rows with no citation at all, neither in `sourceUrls` nor in any `fieldProvenance.*.sourceUrl` (#6320).
+The gate reads such a row as silence rather than as dead, so it is served even when everything it once cited is gone.
+It should read 0, because every writer that unsets a provenance stamp keeps a served row's last one.
+A non-zero reading means a writer removed a last citation outside the shared rule in `server/src/services/lastCitationGuard.ts`, or a row was served without ever citing a page.
+It is computed on every run from a projection of the served rows, so it costs no route calls.
+
 ## Readings unconfirmed since a sustained refusal
 
 `research-page-text` flags a host that has refused it for a sustained period: at least 3 attempted runs spanning at least 14 days, with no answer between (#6195, rule in `server/src/scrapers/utils/sustainedHostRefusal.ts`).

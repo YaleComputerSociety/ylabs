@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import {
   applyStudentVisibilityGatePlans,
   isStudentVisibilityGatePlanMateriallyChanged,
@@ -28,6 +29,7 @@ import {
   SHARED_ROSTER_WEBSITE_STAGE,
   SHARED_ROSTER_WEBSITE_WITHDRAWAL_REASONS,
   type LaneWebsiteClaim,
+  type SharedWebsitePlan,
   type SharedWebsiteRow,
 } from './retireSharedRosterWebsitesCore';
 
@@ -148,6 +150,35 @@ async function loadInputs() {
   return { claims, personKeyByEntityKey, otherLaneSupport, rowsBySlug };
 }
 
+export async function writeRetireSharedRosterWebsitesPlan(
+  plan: Pick<SharedWebsitePlan, 'entityId' | 'url' | 'refuse' | 'clearStored'>,
+): Promise<{ modifiedCount: number; withheld: string[] }> {
+  // Read fresh, because one row can carry two shared URLs and the second refusal must
+  // extend the list the first one wrote rather than the list loaded before either.
+  const fresh = (await ResearchEntity.findById(plan.entityId)
+    .select('fieldValueRefusals')
+    .lean()) as { fieldValueRefusals?: unknown } | null;
+  const update: Record<string, unknown> = {};
+  if (plan.refuse) {
+    update.$set = planFieldValueRefusal(fresh?.fieldValueRefusals, {
+      field: 'websiteUrl',
+      value: plan.url,
+      rule: 'wrong_owner',
+      sourceName: 'dept-faculty-roster',
+      refusedBy: SCRIPT_NAME,
+      derivedBy: SHARED_ROSTER_WEBSITE_STAGE,
+      note: SHARED_ROSTER_WEBSITE_REFUSAL_NOTE,
+      evidenceUrl: plan.url,
+    });
+  }
+  if (plan.clearStored) update.$unset = { websiteUrl: '', 'fieldProvenance.websiteUrl': '' };
+  return updateOneKeepingLastCitation(
+    ResearchEntity,
+    { _id: new mongoose.Types.ObjectId(plan.entityId) },
+    update,
+  );
+}
+
 async function main(): Promise<void> {
   const options = parseRetireSharedRosterWebsitesArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
@@ -170,6 +201,7 @@ async function main(): Promise<void> {
   let observationsSuperseded = 0;
   let refusalsRecorded = 0;
   let storedCleared = 0;
+  let lastCitationStampsKept = 0;
   let regatedEntities = 0;
   let demotedFromStudentReady = 0;
   let indexSyncFailures = 0;
@@ -205,29 +237,8 @@ async function main(): Promise<void> {
     observationsSuperseded = superseded.modifiedCount || 0;
 
     for (const plan of plans.filter((entry) => entry.refuse || entry.clearStored)) {
-      // Read fresh, because one row can carry two shared URLs and the second refusal must
-      // extend the list the first one wrote rather than the list loaded before either.
-      const fresh = (await ResearchEntity.findById(plan.entityId)
-        .select('fieldValueRefusals')
-        .lean()) as { fieldValueRefusals?: unknown } | null;
-      const update: Record<string, unknown> = {};
-      if (plan.refuse) {
-        update.$set = planFieldValueRefusal(fresh?.fieldValueRefusals, {
-          field: 'websiteUrl',
-          value: plan.url,
-          rule: 'wrong_owner',
-          sourceName: 'dept-faculty-roster',
-          refusedBy: SCRIPT_NAME,
-          derivedBy: SHARED_ROSTER_WEBSITE_STAGE,
-          note: SHARED_ROSTER_WEBSITE_REFUSAL_NOTE,
-          evidenceUrl: plan.url,
-        });
-      }
-      if (plan.clearStored) update.$unset = { websiteUrl: '', 'fieldProvenance.websiteUrl': '' };
-      const result = await ResearchEntity.updateOne(
-        { _id: new mongoose.Types.ObjectId(plan.entityId) },
-        update,
-      );
+      const result = await writeRetireSharedRosterWebsitesPlan(plan);
+      if (result.withheld.length > 0) lastCitationStampsKept += 1;
       if (result.modifiedCount > 0) {
         if (plan.refuse) refusalsRecorded += 1;
         if (plan.clearStored) storedCleared += 1;
@@ -282,6 +293,7 @@ async function main(): Promise<void> {
     observationsSuperseded: options.dryRun ? null : observationsSuperseded,
     refusalsRecorded: options.dryRun ? null : refusalsRecorded,
     storedCleared: options.dryRun ? null : storedCleared,
+    lastCitationStampsKept: options.dryRun ? null : lastCitationStampsKept,
     regatedEntities: options.dryRun ? null : regatedEntities,
     demotedFromStudentReady: options.dryRun ? null : demotedFromStudentReady,
     indexSyncFailures: options.dryRun ? null : indexSyncFailures,

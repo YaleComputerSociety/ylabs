@@ -107,6 +107,7 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { ScrapeRun } from '../models/scrapeRun';
 import {
   MAX_RESEARCH_ENTITY_TOMBSTONE_HOPS,
@@ -1219,6 +1220,7 @@ export interface FieldRetractionResult {
   retractions: PlannedFieldRetraction[];
   withheld?: WithheldFieldRetraction[];
   soleHolderRemovalsByHost?: SoleHolderRemovalsByHost;
+  lastCitationStampsKept?: number;
   userFieldRetraction?: UserFieldRetractionResult;
 }
 
@@ -1798,9 +1800,11 @@ export async function reconcileFieldRetractions(options: {
   }
 
   const clearedEntityIds: string[] = [];
+  let lastCitationStampsKept = 0;
   for (const retraction of screened.retained) {
     if (!retraction.clearsStoredValue) continue;
-    await ResearchEntity.updateOne(
+    const cleared = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { _id: new mongoose.Types.ObjectId(retraction.entityId) },
       {
         $unset: {
@@ -1809,6 +1813,7 @@ export async function reconcileFieldRetractions(options: {
         },
       },
     );
+    if (cleared.withheld.length > 0) lastCitationStampsKept += 1;
     clearedEntityIds.push(retraction.entityId);
   }
 
@@ -1834,6 +1839,7 @@ export async function reconcileFieldRetractions(options: {
     retractions: screened.retained,
     withheld: screened.withheld,
     soleHolderRemovalsByHost: screened.removalsByHost,
+    lastCitationStampsKept,
   };
 }
 

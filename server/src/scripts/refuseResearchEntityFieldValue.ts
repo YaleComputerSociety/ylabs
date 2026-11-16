@@ -45,6 +45,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { storedCitationState, withholdLastCitationRemovals } from '../services/lastCitationGuard';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   fieldValueRefusalKey,
@@ -173,6 +174,7 @@ export interface RefuseFieldValueWritePlan {
   clearsStoredValue: boolean;
   closureRederivation: RefusalClosureRederivation;
   staleProvenance: string[];
+  lastCitationRemovalsWithheld: string[];
   write: { $set: Record<string, unknown>; $unset?: Record<string, ''> };
   regates: boolean;
 }
@@ -229,17 +231,22 @@ export async function planRefuseFieldValueWrite(
       staleProvenance.push(fieldProvenancePath(field));
     }
   }
-  const unset: Record<string, ''> = {
-    ...(clearsStoredValue ? { [args.field]: '' as const } : {}),
-    ...Object.fromEntries(staleProvenance.map((path) => [path, '' as const])),
-  };
+  const guarded = withholdLastCitationRemovals(storedCitationState(row), {
+    set: { ...record, ...rederivedClosure },
+    unset: {
+      ...(clearsStoredValue ? { [args.field]: '' as const } : {}),
+      ...Object.fromEntries(staleProvenance.map((path) => [path, '' as const])),
+    },
+  });
+  const unset = guarded.unset as Record<string, ''>;
   return {
     refusedKey,
     clearsStoredValue,
     closureRederivation,
-    staleProvenance,
+    staleProvenance: staleProvenance.filter((path) => !guarded.withheld.includes(path)),
+    lastCitationRemovalsWithheld: guarded.withheld,
     write: {
-      $set: { ...record, ...rederivedClosure },
+      $set: guarded.set,
       ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
     },
     regates: clearsStoredValue || Object.keys(rederivedClosure).length > 0,
@@ -259,8 +266,15 @@ async function main(): Promise<void> {
     const row = await ResearchEntity.findOne({ slug: args.slug }).lean<Record<string, unknown>>();
     if (!row) throw new Error(`no research entity for the named slug`);
 
-    const { refusedKey, clearsStoredValue, closureRederivation, staleProvenance, write, regates } =
-      await planRefuseFieldValueWrite(row, args);
+    const {
+      refusedKey,
+      clearsStoredValue,
+      closureRederivation,
+      staleProvenance,
+      lastCitationRemovalsWithheld,
+      write,
+      regates,
+    } = await planRefuseFieldValueWrite(row, args);
     const listEntryRemoval = args.withdraw
       ? undefined
       : planListEntryRefusalRemoval({
@@ -292,6 +306,7 @@ async function main(): Promise<void> {
           refusedKey,
           storedValueIsTheRefusedValue: clearsStoredValue,
           staleProvenanceUnset: staleProvenance,
+          lastCitationStampsKept: lastCitationRemovalsWithheld,
           ...(listEntryRemoval ? { listEntryRemoval } : {}),
           closureRederivation,
           liveRefusalsBefore: liveFieldValueRefusals(row.fieldValueRefusals, args.field).length,

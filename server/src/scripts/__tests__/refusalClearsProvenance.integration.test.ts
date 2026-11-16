@@ -163,7 +163,7 @@ describe('a refusal leaves no stamp describing a value the row no longer holds (
       { $set: { websiteUrl: OWN_SITE, 'fieldProvenance.websiteUrl': stampFor(fresh._id) } },
     );
 
-    expect(await unsetStampIfUnchangedSinceRead(read!, 'websiteUrl')).toBe(0);
+    expect((await unsetStampIfUnchangedSinceRead(read!, 'websiteUrl')).modifiedCount).toBe(0);
     const after = await ResearchEntity.findById(row._id).lean();
     expect(String(after?.fieldProvenance?.websiteUrl?.observationId)).toBe(String(fresh._id));
   });

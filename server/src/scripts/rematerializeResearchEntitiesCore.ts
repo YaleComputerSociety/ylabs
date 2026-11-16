@@ -634,6 +634,7 @@ export interface RematerializeEntityReport {
   changes: RematerializeReportedChange[];
   clearedContactFields?: string[];
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
+  lastCitationRemovalsWithheld?: string[];
   accessSignalChanges?: AccessSignalChangePlan;
   leadEdgeResolution?: LeadEdgeResolution;
   cardSynthesisPending?: true;
@@ -655,6 +656,7 @@ export function rematerializeEntityReportFromChanges(input: {
   changes: RematerializeReportedChange[];
   foreignContact: boolean;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
+  lastCitationRemovalsWithheld?: string[];
   cardSynthesisPending?: boolean;
   skipped?: string;
 }): RematerializeEntityReport {
@@ -675,6 +677,9 @@ export function rematerializeEntityReportFromChanges(input: {
         }
       : {}),
     ...(input.unbackedResearchAreas ? { unbackedResearchAreas: input.unbackedResearchAreas } : {}),
+    ...(input.lastCitationRemovalsWithheld?.length
+      ? { lastCitationRemovalsWithheld: input.lastCitationRemovalsWithheld }
+      : {}),
     ...(input.cardSynthesisPending ? { cardSynthesisPending: true as const } : {}),
     skipped: input.skipped,
   };
@@ -712,8 +717,10 @@ export function summarizeRematerializeEntities(
   unbackedResearchAreas: Partial<Record<UnbackedResearchAreaOutcome, number>>;
   researchAreaChips: { added: number; removed: number };
   entitiesAwaitingCardSynthesis: number;
+  entitiesWithLastCitationKept: number;
 } {
   let entitiesChanged = 0;
+  let entitiesWithLastCitationKept = 0;
   let entitiesAwaitingCardSynthesis = 0;
   let fieldsWritten = 0;
   let clearedContactFields = 0;
@@ -727,6 +734,7 @@ export function summarizeRematerializeEntities(
     fieldsWritten += entity.changes.length;
     clearedContactFields += entity.clearedContactFields?.length ?? 0;
     if (entity.cardSynthesisPending) entitiesAwaitingCardSynthesis += 1;
+    if (entity.lastCitationRemovalsWithheld?.length) entitiesWithLastCitationKept += 1;
     if (entity.unbackedResearchAreas) {
       unbackedResearchAreas[entity.unbackedResearchAreas] =
         (unbackedResearchAreas[entity.unbackedResearchAreas] ?? 0) + 1;
@@ -739,6 +747,7 @@ export function summarizeRematerializeEntities(
     unbackedResearchAreas,
     researchAreaChips,
     entitiesAwaitingCardSynthesis,
+    entitiesWithLastCitationKept,
   };
 }
 
