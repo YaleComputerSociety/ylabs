@@ -24,6 +24,27 @@ export const STUDENT_VISIBILITY_OVERRIDE_AUDIT_ACTIONS = {
   clear: 'research_entity.visibility_override.clear',
 } as const;
 
+export const STUDENT_VISIBILITY_OVERRIDE_COLLECTIONS = ['research', 'programs'] as const;
+export type StudentVisibilityOverrideCollection =
+  (typeof STUDENT_VISIBILITY_OVERRIDE_COLLECTIONS)[number];
+
+export const STUDENT_VISIBILITY_OVERRIDE_AUDIT = {
+  research: {
+    targetType: STUDENT_VISIBILITY_OVERRIDE_AUDIT_TARGET_TYPE,
+    actions: STUDENT_VISIBILITY_OVERRIDE_AUDIT_ACTIONS,
+  },
+  programs: {
+    targetType: 'fellowship',
+    actions: {
+      set: 'fellowship.visibility_override.set',
+      clear: 'fellowship.visibility_override.clear',
+    },
+  },
+} as const satisfies Record<
+  StudentVisibilityOverrideCollection,
+  { targetType: string; actions: Record<OverrideAction['kind'], string> }
+>;
+
 export const MAX_OVERRIDE_REASON_LENGTH = 320;
 
 const REASON_CODE_RE = /^([a-z][a-z0-9_]{2,63}):\s+\S/;
@@ -32,6 +53,7 @@ const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 export type OverrideAction = { kind: 'set'; tier: StudentVisibilityTier } | { kind: 'clear' };
 
 export interface StudentVisibilityOverrideArgs {
+  collection: StudentVisibilityOverrideCollection;
   target: { slug: string } | { id: string };
   action: OverrideAction;
   reason: string;
@@ -99,6 +121,7 @@ export function withOverrideReasonEntry(existing: unknown, reason: string): stri
 export function parseStudentVisibilityOverrideArgs(
   argv: readonly string[],
 ): StudentVisibilityOverrideArgs {
+  let collection = '';
   let slug = '';
   let id = '';
   let tier = '';
@@ -113,7 +136,11 @@ export function parseStudentVisibilityOverrideArgs(
     else if (arg === '--dry-run' || arg === '--mode=dry-run') apply = false;
     else if (arg === STUDENT_VISIBILITY_OVERRIDE_CONFIRM_FLAG) confirmed = true;
     else if (arg === '--clear') clear = true;
-    else if (arg.startsWith('--slug=')) slug = flagValue('--slug', arg.slice(7), slug);
+    else if (arg.startsWith('--collection=')) {
+      collection = flagValue('--collection', arg.slice(13), collection);
+    } else if (arg === '--collection') {
+      collection = flagValue('--collection', argv[++index], collection);
+    } else if (arg.startsWith('--slug=')) slug = flagValue('--slug', arg.slice(7), slug);
     else if (arg === '--slug') slug = flagValue('--slug', argv[++index], slug);
     else if (arg.startsWith('--id=')) id = flagValue('--id', arg.slice(5), id);
     else if (arg === '--id') id = flagValue('--id', argv[++index], id);
@@ -129,6 +156,15 @@ export function parseStudentVisibilityOverrideArgs(
     throw new Error('Give exactly one of --slug or --id: an override is a judgement about one row');
   }
   if (id && !OBJECT_ID_RE.test(id)) throw new Error('--id must be a 24-character ObjectId');
+  const overrideCollection = (collection || 'research') as StudentVisibilityOverrideCollection;
+  if (!STUDENT_VISIBILITY_OVERRIDE_COLLECTIONS.includes(overrideCollection)) {
+    throw new Error(
+      `--collection must be one of ${STUDENT_VISIBILITY_OVERRIDE_COLLECTIONS.join(', ')}`,
+    );
+  }
+  if (overrideCollection === 'programs' && slug) {
+    throw new Error('A program row has no slug: give --id with --collection=programs');
+  }
   if (clear === Boolean(tier)) throw new Error('Give exactly one of --tier=<tier> or --clear');
   if (tier && !(studentVisibilityTiers as readonly string[]).includes(tier)) {
     throw new Error(`--tier must be one of ${studentVisibilityTiers.join(', ')}`);
@@ -143,6 +179,7 @@ export function parseStudentVisibilityOverrideArgs(
     throw new Error(`--apply requires ${STUDENT_VISIBILITY_OVERRIDE_CONFIRM_FLAG}`);
   }
   return {
+    collection: overrideCollection,
     target: slug ? { slug } : { id },
     action: clear ? { kind: 'clear' } : { kind: 'set', tier: tier as StudentVisibilityTier },
     reason: normalizeOverrideReason(reason),
