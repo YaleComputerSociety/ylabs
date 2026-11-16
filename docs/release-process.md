@@ -285,7 +285,10 @@ Since #6094 a slug whose row was merged away or renamed resolves to the live row
 Since #5643 a bare acronym keys as the phrase it stands for, so a file holding a bare acronym and its phrase as two entries is refused with `Entries <i> and <j> have the same query key`, before anything is read or written.
 The seed file Development was seeded from on 2026-11-10 holds one such pair, so it cannot seed any environment until it is revised.
 That revision is done: version v3 of the file reseeded Development on 2026-11-11 under the marker `full-v3-2026-11-11`.
-Version v4, v3 plus 36 multi-word topic queries students typed on Production and scored offline (#6094), reseeded Development on 2026-11-13 under `full-v4-2026-11-13` and is the file the next promotion seeds Beta and Production from.
+Version v4, v3 plus 36 multi-word topic queries students typed on Production and scored offline (#6094), reseeded Development on 2026-11-13 under `full-v4-2026-11-13`.
+The first seeding round (#6222, `docs/search-rerank-cache.md`, "Seeding rounds") then added two files on Development on 2026-11-16: the round's 67 new queries under `full-v5-2026-11-16`, and the 53 stale v4 entries it re-scored under `full-v5b-2026-11-16`.
+The next promotion seeds Beta and Production from all three, in the order Development was seeded: v4, then v5, then v5b.
+The seeder upserts each entry by its query key and leaves every other entry alone, so a later file replaces only the keys it carries, and seeding v4 after v5b would put the 53 stale scores back.
 Both files live outside the repository, so the steps below are the procedure for the next revision rather than a pending task.
 Drop the bare acronym entry and keep the phrase entry, because the acronym is now searched as its phrase, so the phrase entry's scores are the ones scored against the pool the acronym is served.
 Revise the file outside the repository under a new version name and keep the previous version.
@@ -295,6 +298,7 @@ Then re-seed Development's own `search_rerank_cache` from the revised file, so i
 #### Commands
 
 Run every command from the repository root of a laptop checkout at current `beta`, with `<seed.json>` the revised file and `<marker>` the index version.
+When Development was seeded from more than one file, run the steps below once per file, in the order Development was seeded, each with its own marker and its own step-1 counts.
 Name the marker `full-<seed version>-<YYYY-MM-DD>` with the seeding date, for example `full-v5-2026-11-20`.
 The `full-` prefix is what marks an entry as seeded: the live-miss job never replaces such an entry, and the dry run counts it in `seededEntries`.
 Write each variable as a prefix on the command line itself, as below; in zsh an unquoted variable holding two assignments does not split, so the second never reaches the command.

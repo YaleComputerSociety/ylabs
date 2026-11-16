@@ -266,6 +266,7 @@
     "research-topics:rekey-stripped": "tsx src/scripts/rekeyResearchTopicsToStrippedText.ts",
     "research-topics:rekey-topic-text": "tsx src/scripts/rekeyResearchTopicsToTopicText.ts",
     "research-search:seed-rerank-cache": "tsx src/scripts/seedSearchRerankCache.ts",
+    "research-search:rerank-seeding-round": "tsx src/scripts/rerankSeedingRound.ts",
     "research-entity:grant-corpus-synthesis": "tsx src/scripts/grantCorpusSynthesis.ts",
     "scraper-llm:description-ab": "tsx src/scripts/descriptionPromptAbHarness.ts",
     "research-entity:fra-profile-synthesis": "tsx src/scripts/fraProfileSynthesis.ts",
