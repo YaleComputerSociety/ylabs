@@ -170,6 +170,9 @@ describe('materializeEntity reads only lead-naming pages for a person row topics
 
     const row = await persisted();
     expect(row?.researchAreas ?? []).toEqual([]);
+
+    await materializeEntity('researchEntity', { entityKey: SLUG });
+    expect((await persisted())?.researchAreas ?? []).toEqual([]);
   });
 
   it('keeps stored topics when no page names the lead and the list cites a page no longer stored', async () => {
