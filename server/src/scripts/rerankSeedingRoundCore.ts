@@ -262,14 +262,58 @@ export const NAME_SHAPED_MAX_WORDS = 4;
 
 export interface TopicVocabulary {
   isTopicTerm: (word: string) => boolean;
+  isCorpusSymbol: (token: string) => boolean;
 }
+
+// Measured on Development 2026-11-16: at two rows every netid-shaped symbol collected was a
+// scientific symbol, while three rows lost common gene symbols.
+export const CORPUS_SYMBOL_MIN_DOCUMENTS = 2;
+
+const EMAIL_OR_URL = /\S+@\S+|(?:https?:\/\/|www\.)\S+|\S*[\p{L}\p{N}-]+\.\p{L}{2,}\/\S*/giu;
+
+const symbolPieces = (text: string): string[] =>
+  (foldLatinDiacritics(text.toLowerCase()).match(/[\p{L}\p{N}]+/gu) ?? []).filter(
+    (piece) => /\p{N}/u.test(piece) && /\p{L}/u.test(piece),
+  );
+
+/**
+ * A word mixing letters and digits is a gene, virus or model symbol only when served
+ * research text states it, because the same shape is a student's netid. Email addresses
+ * and links are removed first, so a netid in a contact address is never collected, and a
+ * symbol must appear in several served rows.
+ */
+export function corpusSymbolsFrom(
+  documents: ReadonlyArray<{ bodyText: readonly unknown[]; served: boolean }>,
+  minDocuments = CORPUS_SYMBOL_MIN_DOCUMENTS,
+): ReadonlySet<string> {
+  const documentCounts = new Map<string, number>();
+  for (const document of documents) {
+    if (!document.served) continue;
+    const text = document.bodyText
+      .flatMap((value) => (Array.isArray(value) ? value : [value]))
+      .filter((value): value is string => typeof value === 'string')
+      .join(' ')
+      .replace(EMAIL_OR_URL, ' ');
+    for (const symbol of new Set(symbolPieces(text))) {
+      documentCounts.set(symbol, (documentCounts.get(symbol) ?? 0) + 1);
+    }
+  }
+  return new Set(
+    [...documentCounts].filter(([, count]) => count >= minDocuments).map(([symbol]) => symbol),
+  );
+}
+
+export const queryHasUnknownSymbol = (query: string, vocabulary: TopicVocabulary): boolean =>
+  symbolPieces(query).some((symbol) => !vocabulary.isCorpusSymbol(symbol));
 
 export function topicVocabularyFrom(
   vocabulary: Pick<SearchSpellingVocabulary, 'documentFrequency' | 'personNameWords'>,
   isDictionaryWord: (word: string) => boolean,
+  corpusSymbols: ReadonlySet<string>,
 ): TopicVocabulary {
   const personNameWords = new Set(vocabulary.personNameWords);
   return {
+    isCorpusSymbol: (token) => corpusSymbols.has(foldLatinDiacritics(token.toLowerCase())),
     isTopicTerm: (word) => {
       const folded = foldLatinDiacritics(word.toLowerCase());
       if (personNameWords.has(folded)) return false;
@@ -281,22 +325,6 @@ export function topicVocabularyFrom(
   };
 }
 
-const mixesLettersAndDigits = (token: string): boolean =>
-  /\p{N}/u.test(token) && /\p{L}/u.test(token);
-
-const isKnownSymbol = (token: string, vocabulary: TopicVocabulary): boolean =>
-  mixesLettersAndDigits(token) && vocabulary.isTopicTerm(token);
-
-const hasSymbolShape = (token: string, vocabulary: TopicVocabulary): boolean =>
-  mixesLettersAndDigits(token) &&
-  (token.match(/\p{L}+/gu) ?? []).every(
-    (letters) => letters.length <= 2 || vocabulary.isTopicTerm(letters),
-  );
-
-const isSymbolOnlyQuery = (tokens: string[], vocabulary: TopicVocabulary): boolean =>
-  tokens.some((token) => hasSymbolShape(token, vocabulary)) &&
-  tokens.every((token) => hasSymbolShape(token, vocabulary) || ACCESS_FILTER_WORDS.has(token));
-
 /**
  * Development's search recognises only the people its corpus carries, so a classmate's
  * name it does not know would pass the name-query gate. A short query of letters only is
@@ -304,10 +332,11 @@ const isSymbolOnlyQuery = (tokens: string[], vocabulary: TopicVocabulary): boole
  * person's name never counts as one; in doubt the query is dropped.
  */
 export function queryIsNameShaped(query: string, vocabulary: TopicVocabulary): boolean {
-  const rawTokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (rawTokens.some((token) => isKnownSymbol(token, vocabulary))) return false;
-  if (isSymbolOnlyQuery(rawTokens, vocabulary)) return false;
-  const tokens = rawTokens
+  if (symbolPieces(query).some((symbol) => vocabulary.isCorpusSymbol(symbol))) return false;
+  const tokens = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
     .map((token) => token.replace(/[^\p{L}'.-]+/gu, ''))
     .filter((token) => /\p{L}/u.test(token) && !ACCESS_FILTER_WORDS.has(token));
   if (tokens.length === 0 || tokens.length > NAME_SHAPED_MAX_WORDS) return false;
@@ -327,6 +356,7 @@ export interface SearchQueryAggregate {
 export type RoundExclusion =
   | 'too-long'
   | 'filter-phrase'
+  | 'unknown-symbol'
   | 'name-shaped'
   | 'already-seeded'
   | 'name-query'
@@ -438,6 +468,7 @@ export async function collectRoundQueries(options: {
   const excluded: Record<RoundExclusion, number> = {
     'too-long': 0,
     'filter-phrase': 0,
+    'unknown-symbol': 0,
     'name-shaped': 0,
     'already-seeded': 0,
     'name-query': 0,
@@ -452,7 +483,9 @@ export async function collectRoundQueries(options: {
   for (const [key, aggregate] of ordered) {
     if (!searchRerankLiveMissQueryFits(aggregate.query)) excluded['too-long'] += 1;
     else if (!queryNamesATopic(aggregate.query)) excluded['filter-phrase'] += 1;
-    else if (queryIsNameShaped(aggregate.query, options.topicVocabulary)) {
+    else if (queryHasUnknownSymbol(aggregate.query, options.topicVocabulary)) {
+      excluded['unknown-symbol'] += 1;
+    } else if (queryIsNameShaped(aggregate.query, options.topicVocabulary)) {
       excluded['name-shaped'] += 1;
     } else if (seededKeys.has(key)) excluded['already-seeded'] += 1;
     else {

@@ -56,10 +56,12 @@ const toVocabularyDocument = (hit: Record<string, unknown>): SearchVocabularyDoc
   served: servesStudentVisibilityTier(hit),
 });
 
-export const loadResearchSearchSpellingVocabulary = async (
-  getIndex: () => Promise<VocabularySearchIndex> = () =>
-    getMeiliSearchIndex('researchentities') as Promise<VocabularySearchIndex>,
-): Promise<SearchSpellingVocabulary> => {
+const getResearchEntitiesIndex = () =>
+  getMeiliSearchIndex('researchentities') as Promise<VocabularySearchIndex>;
+
+export const loadResearchSearchVocabularyDocuments = async (
+  getIndex: () => Promise<VocabularySearchIndex> = getResearchEntitiesIndex,
+): Promise<SearchVocabularyDocument[]> => {
   const index = await getIndex();
   const documents: SearchVocabularyDocument[] = [];
   for (let offset = 0; offset < MAX_DOCUMENTS; offset += PAGE_SIZE) {
@@ -78,8 +80,13 @@ export const loadResearchSearchSpellingVocabulary = async (
     documents.push(...page.hits.map(toVocabularyDocument));
     if (page.hits.length < PAGE_SIZE) break;
   }
-  return buildSearchSpellingVocabulary(documents);
+  return documents;
 };
+
+export const loadResearchSearchSpellingVocabulary = async (
+  getIndex: () => Promise<VocabularySearchIndex> = getResearchEntitiesIndex,
+): Promise<SearchSpellingVocabulary> =>
+  buildSearchSpellingVocabulary(await loadResearchSearchVocabularyDocuments(getIndex));
 
 export const getResearchSearchSpellingVocabulary = (): SearchSpellingVocabulary | null =>
   currentVocabulary;

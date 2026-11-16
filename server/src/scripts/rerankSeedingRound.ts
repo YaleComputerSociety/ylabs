@@ -28,7 +28,11 @@ import { SEARCH_RERANK_WINDOW } from '../services/searchRerankCache';
 import { searchRerankPromptExcerpts } from '../services/searchRerankCandidateText';
 import { searchRerankCandidatesWithServedText } from '../services/searchRerankLiveMissJob';
 import { isEnglishDictionaryWord } from '../services/englishDictionaryWords';
-import { warmResearchSearchSpellingVocabulary } from '../services/researchSearchSpellingVocabulary';
+import {
+  loadResearchSearchVocabularyDocuments,
+  warmResearchSearchSpellingVocabulary,
+} from '../services/researchSearchSpellingVocabulary';
+import { buildSearchSpellingVocabulary } from '../services/searchQuerySpellingCorrection';
 import {
   ROUND_SCRIPT_NAME,
   ROUND_SOURCE_URL_ENV,
@@ -37,6 +41,7 @@ import {
   type ServedCandidates,
   assertReadOnlySourcePrivileges,
   collectRoundQueries,
+  corpusSymbolsFrom,
   gateRound,
   judgePacket,
   ndcgOutcomes,
@@ -124,14 +129,18 @@ async function collect(args: RoundArgs): Promise<void> {
     const existingEntries = await SearchRerankCache.find({})
       .select('queryKey indexVersion source')
       .lean<Array<{ queryKey: string; indexVersion?: unknown; source?: unknown }>>();
-    const vocabulary = await warmResearchSearchSpellingVocabulary();
+    const corpusDocuments = await loadResearchSearchVocabularyDocuments();
+    const vocabulary = await warmResearchSearchSpellingVocabulary(async () =>
+      buildSearchSpellingVocabulary(corpusDocuments),
+    );
     if (!vocabulary) {
       throw new Error(`${ROUND_SCRIPT_NAME} collect needs the Development search vocabulary`);
     }
+    const corpusSymbols = corpusSymbolsFrom(corpusDocuments);
     const { queries, report } = await collectRoundQueries({
       aggregates,
       existingEntries,
-      topicVocabulary: topicVocabularyFrom(vocabulary, isEnglishDictionaryWord),
+      topicVocabulary: topicVocabularyFrom(vocabulary, isEnglishDictionaryWord, corpusSymbols),
       searchCandidates: developmentServedCandidates,
     });
     const written = args.out
@@ -156,6 +165,7 @@ async function collect(args: RoundArgs): Promise<void> {
           source: aggregatesFile ? 'aggregates-file' : ROUND_SOURCE_URL_ENV,
           since: args.since!.toISOString(),
           dryRun: written === null,
+          corpusSymbols: corpusSymbols.size,
           ...report,
           wroteFiles: written !== null,
         },
