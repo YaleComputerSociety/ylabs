@@ -39,6 +39,20 @@ export class ServedCheckStudentRefusal extends Error {
   }
 }
 
+/** The entry refuses to run anywhere but a check runtime with the local bypass explicitly off. */
+export function assertStudentCheckRuntime(env: NodeJS.ProcessEnv = process.env): void {
+  if (requiresDeployedRuntimeSecurity(env)) {
+    throw new ServedCheckStudentRefusal(
+      'The served-check student entry never runs in a deployed runtime.',
+    );
+  }
+  if (env.LOCAL_AUTH_BYPASS !== 'false') {
+    throw new ServedCheckStudentRefusal(
+      'The served-check student entry needs LOCAL_AUTH_BYPASS=false.',
+    );
+  }
+}
+
 export function mintSyntheticStudent(): SyntheticStudentSession {
   const suffix = randomBytes(SYNTHETIC_STUDENT_NETID_RANDOM_BYTES).toString('hex');
   return Object.freeze({

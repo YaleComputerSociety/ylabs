@@ -5,7 +5,7 @@
 import net from 'node:net';
 import mongoose from 'mongoose';
 import { installMongoWriteRefusal } from '../scrapers/utils/mongoWriteRefusal';
-import { requiresDeployedRuntimeSecurity } from '../utils/environment';
+import { assertStudentCheckRuntime } from '../utils/servedCheckStudentSession';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const RESULT_FD = 3;
@@ -16,17 +16,8 @@ const writeResult = (line: string) => {
   resultStream.write(`${line}\n`);
 };
 
-const refuseUnlessCheckRuntime = () => {
-  if (requiresDeployedRuntimeSecurity()) {
-    throw new Error('The served-check student entry never runs in a deployed runtime.');
-  }
-  if (process.env.LOCAL_AUTH_BYPASS !== 'false') {
-    throw new Error('The served-check student entry needs LOCAL_AUTH_BYPASS=false.');
-  }
-};
-
 const readAsStudent = async () => {
-  refuseUnlessCheckRuntime();
+  assertStudentCheckRuntime();
   const refusal = installMongoWriteRefusal(mongoose);
   const { declareRequestServingProcess } = await import('../db/devWriteGuard');
   declareRequestServingProcess();
