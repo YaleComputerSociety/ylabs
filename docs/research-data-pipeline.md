@@ -1431,6 +1431,10 @@ A stored `school` that is refused, for example through a refused `schools` entry
 Re-recording a refusal made before #6155 is idempotent for the record and re-derives the closure, which is the repair for rows that already carry one.
 A write that changes any closure member re-gates the row, even when the refused field itself was already clear.
 The grant and Yale-status closures derive from observations and researcher rows rather than stored fields, and `kind` maps `entityType` into another vocabulary, so the dry run reports those closures as `no-stored-state-derivation` and writes only the clear.
+The same write unsets `fieldProvenance.<field>` for the cleared field, and for a closure member it re-derives unless the observation the stamp cites asserts the new value, so no reader takes the refused value's source as evidence for what the row now holds (#6318).
+A stored value the refusal does not touch keeps its stamp, and the dry run lists the unset paths under `staleProvenanceUnset`.
+The rule is `provenanceNoLongerDescribesValue` in `server/src/scripts/refusedFieldProvenance.ts`; `sources:repair-vanity-host-citations` applies it to the website fields it rewrites, and `research-entity:clear-dead-research-websites` unsets the stamp of every field it clears.
+`yarn --cwd server research-entity:clear-stale-refusal-provenance` repairs stamps an earlier refusal left behind: it derives each target from the stored refusal records (a live refusal, an empty stored field, a stamp still present), writes only the `$unset`, skips a row whose field or stamp changed since the read, and never rewrites the refusal records; `--apply` needs `--confirm-clear-stale-refusal-provenance`.
 `--withdraw` retires a refusal, because a rule can change and a judgement can be wrong.
 
 This is also layer 3's only writer, and `--rule=operator_judgement` is the one rule that demands both halves of its record: a `--note` saying why and a `--decided-by` saying whose.
