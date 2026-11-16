@@ -250,8 +250,13 @@ const queryWords = (query: string): string[] =>
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
 
+const COURSE_CODE_OR_NUMBER_QUERY = /^(?:[\d\s]+|(?:(?:[a-z]{2,5}\s*)?\d[\dx]{2,3}[a-z]?\s*)+)$/;
+
+const isCourseCodeOrNumber = (query: string): boolean =>
+  COURSE_CODE_OR_NUMBER_QUERY.test(query.trim().toLowerCase());
+
 export const queryNamesATopic = (query: string): boolean =>
-  queryWords(query).some((word) => !ACCESS_FILTER_WORDS.has(word));
+  !isCourseCodeOrNumber(query) && queryWords(query).some((word) => !ACCESS_FILTER_WORDS.has(word));
 
 export const NAME_SHAPED_MAX_WORDS = 4;
 
@@ -276,6 +281,22 @@ export function topicVocabularyFrom(
   };
 }
 
+const mixesLettersAndDigits = (token: string): boolean =>
+  /\p{N}/u.test(token) && /\p{L}/u.test(token);
+
+const isKnownSymbol = (token: string, vocabulary: TopicVocabulary): boolean =>
+  mixesLettersAndDigits(token) && vocabulary.isTopicTerm(token);
+
+const hasSymbolShape = (token: string, vocabulary: TopicVocabulary): boolean =>
+  mixesLettersAndDigits(token) &&
+  (token.match(/\p{L}+/gu) ?? []).every(
+    (letters) => letters.length <= 2 || vocabulary.isTopicTerm(letters),
+  );
+
+const isSymbolOnlyQuery = (tokens: string[], vocabulary: TopicVocabulary): boolean =>
+  tokens.some((token) => hasSymbolShape(token, vocabulary)) &&
+  tokens.every((token) => hasSymbolShape(token, vocabulary) || ACCESS_FILTER_WORDS.has(token));
+
 /**
  * Development's search recognises only the people its corpus carries, so a classmate's
  * name it does not know would pass the name-query gate. A short query of letters only is
@@ -283,13 +304,13 @@ export function topicVocabularyFrom(
  * person's name never counts as one; in doubt the query is dropped.
  */
 export function queryIsNameShaped(query: string, vocabulary: TopicVocabulary): boolean {
-  const tokens = query
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((token) => token && !ACCESS_FILTER_WORDS.has(token));
+  const rawTokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (rawTokens.some((token) => isKnownSymbol(token, vocabulary))) return false;
+  if (isSymbolOnlyQuery(rawTokens, vocabulary)) return false;
+  const tokens = rawTokens
+    .map((token) => token.replace(/[^\p{L}'.-]+/gu, ''))
+    .filter((token) => /\p{L}/u.test(token) && !ACCESS_FILTER_WORDS.has(token));
   if (tokens.length === 0 || tokens.length > NAME_SHAPED_MAX_WORDS) return false;
-  if (!tokens.every((token) => /^[\p{L}'.-]+$/u.test(token))) return false;
   return !tokens.some((token) =>
     token
       .split(/['.-]+/)
