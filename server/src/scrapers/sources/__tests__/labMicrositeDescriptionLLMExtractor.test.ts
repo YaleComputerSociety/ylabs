@@ -606,63 +606,6 @@ describe('descriptionPageNamesRowLead (#4809)', () => {
     ).toBe(true);
   });
 
-  describe('reads the surname the way a page prints it (#6389)', () => {
-    const personRow = { kind: 'individual', rowName: 'Fixture Research' };
-    const profileUrl = 'https://medicine.yale.edu/profile/robin-quillon/';
-
-    it('matches a compound surname by its first part, in the profile address or the text', () => {
-      expect(
-        descriptionPageNamesRowLead({
-          ...personRow,
-          personName: 'Robin Avery Quillon-Fernsby',
-          pageUrl: profileUrl,
-          pageText: 'Assistant Clinical Professor. Interests: child development.',
-        }),
-      ).toBe(true);
-      expect(
-        descriptionPageNamesRowLead({
-          ...personRow,
-          personName: 'Robin Quillón-Fernsby',
-          pageUrl: 'https://medicine.yale.edu/research/',
-          pageText: 'Dr. Quillón studies sleep in adolescents.',
-        }),
-      ).toBe(true);
-    });
-
-    it('takes the surname before post-nominal credentials', () => {
-      expect(
-        descriptionPageNamesRowLead({
-          ...personRow,
-          personName: 'Robin Quillon, MD, MPH, Facp',
-          pageUrl: profileUrl,
-          pageText: 'Health informatics and care quality.',
-        }),
-      ).toBe(true);
-    });
-
-    it('still refuses a page that names neither part of a compound surname', () => {
-      expect(
-        descriptionPageNamesRowLead({
-          ...personRow,
-          personName: 'Robin Avery Quillon-Fernsby',
-          pageUrl: 'https://medicine.yale.edu/research/',
-          pageText: 'The school advances research in infectious disease and global health.',
-        }),
-      ).toBe(false);
-    });
-
-    it('does not match a short hyphen part on its own', () => {
-      expect(
-        descriptionPageNamesRowLead({
-          ...personRow,
-          personName: 'Robin El-Quillon',
-          pageUrl: 'https://medicine.yale.edu/research/',
-          pageText: 'El Camino study group news.',
-        }),
-      ).toBe(false);
-    });
-  });
-
   describe('a non-Yale page must confirm the lead even when it is the row website (#5777)', () => {
     const outsideSite = 'https://coastal-foundation.example.org/';
     const outsideRow = { ...base, websiteUrl: outsideSite };

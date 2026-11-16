@@ -60,6 +60,67 @@ const leadNamesOf = (row: TopicEvidenceRow): string[] =>
     (name): name is string => typeof name === 'string' && name.trim() !== '',
   );
 
+const MIN_COMPOUND_SURNAME_PART_LENGTH = 3;
+const SURNAME_PARTICLES = new Set([
+  'van',
+  'von',
+  'del',
+  'der',
+  'den',
+  'dos',
+  'das',
+  'les',
+  'los',
+  'las',
+]);
+
+interface LeadNameReading {
+  personName: string;
+  otherNameTokens?: string[];
+}
+
+const comparableWords = (value: string): string[] =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/**
+ * A lead's name as a page may print it (#6389): the name before post-nominal credentials, and
+ * the name with a compound surname cut to each of its hyphen parts. A part alone is a weaker
+ * witness than a whole surname, so a part reading also needs one of the lead's other names on
+ * the page. Only the topic filter reads these; the description lane keeps the stored name.
+ */
+function leadNameReadings(personName: string): LeadNameReading[] {
+  const beforeCredentials = personName.split(',')[0]?.trim() ?? '';
+  const readings: LeadNameReading[] = [{ personName }];
+  if (beforeCredentials && beforeCredentials !== personName) {
+    readings.push({ personName: beforeCredentials });
+  }
+  const words = beforeCredentials.split(/\s+/).filter(Boolean);
+  const surname = words[words.length - 1] ?? '';
+  if (words.length < 2 || !surname.includes('-')) return readings;
+  const otherNameTokens = comparableWords(words.slice(0, -1).join(' ')).filter(
+    (token) => token.length >= 2,
+  );
+  if (otherNameTokens.length === 0) return readings;
+  for (const part of surname.split('-')) {
+    const letters = comparableWords(part).join('');
+    if (letters.length < MIN_COMPOUND_SURNAME_PART_LENGTH || SURNAME_PARTICLES.has(letters)) {
+      continue;
+    }
+    readings.push({ personName: [...words.slice(0, -1), part].join(' '), otherNameTokens });
+  }
+  return readings;
+}
+
+const pageCarriesAnyToken = (url: string, text: string, tokens: readonly string[]): boolean => {
+  const words = new Set([...comparableWords(url), ...comparableWords(text)]);
+  return tokens.some((token) => words.has(token));
+};
+
 /**
  * The pages a row's topic reading reads (#6110): `researchPageTextEntriesForTopics`, and on a
  * person's research row only the pages that name one of its leads by the description lane's
@@ -87,16 +148,20 @@ export function researchPageTextEntriesForRowTopics(
   return pages.filter(
     (page) =>
       isYalePeoplePageForNetid(page.url, row.leadNetids ?? []) ||
-      leadNames.some((personName) =>
-        descriptionPageNamesRowLead({
+      leadNames.flatMap(leadNameReadings).some(({ personName, otherNameTokens }) => {
+        const pageText = storedTextByUrl.get(page.url) ?? page.text;
+        if (otherNameTokens && !pageCarriesAnyToken(page.url, pageText, otherNameTokens)) {
+          return false;
+        }
+        return descriptionPageNamesRowLead({
           personName,
           websiteUrl: row.websiteUrl,
           rowName: row.name,
           kind: 'individual',
           pageUrl: page.url,
-          pageText: storedTextByUrl.get(page.url) ?? page.text,
-        }),
-      ),
+          pageText,
+        });
+      }),
   );
 }
 

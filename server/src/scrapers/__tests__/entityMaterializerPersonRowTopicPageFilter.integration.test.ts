@@ -23,6 +23,7 @@ import { RoleAssignment } from '../../models/roleAssignment';
 import { ResearchTopicsDerivation } from '../../models/researchTopicsDerivation';
 import { RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME } from '../../models/fieldProvenanceBacking';
 import { materializeEntity } from '../entityMaterializer';
+import { loadStoredPageTextRows } from '../../scripts/deriveResearchTopics';
 import {
   CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS,
   researchPageTextHash,
@@ -170,5 +171,38 @@ describe('materializeEntity reads only lead-naming pages for a person row topics
     expect(row?.fieldProvenance?.researchAreas?.sourceName).toBe(
       RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
     );
+  });
+
+  it("keys derive and resolve on a profile the lead's netid names, so both read it (#6389)", async () => {
+    const netidPage = {
+      url: 'https://medicine.yale.edu/profile/aq123/',
+      text: 'My main focus is how coastal kelp forests recover after marine heatwaves.',
+    };
+    await Researcher.updateOne(
+      { displayName: 'Avery Quillfeather' },
+      { $set: { 'identifiers.netid': 'aq123' } },
+    );
+    await seedPageText([netidPage, landingPage]);
+    await ResearchTopicsDerivation.create({
+      inputHash: researchTopicsDerivationInputHash([netidPage]),
+      ...CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS,
+      extractedTopics: [
+        { topic: 'Kelp forests', quote: 'coastal kelp forests recover', url: netidPage.url },
+      ],
+      extractedField: null,
+    });
+
+    const [deriveRow] = await loadStoredPageTextRows({
+      apply: false,
+      confirm: false,
+      limit: 10,
+      all: false,
+      slugs: [SLUG],
+      concurrency: 1,
+    });
+    expect(deriveRow?.topicRow?.leadNetids).toEqual(['aq123']);
+
+    await materializeEntity('researchEntity', { entityKey: SLUG });
+    expect((await persisted())?.researchAreas).toEqual(['Kelp forests']);
   });
 });
