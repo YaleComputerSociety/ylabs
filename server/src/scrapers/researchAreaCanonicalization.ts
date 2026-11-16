@@ -601,6 +601,25 @@ export interface ResearchAreaPartition {
  * list whose every value this drops is no evidence anywhere: changing it here
  * changes all three together.
  */
+// Only headings a full blind census found to be a research subject on no row (#6357: 59 graded
+// drops, 30 of them real subjects). Frequent method and education headings such as "Education,
+// Medical" or "Curriculum" are a row's real subject about half the time, and no wording rule
+// separates the two, so they stay out of this list.
+const NON_SUBJECT_RESEARCH_AREA_HEADINGS = [
+  'Data Analysis',
+  'Teaching Rounds',
+  'Education Mission',
+  'Qualitative',
+];
+
+const NON_SUBJECT_RESEARCH_AREA_HEADING_KEYS = new Set(
+  NON_SUBJECT_RESEARCH_AREA_HEADINGS.map((heading) => researchAreaMatchKey(heading)),
+);
+
+export function isNonSubjectResearchAreaHeading(raw: unknown): boolean {
+  return NON_SUBJECT_RESEARCH_AREA_HEADING_KEYS.has(researchAreaMatchKey(raw));
+}
+
 export function partitionResearchAreas(
   canonicalizer: ResearchAreaCanonicalizer,
   raw: unknown,
@@ -609,7 +628,9 @@ export function partitionResearchAreas(
   const canonical = canonicalizer.canonicalizeResearchAreas(raw);
   const departmentKeys = departmentMatchKeys(departments);
   const isRejected = (value: string) =>
-    departmentKeys.has(researchAreaMatchKey(value)) || isDivisionLevelResearchAreaLabel(value);
+    departmentKeys.has(researchAreaMatchKey(value)) ||
+    isDivisionLevelResearchAreaLabel(value) ||
+    isNonSubjectResearchAreaHeading(value);
   return {
     admitted: canonical.values.filter((value) => !isRejected(value)),
     unmatched: canonical.unmatched.filter((value) => !isRejected(value)),

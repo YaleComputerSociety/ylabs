@@ -6,6 +6,7 @@ import {
   createResearchAreaCanonicalizer,
   isDivisionLevelResearchAreaLabel,
   isResearchAreaLabelLeakage,
+  isNonSubjectResearchAreaHeading,
   partitionResearchAreas,
   researchAreaMatchKey,
   resetResearchAreaCanonicalizerCache,
@@ -720,5 +721,56 @@ describe('isDivisionLevelResearchAreaLabel', () => {
     expect(isDivisionLevelResearchAreaLabel(42)).toBe(false);
     expect(isDivisionLevelResearchAreaLabel('')).toBe(false);
     expect(isDivisionLevelResearchAreaLabel(null)).toBe(false);
+  });
+});
+
+describe('non-subject research-area headings (#6357)', () => {
+  it.each([
+    'Data Analysis',
+    'data analysis.',
+    'Teaching Rounds',
+    'Education Mission',
+    'Qualitative',
+  ])('refuses %s as a topic', (heading) => {
+    expect(isNonSubjectResearchAreaHeading(heading)).toBe(true);
+    expect(partitionResearchAreas(canonicalizer, [heading, 'Neuroscience']).admitted).toEqual([
+      'Neuroscience',
+    ]);
+  });
+
+  it.each([
+    'Education, Medical',
+    'Education, Medical, Graduate',
+    'Education, Graduate',
+    'Curriculum',
+    'Training',
+    'Teaching',
+    'Research Design',
+    'Research Methods',
+    'Qualitative Research',
+    'Internship and Residency',
+    'Epidemiologic Methods',
+    'Epidemiology Methods',
+  ])('keeps %s, a heading the census found to be a real subject on some rows', (heading) => {
+    expect(isNonSubjectResearchAreaHeading(heading)).toBe(false);
+  });
+
+  it.each([
+    'Learning Disabilities',
+    'Machine Learning',
+    'Health Education',
+    'Medical Imaging',
+    'School Attendance',
+    'Second Viennese School',
+    'Numerical Methods',
+    'Quantitative Biology',
+  ])('keeps %s, a real subject that only shares a word with a refused heading', (topic) => {
+    expect(isNonSubjectResearchAreaHeading(topic)).toBe(false);
+  });
+
+  it('records a refused heading as dropped rather than unmatched', () => {
+    const partition = partitionResearchAreas(canonicalizer, ['Data Analysis', 'Neuroscience']);
+    expect(partition.dropped).toContain('Data Analysis');
+    expect(partition.unmatched).not.toContain('Data Analysis');
   });
 });
