@@ -23,7 +23,11 @@ Each document carries `queryText`, the stored `filters`, `scores` as `[{ entityI
 The serve path is off unless `SEARCH_RERANK_CACHE_ENABLED=true`, and with the flag unset search does not read the collection at all.
 With the flag on, a non-empty text query whose candidate pool is paginated locally (a hybrid query with no explicit sort) looks up its key once, through an in-process memo of five minutes, so the pages of one search cost one read.
 After the keyword and semantic legs are fused and the student filters narrow the pool, `applyCachedRerank` reorders the first 30 rows by cached score, highest first, with the fused order as the tiebreak.
-A row the entry does not score takes the neutral score 1.5, and every row after the first 30 keeps its place.
+A row the entry does not score takes the neutral score 0.5, below a row scored 1 and above a row scored 0, and every row after the first 30 keeps its place.
+The neutral was 1.5 until #6411, which ranked every row new to a seeded pool above the rows the seed judged marginal.
+On 2026-11-16 the 67 seeded round-1 queries served nDCG@10 0.842 through the route against 0.922 before, both on the same grades.
+An offline replay of those 67 queries on that day's pools gave 0.837 at neutral 1.5 and 0.897 at neutral 0.5.
+`rerankedTop` in `scripts/rerankSeedingRoundCore.ts` reads the same constant, so a seeding round's gate measures the order search serves.
 The reorder runs before the page is sliced, so every page of one search reads the same order, and the total and the facet counts are unchanged.
 The service core demotion (#5748) runs after it, so a cached score cannot lift a core above research rows, and the rerank-candidate read the live-miss job scores skips the demotion, so the rows it scores are the window the cache reorders.
 
@@ -226,7 +230,7 @@ All of these are in-process, so they hold per server instance; the web service r
 `runSearchRerankLiveMissJob` in `server/src/services/searchRerankLiveMissJob.ts` re-runs the same search for the key through `searchResearchGroupsForRerankCandidates`, public visibility scope, spelling correction and filter resolution as the route applies them, and no cached reorder.
 It sends the top 30 to `gpt-5-mini` through the shared model client under caller `search-rerank-live-miss`, with the prompt in `server/src/scrapers/prompts/searchRerankLiveMiss.md` (the rerank prompt measured in the #5549 cost pilot).
 The reply must give at least 27 of every 30 candidates (all but a tenth, rounded down) an integer score from 0 to 3; ids outside the candidate window and non-integer ids are ignored, and a reply below that bar writes nothing.
-Only the scored candidates are stored, and an unscored candidate reads as the neutral 1.5 on the serve path, as any unscored row does.
+Only the scored candidates are stored, and an unscored candidate reads as the neutral 0.5 on the serve path, as any unscored row does.
 The bar is measured: a strict every-candidate rule threw away 61 of 320 real answers in the review pilot, 46 of them for missing one id of 30 (#5549).
 Each stored score carries the `textHash` of its pool hit from that same search.
 Before scoring, the job re-reads the existing entry and applies the same rule search applies, against the re-run search's served top 10, so the search path and the job agree on what is stale.
