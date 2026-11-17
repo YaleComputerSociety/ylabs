@@ -46,7 +46,8 @@ describe('profileImagePictureKey (#5640)', () => {
   });
 
   it('keeps a file uploaded as WebP apart from a JPEG of the same base name', () => {
-    const uploadedWebp = 'https://fixture.yale.edu/sites/default/files/2024-02/avery-synthetic.webp';
+    const uploadedWebp =
+      'https://fixture.yale.edu/sites/default/files/2024-02/avery-synthetic.webp';
     expect(profileImagePictureKey(uploadedWebp)).not.toBe(profileImagePictureKey(DRUPAL_FILE_B));
   });
 
