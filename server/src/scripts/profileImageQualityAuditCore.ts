@@ -70,6 +70,7 @@ export function isNonPersonProfileImageUrl(value: unknown): boolean {
     /\/[^/]*placeholder[^/]*$/,
     /\/campus[-_]\d{4}[^/]*$/,
     /\/[^/]*-logo-[^/]*$/,
+    /\/(?:[^/]*[-_])?exterior[-_][^/]*$/,
   ].some((pattern) => pattern.test(normalized));
 }
 

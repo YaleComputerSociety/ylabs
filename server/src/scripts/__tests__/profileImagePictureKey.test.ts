@@ -96,6 +96,7 @@ describe('placeholder images are never served as a person photo (#5640)', () => 
     'https://fixture.yale.edu/wp-content/uploads/2022/01/placeholder-300x300.jpg',
     'https://fixture.yale.edu/sites/default/files/2023-01/Campus_2023_3000x2000.jpg',
     'https://fixture.yale.edu/sites/default/files/styles/portrait/public/2023-01/center-logo-profile_0.jpg',
+    'https://fixture.yale.edu/sites/default/files/styles/hero_card_340/public/2021-12/hall_exterior_faculty_1.jpeg',
   ])('refuses %s', (url) => {
     expect(isLikelyPublicProfileImageUrl(url)).toBe(false);
   });
@@ -103,6 +104,7 @@ describe('placeholder images are never served as a person photo (#5640)', () => 
   it.each([
     'https://fixture.yale.edu/sites/default/files/2024-02/avery-blankenship.jpg',
     'https://fixture.yale.edu/sites/default/files/2024-02/campusano-avery.jpg',
+    'https://fixture.yale.edu/sites/default/files/2024-02/exteriorsynthetic-avery.jpg',
     CLOUDINARY_A,
   ])('keeps the real photo %s', (url) => {
     expect(isLikelyPublicProfileImageUrl(url)).toBe(true);

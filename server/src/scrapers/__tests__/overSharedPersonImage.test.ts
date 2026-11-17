@@ -150,6 +150,46 @@ describe('a picture stored on many researchers with different identities is a de
     expect(isOverSharedPersonImage(DEFAULT_PICTURE, keys)).toBe(true);
   });
 
+  it("counts one person's two rows and email-alias key once (#6284)", () => {
+    const keys = overSharedStoredPersonImageKeys(
+      [
+        holder('r1', undefined, 'Avery Synthetic'),
+        holder('r2', undefined, 'Avery Quinn Synthetic'),
+      ],
+      [
+        {
+          value: DEFAULT_PICTURE,
+          entityKey: 'netid:avery.synthetic',
+          sourceName: 'dept-faculty-roster',
+        },
+      ],
+    );
+    expect(isOverSharedPersonImage(DEFAULT_PICTURE, keys)).toBe(false);
+  });
+
+  it('still marks a picture three different people hold through rows and an alias key', () => {
+    const keys = overSharedStoredPersonImageKeys(
+      [holder('r1', 'fx1', 'Avery Synthetic'), holder('r2', undefined, 'Blake Fixture')],
+      [
+        {
+          value: DEFAULT_PICTURE,
+          entityKey: 'netid:casey.example',
+          sourceName: 'dept-faculty-roster',
+        },
+      ],
+    );
+    expect(isOverSharedPersonImage(DEFAULT_PICTURE, keys)).toBe(true);
+  });
+
+  it('counts two rows with different netids as two people even when their names agree', () => {
+    const keys = overSharedStoredPersonImageKeys([
+      holder('r1', 'fx1', 'Avery Synthetic'),
+      holder('r2', 'fx2', 'Avery Synthetic'),
+      holder('r3', undefined, 'Blake Fixture'),
+    ]);
+    expect(isOverSharedPersonImage(DEFAULT_PICTURE, keys)).toBe(true);
+  });
+
   it('counts a researcher and its own evidence as one identity', () => {
     const keys = overSharedStoredPersonImageKeys(
       [holder('r1', 'fx1', 'Fixture One'), holder('r2', undefined, 'Fixture Two')],
