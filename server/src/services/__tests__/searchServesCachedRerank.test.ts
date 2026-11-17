@@ -135,7 +135,7 @@ const CACHED_SCORES = [
   { entityId: rowId(25), score: 3 },
   { entityId: rowId(12), score: 3 },
   { entityId: rowId(0), score: 0 },
-  { entityId: rowId(1), score: 0.5 },
+  { entityId: rowId(1), score: 0.25 },
   { entityId: rowId(35), score: 3 },
 ];
 const cachedScoresById = new Map(CACHED_SCORES.map(({ entityId, score }) => [entityId, score]));
