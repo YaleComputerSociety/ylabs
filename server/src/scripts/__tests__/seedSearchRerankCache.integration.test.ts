@@ -498,6 +498,43 @@ describe('research-search:seed-rerank-cache resolution of merged and renamed slu
     ]);
   });
 
+  it.each([
+    {
+      winner: 'carried',
+      scores: { 'synthetic-survivor-lab': 2, 'synthetic-merged-lab': 3 },
+      expectedHash: 'graded-against-older-text',
+    },
+    {
+      winner: 'fresh',
+      scores: { 'synthetic-survivor-lab': 3, 'synthetic-merged-lab': 2 },
+      expectedHash: 'current-index-hash',
+    },
+  ])(
+    'keeps the hash of the winning score when a $winner score wins a collision',
+    async ({ scores, expectedHash }) => {
+      await seedSearchRerankCache({
+        entries: parseSeedInput([
+          {
+            query: 'synthetic topic',
+            scores,
+            scoredTextHashes: { 'synthetic-merged-lab': 'graded-against-older-text' },
+          },
+        ]),
+        apply: true,
+        indexVersion: 'full-synthetic-1',
+        source: 'test',
+        readIndexTextHashes: async () =>
+          new Map([[ids['synthetic-survivor-lab'], 'current-index-hash']]),
+      });
+      const stored = await SearchRerankCache.findOne({
+        queryKey: searchRerankCacheQueryKey('synthetic topic', {}),
+      }).lean();
+      expect(stored?.scores).toEqual([
+        { entityId: ids['synthetic-survivor-lab'], score: 3, textHash: expectedHash },
+      ]);
+    },
+  );
+
   it('refuses the whole run before any write when two such scores are 2 or more apart', async () => {
     await expect(
       seedSearchRerankCache({

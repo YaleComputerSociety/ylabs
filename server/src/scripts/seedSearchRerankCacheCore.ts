@@ -232,7 +232,7 @@ export function parseSeedInput(raw: unknown): SeedInputEntry[] {
         throw new Error(`Entry ${index} scoredTextHashes must be an object`);
       }
       for (const [slug, textHash] of Object.entries(scoredTextHashes)) {
-        if (!(slug in scores) || typeof textHash !== 'string' || textHash === '') {
+        if (!Object.hasOwn(scores, slug) || typeof textHash !== 'string' || textHash === '') {
           throw new Error(
             `Entry ${index} scoredTextHashes may only name a scored slug with a non-empty hash`,
           );

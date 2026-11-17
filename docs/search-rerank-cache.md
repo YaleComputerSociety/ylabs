@@ -85,6 +85,8 @@ An entry may also carry `"scoredTextHashes": { "<slug>": "<hash>" }`, naming the
 A score with one keeps that hash instead of the index's current one, so a re-seed that carries old scores forward beside new ones leaves the carried-over rows stale where their text has changed (#6427).
 Without it, every carried-over score would read as current and the stale count would fall without any re-scoring.
 `scoresKeepingScoredTextHash` counts the scores that keep a supplied hash, and `plannedEntriesStaleAfterApply` counts the planned entries that will still read as stale after the apply.
+`plannedEntriesStaleAfterApply` covers the text-hash half of staleness only, not the candidate-set rule that counts unscored rows in the top 10.
+A carried-over score whose hash is omitted from the input is indistinguishable from a fresh one and takes the current hash, so a re-seed should check that `scoresKeepingScoredTextHash` equals the number of scores it carries over.
 A seed without hashes is still served and still judged by the candidate-set rule, so seeding Beta or Production from a laptop degrades staleness detection rather than failing.
 A promotion seeds Beta and Production that way, from the laptop that holds the seed file, because a Render shell cannot read it; the exact runbook, its expected counts, turning the serve flag on, verification and rollback are in `docs/release-process.md` ("Seed the search rerank cache after the copy and the reindex").
 
