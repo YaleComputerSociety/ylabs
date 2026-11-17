@@ -386,13 +386,28 @@ describe('rankProgramSearch pay and thesis wording (#6398)', () => {
   ];
 
   it('answers paid from a stated award amount or a compensation summary that names pay', () => {
-    for (const query of ['paid', 'stipend']) {
-      expect(titles(rankedPrograms(query, catalog))).toEqual([
-        'Summer Lab Fellowship',
-        'Internship Program',
-        'Thesis Support Grant',
-      ]);
-    }
+    expect(titles(rankedPrograms('paid', catalog))).toEqual([
+      'Summer Lab Fellowship',
+      'Internship Program',
+      'Thesis Support Grant',
+    ]);
+    expect(titles(rankedPrograms('stipend', catalog)).sort()).toEqual([
+      'Internship Program',
+      'Painting Stipend',
+      'Summer Lab Fellowship',
+      'Thesis Support Grant',
+    ]);
+  });
+
+  it('still finds a program by its own title when the title carries a pay or funding word', () => {
+    const namedGrant = program('Harbor Research Grant', 'Recognizes research.', {
+      programKind: 'RESEARCH_AWARD',
+    });
+    expect(titles(rankedPrograms('harbor grant', [...catalog, namedGrant]))).toEqual([
+      'Harbor Research Grant',
+    ]);
+    expect(titles(rankedPrograms('painting stipend', catalog))).toEqual(['Painting Stipend']);
+    expect(titles(rankedPrograms('painting paid', catalog))).toEqual([]);
   });
 
   it('never infers pay from prose or from a summary that only says funding when awarded', () => {

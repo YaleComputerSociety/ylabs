@@ -3,6 +3,10 @@ import {
   PROGRAM_QUERY_STOP_WORDS,
   PROGRAM_SEARCH_SPELLING_FIELDS,
 } from './programSearchSpellingVocabulary';
+import {
+  PROGRAM_FUNDING_INTENT_WORDS,
+  PROGRAM_PAY_INTENT_WORDS,
+} from './programSearchIntentWords';
 import { PROGRAM_TOPIC_TAXONOMY } from './programTopicService';
 
 export const PROGRAM_SEARCH_FIELDS = PROGRAM_SEARCH_SPELLING_FIELDS;
@@ -275,25 +279,13 @@ const yearStanding = (
   return stated.some((year) => years.has(year)) ? 'states' : 'excludes';
 };
 
-const PAY_INTENT_WORDS: ReadonlySet<string> = new Set([
-  'paid',
-  'stipend',
-  'stipends',
-  'compensated',
-  'compensation',
-  'wage',
-  'wages',
-]);
-
-const FUNDING_INTENT_WORDS: ReadonlySet<string> = new Set(['funded', 'funding', 'grant', 'grants']);
-
 const FUNDING_PROGRAM_KINDS: ReadonlySet<string> = new Set([
   'FELLOWSHIP_FUNDING',
   'TRAVEL_RESEARCH_GRANT',
   'SENIOR_THESIS_FUNDING',
 ]);
 
-const STATED_PAY_SUMMARY = /\bstipends?\b|\bpaid\b|\$\s?\d|\bhour(?:ly)?\b|\bwages?\b/i;
+const STATED_PAY_SUMMARY = /\bstipends?\b|\bpaid\b|\$\s?\d|\bhourly\b|\bwages?\b/i;
 
 const hasText = (value: unknown): value is string =>
   typeof value === 'string' && value.trim() !== '';
@@ -317,7 +309,13 @@ const offersFunding = (program: Record<string, unknown>): boolean =>
   program.programRole === 'FUNDS_RESEARCH';
 
 const isIntentWord = (word: string): boolean =>
-  PAY_INTENT_WORDS.has(word) || FUNDING_INTENT_WORDS.has(word);
+  PROGRAM_PAY_INTENT_WORDS.has(word) || PROGRAM_FUNDING_INTENT_WORDS.has(word);
+
+const titleNamesAny = (program: Record<string, unknown>, words: readonly string[]): boolean => {
+  if (!hasText(program.title)) return false;
+  const titleStems = new Set(programSearchWords(program.title).map(programSearchWordStem));
+  return words.some((word) => titleStems.has(programSearchWordStem(word)));
+};
 
 const MATCH_KIND_RANK = { allWords: 0, subject: 1, allButOneWord: 2 } as const;
 
@@ -389,15 +387,25 @@ export const rankProgramSearch = <T extends Record<string, unknown>>(
   programs: readonly T[],
 ): RankedProgramSearch<T> => {
   const { years, otherWords } = statedYearsInQuery(programQueryContentWords(query));
-  const asksForPay = otherWords.some((word) => PAY_INTENT_WORDS.has(word));
-  const asksForFunding = otherWords.some((word) => FUNDING_INTENT_WORDS.has(word));
+  const payWords = otherWords.filter((word) => PROGRAM_PAY_INTENT_WORDS.has(word));
+  const fundingWords = otherWords.filter((word) => PROGRAM_FUNDING_INTENT_WORDS.has(word));
+  const asksForPay = payWords.length > 0;
+  const asksForFunding = fundingWords.length > 0;
   const contentWords = otherWords.filter((word) => !isIntentWord(word));
   const standing = (program: T) => (years.size > 0 ? yearStanding(program, years) : 'unstated');
   const eligible = programs
     .map((program, order) => ({ program, order, standing: standing(program) }))
     .filter((entry) => entry.standing !== 'excludes')
-    .filter((entry) => !asksForPay || statesPay(entry.program))
-    .filter((entry) => !asksForFunding || offersFunding(entry.program));
+    .filter(
+      (entry) =>
+        !asksForPay || statesPay(entry.program) || titleNamesAny(entry.program, payWords),
+    )
+    .filter(
+      (entry) =>
+        !asksForFunding ||
+        offersFunding(entry.program) ||
+        titleNamesAny(entry.program, fundingWords),
+    );
   if (contentWords.length === 0) {
     const answeredByStatedFields = years.size > 0 || asksForPay || asksForFunding;
     return {
