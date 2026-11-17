@@ -11,6 +11,7 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
 }));
 
 import { publicProgramForReader } from '../../controllers/programPayload';
+import { programLikeCardShortDescription } from '../../utils/researchEntityDescriptionQuality';
 import {
   publicFellowshipForStudent,
   readFellowships,
@@ -877,5 +878,54 @@ describe('a rolling-review program serves its date as the close of the window (#
     );
     expect(projected.projectedNextCycle).toBe(true);
     expect(projected.rollingReview).toBe(false);
+  });
+});
+
+describe('a department-page program that is not a department guide (#6454)', () => {
+  const lane = (overrides: Record<string, unknown>) => ({
+    _id: '67d8928150621bcef434a1d9',
+    title: 'Synthetic Department Research Award',
+    sourcePageTitle: 'Undergraduate Research',
+    summary:
+      'Supports undergraduate research in Synthetic Studies through department guidance on finding faculty research opportunities.',
+    description:
+      'Supports undergraduate research in Synthetic Studies. The award funds a student research project of up to one thousand dollars each fall.',
+    ...overrides,
+  });
+
+  it('reads an award card from its own description, not the guidance template', () => {
+    const payload = publicFellowshipForStudent(lane({ programKind: 'FELLOWSHIP_FUNDING' }));
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload.cardSummary).not.toMatch(/department guidance/);
+    expect(payload.cardSummary).toMatch(/award funds a student research project/);
+  });
+
+  it('keeps the guidance card on a department research guide', () => {
+    const payload = publicFellowshipForStudent(lane({ programKind: 'DEPARTMENT_RESEARCH_GUIDE' }));
+    expect(payload.departmentResearchGuidance).toBe(true);
+    expect(payload.cardSummary).toMatch(/through department guidance on finding faculty/);
+  });
+
+  it('serves no card rather than the template when a non-guide has no description of its own', () => {
+    const payload = publicFellowshipForStudent(
+      lane({
+        programKind: 'MENTOR_MATCHING',
+        description: 'Supports undergraduate research in Synthetic Studies.',
+      }),
+    );
+    expect(payload.cardSummary).toBeUndefined();
+  });
+
+  it('leaves a card that does not use the guidance template unchanged', () => {
+    const program = lane({
+      programKind: 'FELLOWSHIP_FUNDING',
+      summary: 'Funds a synthetic research project.',
+    });
+    expect(publicFellowshipForStudent(program).cardSummary).toBe(
+      programLikeCardShortDescription({
+        shortDescription: program.summary,
+        fullDescription: program.description,
+      }),
+    );
   });
 });
