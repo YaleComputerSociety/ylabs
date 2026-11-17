@@ -61,7 +61,11 @@ export function nonContentResearchPageReason(page: PageLike): NonContentResearch
   if (short && COOKIE_GATE.test(text) && CHALLENGE_VENDOR.test(text)) return 'bot-challenge';
   if (url && SIGN_IN_WALL_PATH.test(url.pathname)) return 'sign-in-wall';
   if (short && SIGN_IN_WALL_TEXT.test(text)) return 'sign-in-wall';
-  if (url && SCHOOL_HOSTS.has(url.host.toLowerCase().replace(/^www\./, '')) && SCHOOL_INDEX_PATHS.has(normalizedPath(url))) {
+  if (
+    url &&
+    SCHOOL_HOSTS.has(url.host.toLowerCase().replace(/^www\./, '')) &&
+    SCHOOL_INDEX_PATHS.has(normalizedPath(url))
+  ) {
     return 'school-landing';
   }
   return null;

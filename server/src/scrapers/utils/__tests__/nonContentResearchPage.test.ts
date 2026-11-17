@@ -11,21 +11,24 @@ const RESEARCH =
 
 describe('nonContentResearchPageReason (#6460)', () => {
   it('refuses a bot-challenge interstitial', () => {
-    expect(nonContentResearchPageReason({ url: 'https://example.org/people/x', text: BOT_CHALLENGE })).toBe(
-      'bot-challenge',
-    );
+    expect(
+      nonContentResearchPageReason({ url: 'https://example.org/people/x', text: BOT_CHALLENGE }),
+    ).toBe('bot-challenge');
   });
 
   it('refuses a CAS sign-in page by its address', () => {
     expect(
-      nonContentResearchPageReason({ url: 'https://secure.its.yale.edu/cas/login?service=x', text: 'Sign in' }),
+      nonContentResearchPageReason({
+        url: 'https://secure.its.yale.edu/cas/login?service=x',
+        text: 'Sign in',
+      }),
     ).toBe('sign-in-wall');
   });
 
   it('refuses a CAS sign-in page by its text on another address', () => {
-    expect(nonContentResearchPageReason({ url: 'https://lab.yale.edu/members', text: SIGN_IN })).toBe(
-      'sign-in-wall',
-    );
+    expect(
+      nonContentResearchPageReason({ url: 'https://lab.yale.edu/members', text: SIGN_IN }),
+    ).toBe('sign-in-wall');
   });
 
   it("refuses a school's own research index that a cited page redirected to", () => {
@@ -38,11 +41,15 @@ describe('nonContentResearchPageReason (#6460)', () => {
   });
 
   it('keeps a research page that mentions a NetID in passing', () => {
-    expect(nonContentResearchPageReason({ url: 'https://lab.yale.edu/join', text: RESEARCH })).toBeNull();
+    expect(
+      nonContentResearchPageReason({ url: 'https://lab.yale.edu/join', text: RESEARCH }),
+    ).toBeNull();
   });
 
   it('keeps a long research page that names a challenge vendor in its prose', () => {
-    const text = `${RESEARCH} `.repeat(20) + 'We study why a browser is being verified by Cloudflare challenges.';
+    const text =
+      `${RESEARCH} `.repeat(20) +
+      'We study why a browser is being verified by Cloudflare challenges.';
     expect(nonContentResearchPageReason({ url: 'https://lab.yale.edu/research', text })).toBeNull();
   });
 
@@ -52,19 +59,28 @@ describe('nonContentResearchPageReason (#6460)', () => {
   });
 
   it('refuses the JavaScript-and-cookies gate when a challenge vendor signs it', () => {
-    const text = 'Just a moment... Enable JavaScript and cookies to continue. Performance and security by Cloudflare. Ray ID: 8f2c';
-    expect(nonContentResearchPageReason({ url: 'https://example.org/people/x', text })).toBe('bot-challenge');
+    const text =
+      'Just a moment... Enable JavaScript and cookies to continue. Performance and security by Cloudflare. Ray ID: 8f2c';
+    expect(nonContentResearchPageReason({ url: 'https://example.org/people/x', text })).toBe(
+      'bot-challenge',
+    );
   });
 
   it('refuses a school index on a www-prefixed host', () => {
-    expect(nonContentResearchPageReason({ url: 'https://www.medicine.yale.edu/research', text: RESEARCH })).toBe(
-      'school-landing',
-    );
+    expect(
+      nonContentResearchPageReason({
+        url: 'https://www.medicine.yale.edu/research',
+        text: RESEARCH,
+      }),
+    ).toBe('school-landing');
   });
 
   it('keeps a deeper page on a school host', () => {
     expect(
-      nonContentResearchPageReason({ url: 'https://medicine.yale.edu/lab/example/research/', text: RESEARCH }),
+      nonContentResearchPageReason({
+        url: 'https://medicine.yale.edu/lab/example/research/',
+        text: RESEARCH,
+      }),
     ).toBeNull();
   });
 });
@@ -73,11 +89,16 @@ describe('stored page text drops non-content pages on every read (#6460)', () =>
   const stored = [
     { url: 'https://secure.its.yale.edu/cas/login', text: SIGN_IN },
     { url: 'https://lab.yale.edu/research', text: RESEARCH },
-    { url: 'https://medicine.yale.edu/research/', text: 'Yale School of Medicine research spans the full spectrum.' },
+    {
+      url: 'https://medicine.yale.edu/research/',
+      text: 'Yale School of Medicine research spans the full spectrum.',
+    },
   ];
 
   it('keeps only the content pages in the parsed entries', () => {
-    expect(researchPageTextEntries(stored)).toEqual([{ url: 'https://lab.yale.edu/research', text: RESEARCH }]);
+    expect(researchPageTextEntries(stored)).toEqual([
+      { url: 'https://lab.yale.edu/research', text: RESEARCH },
+    ]);
   });
 
   it('keeps them out of the topic reading input too', () => {

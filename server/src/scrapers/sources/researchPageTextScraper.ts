@@ -548,7 +548,8 @@ export class ResearchPageTextScraper implements IScraper {
       });
       if (nonContent) {
         transientFailures.push({ url, throttled: false });
-        if (page.url && page.url !== url) transientFailures.push({ url: page.url, throttled: false });
+        if (page.url && page.url !== url)
+          transientFailures.push({ url: page.url, throttled: false });
         ctx.log(`[${row.slug || 'candidate'}] research page refused: ${nonContent}`);
         return null;
       }

@@ -54,7 +54,9 @@ function run(
   const lane = new ResearchPageTextScraper({
     fetchPage: vi.fn(async (url: string) => {
       if (url === PARTNER) return partnerPage;
-      return url === HOME ? { url, html: research('how kelp forests recover after marine heatwaves') } : null;
+      return url === HOME
+        ? { url, html: research('how kelp forests recover after marine heatwaves') }
+        : null;
     }),
     rowFinder: async () => [subject],
     storedHashLoader: async () => (storedReadingHosts.length ? 'stored-hash' : undefined),
@@ -97,7 +99,11 @@ describe('research-page-text refuses a fetched page that is not the row content 
   });
 
   it('refuses a school index a person row cites directly', async () => {
-    const person: CandidateDescriptionLab = { ...row, sourceUrls: [HOME, SCHOOL_INDEX], kind: 'individual' } as CandidateDescriptionLab;
+    const person: CandidateDescriptionLab = {
+      ...row,
+      sourceUrls: [HOME, SCHOOL_INDEX],
+      kind: 'individual',
+    } as CandidateDescriptionLab;
     const { emitted } = await runWith(person, { url: SCHOOL_INDEX, html: schoolIndexPage });
 
     expect(pageText(emitted)?.map((entry) => entry.url)).toEqual([HOME]);
@@ -129,7 +135,9 @@ function runWith(subject: CandidateDescriptionLab, schoolPage: { url: string; ht
   const lane = new ResearchPageTextScraper({
     fetchPage: vi.fn(async (url: string) => {
       if (url === schoolPage.url) return schoolPage;
-      return url === HOME ? { url, html: research('how kelp forests recover after marine heatwaves') } : null;
+      return url === HOME
+        ? { url, html: research('how kelp forests recover after marine heatwaves') }
+        : null;
     }),
     rowFinder: async () => [subject],
     storedHashLoader: async () => undefined,
