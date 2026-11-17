@@ -15,6 +15,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -118,7 +119,7 @@ async function main(): Promise<void> {
   );
 
   fs.mkdirSync(path.dirname(options.output), { recursive: true });
-  fs.writeFileSync(options.output, JSON.stringify(report, null, 2));
+  writeReportFileSync(options.output, JSON.stringify(report, null, 2));
   console.log(
     `${SCRIPT_NAME}: ${report.storedNonEmptyRows} rows store areas, ${report.unbackedRows} have no live evidence, ${report.candidateCount} selected with a usable url. Saved to ${options.output}`,
   );

@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -21,6 +20,7 @@ import {
   summarizePiAttributedUserRows,
   type PiAttributedUserRow,
 } from './materializePiAttributedUsersCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -114,7 +114,7 @@ async function main(): Promise<void> {
 
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
-    fs.writeFileSync(outputPath, JSON.stringify({ ...report, rows }, null, 2));
+    writeReportFileSync(outputPath, JSON.stringify({ ...report, rows }, null, 2));
   }
 
   console.log(JSON.stringify(report, null, 2));

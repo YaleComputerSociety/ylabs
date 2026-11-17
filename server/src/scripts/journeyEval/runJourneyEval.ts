@@ -42,6 +42,7 @@ import {
   websiteIdentitiesStatedBy,
   websiteIdentity,
 } from '../../scrapers/survivorOwnedWebsiteClear';
+import { writeReportFileSync } from '../../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -414,7 +415,7 @@ export async function main(): Promise<void> {
   console.log(JSON.stringify(report, null, 2));
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
-    fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
+    writeReportFileSync(outputPath, JSON.stringify(report, null, 2));
     console.error(`Report written to ${outputPath}`);
   }
 

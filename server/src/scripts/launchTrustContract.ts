@@ -13,6 +13,7 @@ import {
 import type { StudentVisibilityGateCollection } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -98,7 +99,7 @@ export function writeLaunchTrustContractOutput(value: unknown, output?: string):
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(value, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export function buildLaunchTrustContractOutput(

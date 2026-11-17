@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
@@ -29,6 +28,7 @@ import {
   type FraProfileSynthesisEntityReport,
   type FraProfileSynthesisRevalidationReport,
 } from './fraProfileSynthesisLane';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -183,7 +183,7 @@ async function main(): Promise<void> {
 
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
-    fs.writeFileSync(
+    writeReportFileSync(
       outputPath,
       `${JSON.stringify({ summary, reports, revalidations }, null, 2)}\n`,
     );

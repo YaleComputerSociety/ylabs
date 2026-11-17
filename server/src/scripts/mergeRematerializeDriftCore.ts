@@ -10,6 +10,7 @@ import {
 } from './rematerializeResearchEntitiesCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { isResearchEntityContactField } from '../scrapers/rowKeyedContactEvidence';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 /**
  * A merge copies a fixed field list onto the survivor, so every field outside that
@@ -111,7 +112,7 @@ export function mergeRematerializeFilledChanges(
 
 export function writeMergeRematerializeDriftReport(output: string, report: object): void {
   fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function summarizeMergeRematerializeDrift(
