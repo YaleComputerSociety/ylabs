@@ -366,9 +366,16 @@ function isLabelShapedQuote(quote: string): boolean {
 export function isFieldQuoteAnUnrelatedLabel(field: string, quote: string): boolean {
   if (!isLabelShapedQuote(quote)) return false;
   const quoteWords = labelSupportWords(quote);
+  if (quoteWords.includes(fieldInitialism(field))) return false;
   return !labelSupportWords(field).some((fieldWord) =>
     quoteWords.some((quoteWord) => sharesALeadingStem(fieldWord, quoteWord)),
   );
+}
+
+/** "AI" for "artificial intelligence": a quote that abbreviates the field names it. */
+function fieldInitialism(field: string): string {
+  const words = scanWords(field).filter((word) => !TOPIC_FUNCTION_WORDS.has(word));
+  return words.length >= 2 ? words.map((word) => word[0]).join('') : '';
 }
 
 interface AdmittedTopic {

@@ -385,6 +385,12 @@ describe('a field quoted from a heading, breadcrumb or menu label (#6385)', () =
     expect(isFieldQuoteAnUnrelatedLabel('theatre', 'Lecturer in Theater Management')).toBe(false);
   });
 
+  it('keeps a heading that abbreviates the field by its initials', () => {
+    expect(isFieldQuoteAnUnrelatedLabel('artificial intelligence', 'AI')).toBe(false);
+    expect(isFieldQuoteAnUnrelatedLabel('natural language processing', 'NLP Group')).toBe(false);
+    expect(isFieldQuoteAnUnrelatedLabel('natural language processing', 'AI')).toBe(true);
+  });
+
   it('keeps lower-case prose framing that never names the field', () => {
     expect(
       isFieldQuoteAnUnrelatedLabel('Neuro-oncology', 'how glioma cells invade the brain'),
