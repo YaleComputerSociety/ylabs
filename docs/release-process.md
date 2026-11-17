@@ -201,7 +201,7 @@ A non-zero exit means some rows hold a `browseRankScore` the current scorer does
 
 Run the steps in this order.
 The order is not cosmetic and two of the orderings are the opposite of what seems natural.
-`yarn promote:production` runs steps 1 to 5 in this order and then prints step 6; `docs/data-refresh-runbook.md` ("One-Command Promotion") owns what it checks.
+`yarn promote:production` runs steps 1 to 5 in this order, checks the declared indexes read-only right after the step 3 copy (below), and then prints step 6; `docs/data-refresh-runbook.md` ("One-Command Promotion") owns what it checks.
 
 1. **Dry-run the copy.** `yarn --cwd server production:promote-beta-copy --dataset-version prod-promote-YYYY-MM-DD-lane-a-beta-copy`. Dry-run is the default. Read the per-collection plan before doing anything else, along with `storageHeadroom`, which must read `ok`, and `previousGenerations`, the generation the apply will replace as its rollback point (#4149). The script refuses unless `BETA_MONGODBURL` names the database `Beta` and `PRODUCTION_MONGODBURL` names `Prod`, both on remote hosts, and `yarn --cwd server database:verify-names --pair beta-to-production` runs the same check without connecting (#4150).
 2. **Check for a collection that would copy nothing over existing documents.** Apply is blocked when `sourceCopyCount` is 0 and `targetCount` is above 0, because `copyCollection` deletes the whole target before inserting. Treat that blocker as a stop, not an obstacle.
@@ -211,11 +211,16 @@ The order is not cosmetic and two of the orderings are the opposite of what seem
 6. **Then reconcile and merge `main`**, which deploys the code. With `accountDataControls` on, the system now enforces the deletion settings rather than relying on this list: Production refuses self-serve deletion while `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, `POSTHOG_PERSONAL_API_KEY` or `POSTHOG_PROJECT_ID` is missing, and the `Post-Promotion Verify` smoke fails on `api.ready.accountDeletion` until they are set ("Holding one feature instead of the whole release", #5624).
 
 Build any declared index the target is missing, on Beta after the Development copy and on Production after this one.
-Indexes are no longer built on connect, and the copy moves documents rather than index definitions, so an index declared since the target's last build stays missing until someone builds it.
+Indexes are no longer built on connect, and the copy recreates only the indexes its source collection carries, so an index declared since the source's last build stays missing on the target until someone builds it.
 An environment-local collection that is never copied, such as the `model_call_usages` TTL index on `calledAt` (`docs/model-usage.md`), is in the same position.
-Run `yarn --cwd server db:build-indexes` against the target first; it is a dry run by default and lists `missingByCollection` and `undeclaredByCollection`.
+Right after the copy, `yarn promote:production` runs `yarn --cwd server db:verify-indexes --target production` (#6482).
+It only reads: it lists Production's indexes, compares them with the declared set, and prints the database name but never the connection string.
+A missing index, or one whose name or keys conflict with a declaration, fails the promotion and prints the exact `db:build-indexes` command; the remote phase still runs first, so the corpus is never left un-gated, but do not merge `main` until the check passes.
+An undeclared extra index only warns.
+Run the same check by hand against Beta after a Development copy with `--target beta`.
+To build, run `yarn --cwd server db:build-indexes` against the target first; it is a dry run by default and lists `missingByCollection` and `undeclaredByCollection`.
 Apply with `--apply` only when it plans additions alone. It never drops an index, but a unique index on a large collection, or a TTL index whose window already covers stored documents, changes data and needs its own decision.
-`yarn promote:production` does not run this step.
+A conflicting index is not something `db:build-indexes` can fix, because it never drops one, so it needs a reviewed migration.
 
 The gate refuses to apply when too many lead-requiring entities resolve no lead, and it throws rather than writing a partial result.
 That is the intended behaviour, and it is why the gate must follow a complete copy: a copy that stopped after `research_entities` but before `role_assignments` would make every row read as leadless.

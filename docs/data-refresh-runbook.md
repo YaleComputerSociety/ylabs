@@ -608,9 +608,12 @@ A draft does not hold the data copy, because `docs/release-process.md` copies da
 4. Checks the Production operator service, which must deploy `main`, and reports whether its live build is behind the `main` head.
 5. Requires the operator to type `production`; it never accepts `--yes`.
 6. Deploys the operator service at the `main` head when its build is older, waiting until it is live and stopping before any write if it is not, then applies with `CONFIRM_LANE_A_COPY=true` and `CONFIRM_PROD_SCRAPE=true`, whose staged swap rolls a failed copy back.
-7. Starts a one-off job on the Production operator service running `promote:remote-phase --environment production`, which verifies the names, re-gates visibility, updates the Production index with `CONFIRM_PROD_SCRAPE=true` (a reconcile when its embedder matches the code, otherwise a full rebuild), and runs the Production smoke.
+7. Runs `db:verify-indexes --target production`, a read-only comparison of Production's live indexes with the declared set (#6482).
+It never builds or drops an index and prints the database name, never the connection string.
+A missing or conflicting index fails the promotion after the remote phase has still run, so the corpus is never left un-gated, and the output names the exact `db:build-indexes` command; an undeclared extra index only warns.
+8. Starts a one-off job on the Production operator service running `promote:remote-phase --environment production`, which verifies the names, re-gates visibility, updates the Production index with `CONFIRM_PROD_SCRAPE=true` (a reconcile when its embedder matches the code, otherwise a full rebuild), and runs the Production smoke.
 It refuses when `PFR3_MEILI_RESTORE_POINT` is not set; pass the restore point taken before this promotion as `--meili-restore-point <dump-uid>` and the start command carries it to the job, so the operator service's environment never needs a per-promotion edit ([Taking the Production restore point](#taking-the-production-restore-point)).
-8. Prints the remaining step from `docs/release-process.md`: mark the `main` promotion pull request ready and merge it.
+9. Prints the remaining step from `docs/release-process.md`: mark the `main` promotion pull request ready and merge it.
 
 ### Running them
 

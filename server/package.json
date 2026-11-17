@@ -16,6 +16,7 @@
     "scraper-llm:ab": "tsx src/scripts/scraperLlmModelAbHarness.ts",
     "analytics:collapse-search-episodes": "tsx src/scripts/collapseSearchEpisodeHistory.ts",
     "db:build-indexes": "tsx src/scripts/buildMongoIndexes.ts",
+    "db:verify-indexes": "tsx src/scripts/verifyDeclaredIndexes.ts",
     "migrate:mongo-naming": "tsx src/scripts/migrateMongoNaming.ts",
     "migrate:signal-consolidation": "tsx src/scripts/signalConsolidationMigration.ts",
     "research-entity:migrate": "tsx src/scripts/migrateResearchEntities.ts",

@@ -422,7 +422,7 @@ describe('promote:production', () => {
   it('applies with both confirmations only after the typed target name', async () => {
     const harness = newHarness();
     expect(await runPromoteProduction([], productionDeps(harness))).toBe(0);
-    const apply = harness.yarnCalls.at(-1)!;
+    const apply = harness.yarnCalls.find((call) => call.args.includes('--apply'))!;
     expect(apply.args.slice(0, 2)).toEqual(['production:promote-beta-copy', '--apply']);
     expect(apply.env).toEqual({ CONFIRM_LANE_A_COPY: 'true', CONFIRM_PROD_SCRAPE: 'true' });
     const created = harness.renderCalls.find((call) => call.method === 'POST')!;
@@ -491,6 +491,52 @@ describe('promote:production', () => {
     expect(await runPromoteProduction([], deps)).toBe(1);
     expect(harness.errors).toEqual(['refused: promotion refused before writing: no headroom']);
     expect(harness.yarnCalls.some((call) => call.args.includes('--apply'))).toBe(false);
+  });
+
+  const indexCheckExit = (harness: Harness, exit: number) => {
+    const deps = productionDeps(harness);
+    const runYarn = deps.runYarn;
+    deps.runYarn = async (args, env) => {
+      const code = await runYarn(args, env);
+      if (args[0] !== 'db:verify-indexes') return code;
+      harness.events.push('verify-indexes');
+      return exit;
+    };
+    return deps;
+  };
+
+  it('checks the declared indexes read-only right after the copy and before the remote phase', async () => {
+    const harness = newHarness();
+    expect(await runPromoteProduction([], indexCheckExit(harness, 0))).toBe(0);
+    const check = harness.yarnCalls.find((call) => call.args[0] === 'db:verify-indexes')!;
+    expect(check.args).toEqual(['db:verify-indexes', '--target', 'production']);
+    expect(check.env).toBeUndefined();
+    expect(harness.events.indexOf('verify-indexes')).toBe(harness.events.indexOf('apply') + 1);
+    expect(harness.events.indexOf('job')).toBeGreaterThan(harness.events.indexOf('verify-indexes'));
+    expect(harness.yarnCalls.some((call) => call.args[0] === 'db:build-indexes')).toBe(false);
+  });
+
+  it('never runs the index check on a dry run', async () => {
+    const harness = newHarness();
+    expect(await runPromoteProduction(['--dry-run'], indexCheckExit(harness, 0))).toBe(0);
+    expect(harness.yarnCalls.some((call) => call.args[0] === 'db:verify-indexes')).toBe(false);
+  });
+
+  it('still runs the remote phase on an index mismatch but fails the promotion loudly', async () => {
+    const harness = newHarness();
+    expect(await runPromoteProduction([], indexCheckExit(harness, 1))).toBe(1);
+    expect(harness.events).toContain('job');
+    expect(harness.logs.join('\n')).not.toContain('Production promoted');
+    expect(harness.errors.join('\n')).toContain(
+      'refused: db:verify-indexes --target production exited 1',
+    );
+    expect(harness.errors.join('\n')).toContain('db:build-indexes command it printed');
+  });
+
+  it('fails an index mismatch with the remote phase skipped', async () => {
+    const harness = newHarness();
+    expect(await runPromoteProduction(['--skip-remote-phase'], indexCheckExit(harness, 1))).toBe(1);
+    expect(harness.errors.join('\n')).toContain('db:verify-indexes --target production exited 1');
   });
 });
 
