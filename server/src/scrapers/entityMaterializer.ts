@@ -14214,7 +14214,10 @@ export async function projectFromLog(
       entityDoc?.sourceLastVerifiedAt,
       latestFellowshipSourceReadAt(materializationObs, set.sourceName ?? entityDoc?.sourceName),
     );
-    if (sourceLastVerifiedAt) set.sourceLastVerifiedAt = sourceLastVerifiedAt;
+    if (sourceLastVerifiedAt) {
+      set.sourceLastVerifiedAt = sourceLastVerifiedAt;
+      fieldsWritten++;
+    }
   }
 
   if (entityType === 'fellowship') {

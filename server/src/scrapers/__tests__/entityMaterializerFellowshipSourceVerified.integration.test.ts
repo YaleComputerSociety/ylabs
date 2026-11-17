@@ -99,9 +99,10 @@ describe('a program records when its own source last confirmed it (#6403)', () =
     await materializeEntity('fellowship', { entityKey: KEY });
 
     await rereadOwnLane(SECOND_READ);
-    await materializeEntity('fellowship', { entityKey: KEY });
+    const reread = await materializeEntity('fellowship', { entityKey: KEY });
 
     expect((await verifiedAt())?.toISOString()).toBe(SECOND_READ);
+    expect(reread.changedPaths).toEqual(['sourceLastVerifiedAt']);
   });
 
   it('does not advance when no new read lands, and a second resolve writes nothing', async () => {
@@ -112,6 +113,8 @@ describe('a program records when its own source last confirmed it (#6403)', () =
 
     expect((await verifiedAt())?.toISOString()).toBe(FIRST_READ);
     expect(again.fieldsWritten ?? 0).toBe(0);
+    expect(again.skipped).toBe('unchanged');
+    expect(again.changedPaths).toBeUndefined();
   });
 
   it("does not advance on another lane's later read of the row", async () => {
