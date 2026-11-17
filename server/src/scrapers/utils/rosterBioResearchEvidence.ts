@@ -194,9 +194,9 @@ const DEPT_PERSON_KEY = /^(dept:[^:]+:)(.+)$/;
  */
 export function rosterBioPersonKey(person: RosterBioPerson): string {
   const match = person.key.match(DEPT_PERSON_KEY);
-  const givenHead = typeof person.fname === 'string' ? person.fname.trim().split(/\s+/)[0] : '';
-  if (!match || !givenHead || !CREDENTIAL_TOKEN.test(givenHead)) return person.key;
-  const credentialSlugs = [slugify(givenHead), givenHead.toLowerCase().replace(/[^a-z]/g, '')];
+  const given = typeof person.fname === 'string' ? person.fname.trim() : '';
+  if (!match || !given || !CREDENTIAL_TOKEN.test(given)) return person.key;
+  const credentialSlugs = [slugify(given), given.toLowerCase().replace(/[^a-z]/g, '')];
   if (!credentialSlugs.some((slug) => match[2].startsWith(`${slug}-`))) return person.key;
   const name = rosterBioPersonName(person);
   const nameSlug = slugify(name);
@@ -293,7 +293,7 @@ export function planRosterBioResearchRows(
       skip('teaching_appointment');
       continue;
     }
-    const department = resolveDepartment(person, name);
+    const department = resolveDepartment({ ...person, key: personKey }, name);
     if (!department) {
       skip('no_department');
       continue;

@@ -337,6 +337,21 @@ describe('a credential the roster put where the given name belongs (#6372)', () 
     ).toBe('dept:synthetic:alex-example');
   });
 
+  it('mints at the slug the roster lane would mint for the rebuilt key', () => {
+    const config = {
+      deptKey: 'synthetic',
+      deptName: 'Synthetic Studies',
+      schoolName: 'Synthetic School',
+      url: 'https://synthetic.yale.edu/people',
+    } as DeptConfig;
+    const { planned } = planRosterBioResearchRows(
+      [credentialLed({ departments: ['Synthetic Studies'] })],
+      emptyCovered(),
+      rosterBioDepartmentResolver([config]),
+    );
+    expect(planned.map((row) => row.slug)).toEqual(['dept-synthetic-alex-example']);
+  });
+
   it('mints nothing when no given name can be recovered', () => {
     const nameless = credentialLed({
       profileUrls: { departmental: 'https://synthetic.yale.edu/profile/12345' },
@@ -353,6 +368,8 @@ describe('a credential the roster put where the given name belongs (#6372)', () 
       ['dept:synthetic:phdung-example', 'Phdung'],
       ['dept:synthetic:mdala-example', 'Mdala'],
       ['dept:synthetic:alex-example', 'Alex'],
+      ['dept:synthetic:dr-alex-example', 'Dr. Alex'],
+      ['dept:synthetic:md-alex-example', 'Md Alex'],
     ]) {
       expect(rosterBioPersonKey(person({ key, fname }))).toBe(key);
     }
