@@ -61,6 +61,7 @@ import {
   plannedHosts,
   type ReleaseFinishedHost,
 } from '../utils/hostCompletion';
+import { nonContentResearchPageReason } from '../utils/nonContentResearchPage';
 
 const MAX_PAGES_PER_ROW = 6;
 const MAX_RESEARCH_SUBPAGES = 2;
@@ -541,6 +542,16 @@ export class ResearchPageTextScraper implements IScraper {
       const page = await this.fetchPage(url);
       if (!page?.html) return null;
       if (!isReusedResponse(page)) recordHostReadOutcome(hostOutcomes, pageHost(url), 'answered');
+      const nonContent = nonContentResearchPageReason({
+        url: page.url || url,
+        text: cheerio.load(page.html)('body').text().replace(/\s+/g, ' ').trim(),
+      });
+      if (nonContent) {
+        transientFailures.push({ url, throttled: false });
+        if (page.url && page.url !== url) transientFailures.push({ url: page.url, throttled: false });
+        ctx.log(`[${row.slug || 'candidate'}] research page refused: ${nonContent}`);
+        return null;
+      }
       if (capturedPageLeftTheRequestedPersonProfile(url, page, row)) {
         ctx.log(
           `[${row.slug || 'candidate'}] research page refused: profile landed off the subject`,

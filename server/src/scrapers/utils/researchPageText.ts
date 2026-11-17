@@ -13,6 +13,7 @@ import {
   withoutResearchPageChrome,
   withoutResearchPageChromeMenusAndListings,
 } from './researchPageChrome';
+import { nonContentResearchPageReason } from './nonContentResearchPage';
 
 export const RESEARCH_PAGE_TEXT_SOURCE = 'research-page-text';
 export const RESEARCH_PAGE_TEXT_FIELD = 'researchPageText';
@@ -516,7 +517,8 @@ export function researchPageTextEntries(value: unknown): ResearchPageTextEntry[]
     const record = entry as Record<string, unknown>;
     const url = textOf(record.url);
     const text = textOf(record.text);
-    return url && text ? [{ url, text }] : [];
+    if (!url || !text) return [];
+    return nonContentResearchPageReason({ url, text }) ? [] : [{ url, text }];
   });
 }
 
