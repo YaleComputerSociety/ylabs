@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   decideResearcherFieldWrite,
+  decideUnprovenKeyFieldWrite,
+  isUnprovenNetidKeyOnNameJoin,
   isFillOnlyFieldValue,
   isFillOnlyIdentityJoin,
   researcherFieldWriter,
@@ -297,5 +299,67 @@ describe('researcher field writer precedence (#5706)', () => {
         releaseWriter: false,
       });
     }
+  });
+});
+
+describe('an unproven netid key on a name join (#6447)', () => {
+  const evidence = {
+    identityJoin: 'person-name',
+    payload: 'fixture.quillmarsh',
+    payloadHeldAsNetid: false,
+    aliasNetid: undefined,
+    researcherNetid: 'fq6447',
+  };
+
+  it('is unproven only on a name join with no netid holder and no alias to this researcher', () => {
+    expect(isUnprovenNetidKeyOnNameJoin(evidence)).toBe(true);
+    expect(isUnprovenNetidKeyOnNameJoin({ ...evidence, identityJoin: 'account-email' })).toBe(
+      false,
+    );
+    expect(isUnprovenNetidKeyOnNameJoin({ ...evidence, identityJoin: 'account-netid' })).toBe(
+      false,
+    );
+    expect(isUnprovenNetidKeyOnNameJoin({ ...evidence, payloadHeldAsNetid: true })).toBe(false);
+    expect(isUnprovenNetidKeyOnNameJoin({ ...evidence, payload: '' })).toBe(false);
+  });
+
+  it('counts an alias-map hit on this researcher as proven, and one on another netid as not', () => {
+    expect(isUnprovenNetidKeyOnNameJoin({ ...evidence, aliasNetid: 'fq6447' })).toBe(false);
+    expect(isUnprovenNetidKeyOnNameJoin({ ...evidence, aliasNetid: 'FQ6447 ' })).toBe(false);
+    expect(isUnprovenNetidKeyOnNameJoin({ ...evidence, aliasNetid: 'zz9999' })).toBe(true);
+    expect(
+      isUnprovenNetidKeyOnNameJoin({
+        ...evidence,
+        researcherNetid: undefined,
+        aliasNetid: 'fq6447',
+      }),
+    ).toBe(true);
+  });
+
+  it('fills only an empty field with no writer, and gives back a field the key holds', () => {
+    const key = 'netid:fixture.quillmarsh';
+    const held = new Map([['websiteUrl', researcherFieldWriter(key, 'person-name', 1)]]);
+    const other = new Map([
+      ['websiteUrl', researcherFieldWriter('netid:zz9999', 'account-netid', 1)],
+    ]);
+    expect(decideUnprovenKeyFieldWrite(new Map(), 'websiteUrl', key, true, false)).toEqual({
+      write: true,
+    });
+    expect(decideUnprovenKeyFieldWrite(new Map(), 'websiteUrl', key, true, true)).toEqual({
+      write: false,
+      releaseWriter: false,
+    });
+    expect(decideUnprovenKeyFieldWrite(new Map(), 'websiteUrl', key, false, false)).toEqual({
+      write: false,
+      releaseWriter: false,
+    });
+    expect(decideUnprovenKeyFieldWrite(other, 'websiteUrl', key, true, false)).toEqual({
+      write: false,
+      releaseWriter: false,
+    });
+    expect(decideUnprovenKeyFieldWrite(held, 'websiteUrl', key, true, true)).toEqual({
+      write: false,
+      releaseWriter: true,
+    });
   });
 });

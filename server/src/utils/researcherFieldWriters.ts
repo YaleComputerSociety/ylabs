@@ -174,6 +174,49 @@ export type ResearcherFieldWriteDecision =
   | { write: true; writer: ResearcherFieldWriter; writerChanged: boolean }
   | { write: false; releaseWriter: boolean };
 
+export interface NetidKeyIdentityEvidence {
+  identityJoin: string | undefined;
+  payload: string;
+  payloadHeldAsNetid: boolean;
+  aliasNetid: string | undefined;
+  researcherNetid: string | undefined;
+}
+
+/**
+ * Whether a netid-shaped user key reached this researcher by a name join alone with nothing to
+ * show it is that person (#6447). The `netid:` namespace often carries an email local part, a
+ * misnomer #2831 measured and kept, so the key is proven when some researcher holds the payload
+ * as a netid or the directory alias map resolves it to this researcher's netid (#5744).
+ */
+export function isUnprovenNetidKeyOnNameJoin(evidence: NetidKeyIdentityEvidence): boolean {
+  if (evidence.identityJoin !== 'person-name') return false;
+  if (!evidence.payload || evidence.payloadHeldAsNetid) return false;
+  const researcherNetid = evidence.researcherNetid?.trim().toLowerCase();
+  const aliasNetid = evidence.aliasNetid?.trim().toLowerCase();
+  return !(aliasNetid && researcherNetid && aliasNetid === researcherNetid);
+}
+
+export type UnprovenKeyFieldWriteDecision =
+  { write: true } | { write: false; releaseWriter: boolean };
+
+/**
+ * An unproven key never holds a field (#6447): it gives back any field it holds, keeping the
+ * value, and it only fills a field that is empty with no writer, recording no writer for it, so
+ * a key that does reach the researcher can take the field over on its own standing.
+ */
+export function decideUnprovenKeyFieldWrite(
+  writers: unknown,
+  field: ResearcherGatedField,
+  userKey: string,
+  hasValue: boolean,
+  storedValuePresent: boolean,
+): UnprovenKeyFieldWriteDecision {
+  const recorded = storedWriter(writers, field);
+  if (recorded?.userKey === userKey) return { write: false, releaseWriter: true };
+  if (!hasValue || storedValuePresent || recorded) return { write: false, releaseWriter: false };
+  return { write: true };
+}
+
 /**
  * Whether this key writes `field`. A key that holds the field but resolves no candidate now
  * releases it, so a sibling can take the field over; the stored value itself is left alone.
