@@ -208,6 +208,16 @@ describe('materializeEntity names a faculty research row after its lead on every
     expect(stored.entityType).toBe('LAB');
   });
 
+  it('keeps the name of a faculty research row with no resolved lead', async () => {
+    await seedRosterRow({ displayName: PAGE_SPELLING_NAME });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const stored = await persisted();
+    expect(stored.name).toBe(PAGE_SPELLING_NAME);
+    expect(stored.displayName).toBe(PAGE_SPELLING_NAME);
+  });
+
   it('keeps the name when the lead record now names a different person', async () => {
     const entity = await seedRosterRow();
     await seedLead(entity._id, 'Marisol Kettle-Fixture');
