@@ -176,6 +176,9 @@ It was drawn on 2026-11-17 by class from Production search logs through the read
 Any query matching a researcher name token was dropped, and queries about access rather than a topic (such as undergraduate, fellowship or first-year wording) are excluded.
 Its queries and grades stay local, like the blind 170's, and every gate reports it with the other strata.
 It exists because one-word queries are 66% of live traffic but 6 of the blind 170, so without it the most heavily weighted band is always underpowered.
+Its baseline, measured on 2026-11-17 on Development through the real search route with three blind graders and the median vote: P@10 0.811 (95% CI 0.756 to 0.862) and nDCG@10 0.951 (0.930 to 0.968) over all 120 queries.
+By class, field names (40) score P@10 0.938 and topics (33) 0.782; abbreviations, misspellings, methods, molecular terms and organisms each have fewer than 20 queries and are underpowered, with molecular terms weakest at P@10 0.367 on 6 queries.
+P@10 is the headline, because nDCG here is normalised over the graded top 10 and so measures ordering rather than recall.
 - Privacy: Production queries are student input, so the committed fixture holds only queries searched at least twice, after the person-identifier scan and owner review; anything else stays outside the repository.
 
 A second instrument stays separate: the lane scorecard over frozen pages (`lane_benchmark_pages`) labelled with the sampled rows' topic lists, which moves only when lane code changes.
