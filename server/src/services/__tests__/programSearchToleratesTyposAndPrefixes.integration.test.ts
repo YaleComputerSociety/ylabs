@@ -88,8 +88,13 @@ describe('program search tolerates misspellings and unfinished words (#4537)', (
     const corrected = await searchFellowships({ query: 'sophmore' });
     const correct = await searchFellowships({ query: 'sophomore' });
 
-    expect(corrected.total).toBe(3);
+    expect(corrected.total).toBe(correct.total);
     expect(titles(corrected).sort()).toEqual(titles(correct).sort());
+    expect(titles(corrected).slice(0, 3).sort()).toEqual([
+      'Fixture Sophomore Lab Stipend',
+      'Fixture Sophomore Summer Grant',
+      'Fixture Sophomore Travel Award',
+    ]);
     expect(corrected.queryCorrection).toEqual({
       originalQuery: 'sophmore',
       correctedQuery: 'sophomore',

@@ -310,7 +310,10 @@ export const rankProgramSearch = <T extends Record<string, unknown>>(
     return {
       programs:
         years.size > 0
-          ? eligible.filter((entry) => entry.standing === 'states').map((entry) => entry.program)
+          ? [
+              ...eligible.filter((entry) => entry.standing === 'states'),
+              ...eligible.filter((entry) => entry.standing === 'unstated'),
+            ].map((entry) => entry.program)
           : [],
       missingOneWord: false,
       closeMatchesFrom: null,

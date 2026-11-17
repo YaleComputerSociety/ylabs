@@ -719,9 +719,20 @@ const yearWordsServeTheStatedYear: ProgramJourneyCase = {
       .map((row) => ({ key: rowKey(row), years: statedYearsOfRow(row) }))
       .filter((row) => row.key);
     const walks = [];
+    const filterPairs = [];
     for (const { query, year } of YEAR_WORD_QUERIES) {
       const { rows } = await walkProgramBrowseLikeTheClient(context, { query });
-      walks.push({ query, year, servedKeys: rows.map(rowKey).filter(Boolean) });
+      const servedKeys = rows.map(rowKey).filter(Boolean);
+      walks.push({ query, year, servedKeys });
+      const filtered = await walkProgramBrowseLikeTheClient(context, {
+        filters: { yearOfStudy: [year] },
+      });
+      filterPairs.push({
+        baselineQuery: `yearOfStudy filter ${year}`,
+        variantQuery: query,
+        baselineKeys: filtered.rows.map(rowKey).filter(Boolean),
+        variantKeys: servedKeys,
+      });
     }
     const corpusAfter = await context.readCorpusFingerprint();
     return {
@@ -733,6 +744,14 @@ const yearWordsServeTheStatedYear: ProgramJourneyCase = {
           catalog,
           corpusBefore,
           corpusAfter,
+        ),
+        checkQueryVariantServesTheBaseline(
+          'programs-typed-year-matches-the-year-filter',
+          'A typed year query serves the same programs as picking that year in the filter',
+          filterPairs,
+          corpusBefore,
+          corpusAfter,
+          'sameRowSet',
         ),
       ],
       rates: [],

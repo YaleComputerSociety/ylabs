@@ -275,12 +275,16 @@ describe('rankProgramSearch year words (#6397)', () => {
     program('Painting Stipend', 'A studio stipend.', { yearOfStudy: ['First-Year Student'] }),
   ];
 
-  it('returns every program that states the year, whatever its text says', () => {
+  it('returns every program that states the year, then those that state no year, like the year filter', () => {
     expect(titles(rankedPrograms('first-year', catalog))).toEqual([
       'Starter Research Grant',
       'Painting Stipend',
+      'Open Research Grant',
     ]);
-    expect(titles(rankedPrograms('sophomores', catalog))).toEqual(['Starter Research Grant']);
+    expect(titles(rankedPrograms('sophomores', catalog))).toEqual([
+      'Starter Research Grant',
+      'Open Research Grant',
+    ]);
   });
 
   it('never returns a program whose stated years exclude the year, even when its text names it', () => {
@@ -314,7 +318,10 @@ describe('rankProgramSearch year words (#6397)', () => {
     expect(titles(rankedPrograms('senior thesis', [...catalog, thesisGrant]))).toEqual([
       'Thesis Support Grant',
     ]);
-    expect(titles(rankedPrograms('seniors', catalog))).toEqual(['Upper Year Research Grant']);
+    expect(titles(rankedPrograms('seniors', catalog))).toEqual([
+      'Upper Year Research Grant',
+      'Open Research Grant',
+    ]);
   });
 
   it('reads a rising year as the year the student is in now, the way the sources state it', () => {
