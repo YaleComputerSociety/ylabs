@@ -21,6 +21,7 @@ import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -98,7 +99,7 @@ async function main() {
   if (options.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(options.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
   }
 }
 

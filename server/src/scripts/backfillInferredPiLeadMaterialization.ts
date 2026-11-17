@@ -8,6 +8,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { runInferredPiLeadMaterializationBackfill } from './backfillInferredPiLeadMaterializationCore';
 import { createInferredPiLeadMaterializationDeps } from '../scrapers/inferredPiLeadReclaim';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,7 +50,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(outputReport, null, 2));
   if (output) {
     fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, `${JSON.stringify(outputReport, null, 2)}\n`);
+    writeReportFileSync(output, `${JSON.stringify(outputReport, null, 2)}\n`);
   }
 }
 

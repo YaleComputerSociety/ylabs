@@ -37,6 +37,7 @@ import {
   type OperatorDatabaseEnvironment,
 } from './operatorDatabaseEnvironment';
 import { resolveSafeJsonReportOutputPath, resolveSafeJsonReportPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -749,7 +750,7 @@ export function writeCanonicalMongoValidatorReport(
 ): void {
   if (!target) return;
   const safeTarget = resolveSafeJsonReportOutputPath(target);
-  fs.writeFileSync(safeTarget, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeTarget, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 /**
