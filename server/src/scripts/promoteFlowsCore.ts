@@ -414,11 +414,17 @@ export async function runPromoteProduction(
     appliedReport = undefined;
   }
   deps.log(formatProductionApplied(appliedReport));
+  const indexesExit = await deps.runYarn(['db:verify-indexes', '--target', 'production']);
+  const indexesProblem =
+    indexesExit === 0
+      ? undefined
+      : `db:verify-indexes --target production exited ${indexesExit}: Production lacks a declared index or carries a conflicting one; build what it names with the db:build-indexes command it printed before merging main`;
 
   if (args.skipRemotePhase) {
     deps.log(
       'Remote phase skipped: re-gate, reindex and smoke from the Production Render shell (docs/data-refresh-runbook.md Phase 5).',
     );
+    if (indexesProblem) return refuse(deps, [indexesProblem]);
     return 0;
   }
   const exitCode = await runRemotePhaseJob(
@@ -431,14 +437,17 @@ export async function runPromoteProduction(
       meiliRestorePoint: args.meiliRestorePoint,
     },
   );
-  if (exitCode === 0) {
+  if (exitCode === 0 && !indexesProblem) {
     deps.log(
       'Production promoted: gate, search reindex and smoke passed. Next: mark the main promotion pull request ready and merge it (docs/release-process.md step 6).',
     );
-  } else {
+    return 0;
+  }
+  if (exitCode !== 0) {
     deps.error(
       'Production MongoDB holds the new copy but the gate, reindex or smoke failed. Keep the Mongo result, fix the failed step from the Production Render shell, and do not merge main yet.',
     );
   }
-  return exitCode;
+  if (indexesProblem) deps.error(`refused: ${indexesProblem}`);
+  return exitCode !== 0 ? exitCode : 1;
 }
