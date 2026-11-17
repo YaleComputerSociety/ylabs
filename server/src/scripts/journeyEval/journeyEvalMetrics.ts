@@ -791,12 +791,21 @@ export interface ServedQueryPair {
   variantKeys: readonly string[];
 }
 
-export type QueryVariantAgreement = 'sameOrderedRows' | 'coversBaselineRows' | 'sharesABaselineRow';
+export type QueryVariantAgreement =
+  'sameOrderedRows' | 'sameRowSet' | 'coversBaselineRows' | 'sharesABaselineRow';
 
 const variantAgrees = (pair: ServedQueryPair, agreement: QueryVariantAgreement): boolean => {
   if (agreement === 'coversBaselineRows') {
     const variantKeys = new Set(pair.variantKeys);
     return pair.baselineKeys.every((key) => variantKeys.has(key));
+  }
+  if (agreement === 'sameRowSet') {
+    const baselineKeys = new Set(pair.baselineKeys);
+    const variantKeys = new Set(pair.variantKeys);
+    return (
+      baselineKeys.size === variantKeys.size &&
+      [...baselineKeys].every((key) => variantKeys.has(key))
+    );
   }
   if (agreement === 'sharesABaselineRow') {
     const variantKeys = new Set(pair.variantKeys);

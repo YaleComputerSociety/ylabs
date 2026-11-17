@@ -462,6 +462,21 @@ describe('departmentUndergradResearchScraper', () => {
     expect(records[0].description).not.toContain('coordinator@');
   });
 
+  it('persists the department page text a program record was read from, without a raw email (#6402)', () => {
+    const tobinConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'economics-tobin-ra',
+    );
+    const records = parseStructuredOpportunityPage(TOBIN_HTML, tobinConfig!);
+    const source = departmentUndergradResearchRecordsToObservations(records).find(
+      (observation) => observation.field === 'fullSourceDescription',
+    );
+    expect(source?.entityType).toBe('fellowship');
+    expect(typeof source?.value).toBe('string');
+    expect(String(source?.value)).not.toBe(records[0].description);
+    expect(String(source?.value)).not.toMatch(/^Supports undergraduate research in Economics\./);
+    expect(String(source?.value)).not.toContain('coordinator@yale.edu');
+  });
+
   it('does not take a news link whose slug merely contains "form" as the application route', () => {
     const html = `
       <main>

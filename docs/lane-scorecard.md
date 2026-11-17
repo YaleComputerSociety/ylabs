@@ -243,6 +243,12 @@ A fellowship's structured fields compare by kind rather than by containment, bec
 The comparison is chosen by entity type and field together, so a research-entity field that shares a name keeps containment.
 `applicationLink` compares as a URL after upgrading `http` to `https`, lowercasing the host, and dropping the fragment and any trailing slash.
 `yearOfStudy`, `termOfAward`, and `purpose` compare by set equality, with each acceptable set written as a JSON array string, so a superset does not match.
+
+Gold labels follow the lane's own field definitions, so a definition ruling re-labels the gold rather than loosening the lane (2026-11-16 and 2026-11-17, manager rulings).
+`contactOffice` is present only where the page states the office explicitly (#4589, narrowed to admit a named office's application system); a sponsor named only in a program's title is not a contact office, so 50 agent-drafted `programs-grants-gold-v1` labels moved to absent and 3 moved to present after an inline second pass agreed with the first on 80 of 85 rows.
+`entryMode` labels follow the classifier's rules: a graduate dissertation or travel record requires an adviser by construction, and closure lives in `isAcceptingApplications`, so a closed program keeps its arm's mode rather than `TRACK_NEXT_CYCLE` (7 `programs-fellowships-office-gold-v1` labels).
+A `contactOffice` label accepts the page's own name for its office ("Yale Fellowships and Funding" beside "Office of Fellowships and Funding", 3 labels).
+The original label files are kept outside the repository so each re-label can be reverted.
 A `deadline` label written `YYYY-MM-DD` matches an emitted instant that falls on that America/New_York calendar date, and one written `YYYY-MM-DDTHH:MM` matches only the same New York minute.
 `requiresMentorBeforeApply` and `entryMode` compare by exact value, and a fellowship `title` and `contactOffice` keep containment.
 A fellowship `eligibility` is a statement: it matches when it is a clause of an acceptable value at least 20 characters long, or contains one and runs at most 400 characters past it (#4233).

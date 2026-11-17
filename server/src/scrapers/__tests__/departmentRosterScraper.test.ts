@@ -50,6 +50,8 @@ import {
   csRenderedExtractor,
   csFacultyDataExtractor,
   chemEnvFacultyExtractor,
+  engineeringDepartmentFacultyExtractor,
+  rosterUnitYields,
   collapseLaneOutcomesByDepartment,
   type DeptConfig,
   type FacultyEntry,
@@ -2182,6 +2184,40 @@ describe('chemEnvFacultyExtractor', () => {
       },
     ]);
   });
+  it('reads the applied and computational mathematics cards, including off-site profiles (#6423)', () => {
+    const cards = `
+      <div id="8616" class="window-shade-container py-8 lg:py-16">
+        <div class="stories justify-center grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <a class="block stories-item py-2 !no-underline" target="_self" href="/research-and-faculty/faculty-directory/alpha-example">
+            <picture><img class="img-fluid" width="704" height="704" src="/application/files/thumbnails/alpha-example.webp" /></picture>
+            <h3 class="!pb-0 block text-brand-blue">Alpha Example <em class="fa fa-arrow-right text-light-blue"></em></h3>
+            <span class="text-black block font-bold">Professor of Applied Mathematics</span>
+          </a>
+          <a class="block stories-item py-2 !no-underline" target="_blank" href="https://math.yale.edu/profile/beta-sample">
+            <h3 class="!pb-0 block text-brand-blue">Beta Sample <em class="fa fa-arrow-right text-light-blue"></em></h3>
+            <span class="text-black block font-bold">Professor of Mathematics</span>
+          </a>
+        </div>
+      </div>
+    `;
+    const out = chemEnvFacultyExtractor(cards, {
+      pageUrl:
+        'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
+    });
+    expect(out.map(({ name, profileUrl, title }) => ({ name, profileUrl, title }))).toEqual([
+      {
+        name: 'Alpha Example',
+        profileUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/alpha-example',
+        title: 'Professor of Applied Mathematics',
+      },
+      {
+        name: 'Beta Sample',
+        profileUrl: 'https://math.yale.edu/profile/beta-sample',
+        title: 'Professor of Mathematics',
+      },
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2344,8 +2380,8 @@ describe('DepartmentRosterScraper.run', () => {
     });
     expect(configsByKey.get('applied-mathematics')).toMatchObject({
       deptName: 'Applied Mathematics',
-      url: 'https://applied.math.yale.edu/people/faculty',
-      extractor: viewsTableRowExtractor,
+      url: 'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
+      extractor: engineeringDepartmentFacultyExtractor,
     });
     expect(configsByKey.get('history-science-medicine-public-health')).toMatchObject({
       deptName: 'History of Science, Medicine & Public Health',
@@ -2400,6 +2436,29 @@ describe('DepartmentRosterScraper.run', () => {
     expect(
       logs.some((l) => /WARNING:.*yielded no faculty/.test(l) && l.includes('physics(empty)')),
     ).toBe(true);
+    expect(result.partialFailures).toBeUndefined();
+    expect(result.metrics?.unitYields).toEqual({ physics: 0 });
+  });
+
+  it('reports each read department as a unit yield and leaves an unread one out (#6423)', () => {
+    expect(
+      rosterUnitYields([
+        { deptKey: 'read', status: 'ok', count: 12 },
+        { deptKey: 'truncated', status: 'partial-read', count: 4 },
+        { deptKey: 'truncated-empty', status: 'partial-read', count: 0 },
+        { deptKey: 'migrated', status: 'empty', count: 0 },
+        { deptKey: 'one-tab-migrated', status: 'empty', count: 9 },
+        { deptKey: 'broken-parser', status: 'extractor-error', count: 0 },
+        { deptKey: 'unreachable', status: 'fetch-failed', count: 0 },
+        { deptKey: 'limited', status: 'skipped-by-limit', count: 0 },
+      ]),
+    ).toEqual({
+      read: 12,
+      truncated: 4,
+      migrated: 0,
+      'one-tab-migrated': 9,
+      'broken-parser': 0,
+    });
   });
 
   // The whole lane read, not just the mint: a support-staff roster entry carrying the
@@ -6091,5 +6150,123 @@ describe('dept-faculty-roster userType comes from the person, not the page (#575
       deptListing('chem', 'Chemistry', 'Professor of Chemistry'),
     ]);
     expect(typings.at(-1)).toBe('faculty');
+  });
+});
+
+describe('engineeringDepartmentFacultyExtractor (#6423)', () => {
+  const page = `
+    <main>
+      <h2>Faculty</h2>
+      <div class="stories">
+        <a class="block stories-item py-2 !no-underline" href="/research-and-faculty/faculty-directory/alpha-example">
+          <h3 class="!pb-0 block text-brand-blue">Alpha Example <em class="fa fa-arrow-right"></em></h3>
+          <span class="text-black block font-bold">Professor of Applied Mathematics</span>
+        </a>
+      </div>
+      <div><h2 class="text-brand-blue">Gibbs Assistant Professors</h2></div>
+      <div class="grid gap-8 content-columns grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 bordered columns4">
+        <div class="content1 px-4"><h3>Gamma Sample</h3><p><a href="mailto:gamma.sample@example.edu">gamma.sample@example.edu</a></p></div>
+        <div class="content2 px-4"><h3>Delta Placeholder</h3><p><a href="mailto:delta.placeholder@example.edu">delta.placeholder@example.edu</a></p></div>
+      </div>
+      <div><h2>Contact Us</h2></div>
+      <div class="grid content-columns columns2">
+        <div class="content1 px-4"><h3>Epsilon Office</h3><p><a href="mailto:office@example.edu">office@example.edu</a></p></div>
+      </div>
+    </main>
+  `;
+  const ctx = {
+    pageUrl:
+      'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
+  };
+
+  it('reads the cards and a named rank section, titling its people from the heading', () => {
+    expect(
+      engineeringDepartmentFacultyExtractor(page, ctx).map(({ name, title, email }) => ({
+        name,
+        title,
+        email,
+      })),
+    ).toEqual([
+      { name: 'Alpha Example', title: 'Professor of Applied Mathematics', email: undefined },
+      {
+        name: 'Gamma Sample',
+        title: 'Gibbs Assistant Professor',
+        email: 'gamma.sample@example.edu',
+      },
+      {
+        name: 'Delta Placeholder',
+        title: 'Gibbs Assistant Professor',
+        email: 'delta.placeholder@example.edu',
+      },
+    ]);
+  });
+
+  it('reads no one from a column section whose heading names no faculty rank', () => {
+    const names = engineeringDepartmentFacultyExtractor(page, ctx).map((entry) => entry.name);
+    expect(names).not.toContain('Epsilon Office');
+  });
+});
+
+describe('a roster title cut off before the field it names (#6426)', () => {
+  const mathConfig = (entry: FacultyEntry): DeptConfig[] => [
+    {
+      deptKey: 'math',
+      deptName: 'Mathematics',
+      schoolName: 'FAS',
+      url: 'https://math.yale.edu/people/faculty',
+      paginated: false,
+      extractor: () => [entry],
+    },
+  ];
+  const titleOf = (emitted: Array<{ entityType: string; field: string; value: unknown }>) =>
+    emitted.find((o) => o.entityType === 'user' && o.field === 'title')?.value;
+
+  it('emits no title when the roster title is truncated and nothing states it whole', async () => {
+    const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
+    const scraper = new DepartmentRosterScraper(
+      mathConfig({ name: 'Sam Fixture', title: 'Assistant Professor of' }),
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'lname')?.value).toBe('Fixture');
+    expect(titleOf(emitted)).toBeUndefined();
+  });
+
+  it('takes the whole title from the person page when the roster title is truncated', async () => {
+    const profileUrl = 'https://math.yale.edu/people/sam-fixture';
+    const profileHtml = `
+      <html><head><title>Sam Fixture | Mathematics</title></head><body>
+        <h1>Sam Fixture</h1>
+        <div class="person-title">Assistant Professor of Applied Mathematics</div>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url === profileUrl ? profileHtml : '<html><body>listing</body></html>',
+    );
+    const scraper = new DepartmentRosterScraper(
+      mathConfig({ name: 'Sam Fixture', title: 'Assistant Professor of', profileUrl }),
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(titleOf(emitted)).toBe('Assistant Professor of Applied Mathematics');
+  });
+
+  it('keeps a complete roster title as it is', async () => {
+    const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
+    const scraper = new DepartmentRosterScraper(
+      mathConfig({ name: 'Sam Fixture', title: 'Assistant Professor of Mathematics' }),
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(titleOf(emitted)).toBe('Assistant Professor of Mathematics');
   });
 });

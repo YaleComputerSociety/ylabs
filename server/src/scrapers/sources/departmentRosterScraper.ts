@@ -285,6 +285,26 @@ export function htmlLaneStatus(
   return walk.distinctEntries.length === 0 ? 'empty' : 'ok';
 }
 
+const ROSTER_BARREN_STATUSES = new Set(['empty', 'extractor-error', 'rendered-extractor-error']);
+
+/**
+ * What each department roster yielded in this run, for the cross-run barren-unit check
+ * (#3876, #6423). A department this run did not read (a failed fetch, a `--limit` skip)
+ * is left out, because an omitted unit is inconclusive and a zero is barren.
+ */
+export function rosterUnitYields(
+  perDept: ReadonlyArray<Pick<LaneRead, 'deptKey' | 'status' | 'count'>>,
+): Record<string, number> {
+  const yields: Record<string, number> = {};
+  for (const dept of perDept) {
+    const readSomething = dept.status === 'partial-read' && dept.count > 0;
+    if (dept.status === 'ok' || readSomething || ROSTER_BARREN_STATUSES.has(dept.status)) {
+      yields[dept.deptKey] = dept.count;
+    }
+  }
+  return yields;
+}
+
 /**
  * How many roster lanes read at once.
  *
@@ -1055,6 +1075,45 @@ export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
   });
 
   return out;
+};
+
+const FACULTY_SECTION_HEADING = /\b(?:professors?|lecturers?|instructors?)\b/i;
+
+const singularSectionTitle = (heading: string): string => heading.replace(/s$/, '');
+
+/**
+ * An engineering department faculty page: the stories cards, then any named section
+ * ("<rank>s") that lists people in content columns as a name and an email, with no card
+ * (#6423). The section heading is the only title the page states for those people.
+ */
+export const engineeringDepartmentFacultyExtractor: FacultyExtractor = (html, ctx) => {
+  const cards = chemEnvFacultyExtractor(html, ctx);
+  const $ = cheerio.load(html);
+  const columnEntries: FacultyEntry[] = [];
+  let sectionHeading = '';
+  $('h2, .content-columns').each((_i, el) => {
+    const node = $(el);
+    if (el.tagName === 'h2') {
+      sectionHeading = cleanText(node.text());
+      return;
+    }
+    if (!FACULTY_SECTION_HEADING.test(sectionHeading)) return;
+    node.children('[class^="content"]').each((_j, column) => {
+      const cell = $(column);
+      const { name, ...listedName } = rosterListedName(cleanText(cell.find('h3').first().text()));
+      if (!name) return;
+      const email = (cell.find('a[href^="mailto:"]').first().attr('href') || '')
+        .replace(/^mailto:/i, '')
+        .trim();
+      columnEntries.push({
+        name,
+        ...listedName,
+        title: singularSectionTitle(sectionHeading),
+        ...(email ? { email } : {}),
+      });
+    });
+  });
+  return [...cards, ...columnEntries];
 };
 
 /**
@@ -2965,9 +3024,9 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'applied-mathematics',
     deptName: 'Applied Mathematics',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    url: 'https://applied.math.yale.edu/people/faculty',
+    url: 'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
     paginated: false,
-    extractor: viewsTableRowExtractor,
+    extractor: engineeringDepartmentFacultyExtractor,
     withholdsHomeDepartment: true,
     namesCatalogDepartment: true,
   },
@@ -3082,6 +3141,9 @@ function absolutize(href: string, base: string): string {
   }
 }
 
+const usableRosterTitle = (title: string | undefined): string | undefined =>
+  title && !isTruncatedPersonTitle(title) ? title : undefined;
+
 function cleanText(value: string | undefined | null): string {
   return String(value || '')
     .replace(/\s+/g, ' ')
@@ -3131,10 +3193,24 @@ function stripTopicLabelPrefix(value: string): string {
   return stripResearchSectionLabelPrefix(value);
 }
 
+/**
+ * The medical and public-health schools' "Research at a Glance" tiles print each topic beside a
+ * researcher-count link and a publications link (#6438). The topic is read from the tile's own
+ * keyword element; any topic that still carries that chrome is refused whole, never trimmed,
+ * because a count glued to a topic's own digits ("COVID-1915 YSM Researchers") cannot be
+ * separated in text.
+ */
+const PROFILE_TOPIC_TILE_CHROME =
+  /\b(?:YS(?:M|PH)|YCC)\s+Researchers?\b|View\s*(?:\d+\s*)?Related\s+Publications?/i;
+const PROFILE_TOPIC_TILE = '.profile-details-interest';
+const PROFILE_TOPIC_TILE_KEYWORD = '.profile-details-interest__keyword';
+const PROFILE_TOPIC_TILE_LIST = '.profile-details-interests-glance';
+
 function isTopicLabelChrome(value: string): boolean {
   const cleaned = cleanText(value);
   if (!cleaned) return true;
   if (/:$/.test(cleaned)) return true;
+  if (PROFILE_TOPIC_TILE_CHROME.test(cleaned)) return true;
   return (
     isResearchSectionLabel(cleaned) ||
     isProseNotTopicPhrase(cleaned) ||
@@ -3513,8 +3589,21 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI, meshIndexed: bo
     '[class*="interests"]',
   ];
 
+  $(PROFILE_TOPIC_TILE_KEYWORD).each((_i, el) => {
+    const keyword = cleanText($(el).text());
+    if (keyword && !isTopicLabelChrome(keyword)) values.push(keyword);
+  });
+
   for (const selector of selectors) {
     $(selector).each((_i, el) => {
+      const node = $(el);
+      if (
+        node.is(PROFILE_TOPIC_TILE_LIST) ||
+        node.closest(`${PROFILE_TOPIC_TILE_LIST}, ${PROFILE_TOPIC_TILE}`).length > 0 ||
+        node.find(PROFILE_TOPIC_TILE).length > 0
+      ) {
+        return;
+      }
       const text = elementTextWithChildSeparators($, el);
       values.push(...splitTopicText(text, separators));
     });
@@ -3972,8 +4061,10 @@ export function mergeProfileEnrichment(
     namePlaceholder: entry.namePlaceholder && resolvedName === entry.name ? true : undefined,
     profileUrl: enrichment.profileUrl || entry.profileUrl,
     profileSourceUrl: enrichment.profileSourceUrl || entry.profileSourceUrl,
-    title: entry.title || enrichment.title,
-    titleFromProfilePage: entry.title ? entry.titleFromProfilePage : Boolean(enrichment.title),
+    title: usableRosterTitle(entry.title) || usableRosterTitle(enrichment.title),
+    titleFromProfilePage: usableRosterTitle(entry.title)
+      ? entry.titleFromProfilePage
+      : Boolean(usableRosterTitle(enrichment.title)),
     email: entry.email || enrichment.email,
     emailSlotAttestation: mergedEmailSlotAttestation(entry, enrichment),
     labUrl: entry.labUrl || enrichment.labUrl,
@@ -4676,7 +4767,7 @@ function entryToUserObservations(
     obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
   }
   if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
-  if (entry.title) {
+  if (usableRosterTitle(entry.title)) {
     obs.push({
       ...titleBase,
       field: 'title',
@@ -5928,11 +6019,10 @@ export class DepartmentRosterScraper implements IScraper {
       );
     }
 
-    const breakageStatuses = new Set(['empty', 'extractor-error', 'rendered-extractor-error']);
-    const brokenSources = perDept.filter((d) => breakageStatuses.has(d.status));
+    const brokenSources = perDept.filter((d) => ROSTER_BARREN_STATUSES.has(d.status));
     if (brokenSources.length > 0) {
       ctx.log(
-        `WARNING: ${brokenSources.length} configured roster source(s) fetched but yielded no faculty - likely a site migration or renamed layout; re-verify the URL and extractor: ${brokenSources
+        `WARNING: ${brokenSources.length} configured roster source(s) fetched a roster page that yielded no faculty - likely a site migration or renamed layout; re-verify the URL and extractor: ${brokenSources
           .map((d) => `${d.deptKey}(${d.status})`)
           .join(', ')}`,
       );
@@ -5965,6 +6055,7 @@ export class DepartmentRosterScraper implements IScraper {
       entitiesObserved: totalFaculty + totalLabs,
       notes: rekeyed.note ? `Departments: ${summary}; ${rekeyed.note}` : `Departments: ${summary}`,
       ...(rekeyed.partialFailure ? { partialFailures: [rekeyed.partialFailure] } : {}),
+      metrics: { unitYields: rosterUnitYields(perDept) },
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }

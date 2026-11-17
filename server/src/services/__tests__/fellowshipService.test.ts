@@ -306,6 +306,7 @@ describe('fellowship public serializer', () => {
       closed: false,
       projectedNextCycle: false,
       stale: false,
+      rollingReview: false,
     });
   });
 
@@ -703,6 +704,7 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
       closed: true,
       projectedNextCycle: true,
       stale: false,
+      rollingReview: false,
     });
   });
 
@@ -719,6 +721,7 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
       closed: true,
       projectedNextCycle: false,
       stale: true,
+      rollingReview: false,
     });
   });
 
@@ -753,6 +756,7 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
       closed: false,
       projectedNextCycle: false,
       stale: false,
+      rollingReview: false,
     });
   });
 
@@ -803,5 +807,75 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
       publicFellowshipForStudent(recurring, new Date('2025-09-01T12:00:00.000Z')),
     );
     expect(reader.deadlineStale).toBe(false);
+  });
+});
+
+describe('a rolling-review program serves its date as the close of the window (#6407)', () => {
+  const now = new Date('2026-11-17T12:00:00.000Z');
+  const program = (overrides: Record<string, unknown>) => ({
+    _id: '67d8928150621bcef434a1d7',
+    title: 'Synthetic research fund',
+    deadline: new Date('2027-03-09T18:00:00.000Z'),
+    isAcceptingApplications: true,
+    ...overrides,
+  });
+
+  it('marks the served deadline as a rolling window when the stored source text says so', () => {
+    const payload = publicFellowshipForStudent(
+      program({
+        fullSourceDescription:
+          'Applications are accepted throughout the semester on a rolling basis.',
+      }),
+      now,
+    );
+    expect(payload.deadline).toEqual(new Date('2027-03-09T18:00:00.000Z'));
+    expect(payload.deadlineRollingReview).toBe(true);
+    expect(publicProgramForReader(payload).deadlineRollingReview).toBe(true);
+  });
+
+  it('keeps a fixed deadline whose text says it is not reviewed on a rolling basis', () => {
+    const payload = publicFellowshipForStudent(
+      program({
+        description:
+          'Applications are reviewed once per year. NB: Applications are not reviewed on a rolling basis.',
+      }),
+      now,
+    );
+    expect(payload.deadlineRollingReview).toBe(false);
+  });
+
+  it('keeps a per-college copy whose shared schedule text never states rolling review', () => {
+    const payload = publicFellowshipForStudent(
+      program({
+        fullSourceDescription:
+          'Each college determines its own schedule for accepting applications and for student presentations.',
+      }),
+      now,
+    );
+    expect(payload.deadline).toEqual(new Date('2027-03-09T18:00:00.000Z'));
+    expect(payload.deadlineRollingReview).toBe(false);
+  });
+
+  it('never marks a projected or a passed deadline as a rolling window', () => {
+    const passed = servedProgramDeadline(
+      program({
+        deadline: new Date('2026-10-01T18:00:00.000Z'),
+        description: 'Applications are accepted on a rolling basis.',
+      }),
+      now,
+    );
+    expect(passed.rollingReview).toBe(false);
+
+    const projected = servedProgramDeadline(
+      program({
+        title: 'Synthetic Annual Research Fund',
+        applicationLink: 'https://funding.example.edu/synthetic-fund',
+        deadline: new Date('2026-10-01T18:00:00.000Z'),
+        description: 'Applications are accepted on a rolling basis.',
+      }),
+      now,
+    );
+    expect(projected.projectedNextCycle).toBe(true);
+    expect(projected.rollingReview).toBe(false);
   });
 });

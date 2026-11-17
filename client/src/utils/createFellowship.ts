@@ -59,8 +59,10 @@ export function createFellowship(data: any): Fellowship {
     // own "unconfirmed, verify at source" warning (#3904).
     deadlineProjectedNextCycle: data.deadlineProjectedNextCycle === true,
     deadlineStale: data.deadlineStale === true,
+    deadlineRollingReview: data.deadlineRollingReview === true,
     deadlineTextConflict:
       typeof data.deadlineTextConflict === 'string' ? data.deadlineTextConflict : null,
+    proseStatesPastCycleDates: data.proseStatesPastCycleDates === true,
     contactName: data.contactName || '',
     contactEmail: data.contactEmail || '',
     contactPhone: data.contactPhone || '',

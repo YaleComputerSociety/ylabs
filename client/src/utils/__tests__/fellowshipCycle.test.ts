@@ -185,3 +185,25 @@ describe('fellowshipCycle', () => {
     expect(getFellowshipDeadlineSubtitle(endOfNewYorkDay, now)).toBe('Due Mar 24');
   });
 });
+
+describe('the card subtitle of a rolling-review program (#6407)', () => {
+  const rolling = (overrides: Partial<Fellowship> = {}) =>
+    baseFellowship({
+      isAcceptingApplications: true,
+      deadline: '2026-06-30T16:00:00.000Z',
+      deadlineRollingReview: true,
+      ...overrides,
+    });
+
+  it('describes an upcoming served date as the close of a rolling window', () => {
+    expect(getFellowshipDeadlineSubtitle(rolling(), now)).toBe(
+      'Reviewed on a rolling basis until Jun\u00a030',
+    );
+  });
+
+  it('keeps a fixed deadline as a due date', () => {
+    expect(getFellowshipDeadlineSubtitle(rolling({ deadlineRollingReview: false }), now)).toBe(
+      'Due Jun 30',
+    );
+  });
+});

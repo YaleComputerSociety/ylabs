@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   ROSTER_BIO_EVIDENCE_FIELD,
   planRosterBioResearchRows,
+  rosterBioMintRefusal,
+  rosterBioPersonKey,
   rosterBioPersonName,
   rosterBioRereadObservation,
+  rosterBioRereadObservations,
   rosterBioResearchObservations,
   rosterBioTitleVerdict,
   type RosterBioCoveredIdentities,
@@ -308,5 +311,212 @@ describe('roster biography research evidence', () => {
     expect(resolve(keyed, 'Alex Example')?.slug).toBe('dept-synthetic-alex-q-example');
     const netidKeyed = person({ key: 'netid:abc123', departments: ['Synthetic Studies'] });
     expect(resolve(netidKeyed, 'Alex Example')?.slug).toBe('dept-synthetic-alex-example');
+  });
+});
+
+describe('a credential the roster put where the given name belongs (#6372)', () => {
+  const CREDENTIAL_KEY = 'dept:synthetic:phd-example';
+  const credentialLed = (overrides: Partial<RosterBioPerson> = {}) =>
+    person({
+      key: CREDENTIAL_KEY,
+      fname: 'PhD',
+      lname: 'Example',
+      profileUrls: { departmental: 'https://synthetic.yale.edu/profile/alex-example' },
+      ...overrides,
+    });
+
+  it('rebuilds the person key from the recovered name and mints under it', () => {
+    expect(rosterBioPersonKey(credentialLed())).toBe('dept:synthetic:alex-example');
+    expect(rosterBioPersonKey(credentialLed({ fname: 'Ph.D.' }))).toBe(
+      'dept:synthetic:alex-example',
+    );
+    const { planned } = planRosterBioResearchRows([credentialLed()], emptyCovered(), resolver);
+    expect(planned).toHaveLength(1);
+    expect(
+      rosterBioResearchObservations(planned[0]).find((obs) => obs.field === 'inferredPiUserKey')
+        ?.value,
+    ).toBe('dept:synthetic:alex-example');
+  });
+
+  it('mints at the slug the roster lane would mint for the rebuilt key', () => {
+    const config = {
+      deptKey: 'synthetic',
+      deptName: 'Synthetic Studies',
+      schoolName: 'Synthetic School',
+      url: 'https://synthetic.yale.edu/people',
+    } as DeptConfig;
+    const { planned } = planRosterBioResearchRows(
+      [credentialLed({ departments: ['Synthetic Studies'] })],
+      emptyCovered(),
+      rosterBioDepartmentResolver([config]),
+    );
+    expect(planned.map((row) => row.slug)).toEqual(['dept-synthetic-alex-example']);
+  });
+
+  it('mints nothing when no given name can be recovered', () => {
+    const nameless = credentialLed({
+      profileUrls: { departmental: 'https://synthetic.yale.edu/profile/12345' },
+    });
+    expect(rosterBioPersonKey(nameless)).toBe('');
+    const { planned, skipped } = planRosterBioResearchRows([nameless], emptyCovered(), resolver);
+    expect(planned).toEqual([]);
+    expect(skipped.credential_only_given_name).toBe(1);
+  });
+
+  it('keeps the key of a real name that is spelled like or starts with a credential', () => {
+    for (const [key, fname] of [
+      ['dept:synthetic:ma-example', 'Ma'],
+      ['dept:synthetic:phdung-example', 'Phdung'],
+      ['dept:synthetic:mdala-example', 'Mdala'],
+      ['dept:synthetic:alex-example', 'Alex'],
+      ['dept:synthetic:dr-alex-example', 'Dr. Alex'],
+      ['dept:synthetic:md-alex-example', 'Md Alex'],
+      ['dept:synthetic:md-example', 'Md'],
+    ]) {
+      expect(rosterBioPersonKey(person({ key, fname }))).toBe(key);
+    }
+    expect(rosterBioPersonKey(credentialLed({ key: 'netid:abc123' }))).toBe('netid:abc123');
+  });
+
+  it('re-points its own row to the rebuilt key, and keeps re-reading it once re-pointed', () => {
+    const OWN_SLUG = 'dept-synthetic-alex-example';
+    const underOldKey: RosterBioCoveredIdentities = {
+      ...emptyCovered(),
+      personKeys: new Set([CREDENTIAL_KEY]),
+      slugs: new Set([OWN_SLUG]),
+      ownRowSlugsByPersonKey: new Map([[CREDENTIAL_KEY, OWN_SLUG]]),
+    };
+    const first = planRosterBioResearchRows([credentialLed()], underOldKey, resolver);
+    expect(first.planned).toEqual([]);
+    expect(first.reread).toHaveLength(1);
+    const observations = rosterBioRereadObservations(first.reread[0]);
+    expect(observations.map((obs) => obs.field)).toEqual([
+      ROSTER_BIO_EVIDENCE_FIELD,
+      'inferredPiUserKey',
+    ]);
+    expect(observations[1]).toMatchObject({
+      entityKey: OWN_SLUG,
+      value: 'dept:synthetic:alex-example',
+    });
+    expect(observations[1].assertsNoValueFor).toBeUndefined();
+
+    const underNewKey: RosterBioCoveredIdentities = {
+      ...underOldKey,
+      personKeys: new Set(['dept:synthetic:alex-example']),
+      ownRowSlugsByPersonKey: new Map([['dept:synthetic:alex-example', OWN_SLUG]]),
+    };
+    const second = planRosterBioResearchRows([credentialLed()], underNewKey, resolver);
+    expect(second.planned).toEqual([]);
+    expect(second.reread.map((row) => row.slug)).toEqual([OWN_SLUG]);
+  });
+
+  it('adds no lead observation when re-reading a row whose key needed no rebuild', () => {
+    const OWN_SLUG = 'dept-synthetic-alex-example';
+    const covered: RosterBioCoveredIdentities = {
+      ...emptyCovered(),
+      personKeys: new Set(['dept:synthetic:alex-example']),
+      slugs: new Set([OWN_SLUG]),
+      ownRowSlugsByPersonKey: new Map([['dept:synthetic:alex-example', OWN_SLUG]]),
+    };
+    const { reread } = planRosterBioResearchRows([person()], covered, resolver);
+    expect(rosterBioRereadObservations(reread[0]).map((obs) => obs.field)).toEqual([
+      ROSTER_BIO_EVIDENCE_FIELD,
+    ]);
+  });
+});
+
+describe('a bio that states no research subject mints nothing (#4954)', () => {
+  const plan = (bio: string) =>
+    planRosterBioResearchRows([person({ bio })], emptyCovered(), resolver);
+
+  it('refuses a bio that states only clinical care, consultation, or supervision', () => {
+    const { planned, skipped } = plan(
+      'Alex Example focuses on integrative care and provides clinical consultation to pediatric practices. She supervised student trainees at an outpatient clinic.',
+    );
+    expect(planned).toHaveLength(0);
+    expect(skipped.clinical_teaching_or_consultation_only).toBe(1);
+  });
+
+  it('refuses a bio that states only curriculum design for teaching', () => {
+    const { planned, skipped } = plan(
+      'Alex Example focuses on designing curricula for ultrasound use in clinical science teaching to medical students.',
+    );
+    expect(planned).toHaveLength(0);
+    expect(skipped.clinical_teaching_or_consultation_only).toBe(1);
+  });
+
+  it('does not read a Study Center in an affiliation as a stated study', () => {
+    const { planned } = plan(
+      'Alex Example focuses on integrative care and provides clinical consultation at the Synthetic Child Study Center.',
+    );
+    expect(planned).toHaveLength(0);
+  });
+
+  it('refuses research stated with no topic', () => {
+    expect(
+      rosterBioMintRefusal(
+        [
+          'Dr. Example is actively involved in both clinical and basic science research.',
+          'Her research and that of her collaborators have been presented at regional, national, and international conferences.',
+        ],
+        'Alex Example',
+      ),
+    ).toBe('no_stated_research_topic');
+  });
+
+  it('keeps clinical-trials research that has a clinical framing', () => {
+    expect(
+      rosterBioMintRefusal(
+        [
+          'She is a clinical investigator whose research focuses on clinical trials of targeted therapies for pediatric leukemia.',
+        ],
+        'Alex Example',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('keeps a stated research subject that names a clinical word without a research verb', () => {
+    for (const sentence of [
+      'Her work focuses on the genetics of epilepsy and its treatment.',
+      'His interests include the molecular mechanisms of drug resistance in patients with leukemia.',
+      'She specializes in the neurobiology of addiction and its therapy.',
+      'Her scholarship addresses health disparities in maternal care.',
+      'He develops novel imaging methods for cancer therapy.',
+      'She is interested in how neonatal encephalopathy alters early brain development.',
+    ]) {
+      expect(rosterBioMintRefusal([sentence], 'Alex Example')).toBeUndefined();
+    }
+  });
+
+  it('refuses only when every sentence is clinical or teaching practice', () => {
+    expect(
+      rosterBioMintRefusal(
+        [
+          'She provides clinical consultation to pediatric practices.',
+          'Her interests include the genetics of childhood epilepsy.',
+        ],
+        'Alex Example',
+      ),
+    ).toBeUndefined();
+    expect(
+      rosterBioMintRefusal(
+        [
+          'Her professional interests include behavioral medicine and interdisciplinary care.',
+          'She supervised student trainees and interns at an outpatient clinic.',
+        ],
+        'Alex Example',
+      ),
+    ).toBe('clinical_teaching_or_consultation_only');
+  });
+
+  it('leaves quality-improvement and program work for the owner to decide', () => {
+    const { planned } = plan(
+      'Alex Example focuses on improving the quality of care for patients with heart failure through care pathway redesign.',
+    );
+    expect(planned).toHaveLength(1);
+  });
+
+  it('keeps research with a topic', () => {
+    expect(plan(person().bio as string).planned).toHaveLength(1);
   });
 });

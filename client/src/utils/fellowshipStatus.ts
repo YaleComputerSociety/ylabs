@@ -96,6 +96,7 @@ export const getFellowshipApplicationStatus = (
     | 'deadline'
     | 'deadlineProjectedNextCycle'
     | 'deadlineStale'
+    | 'deadlineRollingReview'
     | 'eligibility'
     | 'yearOfStudy'
     | 'termOfAward'
@@ -210,12 +211,16 @@ export const getFellowshipApplicationStatus = (
     };
   }
 
+  const rollingDetail = fellowship.deadlineRollingReview
+    ? `Reviewed on a rolling basis until ${formatShortFellowshipDate(fellowship.deadline)}`
+    : undefined;
+
   if (daysUntilDeadline !== null && daysUntilDeadline <= CLOSING_SOON_DAYS) {
     return {
       ...base,
       kind: 'closingSoon',
       label: daysUntilDeadline <= 1 ? 'Due soon' : 'Closing soon',
-      detail: closingDetail(daysUntilDeadline),
+      detail: rollingDetail ?? closingDetail(daysUntilDeadline),
       isCurrentlyRelevant: true,
       isApplicationWindowOpen,
     };
@@ -225,7 +230,7 @@ export const getFellowshipApplicationStatus = (
     ...base,
     kind: 'open',
     label: 'Accepting applications',
-    detail: `Due ${formatShortFellowshipDate(fellowship.deadline)}`,
+    detail: rollingDetail ?? `Due ${formatShortFellowshipDate(fellowship.deadline)}`,
     isCurrentlyRelevant: true,
     isApplicationWindowOpen,
   };

@@ -33,7 +33,7 @@ import {
   programPageTitle,
 } from '../utils/programPageEvidence';
 import { parseProgramDate } from '../utils/programDeadline';
-import { boundedObservedFellowshipProse } from '../fellowshipProse';
+import { boundedObservedFellowshipProse, sanitizedObservedSourceText } from '../fellowshipProse';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 export const YALE_REU_PROGRAMS_SOURCE = 'yale-reu-programs';
@@ -85,6 +85,7 @@ export interface ReuProgramCandidate {
   title: string;
   description?: string;
   eligibility?: string;
+  fullSourceDescription?: string;
   competitionType: string;
   sourceUrl: string;
   applicationLink?: string;
@@ -303,6 +304,7 @@ export function parseReuProgramPage(
     title,
     description,
     eligibility,
+    fullSourceDescription: sanitizedObservedSourceText(bodyText),
     competitionType: competitionTypeForText(identityText),
     sourceUrl: pageUrl,
     applicationLink,
@@ -379,6 +381,7 @@ export function candidateToObservations(candidate: ReuProgramCandidate): Observa
     observation('competitionType', candidate.competitionType, candidate),
     observation('description', candidate.description, candidate),
     observation('eligibility', candidate.eligibility, candidate),
+    observation('fullSourceDescription', candidate.fullSourceDescription, candidate),
     currentSourceObservation('researchFocused', true, candidate),
     currentSourceObservation('archived', false, candidate),
     observation('applicationLink', candidate.applicationLink, candidate),

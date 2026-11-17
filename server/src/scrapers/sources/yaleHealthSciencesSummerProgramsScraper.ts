@@ -36,7 +36,7 @@ import {
   programPageTitle,
 } from '../utils/programPageEvidence';
 import { parseProgramDate } from '../utils/programDeadline';
-import { boundedObservedFellowshipProse } from '../fellowshipProse';
+import { boundedObservedFellowshipProse, sanitizedObservedSourceText } from '../fellowshipProse';
 
 export const YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE = 'yale-health-sciences-summer-programs';
 
@@ -112,6 +112,7 @@ export interface HealthSciencesProgramCandidate {
   title: string;
   description?: string;
   eligibility?: string;
+  fullSourceDescription?: string;
   competitionType: string;
   sourceUrl: string;
   applicationLink?: string;
@@ -337,6 +338,7 @@ export function parseHealthSciencesProgramPage(
     title,
     description,
     eligibility,
+    fullSourceDescription: sanitizedObservedSourceText(bodyText),
     competitionType: 'Summer Undergraduate Research Program (Health Sciences)',
     sourceUrl: pageUrl,
     applicationLink,
@@ -420,6 +422,7 @@ export function candidateToObservations(
     observation('competitionType', candidate.competitionType, candidate),
     observation('description', candidate.description, candidate),
     observation('eligibility', candidate.eligibility, candidate),
+    observation('fullSourceDescription', candidate.fullSourceDescription, candidate),
     currentSourceObservation('researchFocused', true, candidate),
     currentSourceObservation('archived', false, candidate),
     observation('applicationLink', candidate.applicationLink, candidate),

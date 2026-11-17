@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   derivePageQuotedResearchTopics,
+  isFieldQuoteAnUnrelatedLabel,
   isSplitFragmentTopic,
   isUnsearchedAcronymTopic,
   MAX_PAGE_QUOTED_TOPICS,
@@ -334,5 +335,78 @@ describe('derivePageQuotedResearchTopics', () => {
       'Primary Cilium Signaling',
       'Cell Biology',
     ]);
+  });
+});
+
+describe('a field quoted from a heading, breadcrumb or menu label (#6385)', () => {
+  const schoolPages: TopicSourcePage[] = [
+    {
+      url: HOME,
+      text: 'Home > Faculty & Research > Centers. The center studies wetland carbon storage and coastal flooding. Our lab works in environmental economics. Environmental Economics. Immunologic Memory.',
+    },
+  ];
+  const topic = quoted('Wetland carbon storage', 'studies wetland carbon storage', HOME);
+
+  it('refuses a field whose quote is a breadcrumb sharing no word with it', () => {
+    const result = derivePageQuotedResearchTopics(
+      { topics: [topic], field: quoted('environmental studies', 'Faculty & Research', HOME) },
+      schoolPages,
+    );
+    expect(result.topics).toEqual(['Wetland carbon storage']);
+    expect(result.refusals).toEqual([
+      { topic: 'environmental studies', reason: 'field-quote-is-an-unrelated-label' },
+    ]);
+  });
+
+  it('keeps a field stated in prose', () => {
+    const result = derivePageQuotedResearchTopics(
+      {
+        topics: [topic],
+        field: quoted('environmental economics', 'Our lab works in environmental economics', HOME),
+      },
+      schoolPages,
+    );
+    expect(result.topics).toEqual(['Wetland carbon storage', 'environmental economics']);
+  });
+
+  it('keeps a field quoted from a heading inside the content that names it', () => {
+    const result = derivePageQuotedResearchTopics(
+      {
+        topics: [topic],
+        field: quoted('environmental economics', 'Environmental Economics', HOME),
+      },
+      schoolPages,
+    );
+    expect(result.topics).toEqual(['Wetland carbon storage', 'environmental economics']);
+  });
+
+  it('keeps a heading that names the field in another form', () => {
+    expect(isFieldQuoteAnUnrelatedLabel('immunology', 'Immunologic Memory')).toBe(false);
+    expect(isFieldQuoteAnUnrelatedLabel('theatre', 'Lecturer in Theater Management')).toBe(false);
+  });
+
+  it('keeps a heading that abbreviates the field by its initials', () => {
+    expect(isFieldQuoteAnUnrelatedLabel('artificial intelligence', 'AI')).toBe(false);
+    expect(isFieldQuoteAnUnrelatedLabel('natural language processing', 'NLP Group')).toBe(false);
+    expect(isFieldQuoteAnUnrelatedLabel('natural language processing', 'AI')).toBe(true);
+  });
+
+  it('keeps lower-case prose framing that never names the field', () => {
+    expect(
+      isFieldQuoteAnUnrelatedLabel('Neuro-oncology', 'how glioma cells invade the brain'),
+    ).toBe(false);
+    expect(isFieldQuoteAnUnrelatedLabel('hydrology', 'The researcher is a hydrologist.')).toBe(
+      false,
+    );
+  });
+
+  it('does not let a filler word such as research or department count as support', () => {
+    expect(isFieldQuoteAnUnrelatedLabel('conservation science', 'Heritage Science Research')).toBe(
+      true,
+    );
+    expect(isFieldQuoteAnUnrelatedLabel('international trade', 'Department of Economics')).toBe(
+      true,
+    );
+    expect(isFieldQuoteAnUnrelatedLabel('econometrics', 'Department of Economics')).toBe(false);
   });
 });

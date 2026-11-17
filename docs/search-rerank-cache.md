@@ -23,7 +23,11 @@ Each document carries `queryText`, the stored `filters`, `scores` as `[{ entityI
 The serve path is off unless `SEARCH_RERANK_CACHE_ENABLED=true`, and with the flag unset search does not read the collection at all.
 With the flag on, a non-empty text query whose candidate pool is paginated locally (a hybrid query with no explicit sort) looks up its key once, through an in-process memo of five minutes, so the pages of one search cost one read.
 After the keyword and semantic legs are fused and the student filters narrow the pool, `applyCachedRerank` reorders the first 30 rows by cached score, highest first, with the fused order as the tiebreak.
-A row the entry does not score takes the neutral score 1.5, and every row after the first 30 keeps its place.
+A row the entry does not score takes the neutral score 0.5, below a row scored 1 and above a row scored 0, and every row after the first 30 keeps its place.
+The neutral was 1.5 until #6411, which ranked every row new to a seeded pool above the rows the seed judged marginal.
+On 2026-11-16 the 67 seeded round-1 queries served nDCG@10 0.842 through the route against 0.922 before, both on the same grades.
+An offline replay of those 67 queries on that day's pools gave 0.837 at neutral 1.5 and 0.897 at neutral 0.5.
+`rerankedTop` in `scripts/rerankSeedingRoundCore.ts` reads the same constant, so a seeding round's gate measures the order search serves.
 The reorder runs before the page is sliced, so every page of one search reads the same order, and the total and the facet counts are unchanged.
 The service core demotion (#5748) runs after it, so a cached score cannot lift a core above research rows, and the rerank-candidate read the live-miss job scores skips the demotion, so the rows it scores are the window the cache reorders.
 
@@ -77,6 +81,12 @@ It writes Development, and refuses any other database, unless `--environment=bet
 The seeder stores a `textHash` with each resolved score, the `rerankTextHash` of that row's document in the target environment's research-entity index, read through the fail-soft optional Meilisearch path; a document the index has not hashed yet gives none.
 It reads the index only when this shell's `MEILISEARCH_INDEX_PREFIX` names the target (unset for Development, `beta`, `prod`), because a laptop seeding Beta or Production is normally configured for the Development index, and hashing one environment's rows against another's index would store wrong hashes.
 The report's `textHashes` says what happened: `read-from-index`, `index-unreachable` (the read failed, so no hash is stored and the seed still applies), or `index-of-another-environment` (the index was not read); `scoresWithTextHash` counts the scores that carry one.
+An entry may also carry `"scoredTextHashes": { "<slug>": "<hash>" }`, naming the text hash a score was graded against.
+A score with one keeps that hash instead of the index's current one, so a re-seed that carries old scores forward beside new ones leaves the carried-over rows stale where their text has changed (#6427).
+Without it, every carried-over score would read as current and the stale count would fall without any re-scoring.
+`scoresKeepingScoredTextHash` counts the scores that keep a supplied hash, and `plannedEntriesStaleAfterApply` counts the planned entries that will still read as stale after the apply.
+`plannedEntriesStaleAfterApply` covers the text-hash half of staleness only, not the candidate-set rule that counts unscored rows in the top 10.
+A carried-over score whose hash is omitted from the input is indistinguishable from a fresh one and takes the current hash, so a re-seed should check that `scoresKeepingScoredTextHash` equals the number of scores it carries over.
 A seed without hashes is still served and still judged by the candidate-set rule, so seeding Beta or Production from a laptop degrades staleness detection rather than failing.
 A promotion seeds Beta and Production that way, from the laptop that holds the seed file, because a Render shell cannot read it; the exact runbook, its expected counts, turning the serve flag on, verification and rollback are in `docs/release-process.md` ("Seed the search rerank cache after the copy and the reindex").
 
@@ -104,6 +114,7 @@ Run each command through the machine's heavy-command slot.
    A query missing a score for any candidate is refused.
 4. A separate blind judge grades the packet under the judge guide, writing `[{ "qid", "slug", "grade" }]`.
 5. `gate --round=<round.json> --scores=<scores.json> --grades=<grades.json> [--seed-out=<seed.json>]` computes nDCG@10 per query and applies the import rule.
+   Report the round's result weighted to the live word-count mix beside the unweighted one (`docs/research-search-topics-design.md`, "A judged relevance benchmark").
    A round is imported only when it scores at least 10 queries, the mean change has a 95% bootstrap interval above 0, the queries it makes worse lose no more on average than the queries it makes better gain, and every pair is graded.
    It prints the means, the interval, and the better and worse counts, exits 2 on a refusal, and writes the seeder input only when the round passes.
 6. Import with the seeder above into Development as a new `full-v<n>-<date>` version, then dry-run again and re-read the served result.
@@ -226,7 +237,7 @@ All of these are in-process, so they hold per server instance; the web service r
 `runSearchRerankLiveMissJob` in `server/src/services/searchRerankLiveMissJob.ts` re-runs the same search for the key through `searchResearchGroupsForRerankCandidates`, public visibility scope, spelling correction and filter resolution as the route applies them, and no cached reorder.
 It sends the top 30 to `gpt-5-mini` through the shared model client under caller `search-rerank-live-miss`, with the prompt in `server/src/scrapers/prompts/searchRerankLiveMiss.md` (the rerank prompt measured in the #5549 cost pilot).
 The reply must give at least 27 of every 30 candidates (all but a tenth, rounded down) an integer score from 0 to 3; ids outside the candidate window and non-integer ids are ignored, and a reply below that bar writes nothing.
-Only the scored candidates are stored, and an unscored candidate reads as the neutral 1.5 on the serve path, as any unscored row does.
+Only the scored candidates are stored, and an unscored candidate reads as the neutral 0.5 on the serve path, as any unscored row does.
 The bar is measured: a strict every-candidate rule threw away 61 of 320 real answers in the review pilot, 46 of them for missing one id of 30 (#5549).
 Each stored score carries the `textHash` of its pool hit from that same search.
 Before scoring, the job re-reads the existing entry and applies the same rule search applies, against the re-run search's served top 10, so the search path and the job agree on what is stale.

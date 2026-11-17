@@ -3,9 +3,19 @@ import {
   PROGRAM_QUERY_STOP_WORDS,
   PROGRAM_SEARCH_SPELLING_FIELDS,
 } from './programSearchSpellingVocabulary';
-import { PROGRAM_TOPIC_TAXONOMY, yearOfStudyWordAlternatives } from './programTopicService';
+import { PROGRAM_FUNDING_INTENT_WORDS, PROGRAM_PAY_INTENT_WORDS } from './programSearchIntentWords';
+import { PROGRAM_TOPIC_TAXONOMY } from './programTopicService';
 
 export const PROGRAM_SEARCH_FIELDS = PROGRAM_SEARCH_SPELLING_FIELDS;
+
+export const PROGRAM_SEARCH_CANDIDATE_FIELDS = [
+  ...PROGRAM_SEARCH_FIELDS,
+  'yearOfStudy',
+  'awardAmount',
+  'compensationSummary',
+  'programKind',
+  'programRole',
+] as const;
 
 type ProgramSearchField = (typeof PROGRAM_SEARCH_FIELDS)[number];
 
@@ -135,18 +145,17 @@ const bestWeightCovering = (
     0,
   );
 
+const SAME_WORK_NOUNS: ReadonlyArray<readonly string[]> = [
+  ['thesis', 'essay'],
+  ['theses', 'essays'],
+];
+
+const wordsMeaning = (word: string): readonly string[] =>
+  SAME_WORK_NOUNS.find((group) => group.includes(word)) ?? [word];
+
 const wordWeight = (fields: IndexedProgramField[], word: string): number =>
-  Math.max(
-    bestWeightCovering(fields, (field) => fieldCoversWord(field, word)),
-    ...yearOfStudyWordAlternatives(word).map((alternative) =>
-      alternative.every((part) => fields.some((field) => fieldCoversWord(field, part)))
-        ? Math.min(
-            ...alternative.map((part) =>
-              bestWeightCovering(fields, (field) => fieldCoversWord(field, part)),
-            ),
-          )
-        : 0,
-    ),
+  bestWeightCovering(fields, (field) =>
+    wordsMeaning(word).some((alternative) => fieldCoversWord(field, alternative)),
   );
 
 const titleTier = (title: IndexedProgramField, contentWords: string[]): number => {
@@ -156,6 +165,157 @@ const titleTier = (title: IndexedProgramField, contentWords: string[]): number =
   if (` ${titleWords} `.includes(` ${typed} `)) return 2;
   if (contentWords.every((word) => fieldCoversWord(title, word))) return 1;
   return 0;
+};
+
+const STATED_YEAR_TERMS: ReadonlyArray<{ words: readonly string[]; stated: string | null }> = [
+  { words: ['rising', 'first', 'year'], stated: null },
+  { words: ['rising', 'first', 'years'], stated: null },
+  { words: ['rising', 'freshman'], stated: null },
+  { words: ['rising', 'freshmen'], stated: null },
+  { words: ['rising', 'sophomore'], stated: 'First-Year Student' },
+  { words: ['rising', 'sophomores'], stated: 'First-Year Student' },
+  { words: ['rising', 'junior'], stated: 'Sophomore' },
+  { words: ['rising', 'juniors'], stated: 'Sophomore' },
+  { words: ['rising', 'senior'], stated: 'Junior' },
+  { words: ['rising', 'seniors'], stated: 'Junior' },
+  { words: ['first', 'year'], stated: 'First-Year Student' },
+  { words: ['first', 'years'], stated: 'First-Year Student' },
+  { words: ['1st', 'year'], stated: 'First-Year Student' },
+  { words: ['freshman'], stated: 'First-Year Student' },
+  { words: ['freshmen'], stated: 'First-Year Student' },
+  { words: ['sophomore'], stated: 'Sophomore' },
+  { words: ['sophomores'], stated: 'Sophomore' },
+  { words: ['junior'], stated: 'Junior' },
+  { words: ['juniors'], stated: 'Junior' },
+  { words: ['senior'], stated: 'Senior' },
+  { words: ['seniors'], stated: 'Senior' },
+];
+
+const SENIOR_WORK_NOUNS: ReadonlySet<string> = new Set([
+  'essay',
+  'essays',
+  'thesis',
+  'theses',
+  'project',
+  'projects',
+]);
+
+const RISING_LIST_YEAR_WORDS: ReadonlySet<string> = new Set([
+  'sophomore',
+  'sophomores',
+  'junior',
+  'juniors',
+  'senior',
+  'seniors',
+]);
+
+type StatedYearTerm = (typeof STATED_YEAR_TERMS)[number];
+
+const longestTermAt = (
+  contentWords: readonly string[],
+  index: number,
+): StatedYearTerm | undefined =>
+  STATED_YEAR_TERMS.filter(({ words }) =>
+    words.every((word, offset) => contentWords[index + offset] === word),
+  ).sort((a, b) => b.words.length - a.words.length)[0];
+
+const risingTermFor = (yearWord: string): StatedYearTerm | undefined =>
+  STATED_YEAR_TERMS.find(({ words }) => words[0] === 'rising' && words[1] === yearWord);
+
+interface QueryYears {
+  years: ReadonlySet<string>;
+  otherWords: string[];
+}
+
+/**
+ * Year words name an eligibility the program states in `yearOfStudy`, so they are read as a
+ * structured constraint and never matched against program text (#6397). A rising year is read
+ * the way `scrapers/utils/fundYearOfStudy.ts` files it, under the year before it.
+ */
+export const statedYearsInQuery = (contentWords: readonly string[]): QueryYears => {
+  const years = new Set<string>();
+  const otherWords: string[] = [];
+  let risingListOpen = false;
+  for (let index = 0; index < contentWords.length;) {
+    const continuesRisingList: boolean =
+      risingListOpen &&
+      RISING_LIST_YEAR_WORDS.has(contentWords[index]) &&
+      !SENIOR_WORK_NOUNS.has(contentWords[index + 1] ?? '');
+    const term: StatedYearTerm | undefined = continuesRisingList
+      ? risingTermFor(contentWords[index])
+      : longestTermAt(contentWords, index);
+    const consumed = continuesRisingList ? 1 : (term?.words.length ?? 1);
+    const namesAPieceOfWork =
+      term?.stated === 'Senior' && SENIOR_WORK_NOUNS.has(contentWords[index + consumed] ?? '');
+    if (term?.stated === null) {
+      otherWords.push(...term.words);
+    } else if (term?.stated && !namesAPieceOfWork) {
+      years.add(term.stated);
+    } else {
+      otherWords.push(contentWords[index]);
+    }
+    risingListOpen = Boolean(term?.stated) && term?.words[0] === 'rising';
+    index += consumed;
+  }
+  return { years, otherWords: [...new Set(otherWords)] };
+};
+
+const statedYearsOf = (program: Record<string, unknown>): string[] =>
+  Array.isArray(program.yearOfStudy)
+    ? program.yearOfStudy.filter((year): year is string => typeof year === 'string' && year !== '')
+    : [];
+
+type YearStanding = 'states' | 'unstated' | 'excludes';
+
+const yearStanding = (
+  program: Record<string, unknown>,
+  years: ReadonlySet<string>,
+): YearStanding => {
+  const stated = statedYearsOf(program);
+  if (stated.length === 0) return 'unstated';
+  return stated.some((year) => years.has(year)) ? 'states' : 'excludes';
+};
+
+const FUNDING_PROGRAM_KINDS: ReadonlySet<string> = new Set([
+  'FELLOWSHIP_FUNDING',
+  'TRAVEL_RESEARCH_GRANT',
+  'SENIOR_THESIS_FUNDING',
+]);
+
+const STATED_PAY_SUMMARY = /\bstipends?\b|\bpaid\b|\$\s?\d|\bhourly\b|\bwages?\b/i;
+
+const NEGATED_PAY_SUMMARY = /\b(?:no|not|without|unpaid|volunteer)\b/i;
+
+const hasText = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim() !== '';
+
+/**
+ * "paid" and its kin promise pay, so they are answered from the stated award amount or a
+ * compensation summary naming pay, never from prose or a classifier phrase without an amount
+ * (#6398).
+ */
+const statesPay = (program: Record<string, unknown>): boolean =>
+  (hasText(program.awardAmount) && /\d/.test(program.awardAmount)) ||
+  (hasText(program.compensationSummary) &&
+    STATED_PAY_SUMMARY.test(program.compensationSummary) &&
+    !NEGATED_PAY_SUMMARY.test(program.compensationSummary));
+
+/**
+ * "funded", "funding" and "grant" ask for a program that offers funding, which its kind or role
+ * says even when no amount is stated (#6398).
+ */
+const offersFunding = (program: Record<string, unknown>): boolean =>
+  statesPay(program) ||
+  (typeof program.programKind === 'string' && FUNDING_PROGRAM_KINDS.has(program.programKind)) ||
+  program.programRole === 'FUNDS_RESEARCH';
+
+const isIntentWord = (word: string): boolean =>
+  PROGRAM_PAY_INTENT_WORDS.has(word) || PROGRAM_FUNDING_INTENT_WORDS.has(word);
+
+const titleNamesAny = (program: Record<string, unknown>, words: readonly string[]): boolean => {
+  if (!hasText(program.title)) return false;
+  const titleStems = new Set(programSearchWords(program.title).map(programSearchWordStem));
+  return words.some((word) => titleStems.has(programSearchWordStem(word)));
 };
 
 const MATCH_KIND_RANK = { allWords: 0, subject: 1, allButOneWord: 2 } as const;
@@ -168,6 +328,7 @@ interface ScoredProgram<T> {
   kind: ProgramMatchKind | null;
   titleTier: number;
   fieldScore: number;
+  statesYear: boolean;
 }
 
 const MIN_WORDS_FOR_PARTIAL_MATCH = 3;
@@ -188,7 +349,7 @@ const scoreProgram = <T extends Record<string, unknown>>(
       bestWeightCovering(fields, (field) => fieldContainsPhrase(field, phrase)),
     ),
   );
-  const base = { program, order, titleTier: 0 };
+  const base = { program, order, titleTier: 0, statesYear: false };
   if (coveredWords === contentWords.length) {
     return {
       ...base,
@@ -209,6 +370,7 @@ const scoreProgram = <T extends Record<string, unknown>>(
 
 const byRelevance = <T>(a: ScoredProgram<T>, b: ScoredProgram<T>): number =>
   MATCH_KIND_RANK[a.kind!] - MATCH_KIND_RANK[b.kind!] ||
+  Number(b.statesYear) - Number(a.statesYear) ||
   b.titleTier - a.titleTier ||
   b.fieldScore - a.fieldScore ||
   a.order - b.order;
@@ -225,14 +387,47 @@ export const rankProgramSearch = <T extends Record<string, unknown>>(
   query: string,
   programs: readonly T[],
 ): RankedProgramSearch<T> => {
-  const contentWords = programQueryContentWords(query);
+  const { years, otherWords } = statedYearsInQuery(programQueryContentWords(query));
+  const payWords = otherWords.filter((word) => PROGRAM_PAY_INTENT_WORDS.has(word));
+  const fundingWords = otherWords.filter((word) => PROGRAM_FUNDING_INTENT_WORDS.has(word));
+  const asksForPay = payWords.length > 0;
+  const asksForFunding = fundingWords.length > 0;
+  const contentWords = otherWords.filter((word) => !isIntentWord(word));
+  const titleMayAnswer = (program: T, words: readonly string[]) =>
+    contentWords.length > 0 && titleNamesAny(program, words);
+  const standing = (program: T) => (years.size > 0 ? yearStanding(program, years) : 'unstated');
+  const eligible = programs
+    .map((program, order) => ({ program, order, standing: standing(program) }))
+    .filter((entry) => entry.standing !== 'excludes')
+    .filter(
+      (entry) => !asksForPay || statesPay(entry.program) || titleMayAnswer(entry.program, payWords),
+    )
+    .filter(
+      (entry) =>
+        !asksForFunding ||
+        offersFunding(entry.program) ||
+        titleMayAnswer(entry.program, fundingWords),
+    );
   if (contentWords.length === 0) {
-    return { programs: [], missingOneWord: false, closeMatchesFrom: null };
+    const answeredByStatedFields = years.size > 0 || asksForPay || asksForFunding;
+    return {
+      programs: answeredByStatedFields
+        ? [
+            ...eligible.filter((entry) => entry.standing === 'states'),
+            ...eligible.filter((entry) => entry.standing === 'unstated'),
+          ].map((entry) => entry.program)
+        : [],
+      missingOneWord: false,
+      closeMatchesFrom: null,
+    };
   }
   const umbrella = umbrellaSubjectPhrases(contentWords);
   const score = (subjectPhrasesToMatch: string[][]) =>
-    programs
-      .map((program, order) => scoreProgram(program, order, contentWords, subjectPhrasesToMatch))
+    eligible
+      .map(({ program, order, standing: programStanding }) => ({
+        ...scoreProgram(program, order, contentWords, subjectPhrasesToMatch),
+        statesYear: programStanding === 'states',
+      }))
       .filter((entry) => entry.kind !== null);
   let scored = score(umbrella.named);
   if (!scored.some((entry) => entry.kind === 'allWords') && umbrella.aliased.length > 0) {

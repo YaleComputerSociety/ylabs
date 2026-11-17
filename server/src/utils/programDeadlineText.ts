@@ -118,3 +118,60 @@ export function programTextDeadlineConflict(
   if (stated.size !== 1) return undefined;
   return [...stated][0];
 }
+
+const WEEKDAY_BEFORE_DATE = new RegExp(`\\b(${WEEKDAYS.join('|')}),?\\s*$`, 'i');
+
+const dayNumber = ({ year, monthIndex, day }: { year: number; monthIndex: number; day: number }) =>
+  Date.UTC(year, monthIndex, day) / 86_400_000;
+
+const mondayFirstWeekday = (date: { year: number; monthIndex: number; day: number }): number =>
+  (new Date(Date.UTC(date.year, date.monthIndex, date.day)).getUTCDay() + 6) % 7;
+
+function sentenceStatesAPastCycleDate(sentence: string, today: number): boolean {
+  for (const match of sentence.matchAll(STATED_DATE)) {
+    const [, month, day, year] = match;
+    const date = {
+      year: Number(year),
+      monthIndex: MONTH_FORMS.findIndex((form) => new RegExp(`^${form}$`, 'i').test(month)),
+      day: Number(day),
+    };
+    if (!isRealCalendarDate(date)) continue;
+    if (dayNumber(date) < today) return true;
+    const weekday = sentence.slice(0, match.index ?? 0).match(WEEKDAY_BEFORE_DATE)?.[1];
+    if (weekday && WEEKDAYS.indexOf(weekday.toLowerCase()) !== mondayFirstWeekday(date)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether a program's prose states a full calendar date before today, or a weekday the
+ * date does not fall on, while the served deadline is still ahead (#6412). The source
+ * pages keep last cycle's sentences under a refreshed deadline, and those sentences also
+ * carry requirements a student needs, so the reader labels the dates rather than losing
+ * the text. A bare year ("since 2010") is never a full date, and a deadline already past
+ * raises nothing, because then the page and the deadline agree. A projected or stale
+ * deadline raises nothing either, because the reader cannot call it current.
+ */
+export function proseStatesPastCycleDates(
+  prose: readonly unknown[],
+  {
+    deadline,
+    now,
+    projected = false,
+    stale = false,
+  }: { deadline: unknown; now: Date; projected?: boolean; stale?: boolean },
+): boolean {
+  if (projected || stale) return false;
+  const served = deadline instanceof Date ? deadline : new Date(String(deadline ?? ''));
+  if (!deadline || Number.isNaN(served.getTime()) || served.getTime() <= now.getTime()) {
+    return false;
+  }
+  const today = dayNumber(newYorkCalendarDate(now));
+  return prose.some(
+    (text) =>
+      typeof text === 'string' &&
+      sentencesOf(text).some((sentence) => sentenceStatesAPastCycleDate(sentence, today)),
+  );
+}

@@ -34,6 +34,8 @@ import { cachedCardFor } from './cardSynthesisDerivation';
 import { withoutModelCalls } from '../utils/modelClient';
 import {
   decideResearcherFieldWrite,
+  decideUnprovenKeyFieldWrite,
+  isUnprovenNetidKeyOnNameJoin,
   isFillOnlyFieldValue,
   isFillOnlyIdentityJoin,
   writerHeldOnFillOnlyEvidence,
@@ -566,6 +568,10 @@ import { withResearchEntityWriteTransaction } from '../services/researchEntityWr
 import { carryResearchPlansToSurvivor } from '../services/researchPlanMergeCarry';
 import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import {
+  advancedSourceLastVerifiedAt,
+  latestFellowshipSourceReadAt,
+} from './fellowshipSourceVerification';
+import {
   applyResearchEntityOrgUnitCanonicalization,
   getOrgUnitCanonicalizer,
   researchEntityOrgUnitProfileUrls,
@@ -591,6 +597,7 @@ import {
   adoptUnprovenancedRoleAssignments,
   archiveSupersededCanonicalRoleAssignments,
   canonicalMemberIsRemovedByRequest,
+  foldSurvivorOfListedName,
   identifiedResearcherHoldsDisplayName,
   materializeCanonicalMembership,
   nameOnlyResolutionName,
@@ -3746,6 +3753,11 @@ async function resolveRosterMemberIdentityFromEvidence(
     named.filter((researcher) => observedPersonNameAgreesWith(researcher.displayName, listedName)),
   );
   if (agreeing.length === 0) {
+    const foldSurvivorId =
+      named.length === 1 ? await foldSurvivorOfListedName(listedName) : undefined;
+    if (foldSurvivorId && String(named[0]._id) === String(foldSurvivorId)) {
+      return { researcher: named[0], basis: 'identity-evidence' };
+    }
     return {
       researcher: null,
       unresolved: 'evidence-names-someone-else',
@@ -10449,6 +10461,32 @@ async function withdrawScreenedOfficialProfileLinks(
   return { written, ...paths, changedPaths: written ? changedPaths : [] };
 }
 
+function netidPayloadOfUserKey(userKey: string): string {
+  const raw = userKey.trim();
+  const namespaced = /^netid:/i.test(raw);
+  if (!namespaced && NAMESPACED_USER_KEY_PATTERN.test(raw)) return '';
+  const payload = (namespaced ? raw.replace(/^netid:/i, '') : raw).trim().toLowerCase();
+  if (!payload || /[@\s]/.test(payload)) return '';
+  if (namespaced) return payload;
+  return looksLikeYaleNetid(payload) || isLikelyYaleEmailLocalPart(payload) ? payload : '';
+}
+
+async function writerKeyIsUnprovenOnNameJoin(
+  userKey: string,
+  identityJoin: string | undefined,
+  researcher: any,
+): Promise<boolean> {
+  if (identityJoin !== 'person-name') return false;
+  const payload = netidPayloadOfUserKey(userKey);
+  if (!payload) return false;
+  return isUnprovenNetidKeyOnNameJoin({
+    identityJoin,
+    payload,
+    aliasNetid: await netidForRosterEmailAlias(payload),
+    researcherNetid: textValue(researcher?.identifiers?.netid) || undefined,
+  });
+}
+
 async function releaseFieldWritersThatNoLongerReach(
   researcher: any,
   materializingKey: string,
@@ -10795,6 +10833,9 @@ async function materializeUserIdentityToResearcher(
   if (writerKey) {
     await recordLegacyDirectoryNameHolderAsFillOnly(researcher, writerKey, options.chunkPrefetch);
   }
+  const writerKeyUnproven = writerKey
+    ? await writerKeyIsUnprovenOnNameJoin(writerKey, identityJoin, researcher)
+    : false;
   const resolvedConfidence = (...fields: string[]): unknown =>
     fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
   const storedFieldValue = (field: ResearcherGatedField): unknown =>
@@ -10819,6 +10860,17 @@ async function materializeUserIdentityToResearcher(
     valueOutranksStored = false,
     storedValuePresent: boolean = !created && Boolean(textValue(storedFieldValue(field))),
   ): boolean => {
+    if (writerKeyUnproven) {
+      const unproven = decideUnprovenKeyFieldWrite(
+        researcher.profileFieldWriters,
+        field,
+        writerKey,
+        Boolean(value),
+        storedValuePresent,
+      );
+      if (!unproven.write && unproven.releaseWriter) researcher.profileFieldWriters.delete(field);
+      return unproven.write;
+    }
     const decision = decideResearcherFieldWrite(
       researcher.profileFieldWriters,
       field,
@@ -14238,6 +14290,17 @@ export async function projectFromLog(
     lockedFields: manuallyLockedFields,
   });
   Object.assign(set, storedTextNormalization.set);
+
+  if (entityType === 'fellowship') {
+    const sourceLastVerifiedAt = advancedSourceLastVerifiedAt(
+      entityDoc?.sourceLastVerifiedAt,
+      latestFellowshipSourceReadAt(materializationObs, set.sourceName ?? entityDoc?.sourceName),
+    );
+    if (sourceLastVerifiedAt) {
+      set.sourceLastVerifiedAt = sourceLastVerifiedAt;
+      fieldsWritten++;
+    }
+  }
 
   if (entityType === 'fellowship') {
     for (const field of fellowshipFieldsWithheldBySourcePrecedence({

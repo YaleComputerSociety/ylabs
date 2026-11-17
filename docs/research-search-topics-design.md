@@ -131,6 +131,7 @@ The 2026-10-18 decision that every lane is deterministic (#5296) splits the work
   A quote must appear verbatim on the page it names (boundary-anchored matching); every content word of a topic must share an inflectional stem with some word of the row's stored pages, and the field topic needs only its quote.
   A topic that fails is dropped, not repaired, and the deterministic post-filters reject inverted index-heading forms, split fragments, acronym-only chips and bare generic words while keeping the main subject first.
   A topic or field topic that only restates the row's own department, school or appointment label is dropped too (#5957): the labels are the live `departments` and `school` observation values on the row, because a department string with no canonical match is moved to `orgAffiliationLabels` and the stored `departments` alone would miss it.
+  A field topic whose quote is only a short heading, breadcrumb or menu label (six words or fewer, every content word capitalised) sharing no word with the field is dropped (#6385): "Faculty & Research" says nothing about "environmental studies", while a heading that names the field in another form ("Immunologic Memory" for immunology) and lower-case prose framing ("a hydrologist") still support it; filler words such as research, department and studies do not count as support.
   The match is whole-topic equality up to case, "&" or "and", the unit's own name words ("Department of", "Section of", "Program in", "Yale School of", a trailing "Department" or "Program") and plurals, so a subfield that only contains the department's word ("Molecular Biology" under Biology) is kept, and a program-shaped topic under a real department label still drops.
   A label that names a program ("<X> Program", "Program in <X>") is never matched as the label side, because it reaches `departments` only as a non-catalog string and a clinical program named for a disease is real topic signal.
   Because the filters run here, a filter change re-derives every row at no model cost; the derived provenance records the full input hash, the hash of the text alone and the filter contract.
@@ -165,6 +166,19 @@ A read-only harness scores the real ranking path against a frozen judged set and
 - Queries: real Production topic queries, names and lab names removed.
 - Judgements: graded 0 to 3 on the pooled top 10 of keyword-only, semantic-only and fused rankings, by a written guide; the owner calibrates the judge on a sample.
 - Use: advisory, never a merge gate, compared against a stored baseline, in line with how `journey:eval` treats rates.
+- Reporting: every search gate, this benchmark and the rerank sets alike, reports its result weighted to the live word-count mix beside the unweighted result, and names the weights' source and date.
+Weight by word-count band (one, two, three, four or more words) and bootstrap within each band.
+The weights come from Production `analytics_events` search counts read through the read-only credential, counts only, and are re-measured monthly (see `docs/topic-matching-and-search-engagement.md`, "Query length").
+The unweighted set over-represents long queries: on 2026-11-17 the blind 170 was 47% four-or-more-word queries against 1.6% of live searches, and 3.5% one-word queries against 66%, so an unweighted gain can sit almost entirely in a query shape students rarely type (#6421).
+A band with fewer than about 20 queries makes its weighted interval underpowered, and the report says so.
+- One-word stratum: a permanent blind stratum of 120 one-word queries (W1 to W120) is part of the gate set beside the blind 170.
+It was drawn on 2026-11-17 by class from Production search logs through the read-only credential: field names 40, topics 33, abbreviations 15, misspellings 12, methods 9, molecular terms 6, organisms 5.
+Any query matching a researcher name token was dropped, and queries about access rather than a topic (such as undergraduate, fellowship or first-year wording) are excluded.
+Its queries and grades stay local, like the blind 170's, and every gate reports it with the other strata.
+It exists because one-word queries are 66% of live traffic but 6 of the blind 170, so without it the most heavily weighted band is always underpowered.
+Its baseline, measured on 2026-11-17 on Development through the real search route with three blind graders and the median vote: P@10 0.811 (95% CI 0.756 to 0.862) and nDCG@10 0.951 (0.930 to 0.968) over all 120 queries.
+By class, field names (40) score P@10 0.938 and topics (33) 0.782; abbreviations, misspellings, methods, molecular terms and organisms each have fewer than 20 queries and are underpowered, with molecular terms weakest at P@10 0.367 on 6 queries.
+P@10 is the headline, because nDCG here is normalised over the graded top 10 and so measures ordering rather than recall.
 - Privacy: Production queries are student input, so the committed fixture holds only queries searched at least twice, after the person-identifier scan and owner review; anything else stays outside the repository.
 
 A second instrument stays separate: the lane scorecard over frozen pages (`lane_benchmark_pages`) labelled with the sampled rows' topic lists, which moves only when lane code changes.

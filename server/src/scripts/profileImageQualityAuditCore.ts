@@ -70,6 +70,7 @@ export function isNonPersonProfileImageUrl(value: unknown): boolean {
     /\/[^/]*placeholder[^/]*$/,
     /\/campus[-_]\d{4}[^/]*$/,
     /\/[^/]*-logo-[^/]*$/,
+    /\/(?:[^/]*[-_])?exterior[-_][^/]*$/,
   ].some((pattern) => pattern.test(normalized));
 }
 
@@ -89,11 +90,13 @@ export function isSocialShareImageUrl(value: unknown): boolean {
 const CLOUDINARY_VERSION_SEGMENT = /^v\d+$/;
 const DRUPAL_STYLE_PREFIX = /\/styles\/[^/]+\/public\//;
 const DRUPAL_USER_PICTURE = /^picture-(\d+)-\d+\.[a-z0-9]+$/i;
+const DRUPAL_WEBP_DERIVATIVE_SUFFIX = /\.(jpe?g|png|gif)\.webp$/i;
 
 /**
  * The identity of the picture a profile image URL shows, ignoring the parts a site varies
  * between uploads and renditions of one picture: a Cloudinary transform, a Drupal image
- * style, a Drupal user-picture upload timestamp, or a query (#5640). Keyed on the host,
+ * style and the `.webp` its WebP derivative appends to the file name (#6284), a Drupal
+ * user-picture upload timestamp, or a query (#5640). Keyed on the host,
  * because a Drupal `picture-<uid>` is unique only within one site, and on the directory,
  * because one site can reuse a uid across directories for different uploads.
  */
@@ -112,7 +115,9 @@ export function profileImagePictureKey(value: unknown): string {
     const publicId = version >= 0 ? segments.slice(version + 1) : segments.slice(-1);
     return `${host}/${publicId.join('/').replace(/\.[a-z0-9]+$/i, '')}`;
   }
-  const path = url.pathname.replace(DRUPAL_STYLE_PREFIX, '/');
+  const path = url.pathname
+    .replace(DRUPAL_STYLE_PREFIX, '/')
+    .replace(DRUPAL_WEBP_DERIVATIVE_SUFFIX, '.$1');
   const directory = path.slice(0, path.lastIndexOf('/'));
   const basename = path.slice(path.lastIndexOf('/') + 1);
   const picture = DRUPAL_USER_PICTURE.exec(basename);

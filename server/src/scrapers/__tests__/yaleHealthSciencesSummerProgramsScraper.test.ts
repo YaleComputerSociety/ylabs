@@ -104,6 +104,21 @@ describe('parseHealthSciencesProgramPage', () => {
     expect(observations.some((observation) => observation.field === 'contactEmail')).toBe(false);
   });
 
+  it('persists the program page text it read as source evidence, without a raw email (#6402)', () => {
+    const candidate = parseHealthSciencesProgramPage(
+      surfHtml,
+      surfUrl,
+      'Yale School of Medicine',
+      referenceDate,
+    );
+    const source = candidateToObservations(candidate!).find(
+      (observation) => observation.field === 'fullSourceDescription',
+    );
+    expect(typeof source?.value).toBe('string');
+    expect(String(source?.value)).toContain(String(candidate?.eligibility ?? '').slice(0, 40));
+    expect(String(source?.value)).not.toContain('fixture-surf@med.example.edu');
+  });
+
   it('rejects a non-Yale source page (source citations must be Yale-owned)', () => {
     const candidate = parseHealthSciencesProgramPage(
       surfHtml,

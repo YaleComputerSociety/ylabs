@@ -14,7 +14,7 @@ import {
   type ProgramCitizenshipCounts,
 } from './programCitizenshipCounts';
 import { correctProgramSearchQuerySpelling } from './programSearchSpellingVocabulary';
-import { PROGRAM_SEARCH_FIELDS, rankProgramSearch } from './programSearchRelevance';
+import { PROGRAM_SEARCH_CANDIDATE_FIELDS, rankProgramSearch } from './programSearchRelevance';
 import { BadRequestError, NotFoundError, ObjectIdError } from '../utils/errors';
 import { normalizeOverrideReason } from '../scripts/studentVisibilityOverrideCore';
 import {
@@ -36,7 +36,7 @@ import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { Observation } from '../models/observation';
 import { clearedProgramStudentVisibilityVerdict } from '../models/entityArchival';
 import { programRoleForKind } from './programClassifier';
-import { programAudience } from './programAudience';
+import { programAudience, servedUndergraduateOnly } from './programAudience';
 import { departmentGuidanceKindOf } from './departmentResearchGuidance';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
@@ -49,6 +49,7 @@ import {
   programDeadlineClosesAt,
   sameProgramDeadlineNextCycle,
 } from '../utils/programDeadlineInstant';
+import { programStatesRollingReview } from '../utils/programRollingReview';
 import {
   servedUpcomingDuplicateWindow,
   type UpcomingDuplicateWindow,
@@ -406,10 +407,21 @@ export interface ServedProgramDeadline {
   closed: boolean;
   projectedNextCycle: boolean;
   stale: boolean;
+  rollingReview: boolean;
   duplicateWindow?: UpcomingDuplicateWindow;
 }
 
 export const servedProgramDeadline = (program: any, now: Date): ServedProgramDeadline => {
+  const servedWindow = servedProgramDeadlineWindow(program, now);
+  const rollingReview =
+    Boolean(servedWindow.deadline) && !servedWindow.closed && programStatesRollingReview(program);
+  return { ...servedWindow, rollingReview };
+};
+
+const servedProgramDeadlineWindow = (
+  program: any,
+  now: Date,
+): Omit<ServedProgramDeadline, 'rollingReview'> => {
   const duplicateWindow = servedUpcomingDuplicateWindow(program, now);
   if (duplicateWindow) {
     return {
@@ -508,6 +520,7 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
   }
 
   publicFellowship.audience = programAudience(fellowship);
+  publicFellowship.undergraduateOnly = servedUndergraduateOnly(fellowship);
   const departmentGuidanceKind = departmentGuidanceKindOf(fellowship);
   publicFellowship.departmentResearchGuidance = departmentGuidanceKind !== null;
   if (departmentGuidanceKind) publicFellowship.departmentGuidanceKind = departmentGuidanceKind;
@@ -530,6 +543,7 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
   if (windowAcceptance !== undefined) publicFellowship.isAcceptingApplications = windowAcceptance;
   publicFellowship.deadlineProjectedNextCycle = served.projectedNextCycle;
   publicFellowship.deadlineStale = served.stale;
+  publicFellowship.deadlineRollingReview = served.rollingReview;
 
   const deadlineDate = toValidDate(publicFellowship.deadline);
   if (deadlineDate) {
@@ -952,7 +966,6 @@ export const searchFellowships = async (params: {
   subjects?: string[];
   requiresMentorBeforeApply?: boolean;
   mentorMatching?: boolean;
-  undergraduateOnly?: boolean;
   yaleCollegeOnly?: boolean;
   studentVisibilityTier?: StudentVisibilityTier[];
   includeNonPublic?: boolean;
@@ -978,7 +991,6 @@ export const searchFellowships = async (params: {
     subjects = [],
     requiresMentorBeforeApply,
     mentorMatching,
-    undergraduateOnly,
     yaleCollegeOnly,
     studentVisibilityTier = [],
     includeNonPublic = false,
@@ -1071,9 +1083,6 @@ export const searchFellowships = async (params: {
   if (typeof mentorMatching === 'boolean') {
     filter.mentorMatching = mentorMatching;
   }
-  if (typeof undergraduateOnly === 'boolean') {
-    filter.undergraduateOnly = undergraduateOnly;
-  }
   if (typeof yaleCollegeOnly === 'boolean') {
     filter.yaleCollegeOnly = yaleCollegeOnly;
   }
@@ -1145,7 +1154,7 @@ export const searchFellowships = async (params: {
 
   const candidates = (await Fellowship.find(servedFilter, {
     _id: 1,
-    ...Object.fromEntries(PROGRAM_SEARCH_FIELDS.map((field) => [field, 1])),
+    ...Object.fromEntries(PROGRAM_SEARCH_CANDIDATE_FIELDS.map((field) => [field, 1])),
   })
     .sort(fieldSortOptions)
     .lean()) as Array<Record<string, unknown>>;

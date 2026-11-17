@@ -10,14 +10,18 @@ import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
 import { classifyProgram } from '../services/programClassifier';
 import { fellowshipClassificationInput } from '../scrapers/fellowshipClassificationDerivation';
-import { programAudience } from '../services/programAudience';
+import { programAudience, servedUndergraduateOnly } from '../services/programAudience';
 import {
   departmentGuidanceKindOf,
   departmentGuidanceKinds,
   type DepartmentGuidanceKind,
 } from '../services/departmentResearchGuidance';
-import { programTextDeadlineConflict } from '../utils/programDeadlineText';
+import {
+  proseStatesPastCycleDates,
+  programTextDeadlineConflict,
+} from '../utils/programDeadlineText';
 import { formatServedAwardAmount } from '../utils/awardAmountFormat';
+import { newYorkCalendarDate } from '../utils/newYorkTime';
 import { programCitizenshipCondition } from '../utils/programCitizenshipCondition';
 
 const MAX_PROGRAM_LINKS = 8;
@@ -189,9 +193,39 @@ export const withProgramAudience = (program: any) => {
   const departmentGuidanceKind = departmentGuidanceKindOf(program);
   return {
     ...program,
+    undergraduateOnly: servedUndergraduateOnly(program),
     audience: programAudience(program),
     departmentResearchGuidance: departmentGuidanceKind !== null,
     ...(departmentGuidanceKind ? { departmentGuidanceKind } : {}),
+  };
+};
+
+// A conflicting date already in the past is last cycle's deadline, which the past-cycle
+// note explains, so serving both would tell the student to confirm a deadline the other
+// note calls current (#6412).
+const servedProgramDeadlineTextNotes = ({
+  deadline,
+  prose,
+  datedProse,
+  projected,
+  stale,
+  now,
+}: {
+  deadline: unknown;
+  prose: unknown[];
+  datedProse: unknown[];
+  projected: boolean;
+  stale: boolean;
+  now: Date;
+}) => {
+  const pastCycle = proseStatesPastCycleDates(datedProse, { deadline, now, projected, stale });
+  const conflict = programTextDeadlineConflict(deadline, prose, { projected, stale }) ?? null;
+  const today = newYorkCalendarDate(now);
+  const todayIso = `${today.year}-${String(today.monthIndex + 1).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`;
+  const conflictIsPast = conflict !== null && conflict < todayIso;
+  return {
+    deadlineTextConflict: pastCycle && conflictIsPast ? null : conflict,
+    proseStatesPastCycleDates: pastCycle,
   };
 };
 
@@ -216,7 +250,7 @@ export const publicProgramForReader = (program: any) => {
     studentFacingCategory: program.studentFacingCategory,
     requiresMentorBeforeApply: program.requiresMentorBeforeApply,
     mentorMatching: program.mentorMatching,
-    undergraduateOnly: program.undergraduateOnly,
+    undergraduateOnly: servedUndergraduateOnly(program),
     yaleCollegeOnly: program.yaleCollegeOnly,
     audience: programAudience(program),
     compensationSummary: publicCompensationSummary(program.compensationSummary),
@@ -243,15 +277,15 @@ export const publicProgramForReader = (program: any) => {
     deadline: program.deadline,
     deadlineProjectedNextCycle: program.deadlineProjectedNextCycle === true,
     deadlineStale: program.deadlineStale === true,
-    deadlineTextConflict:
-      programTextDeadlineConflict(
-        program.deadline,
-        [summary, description, applicationInformation, eligibility, additionalInformation],
-        {
-          projected: program.deadlineProjectedNextCycle === true,
-          stale: program.deadlineStale === true,
-        },
-      ) ?? null,
+    deadlineRollingReview: program.deadlineRollingReview === true,
+    ...servedProgramDeadlineTextNotes({
+      deadline: program.deadline,
+      prose: [summary, description, applicationInformation, eligibility, additionalInformation],
+      datedProse: [description, applicationInformation, eligibility],
+      projected: program.deadlineProjectedNextCycle === true,
+      stale: program.deadlineStale === true,
+      now: new Date(),
+    }),
     contactOffice: publicProgramText(program.contactOffice),
     yearOfStudy: Array.isArray(program.yearOfStudy) ? program.yearOfStudy : [],
     termOfAward: Array.isArray(program.termOfAward) ? program.termOfAward : [],
