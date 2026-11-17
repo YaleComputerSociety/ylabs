@@ -278,6 +278,9 @@ describe('parseFundDetailPage', () => {
     expect(regionsOf(everyRegion)).toEqual([]);
     expect(regionsOf([...everyRegion, '-- France (Western Europe)'])).toEqual([]);
     expect(regionsOf(everyRegion.slice(0, 6))).toEqual(everyRegion.slice(0, 6));
+    expect(regionsOf([...everyRegion.slice(0, 6), '-- France (Western Europe)'])).toEqual(
+      everyRegion.slice(0, 6),
+    );
     expect(regionsOf(['North America'])).toEqual(['North America']);
   });
 

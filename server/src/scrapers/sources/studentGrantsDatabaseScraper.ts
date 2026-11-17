@@ -74,7 +74,7 @@ import {
   type FundApplicationRoute,
   type FundProseSection,
 } from '../utils/fundApplicationRoute';
-import { isFullRegionEnumeration } from '../../services/globalRegions';
+import { collapseDefaultFillGlobalRegions } from '../../services/globalRegions';
 import { statedAdministeringOffice } from '../utils/administeringOffice';
 import { fundAwardAmount } from '../utils/fundAwardAmount';
 import {
@@ -273,7 +273,7 @@ function parseFacets($: cheerio.CheerioAPI): Record<FundFacetField, string[]> {
       .filter((value) => value.length >= 2 && value.length <= 80);
     facets[facet.field] = Array.from(new Set([...facets[facet.field], ...values]));
   });
-  if (isFullRegionEnumeration(facets.globalRegions)) facets.globalRegions = [];
+  facets.globalRegions = collapseDefaultFillGlobalRegions(facets.globalRegions);
   return facets;
 }
 
