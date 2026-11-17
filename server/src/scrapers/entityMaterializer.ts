@@ -588,6 +588,7 @@ import {
   adoptUnprovenancedRoleAssignments,
   archiveSupersededCanonicalRoleAssignments,
   canonicalMemberIsRemovedByRequest,
+  foldSurvivorOfListedName,
   identifiedResearcherHoldsDisplayName,
   materializeCanonicalMembership,
   nameOnlyResolutionName,
@@ -3738,6 +3739,11 @@ async function resolveRosterMemberIdentityFromEvidence(
     named.filter((researcher) => observedPersonNameAgreesWith(researcher.displayName, listedName)),
   );
   if (agreeing.length === 0) {
+    const foldSurvivorId =
+      named.length === 1 ? await foldSurvivorOfListedName(listedName) : undefined;
+    if (foldSurvivorId && String(named[0]._id) === String(foldSurvivorId)) {
+      return { researcher: named[0], basis: 'identity-evidence' };
+    }
     return {
       researcher: null,
       unresolved: 'evidence-names-someone-else',

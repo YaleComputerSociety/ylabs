@@ -528,6 +528,12 @@ async function liveSurvivorOfFoldedNamesake(
   return toObjectId((survivor as { _id?: unknown } | null)?._id);
 }
 
+export async function foldSurvivorOfListedName(
+  listedName: string,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  return liveSurvivorOfFoldedNamesake(nameOnlyResolutionName(listedName));
+}
+
 async function findOrCreateNameOnlyResearcherId(
   displayName: string,
 ): Promise<mongoose.Types.ObjectId | undefined> {
