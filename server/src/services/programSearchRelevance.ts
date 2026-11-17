@@ -182,6 +182,28 @@ const SENIOR_WORK_NOUNS: ReadonlySet<string> = new Set([
   'projects',
 ]);
 
+const RISING_LIST_YEAR_WORDS: ReadonlySet<string> = new Set([
+  'sophomore',
+  'sophomores',
+  'junior',
+  'juniors',
+  'senior',
+  'seniors',
+]);
+
+type StatedYearTerm = (typeof STATED_YEAR_TERMS)[number];
+
+const longestTermAt = (
+  contentWords: readonly string[],
+  index: number,
+): StatedYearTerm | undefined =>
+  STATED_YEAR_TERMS.filter(({ words }) =>
+    words.every((word, offset) => contentWords[index + offset] === word),
+  ).sort((a, b) => b.words.length - a.words.length)[0];
+
+const risingTermFor = (yearWord: string): StatedYearTerm | undefined =>
+  STATED_YEAR_TERMS.find(({ words }) => words[0] === 'rising' && words[1] === yearWord);
+
 interface QueryYears {
   years: ReadonlySet<string>;
   otherWords: string[];
@@ -195,23 +217,27 @@ interface QueryYears {
 export const statedYearsInQuery = (contentWords: readonly string[]): QueryYears => {
   const years = new Set<string>();
   const otherWords: string[] = [];
+  let risingListOpen = false;
   for (let index = 0; index < contentWords.length;) {
-    const term = STATED_YEAR_TERMS.filter(({ words }) =>
-      words.every((word, offset) => contentWords[index + offset] === word),
-    ).sort((a, b) => b.words.length - a.words.length)[0];
+    const continuesRisingList =
+      risingListOpen &&
+      RISING_LIST_YEAR_WORDS.has(contentWords[index]) &&
+      !SENIOR_WORK_NOUNS.has(contentWords[index + 1] ?? '');
+    const term = continuesRisingList
+      ? risingTermFor(contentWords[index])
+      : longestTermAt(contentWords, index);
+    const consumed = continuesRisingList ? 1 : (term?.words.length ?? 1);
     const namesAPieceOfWork =
-      term?.stated === 'Senior' &&
-      SENIOR_WORK_NOUNS.has(contentWords[index + term.words.length] ?? '');
+      term?.stated === 'Senior' && SENIOR_WORK_NOUNS.has(contentWords[index + consumed] ?? '');
     if (term?.stated === null) {
       otherWords.push(...term.words);
-      index += term.words.length;
     } else if (term?.stated && !namesAPieceOfWork) {
       years.add(term.stated);
-      index += term.words.length;
     } else {
       otherWords.push(contentWords[index]);
-      index += 1;
     }
+    risingListOpen = Boolean(term?.stated) && term?.words[0] === 'rising';
+    index += consumed;
   }
   return { years, otherWords: [...new Set(otherWords)] };
 };
