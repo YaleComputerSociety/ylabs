@@ -200,9 +200,7 @@ describe('proseStatesPastCycleDates (#6412)', () => {
   });
 
   it('says nothing once the served deadline has passed, because page and deadline agree', () => {
-    expect(
-      flags(['Applications were due March 4, 2026.'], '2026-03-05T04:59:00.000Z'),
-    ).toBe(false);
+    expect(flags(['Applications were due March 4, 2026.'], '2026-03-05T04:59:00.000Z')).toBe(false);
   });
 
   it('says nothing for a missing, projected or stale deadline', () => {
