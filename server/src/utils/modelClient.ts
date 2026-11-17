@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import axios, { type AxiosResponse } from 'axios';
 import mongoose from 'mongoose';
 import { ModelCallUsage } from '../models/modelCallUsage';
+import { guardChatCompletionBody } from './modelInputGuard';
 
 const MODEL_ENDPOINT_PREFIX = 'https://api.openai.com/v1/';
 
@@ -241,7 +242,10 @@ async function postModelRequestOnce(
 }
 
 export function postChatCompletion(request: ModelRequest): Promise<AxiosResponse> {
-  return postModelRequest('chat/completions', request);
+  return postModelRequest('chat/completions', {
+    ...request,
+    body: guardChatCompletionBody(request.body).body,
+  });
 }
 
 export function postEmbedding(request: ModelRequest): Promise<AxiosResponse> {

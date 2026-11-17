@@ -1,4 +1,5 @@
 import { assertDevWriteOwnerLabel } from '../db/devWriteLease';
+import { MODEL_INPUT_DATA_PREAMBLE, stripAiDirectedInstructions } from '../utils/modelInputGuard';
 import { computeContentHash } from '../scrapers/contentHashGate';
 import { RESEARCH_PAGE_TOPICS_PROMPT } from '../scrapers/prompts';
 import {
@@ -222,6 +223,7 @@ export interface ResearchTopicsExportRow {
 
 export interface ResearchTopicsExport {
   capturedAt: string;
+  dataPreamble: string;
   systemPrompt: string;
   promptHash: string;
   model: string;
@@ -288,11 +290,12 @@ export function buildResearchTopicsExport(
       slug,
       inputHash: researchTopicsDerivationInputHash(pages, inputs),
       textHash: researchPageTextHash(pages),
-      userMessage: researchTopicsUserMessage(pages),
+      userMessage: stripAiDirectedInstructions(researchTopicsUserMessage(pages)).text,
     });
   }
   return {
     capturedAt: (options.capturedAt ?? new Date()).toISOString(),
+    dataPreamble: MODEL_INPUT_DATA_PREAMBLE,
     systemPrompt: RESEARCH_PAGE_TOPICS_PROMPT,
     promptHash: inputs.promptHash,
     model: inputs.model,

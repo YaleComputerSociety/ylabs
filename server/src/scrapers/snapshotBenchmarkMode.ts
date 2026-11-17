@@ -21,6 +21,7 @@
 import axios, { type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import crypto from 'crypto';
 import { FROZEN_MODEL_RESPONSE_HEADER, isModelEndpointUrl } from '../utils/modelClient';
+import { withoutPreambleMessage } from '../utils/modelInputGuard';
 import {
   type CaptureMode,
   isBenchmarkModeActive,
@@ -79,7 +80,7 @@ const isModelRequest = (config: InternalAxiosRequestConfig): boolean =>
   isModelEndpointUrl(config.url);
 
 export function modelRequestKey(url: string, body: unknown): string {
-  const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+  const parsed = withoutPreambleMessage(typeof body === 'string' ? JSON.parse(body) : body);
   const digest = crypto
     .createHash('sha256')
     .update(`${url}\n${canonicalJson(parsed ?? null)}`)

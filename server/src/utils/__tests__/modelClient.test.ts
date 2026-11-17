@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { MODEL_INPUT_DATA_PREAMBLE } from '../modelInputGuard';
 import { BenchmarkReplayNetworkError } from '../../scrapers/snapshotBenchmarkMode';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -43,7 +44,7 @@ describe('postChatCompletion', () => {
     restoreDefaultModelUsageSink();
   });
 
-  it('sends the same request every call site used to send by hand', async () => {
+  it('sends the request every call site built, behind the shared data preamble', async () => {
     post.mockResolvedValue(chatResponse);
     const body = { model: 'gpt-5-mini', messages: [{ role: 'user', content: 'hi' }] };
 
@@ -55,10 +56,17 @@ describe('postChatCompletion', () => {
     });
 
     expect(response).toBe(chatResponse);
-    expect(post).toHaveBeenCalledWith('https://api.openai.com/v1/chat/completions', body, {
-      headers: { Authorization: 'Bearer sk-test', 'Content-Type': 'application/json' },
-      timeout: 30_000,
-    });
+    expect(post).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        ...body,
+        messages: [{ role: 'system', content: MODEL_INPUT_DATA_PREAMBLE }, ...body.messages],
+      },
+      {
+        headers: { Authorization: 'Bearer sk-test', 'Content-Type': 'application/json' },
+        timeout: 30_000,
+      },
+    );
   });
 
   it('records the caller, model, and every billed token count', async () => {
