@@ -431,7 +431,10 @@ export function parseFundDetailPage(
       !closed &&
       (!opensAt || opensAt.getTime() <= now) &&
       (Boolean(deadline && deadline.getTime() > now) ||
-        statesOpenEndedApplications(Object.values(prose).filter(Boolean).join('. '))),
+        statesOpenEndedApplications(
+          Object.values(prose).filter(Boolean).join('. '),
+          referenceDate,
+        )),
   };
 }
 

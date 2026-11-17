@@ -343,17 +343,46 @@ const WHILE_FUNDS_REMAIN =
 const DATED_BOUND =
   /\b(?:until|through|before|by)\s+(?:the\s+)?(?:deadline|closing\s+date|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d|\d{1,2}\/\d{1,2})/i;
 
+const HARD_CLOSE =
+  /\bfinal\s+deadline\b|\bapplications?\s+(?:will\s+)?close[sd]?\s+(?:on\s+)?(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d|\d{1,2}\/\d{1,2})|\bmust\s+be\s+(?:received|submitted)\s+(?:by|before|no\s+later\s+than)\b/i;
+
+const NO_APPLICATIONS_AFTER =
+  /\bno\s+(?:late\s+)?applications?\s+(?:will\s+be\s+|are\s+|is\s+)?(?:accepted|considered|reviewed)\s+after\b/i;
+
+const ACADEMIC_YEAR = /\b(20\d{2})\s*[-\u2013/]\s*(?:20)?\d{2}\b/g;
+const CALENDAR_YEAR = /\b(20\d{2})\b/g;
+
+const academicCycleStartYear = (referenceDate: Date): number =>
+  referenceDate.getUTCMonth() >= 6
+    ? referenceDate.getUTCFullYear()
+    : referenceDate.getUTCFullYear() - 1;
+
+const namesEarlierCycle = (clause: string, referenceDate: Date): boolean => {
+  const cycleStart = academicCycleStartYear(referenceDate);
+  const academicStarts = [...clause.matchAll(ACADEMIC_YEAR)].map((match) => Number(match[1]));
+  if (academicStarts.length > 0) return Math.max(...academicStarts) < cycleStart;
+  const years = [...clause.matchAll(CALENDAR_YEAR)].map((match) => Number(match[1]));
+  return years.length > 0 && Math.max(...years) < cycleStart;
+};
+
+const statesHardClose = (text: string): boolean =>
+  NO_APPLICATIONS_AFTER.test(normalizeWhitespace(text)) ||
+  unnegatedClauses(text).some((clause) => HARD_CLOSE.test(clause));
+
 /**
  * Whether a page says applications stay open past any nominal deadline (#6480): rolling review
- * or applying while funds remain, in a clause with no negation and no dated bound ("reviewed on
- * a rolling basis until March 1" closes on March 1).
+ * or applying while funds remain, in a clause with no negation, no dated bound ("rolling until
+ * March 1") and no earlier cycle ("for the 2025-26 cycle", #6399), on a page that states no hard
+ * close anywhere ("final deadline", "no applications accepted after").
  */
-export function statesOpenEndedApplications(text: string): boolean {
+export function statesOpenEndedApplications(text: string, referenceDate: Date): boolean {
+  if (statesHardClose(text)) return false;
   return unnegatedClauses(text).some(
     (clause) =>
       (ROLLING_REVIEW.test(clause) ||
         ROLLING_APPLICATIONS.test(clause) ||
         WHILE_FUNDS_REMAIN.test(clause)) &&
-      !DATED_BOUND.test(clause),
+      !DATED_BOUND.test(clause) &&
+      !namesEarlierCycle(clause, referenceDate),
   );
 }
