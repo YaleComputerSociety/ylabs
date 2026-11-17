@@ -3190,10 +3190,21 @@ function stripTopicLabelPrefix(value: string): string {
   return stripResearchSectionLabelPrefix(value);
 }
 
+/**
+ * The medical and public-health schools' "Research at a Glance" tiles print each topic with a
+ * researcher count and a publications link, and the tile's text reaches us with no separator
+ * ("<topic>2 YSM ResearchersView 19 Related Publications<next topic>"), so the chrome is a
+ * boundary between topics (#6438).
+ */
+const PROFILE_TOPIC_TILE_CHROME =
+  /(?:\d+\s+)?YS(?:M|PH)\s+Researchers?\s*(?:View\s*(?:\d+\s*)?Related\s+Publications?)?|View\s*(?:\d+\s*)?Related\s+Publications?/gi;
+const PROFILE_TOPIC_TILE_CHROME_TEST = new RegExp(PROFILE_TOPIC_TILE_CHROME.source, 'i');
+
 function isTopicLabelChrome(value: string): boolean {
   const cleaned = cleanText(value);
   if (!cleaned) return true;
   if (/:$/.test(cleaned)) return true;
+  if (PROFILE_TOPIC_TILE_CHROME_TEST.test(cleaned)) return true;
   return (
     isResearchSectionLabel(cleaned) ||
     isProseNotTopicPhrase(cleaned) ||
@@ -3209,7 +3220,9 @@ function splitTopicText(
   value: string | undefined | null,
   separators: RegExp = TOPIC_SEPARATORS,
 ): string[] {
-  const cleaned = String(value || '').trim();
+  const cleaned = String(value || '')
+    .replace(PROFILE_TOPIC_TILE_CHROME, '\n')
+    .trim();
   if (!cleaned) return [];
   const parts = cleaned
     .split(separators)
