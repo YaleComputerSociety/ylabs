@@ -6206,3 +6206,67 @@ describe('engineeringDepartmentFacultyExtractor (#6423)', () => {
     expect(names).not.toContain('Epsilon Office');
   });
 });
+
+describe('a roster title cut off before the field it names (#6426)', () => {
+  const mathConfig = (entry: FacultyEntry): DeptConfig[] => [
+    {
+      deptKey: 'math',
+      deptName: 'Mathematics',
+      schoolName: 'FAS',
+      url: 'https://math.yale.edu/people/faculty',
+      paginated: false,
+      extractor: () => [entry],
+    },
+  ];
+  const titleOf = (emitted: Array<{ entityType: string; field: string; value: unknown }>) =>
+    emitted.find((o) => o.entityType === 'user' && o.field === 'title')?.value;
+
+  it('emits no title when the roster title is truncated and nothing states it whole', async () => {
+    const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
+    const scraper = new DepartmentRosterScraper(
+      mathConfig({ name: 'Sam Fixture', title: 'Assistant Professor of' }),
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'lname')?.value).toBe('Fixture');
+    expect(titleOf(emitted)).toBeUndefined();
+  });
+
+  it('takes the whole title from the person page when the roster title is truncated', async () => {
+    const profileUrl = 'https://math.yale.edu/people/sam-fixture';
+    const profileHtml = `
+      <html><head><title>Sam Fixture | Mathematics</title></head><body>
+        <h1>Sam Fixture</h1>
+        <div class="person-title">Assistant Professor of Applied Mathematics</div>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url === profileUrl ? profileHtml : '<html><body>listing</body></html>',
+    );
+    const scraper = new DepartmentRosterScraper(
+      mathConfig({ name: 'Sam Fixture', title: 'Assistant Professor of', profileUrl }),
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(titleOf(emitted)).toBe('Assistant Professor of Applied Mathematics');
+  });
+
+  it('keeps a complete roster title as it is', async () => {
+    const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
+    const scraper = new DepartmentRosterScraper(
+      mathConfig({ name: 'Sam Fixture', title: 'Assistant Professor of Mathematics' }),
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(titleOf(emitted)).toBe('Assistant Professor of Mathematics');
+  });
+});

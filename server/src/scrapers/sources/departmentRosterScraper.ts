@@ -3141,6 +3141,9 @@ function absolutize(href: string, base: string): string {
   }
 }
 
+const usableRosterTitle = (title: string | undefined): string | undefined =>
+  title && !isTruncatedPersonTitle(title) ? title : undefined;
+
 function cleanText(value: string | undefined | null): string {
   return String(value || '')
     .replace(/\s+/g, ' ')
@@ -4031,8 +4034,10 @@ export function mergeProfileEnrichment(
     namePlaceholder: entry.namePlaceholder && resolvedName === entry.name ? true : undefined,
     profileUrl: enrichment.profileUrl || entry.profileUrl,
     profileSourceUrl: enrichment.profileSourceUrl || entry.profileSourceUrl,
-    title: entry.title || enrichment.title,
-    titleFromProfilePage: entry.title ? entry.titleFromProfilePage : Boolean(enrichment.title),
+    title: usableRosterTitle(entry.title) || usableRosterTitle(enrichment.title),
+    titleFromProfilePage: usableRosterTitle(entry.title)
+      ? entry.titleFromProfilePage
+      : Boolean(usableRosterTitle(enrichment.title)),
     email: entry.email || enrichment.email,
     emailSlotAttestation: mergedEmailSlotAttestation(entry, enrichment),
     labUrl: entry.labUrl || enrichment.labUrl,
@@ -4735,7 +4740,7 @@ function entryToUserObservations(
     obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
   }
   if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
-  if (entry.title) {
+  if (usableRosterTitle(entry.title)) {
     obs.push({
       ...titleBase,
       field: 'title',
