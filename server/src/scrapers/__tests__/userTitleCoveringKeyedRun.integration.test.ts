@@ -264,71 +264,74 @@ describe('a newer keyed run that covered the key makes its first-hand read fresh
   });
 });
 
-describe("a marked roster title is fresh only from the lane's latest full run (#5578)", () => {
-  let replSet: MongoMemoryReplSet;
-  const MARKED = { source: 'profileTitleBlock' };
+describe.each([ROSTER_LANE, 'official-profile-pi-backfill'])(
+  "a marked %s title is fresh only from the lane's latest full run (#5578, #6197)",
+  (lane) => {
+    let replSet: MongoMemoryReplSet;
+    const MARKED = { source: 'profileTitleBlock' };
 
-  beforeAll(async () => {
-    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
-    await mongoose.connect(replSet.getUri());
-    await Observation.syncIndexes();
-  });
+    beforeAll(async () => {
+      replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+      await mongoose.connect(replSet.getUri());
+      await Observation.syncIndexes();
+    });
 
-  afterAll(async () => {
-    await mongoose.disconnect();
-    await replSet?.stop();
-  });
+    afterAll(async () => {
+      await mongoose.disconnect();
+      await replSet?.stop();
+    });
 
-  beforeEach(async () => {
-    clearC4Flags();
-    const db = mongoose.connection.db!;
-    for (const name of ['accounts', 'researchers', 'observations', 'scrape_runs']) {
-      await db.collection(name).deleteMany({});
+    beforeEach(async () => {
+      clearC4Flags();
+      const db = mongoose.connection.db!;
+      for (const name of ['accounts', 'researchers', 'observations', 'scrape_runs']) {
+        await db.collection(name).deleteMany({});
+      }
+      await Researcher.create({
+        displayName: 'Kestrel Covered',
+        identifiers: { netid: NETID },
+        profileLinks: [
+          {
+            kind: 'YALE_OFFICIAL',
+            purpose: 'PRIMARY_IDENTITY',
+            url: OFFICIAL_PAGE,
+            verifiedAt: new Date('2026-09-01T00:00:00Z'),
+            healthStatus: 'UNKNOWN',
+          },
+        ],
+        profile: { title: STORED_RANK },
+      });
+    });
+
+    async function seedMarkedRosterRead(): Promise<void> {
+      const fullRunId = await recordRun(lane, { startedAt: FULL_RUN_START });
+      await seedRead({
+        scrapeRunId: fullRunId,
+        observedAt: FULL_RUN_START,
+        title: KEYED_RUN_RANK,
+        sourceName: lane,
+        entityKey: NETID_KEY,
+        extraction: MARKED,
+      });
     }
-    await Researcher.create({
-      displayName: 'Kestrel Covered',
-      identifiers: { netid: NETID },
-      profileLinks: [
-        {
-          kind: 'YALE_OFFICIAL',
-          purpose: 'PRIMARY_IDENTITY',
-          url: OFFICIAL_PAGE,
-          verifiedAt: new Date('2026-09-01T00:00:00Z'),
-          healthStatus: 'UNKNOWN',
-        },
-      ],
-      profile: { title: STORED_RANK },
+
+    it("serves a marked read from the lane's latest full run", async () => {
+      await seedMarkedRosterRead();
+
+      await materializeEveryKey();
+
+      expect(await storedTitle()).toBe(KEYED_RUN_RANK);
     });
-  });
 
-  async function seedMarkedRosterRead(): Promise<void> {
-    const fullRunId = await recordRun(ROSTER_LANE, { startedAt: FULL_RUN_START });
-    await seedRead({
-      scrapeRunId: fullRunId,
-      observedAt: FULL_RUN_START,
-      title: KEYED_RUN_RANK,
-      sourceName: ROSTER_LANE,
-      entityKey: NETID_KEY,
-      extraction: MARKED,
+    it('gives the same marked read no authority once a newer full run exists', async () => {
+      await seedMarkedRosterRead();
+      await recordRun(lane, { startedAt: '2026-11-01T00:00:00Z' });
+
+      expect(await materializeEveryKey()).toEqual([0, 0]);
+      expect(await storedTitle()).toBe(STORED_RANK);
     });
-  }
-
-  it("serves a marked roster read from the lane's latest full run", async () => {
-    await seedMarkedRosterRead();
-
-    await materializeEveryKey();
-
-    expect(await storedTitle()).toBe(KEYED_RUN_RANK);
-  });
-
-  it('gives the same marked read no authority once a newer full run exists', async () => {
-    await seedMarkedRosterRead();
-    await recordRun(ROSTER_LANE, { startedAt: '2026-11-01T00:00:00Z' });
-
-    expect(await materializeEveryKey()).toEqual([0, 0]);
-    expect(await storedTitle()).toBe(STORED_RANK);
-  });
-});
+  },
+);
 
 describe('the covering keyed run screen (#6197)', () => {
   const covering = {

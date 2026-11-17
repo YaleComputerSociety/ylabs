@@ -94,15 +94,14 @@ describe('official-profile-pi-backfill records the keys a keyed run covered (#61
     vi.restoreAllMocks();
   });
 
-  it('records nothing today, because no keyed mode emits a title yet', async () => {
+  it("records a keyed visible run's real emitted title key (#6343)", async () => {
     const emitted: ObservationInput[] = [];
     const result = await scraperReading(async () => PROFILE_HTML).run(
       contextFor(['visible-profile-bio-backfill', NETID_KEY], emitted),
     );
 
-    expect(emitted.some((o) => o.entityType === 'user')).toBe(true);
-    expect(emitted.some((o) => o.field === 'title')).toBe(false);
-    expect(result.metrics?.[TITLE_COVERED_KEYS_METRIC]).toBeUndefined();
+    expect(emitted.some((o) => o.entityType === 'user' && o.field === 'title')).toBe(true);
+    expect(result.metrics?.[TITLE_COVERED_KEYS_METRIC]).toEqual([NETID_KEY]);
   });
 
   it('records the emitted title keys of a keyed run', async () => {
