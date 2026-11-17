@@ -99,9 +99,9 @@ A candidate another live researcher with a different netid already carries is sk
 A candidate chosen because its slug names the person, rather than because it continues the stored path, is adopted only when the live page's own email or netid names the researcher.
 The per-link report lists each skipped candidate under `refusedCandidates` and the summary counts them as `candidatesRefused`; [skills/scrapers/SKILL.md](../skills/scrapers/SKILL.md) owns the identity rule itself.
 Person pages are read from `/people/<slug>`, `/profile/<slug>`, `/person/<slug>`, section-nested `/people/<section>/<slug>`, and the nested CMS profile `/<section>/profile/<slug>` that `supersedesOfficialProfileUrl` already treats as canonical (#2310).
-That wider reader is deliberately separate from `personProfileNameTokensFromUrl`, which gates a materializer check on whether a field came _only_ from person-profile pages; widening the gate would change which fields that check suppresses.
+That wider reader is deliberately separate from `personProfileNameTokensFromUrl`, which gates a materializer check on whether a field came *only* from person-profile pages; widening the gate would change which fields that check suppresses.
 A link left `UNAVAILABLE` is withheld at serve time, so an entity page falls back to the person's website rather than offering a 404.
-This probe lane is the safety net behind the cheaper sweep-time rule in the materializer (#2290), which upgrades a stored link when the same host is _observed_ publishing the person on its canonical `/profile/<slug>` page and needs no network call.
+This probe lane is the safety net behind the cheaper sweep-time rule in the materializer (#2290), which upgrades a stored link when the same host is *observed* publishing the person on its canonical `/profile/<slug>` page and needs no network call.
 
 ### `Account` (`accounts`)
 
@@ -367,22 +367,22 @@ The invariant is now that those five fields exist only on a live row.
 Four things hold it:
 
 - `server/src/models/entityArchival.ts` owns the shapes.
-  `archivedEntityUpdate(extra?)` is the one update document that archives a research row: it sets `archived: true` alongside whatever the calling lane records, and unsets the five verdict fields in the same write.
-  Lanes call it through `archiveResearchEntities` in `server/src/services/archivedResearchEntityRoleEdges.ts`, which also repoints, archives as redundant, or ends the row's live role edges in the same step, so no archive leaves a current lead on a row the serve path refuses (#4752), relinks, merges into the survivor, or archives the row's live access signals (#4816), and repoints the row's live relationship edges to the survivor or archives them as redundant (#5122).
-  `LIVE_ENTITY_FILTER` and `liveEntityFilter(match?)` own the spelling of "live" (`archived: { $ne: true }`).
-  Operator intent survives archiving: `studentVisibilityOverrideTier`, `studentVisibilitySuppressionReason` and the reviewer fields are deliberately not cleared.
-  `ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS` and `ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS` partition `studentVisibilityFields`, and a test asserts the partition, so the next field added to the schema fails the suite until someone decides which side it is on instead of defaulting to surviving.
+`archivedEntityUpdate(extra?)` is the one update document that archives a research row: it sets `archived: true` alongside whatever the calling lane records, and unsets the five verdict fields in the same write.
+Lanes call it through `archiveResearchEntities` in `server/src/services/archivedResearchEntityRoleEdges.ts`, which also repoints, archives as redundant, or ends the row's live role edges in the same step, so no archive leaves a current lead on a row the serve path refuses (#4752), relinks, merges into the survivor, or archives the row's live access signals (#4816), and repoints the row's live relationship edges to the survivor or archives them as redundant (#5122).
+`LIVE_ENTITY_FILTER` and `liveEntityFilter(match?)` own the spelling of "live" (`archived: { $ne: true }`).
+Operator intent survives archiving: `studentVisibilityOverrideTier`, `studentVisibilitySuppressionReason` and the reviewer fields are deliberately not cleared.
+`ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS` and `ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS` partition `studentVisibilityFields`, and a test asserts the partition, so the next field added to the schema fails the suite until someone decides which side it is on instead of defaulting to surviving.
 - `clearArchivedResearchStudentVisibility` in `studentVisibilityGateService.ts` runs inside `applyStudentVisibilityGatePlans`, next to the archived-queue reconciliation it already did.
-  There are roughly twenty sites that set `archived: true`, several through the raw driver on a collection name, so the gate apply is the backstop that reconciles any lane which archives a row and never re-gates it.
-  It is idempotent: once the corpus is clean its filter matches nothing.
-  `clearArchivedProgramStudentVisibility` runs beside it and applies the same filter to `Fellowship`, because `planProgramGateUpdates` scopes itself to `archived: false` too: before it existed, 17 archived Development programs still stored `student_ready` (#3753).
+There are roughly twenty sites that set `archived: true`, several through the raw driver on a collection name, so the gate apply is the backstop that reconciles any lane which archives a row and never re-gates it.
+It is idempotent: once the corpus is clean its filter matches nothing.
+`clearArchivedProgramStudentVisibility` runs beside it and applies the same filter to `Fellowship`, because `planProgramGateUpdates` scopes itself to `archived: false` too: before it existed, 17 archived Development programs still stored `student_ready` (#3753).
 - Programs hold the invariant at both admin transitions as well.
-  `updateFellowship` owns both, so the archive and unarchive actions and the admin edit form all take the same path.
-  A write that archives a program unsets the five verdict fields in that write.
-  A write that restores an archived program unsets them too and then re-gates the program before returning it, so a restored program is judged on its current evidence instead of serving the verdict it held before it was archived, and a failed re-gate leaves it unserved.
+`updateFellowship` owns both, so the archive and unarchive actions and the admin edit form all take the same path.
+A write that archives a program unsets the five verdict fields in that write.
+A write that restores an archived program unsets them too and then re-gates the program before returning it, so a restored program is judged on its current evidence instead of serving the verdict it held before it was archived, and a failed re-gate leaves it unserved.
 - `yarn --cwd server research-entity:archived-visibility-verdicts` is the measurement.
-  Its dry-run prints every tier both ways plus the zero-hard-blocker held population both ways, and `--assert-clean` exits non-zero while the two readings disagree.
-  `--apply --confirm-archived-visibility-verdict-repair` repairs stored rows and re-reads the census afterwards.
+Its dry-run prints every tier both ways plus the zero-hard-blocker held population both ways, and `--assert-clean` exits non-zero while the two readings disagree.
+`--apply --confirm-archived-visibility-verdict-repair` repairs stored rows and re-reads the census afterwards.
 
 A cleared tier reads as absent, so an unset `studentVisibilityTier` now means "archived" rather than "never gated".
 Read never-gated as a live row with no `studentVisibilityComputedAt`; the census reports that count directly.
@@ -547,7 +547,7 @@ They were lead-exempt on the theory that the entity itself is institutionally co
 `CORE_FACILITY` was kept on the same measurement because it routes to labs on 38 of 57 rows via `AFFILIATED_LAB` edges.
 
 For-credit pathways are the clearest case.
-A senior essay is done _in a lab_, so "you can do your senior essay here" is an attribute of a lab engagement, not a research home.
+A senior essay is done *in a lab*, so "you can do your senior essay here" is an attribute of a lab engagement, not a research home.
 All 13 `CREDIT_FORMALIZATION_POSSIBLE` signals sat on the 13 `COURSE_SEQUENCE` entities themselves and not one lab carried the fact, while `COURSE_CREDIT_PATHWAY` (already in `accessSignalTypes`) had zero rows.
 The durable direction is to store the fact on the department and inherit it at read time, rather than to mint a policy page as an entity or to write it onto the department's entities.
 
@@ -634,7 +634,7 @@ The `/dashboard` planning workspace hydrates bounded entity summaries and treats
 Current behavior:
 
 - `/api/users/savedResearchEntityIds` returns public entity ids for optimistic UI state.
-  A public entity id is the slug, the same value the public DTO serves as `_id` and `id` (`publicResearchEntityId`), so the detail page compares it with `group._id` and the dashboard with `entity.slug`; it is never the Mongo ObjectId, and a test pins the two to each other (#3637).
+A public entity id is the slug, the same value the public DTO serves as `_id` and `id` (`publicResearchEntityId`), so the detail page compares it with `group._id` and the dashboard with `entity.slug`; it is never the Mongo ObjectId, and a test pins the two to each other (#3637).
 - `/api/users/savedResearchEntities` returns allowlisted entity summaries, bounds `shortDescription` to 300 characters, and reports an archived, hidden, or deleted target as an `unavailableSavedResearchEntities` row instead of pruning it (#2174); see [`ResearchPlan`](#researchplan-research_plans) for the two reasons and what each promises the owner.
 - `PUT` and `DELETE /api/users/savedResearchEntities` add and remove entity-owned saves for the authenticated account, accept a public id or a Mongo ObjectId, and answer with the same public id list.
 - `/api/users/savedResearchEntityPlans` stores the owning student's sanitized planning details, keyed by entity id.
