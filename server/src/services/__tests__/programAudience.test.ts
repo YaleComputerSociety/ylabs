@@ -133,6 +133,7 @@ describe('an eligibility statement that admits graduate students (#6408)', () =>
       'Graduate students are available to mentor applicants.',
       'Eligible undergraduates will be paired with graduate students.',
       'The program welcomes undergraduates and is run by graduate students.',
+      'Applications from undergraduates are reviewed by graduate students.',
     ]) {
       expect(eligibilityAdmitsGraduates(eligibility)).toBe(false);
     }

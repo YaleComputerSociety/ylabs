@@ -43,7 +43,7 @@ const ELIGIBILITY_LIST_NAMES_GRADUATES = new RegExp(
 );
 /** Graduate students named as colleagues, mentors or staff, not as applicants. */
 const COLLEAGUE_ROLE =
-  /\b(?:alongside|paired\s+with|mentor(?:s|ed|ing)?|run\s+by|led\s+by|supervised\s+by|taught\s+by|assisted\s+by|work(?:s|ing)?\s+with)\b/i;
+  /\b(?:alongside|paired\s+with|mentor(?:s|ed|ing)?|run\s+by|led\s+by|supervised\s+by|taught\s+by|assisted\s+by|(?:reviewed|judged|evaluated|selected|chosen)\s+by|work(?:s|ing)?\s+with)\b/i;
 const NEGATION =
   /\b(?:not|ineligible|excluded|excluding|excludes)\b|\bonly\s+(?:open\s+)?to\s+(?:yale\s+)?(?:college\s+)?undergraduates?\b(?!\s*(?:,|and|or))/i;
 
