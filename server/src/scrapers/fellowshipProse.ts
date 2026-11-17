@@ -1,5 +1,6 @@
 import {
   clampDescriptionLength,
+  normalizeHygieneWhitespace,
   sanitizeStoredCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -45,9 +46,20 @@ export function sanitizedObservedFellowshipProse(text: string | undefined): stri
   return sanitizeStoredCatalogDescription(text, MAX_OBSERVED_FELLOWSHIP_PROSE_CHARS) || undefined;
 }
 
+const CONTACT_REDACTION_TOKEN = /\[(?:email|phone) redacted\]/gi;
+
+/**
+ * A lane's source text is the evidence a served claim is checked against, not a description a
+ * student reads, so it is never run through the catalog description hygiene: that pass rejects a
+ * whole page as a navigation, FAQ or staff-contact dump, which emptied the text of half the
+ * program pages read (#6402). Only direct contact details are removed, and the length is bounded.
+ */
 export function sanitizedObservedSourceText(text: string | undefined): string | undefined {
   if (!text) return undefined;
-  return sanitizedObservedFellowshipProse(redactDirectContactInfo(text));
+  const redacted = normalizeHygieneWhitespace(
+    redactDirectContactInfo(text).replace(CONTACT_REDACTION_TOKEN, ' '),
+  );
+  return redacted ? boundedObservedFellowshipProse(redacted) : undefined;
 }
 
 /**
