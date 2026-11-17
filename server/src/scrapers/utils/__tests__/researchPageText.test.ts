@@ -374,6 +374,30 @@ describe('capResearchPageText keeps own statements ahead of listed titles (#6109
     expect(capped.reduce((sum, entry) => sum + entry.text.length, 0)).toBeLessThanOrEqual(3000);
   });
 
+  it("keeps every page's own statements when a research page of long abstracts fills the cap", () => {
+    const abstracts = Array.from(
+      { length: 120 },
+      (_v, i) =>
+        `This fixture abstract ${i + 1} reports that tissue fibrosis follows injury in a model cohort of adults.`,
+    ).join('\n');
+    const otherPage = (subject: string) =>
+      `The program studies ${subject} across several fixture cohorts of adults and children.\nIt also trains graduate students in ${subject} methods and analysis.`;
+    const pages = [
+      { url: RESEARCH, text: abstracts, researchLines: new Set(abstracts.split('\n')) },
+      { url: HOME, text: biography, researchLines: new Set<string>() },
+      { url: `${HOME}/a`, text: otherPage('kidney imaging'), researchLines: new Set<string>() },
+      {
+        url: `${HOME}/b`,
+        text: otherPage('transplant outcomes'),
+        researchLines: new Set<string>(),
+      },
+    ];
+    const capped = capResearchPageText(pages, 6000);
+    expect(capped.map((entry) => entry.url).sort()).toEqual(pages.map((page) => page.url).sort());
+    expect(capped.find((entry) => entry.url === HOME)?.text).toBe(biography);
+    expect(capped.reduce((sum, entry) => sum + entry.text.length, 0)).toBeLessThanOrEqual(6000);
+  });
+
   it('still gives a lone unpunctuated interest line in a research section the research budget', () => {
     const interests =
       'Research interests include kidney fibrosis, tissue repair, organ transplantation, immune tolerance and the long-term outcomes of kidney transplant recipients';
