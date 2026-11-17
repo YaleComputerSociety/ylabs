@@ -40,6 +40,7 @@ vi.mock('../userDepartmentObservationScreens', async () => {
 import { Observation } from '../../models/observation';
 import { OrgUnit } from '../../models/orgUnit';
 import { Researcher } from '../../models/researcher';
+import { resetDirectoryNetidsByAddressCache } from '../directoryContradictedProfileNetid';
 import { materializeEntity } from '../entityMaterializer';
 import { resetOrgUnitCanonicalizerCache } from '../orgUnitCanonicalization';
 import { resetOverSharedPersonWebsiteKeysCache } from '../overSharedPersonWebsite';
@@ -168,6 +169,60 @@ describe('a stored department only screened readings back is cleared on resolve'
 
     expect((await resolve()).fieldsWritten).toBe(0);
     expect((await stored(person._id))?.profile?.primaryDepartment).toBe('Fixture Studies');
+  });
+
+  describe('a screened-only dotted alias key beside a bare directory key (#6444)', () => {
+    const DIRECTORY_KEY = NETID;
+    const ALIAS_LOCAL = 'fixture.quillsby';
+    const ALIAS_KEY = `netid:${ALIAS_LOCAL}`;
+    const seedBothKeys = () =>
+      Observation.insertMany([
+        reading('fname', 'Fixture', 'fixture-screened-lane', ALIAS_KEY),
+        reading('lname', 'Quillsby', 'fixture-screened-lane', ALIAS_KEY),
+        reading('primaryDepartment', SCREENED, 'fixture-screened-lane', ALIAS_KEY),
+        reading('netid', NETID, 'yale-directory', DIRECTORY_KEY),
+        reading('fname', 'Fixture', 'yale-directory', DIRECTORY_KEY),
+        reading('lname', 'Quillsby', 'yale-directory', DIRECTORY_KEY),
+        reading('email', `${ALIAS_LOCAL}@yale.edu`, 'yale-directory', DIRECTORY_KEY),
+        reading('primaryDepartment', 'Fixture Studies', 'yale-directory', DIRECTORY_KEY),
+      ]);
+    const resolveInOrder = async (keys: string[]) => {
+      await Researcher.deleteMany({});
+      resetDirectoryNetidsByAddressCache();
+      resetPrimaryDepartmentStatingKeysCache();
+      const person = await seedPerson(SCREENED, ALIAS_KEY);
+      for (const entityKey of keys) await materializeEntity('user', { entityKey }, {});
+      return (await stored(person._id))?.profile?.primaryDepartment;
+    };
+
+    it('stores the directory department in every key order', async () => {
+      await seedBothKeys();
+      const orders = [
+        [ALIAS_KEY, DIRECTORY_KEY],
+        [DIRECTORY_KEY, ALIAS_KEY],
+        [ALIAS_KEY, DIRECTORY_KEY, ALIAS_KEY],
+        [DIRECTORY_KEY, ALIAS_KEY, DIRECTORY_KEY],
+      ];
+      const results = [];
+      for (const order of orders) results.push(await resolveInOrder(order));
+
+      expect(results).toEqual(orders.map(() => 'Fixture Studies'));
+    });
+
+    it('writes nothing on a second pass over both keys, in either order', async () => {
+      await seedBothKeys();
+      for (const order of [
+        [ALIAS_KEY, DIRECTORY_KEY],
+        [DIRECTORY_KEY, ALIAS_KEY],
+      ]) {
+        await resolveInOrder(order);
+        const second = [];
+        for (const entityKey of order) {
+          second.push((await materializeEntity('user', { entityKey }, {})).fieldsWritten);
+        }
+        expect(second).toEqual([0, 0]);
+      }
+    });
   });
 
   it('keeps it while one unscreened reading on another key naming the researcher states it', async () => {
