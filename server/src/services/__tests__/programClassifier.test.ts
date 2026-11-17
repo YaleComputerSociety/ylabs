@@ -361,6 +361,51 @@ describe('classifyProgram', () => {
   });
 });
 
+describe('mentor matching needs the program to state it (#6455)', () => {
+  it('reads a summer research program whose page states no mentor placement as a program to apply to', () => {
+    const classification = classifyProgram({
+      title: 'Synthetic Summer Research Program',
+      competitionType: 'Summer Undergraduate Research Program',
+      description:
+        'A ten-week summer research program in the synthetic sciences with a stipend and housing for undergraduates.',
+    });
+    expect(classification).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      programKind: 'STRUCTURED_PROGRAM',
+      entryMode: 'APPLY_TO_PROGRAM',
+      mentorMatching: false,
+    });
+    expect(classification.bestNextStep).not.toMatch(/mentor/i);
+  });
+
+  it('reads mentor placement the stored page text states even when the served prose does not', () => {
+    expect(
+      classifyProgram({
+        title: 'Synthetic Summer Research Program',
+        competitionType: 'Summer Undergraduate Research Program',
+        description: 'A ten-week summer research program in the synthetic sciences.',
+        fullSourceDescription:
+          'Each student will be matched with the laboratory of a research mentor for the summer.',
+      }),
+    ).toMatchObject({
+      programKind: 'MENTOR_MATCHING',
+      entryMode: 'DIRECT_FACULTY_MATCHING',
+      mentorMatching: true,
+    });
+  });
+
+  it('names a research mentor rather than a faculty one when it matches', () => {
+    const classification = classifyProgram({
+      title: 'Synthetic Summer Research Program',
+      competitionType: 'Summer Undergraduate Research Program',
+      description: 'Students will be assigned a graduate student mentor for the summer.',
+    });
+    expect(classification.bestNextStep).toBe(
+      'Apply to the summer research program; admitted students are matched with a research mentor.',
+    );
+  });
+});
+
 describe('classifyProgram internship identity (#2925)', () => {
   it('keeps a travel fund whose purpose list merely permits an internship out of the internship category', () => {
     expect(
