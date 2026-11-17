@@ -124,8 +124,20 @@ const GUIDANCE_TEMPLATE_LEAD = /^Supports undergraduate research in [^.]+\.\s*/;
  * card for every page it reads, so a research award, a summer fellowship or an internship
  * found on a department page would be carried as "department guidance". Only a row that is a
  * department guide keeps that card; any other row's card is read from its own description,
- * without the lane's guidance lead.
+ * without the lane's guidance lead, and is empty when the row has no description of its own,
+ * which the client reads as no card rather than falling back to the stored summary.
  */
+export function isGuidanceTemplateOnNonGuide(
+  summary: unknown,
+  guidanceKind: DepartmentGuidanceKind | null,
+): boolean {
+  return (
+    guidanceKind === null &&
+    typeof summary === 'string' &&
+    GUIDANCE_TEMPLATE_CARD.test(summary.trim())
+  );
+}
+
 export function cardSourcesForProgram(
   summary: unknown,
   description: unknown,
@@ -133,9 +145,8 @@ export function cardSourcesForProgram(
 ): { shortDescription?: string; fullDescription?: string } {
   const shortDescription = typeof summary === 'string' ? summary : undefined;
   const fullDescription = typeof description === 'string' ? description : undefined;
-  if (guidanceKind !== null || !GUIDANCE_TEMPLATE_CARD.test(shortDescription?.trim() ?? '')) {
+  if (!isGuidanceTemplateOnNonGuide(summary, guidanceKind)) {
     return { shortDescription, fullDescription };
   }
-  const ownDescription = fullDescription?.replace(GUIDANCE_TEMPLATE_LEAD, '').trim();
-  return ownDescription ? { fullDescription: ownDescription } : {};
+  return { fullDescription: fullDescription?.replace(GUIDANCE_TEMPLATE_LEAD, '').trim() ?? '' };
 }

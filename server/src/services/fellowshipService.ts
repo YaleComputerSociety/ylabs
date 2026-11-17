@@ -37,7 +37,11 @@ import { Observation } from '../models/observation';
 import { clearedProgramStudentVisibilityVerdict } from '../models/entityArchival';
 import { programRoleForKind } from './programClassifier';
 import { programAudience, servedUndergraduateOnly } from './programAudience';
-import { cardSourcesForProgram, departmentGuidanceKindOf } from './departmentResearchGuidance';
+import {
+  cardSourcesForProgram,
+  departmentGuidanceKindOf,
+  isGuidanceTemplateOnNonGuide,
+} from './departmentResearchGuidance';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { programLikeCardShortDescription } from '../utils/researchEntityDescriptionQuality';
@@ -566,11 +570,15 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
       publicFellowship.description,
       departmentGuidanceKind,
     );
-    if ('shortDescription' in cardSources || 'fullDescription' in cardSources) {
-      publicFellowship.cardSummary = programLikeCardShortDescription({
-        shortDescription: cardSources.shortDescription,
-        fullDescription: cardSources.fullDescription,
-      });
+    publicFellowship.cardSummary =
+      cardSources.shortDescription || cardSources.fullDescription
+        ? programLikeCardShortDescription({
+            shortDescription: cardSources.shortDescription,
+            fullDescription: cardSources.fullDescription,
+          })
+        : '';
+    if (isGuidanceTemplateOnNonGuide(publicFellowship.summary, departmentGuidanceKind)) {
+      delete publicFellowship.summary;
     }
   }
 

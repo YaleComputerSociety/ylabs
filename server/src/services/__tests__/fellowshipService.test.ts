@@ -898,6 +898,7 @@ describe('a department-page program that is not a department guide (#6454)', () 
     expect(payload.departmentResearchGuidance).toBe(false);
     expect(payload.cardSummary).not.toMatch(/department guidance/);
     expect(payload.cardSummary).toMatch(/award funds a student research project/);
+    expect(JSON.stringify(payload)).not.toMatch(/through department guidance/);
   });
 
   it('keeps the guidance card on a department research guide', () => {
@@ -913,7 +914,8 @@ describe('a department-page program that is not a department guide (#6454)', () 
         description: 'Supports undergraduate research in Synthetic Studies.',
       }),
     );
-    expect(payload.cardSummary).toBeUndefined();
+    expect(payload.cardSummary).toBe('');
+    expect(payload.summary).toBeUndefined();
   });
 
   it('leaves a card that does not use the guidance template unchanged', () => {
