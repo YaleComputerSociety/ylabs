@@ -284,6 +284,48 @@ describe('researchEntityCopy', () => {
     ).toBe('This research includes genomic screening. This research addresses cilia.');
   });
 
+  describe('a possessive that is the object of "Research at" keeps its lab (#6393)', () => {
+    const facultyResearch = {
+      name: 'Fixture Exemplar Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    };
+
+    it.each([
+      "Research at Fixture Exemplar's lab studies tidal sediment transport.",
+      "Research at Professor Exemplar's lab focuses on tidal sediment transport.",
+      "Research at Dr. Exemplar's lab uses tidal sediment cores.",
+      "Undergraduate research at Exemplar's lab develops tidal sensors.",
+      "Research at Exemplars' lab investigates tidal sediment transport.",
+      'Research at her lab studies tidal sediment transport.',
+      'Research at their lab is interested in tidal sediment transport.',
+    ])('leaves %j reading "lab"', (copy) => {
+      expect(sanitizeFacultyResearchCopy(copy, facultyResearch)).toBe(copy);
+    });
+
+    it('still swaps a possessive lab that is the sentence subject', () => {
+      expect(
+        sanitizeFacultyResearchCopy(
+          "Fixture Exemplar's lab studies tidal sediment transport. Her lab uses sediment cores.",
+          facultyResearch,
+        ),
+      ).toBe(
+        "Fixture Exemplar's research studies tidal sediment transport. Her research uses sediment cores.",
+      );
+    });
+
+    it('swaps a later subject possessive after an earlier "research at" sentence', () => {
+      expect(
+        sanitizeFacultyResearchCopy(
+          "Fixture Exemplar's research at her field station is ongoing. Her lab studies tidal sediment transport.",
+          facultyResearch,
+        ),
+      ).toBe(
+        "Fixture Exemplar's research at her field station is ongoing. Her research studies tidal sediment transport.",
+      );
+    });
+  });
+
   it('strips a trailing "Research" suffix (with or without a dash separator) from the possessive name', () => {
     const dashSuffixEntity = {
       name: 'Tara Boroushaki - Research',
