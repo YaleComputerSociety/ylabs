@@ -319,7 +319,15 @@ export function acceptingByStatedWindow(
 const ROLLING_REVIEW =
   /\b(?:are|is)\s+(?:reviewed|accepted|considered|evaluated)\s+on\s+a\s+rolling\s+basis\b|\brolling\s+(?:review|admissions?)\b|\bapply\s+(?:at\s+)?any\s*time\b|\breviews?\s+applications\s+(?:regularly|continuously|on\s+an\s+ongoing\s+basis|as\s+they\s+(?:are\s+)?(?:received|come\s+in))\b/i;
 
-/** Whether a page says applications are reviewed on a rolling basis now (#6458); past tense is not. */
+const CLAUSE_NEGATION = /\b(?:no|not|never|no\s+longer|cannot|can't|nor)\b/i;
+
+/**
+ * Whether a page says applications are reviewed on a rolling basis now (#6458). Past tense is
+ * not, and neither is a clause that carries a negation ("there is no rolling review", "rolling
+ * admissions are no longer offered", "you cannot apply at any time"), which fails closed.
+ */
 export function statesRollingReview(text: string): boolean {
-  return ROLLING_REVIEW.test(normalizeWhitespace(text));
+  return normalizeWhitespace(text)
+    .split(/[.;!?:]|,\s+(?:but|so|and|or)\b/)
+    .some((clause) => ROLLING_REVIEW.test(clause) && !CLAUSE_NEGATION.test(clause));
 }

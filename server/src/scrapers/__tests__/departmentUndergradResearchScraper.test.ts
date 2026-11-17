@@ -562,6 +562,34 @@ describe('departmentUndergradResearchScraper', () => {
     expect(accepting('Applications were reviewed on a rolling basis last year.')).toBeUndefined();
     expect(accepting('The senior essay prospectus is due September 15.')).toBeUndefined();
     expect(accepting('Students may ask faculty about research.')).toBeUndefined();
+    for (const negated of [
+      'There is no rolling review; the deadline is March 1.',
+      'Rolling admissions are no longer offered.',
+      'You cannot apply at any time; applications open in January.',
+      'Applications are not reviewed on a rolling basis.',
+    ]) {
+      expect(accepting(negated)).toBeUndefined();
+    }
+  });
+
+  it('never gives a department guide page an accepting flag, whatever its labs do (#6458)', () => {
+    const guide = parseGeneralDepartmentResearchPage(
+      `<main><h1>Fixture Studies Undergraduate Research</h1><p>Undergraduates in Fixture Studies can join faculty research labs during the term or the summer for credit or pay.</p><p>Most labs review applications as they come in, so email faculty directly.</p></main>`,
+      {
+        key: 'fixture-studies',
+        url: 'https://fixture.yale.edu/undergraduate/research',
+        department: 'Fixture Studies',
+        school: 'Yale College',
+        parser: 'general-guidance' as const,
+        title: 'Fixture Studies Undergraduate Research',
+      },
+    );
+    expect(guide.length).toBeGreaterThan(0);
+    expect(
+      departmentUndergradResearchRecordsToObservations(guide).some(
+        (obs) => obs.field === 'isAcceptingApplications',
+      ),
+    ).toBe(false);
   });
 
   it('observes the administering office a program page states, and only that (#4589)', () => {
