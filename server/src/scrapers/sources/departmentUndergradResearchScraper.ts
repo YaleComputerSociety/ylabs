@@ -49,6 +49,7 @@ import {
   type LanePageProbe,
 } from '../lanePageHealth';
 import { statedAdministeringOffice } from '../utils/administeringOffice';
+import { statesRollingReview } from '../utils/programPageEvidence';
 import { pageTitleNamesSeniorEssayGuidance } from '../../services/departmentResearchGuidance';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
@@ -87,6 +88,7 @@ export interface DepartmentUndergradResearchRecord {
   contactOffice?: string;
   joinPageUrl?: string;
   pageTitle?: string;
+  isStructuredOpportunity?: boolean;
 }
 
 type FetchHtml = (url: string, useCache: boolean, pageReads?: LanePageReads) => Promise<string>;
@@ -767,6 +769,7 @@ export function parseStructuredOpportunityPage(
       shortDescription: description.shortDescription,
       evidenceQuote: description.evidenceQuote,
       sourceText: text,
+      isStructuredOpportunity: true,
       undergradAccessEvidence: true,
       contactEmail,
       contactRole: contactEmail ? 'Program contact for undergraduate research' : undefined,
@@ -830,6 +833,13 @@ function programRecordToFellowshipObservations(
   const fullSourceDescription = sanitizedObservedSourceText(record.sourceText);
   if (fullSourceDescription) {
     observations.push({ ...base, field: 'fullSourceDescription', value: fullSourceDescription });
+  }
+  // A department page's dates are as often a senior-essay or guidance timeline as an
+  // application window, so only a stated rolling review sets the flag, and only on a single
+  // opportunity's own page: a guide's "labs review applications as they come in" describes
+  // other labs, and the flag would end its guidance kind (#6458).
+  if (record.isStructuredOpportunity && statesRollingReview(record.sourceText ?? '')) {
+    observations.push({ ...base, field: 'isAcceptingApplications', value: true });
   }
   return observations;
 }
