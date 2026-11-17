@@ -4,6 +4,7 @@ import {
   OVER_SHARED_PERSON_IMAGE_MIN_SUBJECTS,
   isOverSharedPersonImage,
   overSharedPersonImageKeys,
+  emailAliasPayloadsOnCandidatePictures,
   overSharedStoredPersonImageKeys,
   withoutOverSharedPersonImageObservations,
 } from '../overSharedPersonImage';
@@ -150,12 +151,9 @@ describe('a picture stored on many researchers with different identities is a de
     expect(isOverSharedPersonImage(DEFAULT_PICTURE, keys)).toBe(true);
   });
 
-  it("counts one person's two rows and email-alias key once (#6284)", () => {
+  it("counts one person's netid row, same-name row and resolved alias key once (#6284)", () => {
     const keys = overSharedStoredPersonImageKeys(
-      [
-        holder('r1', undefined, 'Avery Synthetic'),
-        holder('r2', undefined, 'Avery Quinn Synthetic'),
-      ],
+      [holder('r1', 'fx1', 'Avery Synthetic'), holder('r2', undefined, 'Avery Synthetic')],
       [
         {
           value: DEFAULT_PICTURE,
@@ -163,21 +161,32 @@ describe('a picture stored on many researchers with different identities is a de
           sourceName: 'dept-faculty-roster',
         },
       ],
+      3,
+      new Map([['avery.synthetic', 'fx1']]),
     );
     expect(isOverSharedPersonImage(DEFAULT_PICTURE, keys)).toBe(false);
   });
 
-  it('still marks a picture three different people hold through rows and an alias key', () => {
+  it('counts an email-alias key the alias map does not resolve as its own holder', () => {
     const keys = overSharedStoredPersonImageKeys(
-      [holder('r1', 'fx1', 'Avery Synthetic'), holder('r2', undefined, 'Blake Fixture')],
+      [holder('r1', 'fx1', 'Alan Quillmarsh'), holder('r2', 'fx2', 'Beth Jorrow')],
       [
         {
           value: DEFAULT_PICTURE,
-          entityKey: 'netid:casey.example',
+          entityKey: 'netid:a.quillmarsh',
           sourceName: 'dept-faculty-roster',
         },
       ],
     );
+    expect(isOverSharedPersonImage(DEFAULT_PICTURE, keys)).toBe(true);
+  });
+
+  it('merges rows without a netid only on the same full name', () => {
+    const keys = overSharedStoredPersonImageKeys([
+      holder('r1', undefined, 'Avery Synthetic'),
+      holder('r2', undefined, 'Avery Quinn Synthetic'),
+      holder('r3', 'fx3', 'Blake Fixture'),
+    ]);
     expect(isOverSharedPersonImage(DEFAULT_PICTURE, keys)).toBe(true);
   });
 
@@ -188,6 +197,22 @@ describe('a picture stored on many researchers with different identities is a de
       holder('r3', undefined, 'Blake Fixture'),
     ]);
     expect(isOverSharedPersonImage(DEFAULT_PICTURE, keys)).toBe(true);
+  });
+
+  it('asks the alias map only about aliases on a picture that could reach the bar', () => {
+    const aliasObservation = (entityKey: string, value: string) => ({
+      value,
+      entityKey,
+      sourceName: 'dept-faculty-roster',
+    });
+    const payloads = emailAliasPayloadsOnCandidatePictures(
+      [holder('r1', 'fx1', 'Avery Synthetic'), holder('r2', 'fx2', 'Blake Fixture')],
+      [
+        aliasObservation('netid:avery.synthetic', DEFAULT_PICTURE),
+        aliasObservation('netid:casey.example', OWN_PICTURE),
+      ],
+    );
+    expect(payloads).toEqual(['avery.synthetic']);
   });
 
   it('counts a researcher and its own evidence as one identity', () => {

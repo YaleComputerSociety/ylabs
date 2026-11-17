@@ -105,6 +105,8 @@ describe('placeholder images are never served as a person photo (#5640)', () => 
     'https://fixture.yale.edu/sites/default/files/2024-02/avery-blankenship.jpg',
     'https://fixture.yale.edu/sites/default/files/2024-02/campusano-avery.jpg',
     'https://fixture.yale.edu/sites/default/files/2024-02/exteriorsynthetic-avery.jpg',
+    'https://fixture.yale.edu/sites/default/files/2024-02/avery-exterior.jpg',
+    'https://fixture.yale.edu/sites/default/files/2024-02/hall-avery-synthetic.jpg',
     CLOUDINARY_A,
   ])('keeps the real photo %s', (url) => {
     expect(isLikelyPublicProfileImageUrl(url)).toBe(true);
