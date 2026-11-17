@@ -76,6 +76,7 @@ import {
 } from '../utils/fundApplicationRoute';
 import { collapseDefaultFillGlobalRegions } from '../../services/globalRegions';
 import { statedAdministeringOffice } from '../utils/administeringOffice';
+import { statesOpenEndedApplications } from '../utils/programPageEvidence';
 import { fundAwardAmount } from '../utils/fundAwardAmount';
 import {
   resolveFundYearOfStudy,
@@ -428,8 +429,9 @@ export function parseFundDetailPage(
     ...otherFacets,
     isAcceptingApplications:
       !closed &&
-      Boolean(deadline && deadline.getTime() > now) &&
-      (!opensAt || opensAt.getTime() <= now),
+      (!opensAt || opensAt.getTime() <= now) &&
+      (Boolean(deadline && deadline.getTime() > now) ||
+        statesOpenEndedApplications(Object.values(prose).filter(Boolean).join('. '))),
   };
 }
 

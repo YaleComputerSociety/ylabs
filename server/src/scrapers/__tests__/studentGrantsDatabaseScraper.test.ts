@@ -242,6 +242,56 @@ describe('parseFundDetailPage', () => {
     expect(acceptingAt('2027-03-24T17:01:00.000Z')).toBe(false);
   });
 
+  it('keeps a fund whose own text states rolling or while-funds-remain applications accepting past its nominal deadline (#6480)', () => {
+    const acceptingWith = (
+      applicationInformation: string,
+      extra: { closedOn?: string; opens?: string } = {},
+    ) =>
+      parseFundDetailPage(
+        fundDetailHtml({
+          opens: extra.opens ?? '9/17/2026',
+          deadline: '11/14/2026 5:00 PM',
+          closedOn: extra.closedOn,
+          applicationInformation,
+        }),
+        { title: '', url: FUND_A_URL },
+        new Date('2026-11-17T12:00:00.000Z'),
+      )?.isAcceptingApplications;
+    expect(acceptingWith('Please submit a short proposal.')).toBe(false);
+    expect(acceptingWith('Please note: Applications for this funding are rolling.')).toBe(true);
+    expect(
+      acceptingWith('Students are encouraged to apply as long as funds remain available.'),
+    ).toBe(true);
+    expect(acceptingWith('Applications are reviewed on a rolling basis.')).toBe(true);
+  });
+
+  it('still reads a negated, dated, closed or not-yet-open rolling fund as not accepting (#6480)', () => {
+    const acceptingWith = (
+      applicationInformation: string,
+      extra: { closedOn?: string; opens?: string } = {},
+    ) =>
+      parseFundDetailPage(
+        fundDetailHtml({
+          opens: extra.opens ?? '9/17/2026',
+          deadline: '11/14/2026 5:00 PM',
+          closedOn: extra.closedOn,
+          applicationInformation,
+        }),
+        { title: '', url: FUND_A_URL },
+        new Date('2026-11-17T12:00:00.000Z'),
+      )?.isAcceptingApplications;
+    expect(acceptingWith('NB: Applications are not reviewed on a rolling basis.')).toBe(false);
+    expect(acceptingWith('Applications are reviewed on a rolling basis until November 14.')).toBe(
+      false,
+    );
+    expect(acceptingWith('Applications are rolling until the deadline.')).toBe(false);
+    expect(acceptingWith('Applications were accepted on a rolling basis.')).toBe(false);
+    expect(
+      acceptingWith('Applications are rolling.', { closedOn: 'Fund closed on 11/15/2026' }),
+    ).toBe(false);
+    expect(acceptingWith('Applications are rolling.', { opens: '1/15/2027' })).toBe(false);
+  });
+
   it('keeps regions and drops the countries listed under them', () => {
     const fund = parseFundDetailPage(
       FUND_A_DETAIL_HTML,
