@@ -50,6 +50,7 @@ import {
 import { resolveFieldLockReleases } from './releaseRevisitableFieldLocksCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -321,7 +322,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(summary, null, 2));
     if (args.output) {
       fs.mkdirSync(path.dirname(args.output), { recursive: true });
-      fs.writeFileSync(args.output, `${JSON.stringify(result, null, 2)}\n`);
+      writeReportFileSync(args.output, `${JSON.stringify(result, null, 2)}\n`);
     }
   } finally {
     await mongoose.disconnect();

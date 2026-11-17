@@ -50,6 +50,7 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { connectScriptMongo } from '../db/connections';
 import { postChatCompletion } from '../utils/modelClient';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -300,7 +301,7 @@ async function main(): Promise<void> {
   );
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`report written: ${options.output}`);
   }
   await mongoose.disconnect();

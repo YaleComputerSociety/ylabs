@@ -20,6 +20,7 @@ import {
   summarizeNonOwnerLeadEdgeQueueExclusions,
   type NonOwnerLeadEdgeCandidate,
 } from './queueNonOwnerLeadEdgeReviewCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -189,7 +190,7 @@ async function main(): Promise<void> {
 
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(
+    writeReportFileSync(
       options.output,
       `${JSON.stringify({ ...report, queue: plan.queue }, null, 2)}\n`,
     );

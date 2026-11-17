@@ -38,7 +38,6 @@
  *     --output /tmp/report.json
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -65,6 +64,7 @@ import {
   type DescriptionRefusalRow,
   partitionAttestedEmptyReadsByVocabulary,
 } from './refuseUnassertedDescriptionsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -239,7 +239,7 @@ async function main(): Promise<void> {
 
   const serialized = JSON.stringify({ ...report, plans: plan.plans, skips: plan.skips }, null, 2);
   if (options.output) {
-    fs.writeFileSync(resolveSafeJsonReportOutputPath(options.output), serialized);
+    writeReportFileSync(resolveSafeJsonReportOutputPath(options.output), serialized);
   }
   console.log(JSON.stringify(report, null, 2));
   await mongoose.disconnect();

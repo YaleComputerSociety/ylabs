@@ -9,6 +9,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { personProfileSourceMatchesEntity } from '../scrapers/utils/personProfileEntityMatch';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -178,7 +179,7 @@ async function main() {
   if (args.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
 
   console.log(JSON.stringify({ ...report, groups: groups.slice(0, 50) }, null, 2));

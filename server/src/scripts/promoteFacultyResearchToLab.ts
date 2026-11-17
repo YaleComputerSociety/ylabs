@@ -31,6 +31,7 @@ import {
   type FacultyResearchPromotionRow,
   type LabNameAdmissibility,
 } from './promoteFacultyResearchToLabCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 /**
  * The promotion is evidence-backed rather than a bare field write. `entityType` is
@@ -459,7 +460,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
+      writeReportFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
       console.log(`Saved faculty-research promotion report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
