@@ -546,6 +546,15 @@ describe('checkQueryVariantServesTheBaseline', () => {
     ).toBe('fail');
   });
 
+  it('accepts the same rows in any order, and nothing extra or missing, when the row set is asserted', () => {
+    const check = (variantKeys: string[]) =>
+      checkQueryVariantServesTheBaseline('x', 'x', pair(variantKeys), still, still, 'sameRowSet')
+        .status;
+    expect(check(['b', 'a'])).toBe('pass');
+    expect(check(['a', 'b', 'c'])).toBe('fail');
+    expect(check(['a'])).toBe('fail');
+  });
+
   it('accepts a variant sharing one baseline row when only a shared row is asserted', () => {
     const sharing = pair(['c', 'b']);
     expect(

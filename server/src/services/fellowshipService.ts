@@ -14,7 +14,7 @@ import {
   type ProgramCitizenshipCounts,
 } from './programCitizenshipCounts';
 import { correctProgramSearchQuerySpelling } from './programSearchSpellingVocabulary';
-import { PROGRAM_SEARCH_FIELDS, rankProgramSearch } from './programSearchRelevance';
+import { PROGRAM_SEARCH_CANDIDATE_FIELDS, rankProgramSearch } from './programSearchRelevance';
 import { BadRequestError, NotFoundError, ObjectIdError } from '../utils/errors';
 import { normalizeOverrideReason } from '../scripts/studentVisibilityOverrideCore';
 import {
@@ -1141,7 +1141,7 @@ export const searchFellowships = async (params: {
 
   const candidates = (await Fellowship.find(servedFilter, {
     _id: 1,
-    ...Object.fromEntries(PROGRAM_SEARCH_FIELDS.map((field) => [field, 1])),
+    ...Object.fromEntries(PROGRAM_SEARCH_CANDIDATE_FIELDS.map((field) => [field, 1])),
   })
     .sort(fieldSortOptions)
     .lean()) as Array<Record<string, unknown>>;

@@ -371,3 +371,57 @@ export function checkProgramFieldAttribution(
     'The corpus changed while the rows were compared, so a difference may be unexplained only because the served and the stored row describe different versions',
   );
 }
+
+export interface YearQueryWalk {
+  query: string;
+  year: string;
+  servedKeys: readonly string[];
+}
+
+export interface StatedYearRow {
+  key: string;
+  years: readonly string[];
+}
+
+/**
+ * A query naming a year of study serves every row that states that year and no row whose
+ * stated years exclude it (#6397). A row that states no year is neither required nor refused.
+ */
+export function checkYearQueriesServeTheStatedYear(
+  id: string,
+  title: string,
+  walks: readonly YearQueryWalk[],
+  catalog: readonly StatedYearRow[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const yearsByKey = new Map(catalog.map((row) => [row.key, row.years]));
+  const compared = walks.map(({ query, year, servedKeys }) => {
+    const served = new Set(servedKeys);
+    const stating = catalog.filter((row) => row.years.includes(year));
+    const missedStating = stating.filter((row) => !served.has(row.key)).length;
+    const servedExcluding = servedKeys.filter((key) => {
+      const years = yearsByKey.get(key) ?? [];
+      return years.length > 0 && !years.includes(year);
+    }).length;
+    return { query, year, stating: stating.length, missedStating, servedExcluding };
+  });
+  const detail = { walks: compared };
+  if (compared.some((walk) => walk.stating === 0)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No served row states one of the years, so recall over it would be a green signal over an empty population',
+      detail,
+    );
+  }
+  return inconclusiveWhenMoved(
+    id,
+    title,
+    compared.every((walk) => walk.missedStating === 0 && walk.servedExcluding === 0),
+    detail,
+    corpusBefore,
+    corpusAfter,
+    'The corpus changed during the walks, so a missed or excluded row may be a write rather than the query',
+  );
+}

@@ -17,10 +17,24 @@ const program = (title: string, description: string, overrides: Record<string, u
   ...overrides,
 });
 
+const SOPHOMORE_ONLY = { yearOfStudy: ['Sophomore'] };
+
 const PROGRAMS = [
-  program('Fixture Sophomore Summer Grant', 'Funding for a sophomore research project.'),
-  program('Fixture Sophomore Travel Award', 'Travel support for a sophomore studying abroad.'),
-  program('Fixture Sophomore Lab Stipend', 'A stipend for a sophomore joining a lab.'),
+  program(
+    'Fixture Sophomore Summer Grant',
+    'Funding for a sophomore research project.',
+    SOPHOMORE_ONLY,
+  ),
+  program(
+    'Fixture Sophomore Travel Award',
+    'Travel support for a sophomore studying abroad.',
+    SOPHOMORE_ONLY,
+  ),
+  program(
+    'Fixture Sophomore Lab Stipend',
+    'A stipend for a sophomore joining a lab.',
+    SOPHOMORE_ONLY,
+  ),
   program('Fixture Computing Internship', 'A paid internship in scientific computing.'),
   program('Fixture Composition Prize', 'An award for original musical composition.'),
   program('Fixture Community Service Fund', 'Support for community service work.'),
@@ -74,8 +88,13 @@ describe('program search tolerates misspellings and unfinished words (#4537)', (
     const corrected = await searchFellowships({ query: 'sophmore' });
     const correct = await searchFellowships({ query: 'sophomore' });
 
-    expect(corrected.total).toBe(3);
+    expect(corrected.total).toBe(correct.total);
     expect(titles(corrected).sort()).toEqual(titles(correct).sort());
+    expect(titles(corrected).slice(0, 3).sort()).toEqual([
+      'Fixture Sophomore Lab Stipend',
+      'Fixture Sophomore Summer Grant',
+      'Fixture Sophomore Travel Award',
+    ]);
     expect(corrected.queryCorrection).toEqual({
       originalQuery: 'sophmore',
       correctedQuery: 'sophomore',

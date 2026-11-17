@@ -5,7 +5,7 @@ import {
   programFacetNotStatedClause,
   type ProgramMongoFilter,
 } from '../utils/programFacetFilters';
-import { PROGRAM_SEARCH_FIELDS, rankProgramSearch } from './programSearchRelevance';
+import { PROGRAM_SEARCH_CANDIDATE_FIELDS, rankProgramSearch } from './programSearchRelevance';
 
 export const CITIZENSHIP_FIELD = 'citizenshipStatus';
 
@@ -109,7 +109,7 @@ export const programCitizenshipOptionCounts = async (params: {
   const [pool, doesntSayIds] = await Promise.all([
     Fellowship.find(filterWithoutCitizenship, {
       _id: 1,
-      ...Object.fromEntries(PROGRAM_SEARCH_FIELDS.map((field) => [field, 1])),
+      ...Object.fromEntries(PROGRAM_SEARCH_CANDIDATE_FIELDS.map((field) => [field, 1])),
     })
       .sort(sort)
       .lean() as Promise<Array<Record<string, unknown>>>,

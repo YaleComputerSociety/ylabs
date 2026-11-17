@@ -7,6 +7,7 @@ import {
   checkServedRowsAreInServedTier,
   checkServedRowsPassTheGate,
   checkWalkCoversReportedTotal,
+  checkYearQueriesServeTheStatedYear,
   tallyProgramFieldAttribution,
   tallyServedRowGate,
   withSurfaceId,
@@ -333,5 +334,46 @@ describe('program field attribution', () => {
     expect(checkProgramFieldAttribution('programs', tally, steadyCorpus, steadyCorpus).status).toBe(
       'inconclusive',
     );
+  });
+});
+
+describe('checkYearQueriesServeTheStatedYear (#6397)', () => {
+  const catalog = [
+    { key: 'a', years: ['First-Year Student', 'Sophomore'] },
+    { key: 'b', years: ['Junior', 'Senior'] },
+    { key: 'c', years: [] },
+  ];
+  const check = (servedKeys: string[], corpusAfter = steadyCorpus) =>
+    checkYearQueriesServeTheStatedYear(
+      'year',
+      'year',
+      [{ query: 'first-year', year: 'First-Year Student', servedKeys }],
+      catalog,
+      steadyCorpus,
+      corpusAfter,
+    );
+
+  it('holds when every stating row is served and an unstated row may be', () => {
+    expect(check(['a']).status).toBe('pass');
+    expect(check(['a', 'c']).status).toBe('pass');
+  });
+
+  it('fails on a missed stating row or a served excluding row', () => {
+    expect(check([]).status).toBe('fail');
+    expect(check(['a', 'b']).status).toBe('fail');
+  });
+
+  it('is inconclusive when the corpus moved or no row states the year', () => {
+    expect(check(['a', 'b'], movedCorpus).status).toBe('inconclusive');
+    expect(
+      checkYearQueriesServeTheStatedYear(
+        'year',
+        'year',
+        [{ query: 'seniors', year: 'Senior', servedKeys: [] }],
+        [{ key: 'a', years: ['Junior'] }],
+        steadyCorpus,
+        steadyCorpus,
+      ).status,
+    ).toBe('inconclusive');
   });
 });
