@@ -19,6 +19,7 @@ import {
   loadCurrentLeadPersonIdsByEntity,
   partitionMergeGroupsByDistinctPeopleVerdict,
 } from '../services/distinctPeopleVerdicts';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -155,7 +156,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(report, null, 2));
   if (output) {
     fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, `${JSON.stringify({ ...report, plan }, null, 2)}\n`);
+    writeReportFileSync(output, `${JSON.stringify({ ...report, plan }, null, 2)}\n`);
   }
   await mongoose.disconnect();
 }

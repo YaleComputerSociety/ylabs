@@ -10,6 +10,7 @@ const REPORT_FILE_MODE = 0o600;
 export interface ReportFileWriteOptions extends ReportOutputPathOptions {
   flag?: string;
   exclusive?: boolean;
+  stripJsonExtension?: boolean;
 }
 
 /**
@@ -23,8 +24,16 @@ export function writeReportFileSync(
   contents: string,
   options: ReportFileWriteOptions = {},
 ): string {
-  const { flag = '--output', exclusive = false, ...resolverOptions } = options;
-  const resolvedPath = resolveSafeJsonReportOutputPath(outputPath, flag, resolverOptions);
+  const {
+    flag = '--output',
+    exclusive = false,
+    stripJsonExtension = false,
+    ...resolverOptions
+  } = options;
+  const resolvedJsonPath = resolveSafeJsonReportOutputPath(outputPath, flag, resolverOptions);
+  const resolvedPath = stripJsonExtension
+    ? resolvedJsonPath.replace(/\.json$/i, '')
+    : resolvedJsonPath;
   const openFlags = exclusive ? EXCLUSIVE_REPORT_OPEN_FLAGS : REPORT_OPEN_FLAGS;
   const descriptor = fs.openSync(resolvedPath, openFlags, REPORT_FILE_MODE);
   try {

@@ -38,6 +38,7 @@ import {
   type TaxonomyReviewCandidate,
   type TaxonomyReviewQueueSummary,
 } from './taxonomyReviewQueueCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -151,7 +152,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(result.summary, null, 2));
     if (output) {
       fs.mkdirSync(path.dirname(output), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         output,
         JSON.stringify({ generatedAt: new Date().toISOString(), ...result }, null, 2),
       );

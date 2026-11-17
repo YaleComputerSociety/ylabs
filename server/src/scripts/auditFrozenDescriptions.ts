@@ -203,7 +203,9 @@ async function main(): Promise<void> {
         '',
       );
       fs.mkdirSync(path.dirname(safeSlugs), { recursive: true });
-      fs.writeFileSync(safeSlugs, result.deliverable.join(','));
+      writeReportFileSync(`${safeSlugs}.json`, result.deliverable.join(','), {
+        stripJsonExtension: true,
+      });
       console.log(`Saved deliverable slugs to ${safeSlugs}`);
     }
   } finally {

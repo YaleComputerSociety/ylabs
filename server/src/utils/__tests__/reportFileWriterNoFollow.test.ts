@@ -79,6 +79,29 @@ describe('the shared report writer (#6375)', () => {
     expect(fs.existsSync(target)).toBe(false);
   });
 
+  it('writes the extensionless sibling of a resolved .json path when asked', () => {
+    const dir = scratch();
+    const anchor = path.join(dir, 'slugs.json');
+    const output = path.join(dir, 'slugs');
+
+    expect(writeReportFileSync(anchor, 'a,b', { stripJsonExtension: true })).toBe(output);
+
+    expect(fs.readFileSync(output, 'utf8')).toBe('a,b');
+    expect(fs.statSync(output).mode & 0o777).toBe(0o600);
+    expect(fs.existsSync(anchor)).toBe(false);
+  });
+
+  it('refuses a link planted at the extensionless sibling, so its target is never written', () => {
+    const dir = scratch();
+    const target = path.join(dir, 'elsewhere');
+    fs.symlinkSync(target, path.join(dir, 'slugs'));
+
+    expect(() =>
+      writeReportFileSync(path.join(dir, 'slugs.json'), 'a,b', { stripJsonExtension: true }),
+    ).toThrow(expect.objectContaining({ code: 'ELOOP' }));
+    expect(fs.existsSync(target)).toBe(false);
+  });
+
   it('formats a JSON payload the way the async JSON writer does', () => {
     const dir = scratch();
     const output = path.join(dir, 'report.json');
