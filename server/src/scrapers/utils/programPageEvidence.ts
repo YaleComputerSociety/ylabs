@@ -222,6 +222,40 @@ export interface StatedApplicationWindow {
   closesAt?: Date;
 }
 
+const STATES_ITS_YEAR = /\b\d{4}\b|\d{1,2}\/\d{1,2}\/\d{2,4}/;
+
+const WEEKDAY = /\b(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\b/i;
+
+const WEEKDAY_ORDER = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+];
+
+const newYorkWeekday = (date: Date): string =>
+  date.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/New_York' }).toLowerCase();
+
+/**
+ * Only a date that states its own year can move a window: a yearless date is rolled to the
+ * next year by inference, which reads a stale page's last cycle as the coming one, and a stated
+ * weekday that does not fit the date marks it as another year's (#6453, #6399).
+ */
+function windowDate(dateText: string, boundary: 'opens' | 'deadline', referenceDate: Date) {
+  if (!STATES_ITS_YEAR.test(dateText)) return undefined;
+  const date = parseProgramDate(dateText, boundary, referenceDate);
+  if (!date) return undefined;
+  const weekday = WEEKDAY.exec(dateText)?.[1].toLowerCase();
+  const boundaryDay = boundary === 'deadline' ? new Date(date.getTime() - 1) : date;
+  if (weekday && WEEKDAY_ORDER.includes(weekday) && newYorkWeekday(boundaryDay) !== weekday) {
+    return undefined;
+  }
+  return date;
+}
+
 const statedDates = (
   pattern: RegExp,
   text: string,
@@ -229,7 +263,7 @@ const statedDates = (
   referenceDate: Date,
 ) =>
   [...text.matchAll(pattern)]
-    .map((match) => parseProgramDate(match[1], boundary, referenceDate))
+    .map((match) => windowDate(match[1], boundary, referenceDate))
     .filter((date): date is Date => date !== undefined);
 
 /**
@@ -262,9 +296,12 @@ export function hasActiveApplicationLanguage(text: string): boolean {
 
 /**
  * Whether a program page's own window is open at `referenceDate`: never before a stated
- * opening, then by the deadline or stated closing, then open once a stated opening has passed,
- * and only otherwise by open-window language (#6453).
+ * opening, then by the deadline or stated closing, then open once a stated opening of the
+ * current cycle (the last six months) has passed, and only otherwise by open-window language
+ * (#6453). An older opening with no closing says nothing about this cycle.
  */
+const CURRENT_CYCLE_MS = 183 * 24 * 60 * 60 * 1000;
+
 export function acceptingByStatedWindow(
   window: StatedApplicationWindow,
   deadline: Date | undefined,
@@ -275,6 +312,6 @@ export function acceptingByStatedWindow(
   if (window.opensAt && window.opensAt.getTime() > now) return false;
   const closesAt = deadline ?? window.closesAt;
   if (closesAt) return closesAt.getTime() > now;
-  if (window.opensAt) return true;
+  if (window.opensAt && now - window.opensAt.getTime() <= CURRENT_CYCLE_MS) return true;
   return hasActiveApplicationLanguage(bodyText);
 }

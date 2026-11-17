@@ -47,4 +47,19 @@ describe('the application window a program page states (#6453)', () => {
     expect(accepting('Applications are now open for the fixture program.')).toBe(true);
     expect(accepting('A summer research program in a fixture lab.')).toBe(false);
   });
+
+  it('fails closed on a yearless or weekday-mismatched date and on an old opening with no close', () => {
+    expect(statedApplicationWindow('Applications close March 13.', now).closesAt).toBeUndefined();
+    expect(accepting('Applications close March 13.')).toBe(false);
+    expect(accepting('Applications open September 1, 2025.')).toBe(false);
+    expect(
+      statedApplicationWindow('Applications close Thursday, February 12, 2027.', now).closesAt,
+    ).toBeUndefined();
+    expect(accepting('Applications close Thursday, February 12, 2027.')).toBe(false);
+    expect(
+      statedApplicationWindow('Applications close Friday, February 12, 2027.', now)
+        .closesAt?.toISOString()
+        .slice(0, 10),
+    ).toBe('2027-02-13');
+  });
 });
