@@ -10,7 +10,7 @@ import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
 import { classifyProgram } from '../services/programClassifier';
 import { fellowshipClassificationInput } from '../scrapers/fellowshipClassificationDerivation';
-import { programAudience } from '../services/programAudience';
+import { programAudience, servedUndergraduateOnly } from '../services/programAudience';
 import {
   departmentGuidanceKindOf,
   departmentGuidanceKinds,
@@ -189,6 +189,7 @@ export const withProgramAudience = (program: any) => {
   const departmentGuidanceKind = departmentGuidanceKindOf(program);
   return {
     ...program,
+    undergraduateOnly: servedUndergraduateOnly(program),
     audience: programAudience(program),
     departmentResearchGuidance: departmentGuidanceKind !== null,
     ...(departmentGuidanceKind ? { departmentGuidanceKind } : {}),
@@ -216,7 +217,7 @@ export const publicProgramForReader = (program: any) => {
     studentFacingCategory: program.studentFacingCategory,
     requiresMentorBeforeApply: program.requiresMentorBeforeApply,
     mentorMatching: program.mentorMatching,
-    undergraduateOnly: program.undergraduateOnly,
+    undergraduateOnly: servedUndergraduateOnly(program),
     yaleCollegeOnly: program.yaleCollegeOnly,
     audience: programAudience(program),
     compensationSummary: publicCompensationSummary(program.compensationSummary),

@@ -36,7 +36,7 @@ import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { Observation } from '../models/observation';
 import { clearedProgramStudentVisibilityVerdict } from '../models/entityArchival';
 import { programRoleForKind } from './programClassifier';
-import { programAudience } from './programAudience';
+import { programAudience, servedUndergraduateOnly } from './programAudience';
 import { departmentGuidanceKindOf } from './departmentResearchGuidance';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
@@ -508,6 +508,7 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
   }
 
   publicFellowship.audience = programAudience(fellowship);
+  publicFellowship.undergraduateOnly = servedUndergraduateOnly(fellowship);
   const departmentGuidanceKind = departmentGuidanceKindOf(fellowship);
   publicFellowship.departmentResearchGuidance = departmentGuidanceKind !== null;
   if (departmentGuidanceKind) publicFellowship.departmentGuidanceKind = departmentGuidanceKind;

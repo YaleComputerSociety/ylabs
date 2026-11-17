@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { programAudience } from '../programAudience';
+import {
+  eligibilityAdmitsGraduates,
+  programAudience,
+  servedUndergraduateOnly,
+} from '../programAudience';
 import { computeProgramStudentVisibility } from '../studentVisibilityTier';
 import { publicProgramForReader } from '../../controllers/programPayload';
 import { publicFellowshipForStudent } from '../fellowshipService';
@@ -84,5 +88,79 @@ describe('both public program serializers serve the derived audience', () => {
 
   it('serves it on the student fellowship serializer', () => {
     expect(publicFellowshipForStudent(openToBoth).audience).toBe('UNDERGRADUATE_AND_GRADUATE');
+  });
+});
+
+describe('an eligibility statement that admits graduate students (#6408)', () => {
+  const undergraduateYears = ['First-Year Student', 'Sophomore', 'Junior'];
+
+  it('widens an undergraduate audience when the text admits graduate affiliates', () => {
+    expect(
+      programAudience({
+        yearOfStudy: undergraduateYears,
+        eligibility:
+          'Fixture Fellowships are ordinarily awarded to juniors, but first years, sophomores and graduate affiliates are eligible (seniors are not eligible).',
+      }),
+    ).toBe('UNDERGRADUATE_AND_GRADUATE');
+    expect(
+      programAudience({
+        undergraduateOnly: true,
+        eligibility:
+          'Applications from graduate students from the professional schools will also be considered.',
+      }),
+    ).toBe('UNDERGRADUATE_AND_GRADUATE');
+  });
+
+  it('keeps a truly undergraduate-only program undergraduate', () => {
+    for (const eligibility of [
+      'This fellowship is only open to Yale College undergraduates.',
+      'Graduate students are not eligible for this award.',
+      'Students who graduate in December are eligible to apply in the summer before their graduation.',
+      'Recent graduates are also eligible to apply.',
+      'Yale College Postgraduate Fellowships support language study and independent projects.',
+      'Applicants need permission of their Director of Graduate Studies.',
+    ]) {
+      expect(eligibilityAdmitsGraduates(eligibility)).toBe(false);
+      expect(programAudience({ yearOfStudy: undergraduateYears, eligibility })).toBe(
+        'UNDERGRADUATE',
+      );
+    }
+  });
+
+  it("reads an undergraduate-only phrase that goes on to name master's students as admitting both", () => {
+    expect(
+      eligibilityAdmitsGraduates(
+        "This is only open to Yale undergraduate and master's-level students.",
+      ),
+    ).toBe(true);
+  });
+
+  it('never narrows a graduate audience or invents one with no other evidence', () => {
+    const eligibility = 'Graduate students are eligible.';
+    expect(programAudience({ yearOfStudy: ['PhD Pre-Candidacy'], eligibility })).toBe('GRADUATE');
+    expect(programAudience({ eligibility })).toBeNull();
+  });
+});
+
+describe('the served undergraduateOnly agrees with the audience (#6400)', () => {
+  it('serves false when the audience includes graduate students, whatever is stored', () => {
+    const program = servedProgram({
+      undergraduateOnly: true,
+      yearOfStudy: ['Junior', 'Master’s Student'],
+    });
+    expect(servedUndergraduateOnly(program as any)).toBe(false);
+    expect(publicProgramForReader(program as any)).toMatchObject({
+      audience: 'UNDERGRADUATE_AND_GRADUATE',
+      undergraduateOnly: false,
+    });
+    expect(publicFellowshipForStudent(program)).toMatchObject({
+      audience: 'UNDERGRADUATE_AND_GRADUATE',
+      undergraduateOnly: false,
+    });
+  });
+
+  it('serves true for an undergraduate audience and null with no audience evidence', () => {
+    expect(servedUndergraduateOnly({ yearOfStudy: ['Senior'] })).toBe(true);
+    expect(servedUndergraduateOnly({})).toBeNull();
   });
 });
