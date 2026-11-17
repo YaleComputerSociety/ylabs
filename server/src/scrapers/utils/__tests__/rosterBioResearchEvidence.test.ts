@@ -509,6 +509,26 @@ describe('a bio that states no research subject mints nothing (#4954)', () => {
     ).toBe('clinical_teaching_or_consultation_only');
   });
 
+  it('keeps a sentence that states a research interest after its clinical-practice clause', () => {
+    expect(
+      rosterBioMintRefusal(
+        [
+          'In her clinical practice she cares for children with epilepsy, and she is interested in the genetics of seizure disorders.',
+        ],
+        'Alex Example',
+      ),
+    ).toBeUndefined();
+    expect(
+      rosterBioMintRefusal(
+        [
+          'She is interested in mindfulness as a therapeutic modality in her clinical work.',
+          'Her professional interests include behavioral medicine and interdisciplinary care.',
+        ],
+        'Alex Example',
+      ),
+    ).toBe('clinical_teaching_or_consultation_only');
+  });
+
   it('leaves quality-improvement and program work for the owner to decide', () => {
     const { planned } = plan(
       'Alex Example focuses on improving the quality of care for patients with heart failure through care pathway redesign.',
