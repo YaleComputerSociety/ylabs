@@ -3886,7 +3886,7 @@ test('identity cleanup report outputs are constrained to safe JSON roots', () =>
   for (const file of ['../server/src/scripts/clearBetaStudentAnalytics.ts']) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.match(source, /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/);
-    assert.match(source, /fs\.writeFileSync\(safeOutput,/);
+    assert.match(source, /writeReportFileSync\(safeOutput,/);
   }
 });
 

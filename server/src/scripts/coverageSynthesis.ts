@@ -382,6 +382,7 @@ function writeJsonReport(output: string, flag: string, value: unknown): void {
   writeReportFileSync(
     resolveSafeJsonReportOutputPath(output, flag),
     JSON.stringify(value, null, 2),
+    { flag },
   );
 }
 
