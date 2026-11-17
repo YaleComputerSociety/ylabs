@@ -149,7 +149,17 @@ const titleTier = (title: IndexedProgramField, contentWords: string[]): number =
   return 0;
 };
 
-const STATED_YEAR_TERMS: ReadonlyArray<{ words: readonly string[]; stated: string }> = [
+const STATED_YEAR_TERMS: ReadonlyArray<{ words: readonly string[]; stated: string | null }> = [
+  { words: ['rising', 'first', 'year'], stated: null },
+  { words: ['rising', 'first', 'years'], stated: null },
+  { words: ['rising', 'freshman'], stated: null },
+  { words: ['rising', 'freshmen'], stated: null },
+  { words: ['rising', 'sophomore'], stated: 'First-Year Student' },
+  { words: ['rising', 'sophomores'], stated: 'First-Year Student' },
+  { words: ['rising', 'junior'], stated: 'Sophomore' },
+  { words: ['rising', 'juniors'], stated: 'Sophomore' },
+  { words: ['rising', 'senior'], stated: 'Junior' },
+  { words: ['rising', 'seniors'], stated: 'Junior' },
   { words: ['first', 'year'], stated: 'First-Year Student' },
   { words: ['first', 'years'], stated: 'First-Year Student' },
   { words: ['1st', 'year'], stated: 'First-Year Student' },
@@ -179,7 +189,8 @@ interface QueryYears {
 
 /**
  * Year words name an eligibility the program states in `yearOfStudy`, so they are read as a
- * structured constraint and never matched against program text (#6397).
+ * structured constraint and never matched against program text (#6397). A rising year is read
+ * the way `scrapers/utils/fundYearOfStudy.ts` files it, under the year before it.
  */
 export const statedYearsInQuery = (contentWords: readonly string[]): QueryYears => {
   const years = new Set<string>();
@@ -191,7 +202,10 @@ export const statedYearsInQuery = (contentWords: readonly string[]): QueryYears 
     const namesAPieceOfWork =
       term?.stated === 'Senior' &&
       SENIOR_WORK_NOUNS.has(contentWords[index + term.words.length] ?? '');
-    if (term && !namesAPieceOfWork) {
+    if (term?.stated === null) {
+      otherWords.push(...term.words);
+      index += term.words.length;
+    } else if (term?.stated && !namesAPieceOfWork) {
       years.add(term.stated);
       index += term.words.length;
     } else {

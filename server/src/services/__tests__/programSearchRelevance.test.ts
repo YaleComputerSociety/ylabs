@@ -316,4 +316,22 @@ describe('rankProgramSearch year words (#6397)', () => {
     ]);
     expect(titles(rankedPrograms('seniors', catalog))).toEqual(['Upper Year Research Grant']);
   });
+
+  it('reads a rising year as the year the student is in now, the way the sources state it', () => {
+    const risingCatalog = [
+      program('Bridge Summer Grant', 'Open to rising juniors.', { yearOfStudy: ['Sophomore'] }),
+      program('Capstone Grant', 'Open to juniors.', { yearOfStudy: ['Junior'] }),
+    ];
+    expect(titles(rankedPrograms('rising juniors', risingCatalog))).toEqual(['Bridge Summer Grant']);
+    expect(titles(rankedPrograms('rising seniors', risingCatalog))).toEqual(['Capstone Grant']);
+  });
+
+  it('matches a rising first year as words, since no stated year names an incoming student', () => {
+    const incomingGrant = program('Incoming Scholar Grant', 'For rising freshmen.', {
+      yearOfStudy: ['Sophomore'],
+    });
+    expect(titles(rankedPrograms('rising freshmen', [...catalog, incomingGrant]))).toEqual([
+      'Incoming Scholar Grant',
+    ]);
+  });
 });
