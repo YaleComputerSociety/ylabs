@@ -108,6 +108,7 @@ Run each command through the machine's heavy-command slot.
    A query missing a score for any candidate is refused.
 4. A separate blind judge grades the packet under the judge guide, writing `[{ "qid", "slug", "grade" }]`.
 5. `gate --round=<round.json> --scores=<scores.json> --grades=<grades.json> [--seed-out=<seed.json>]` computes nDCG@10 per query and applies the import rule.
+   Report the round's result weighted to the live word-count mix beside the unweighted one (`docs/research-search-topics-design.md`, "A judged relevance benchmark").
    A round is imported only when it scores at least 10 queries, the mean change has a 95% bootstrap interval above 0, the queries it makes worse lose no more on average than the queries it makes better gain, and every pair is graded.
    It prints the means, the interval, and the better and worse counts, exits 2 on a refusal, and writes the seeder input only when the round passes.
 6. Import with the seeder above into Development as a new `full-v<n>-<date>` version, then dry-run again and re-read the served result.
