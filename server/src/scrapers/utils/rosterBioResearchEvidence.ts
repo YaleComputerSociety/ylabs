@@ -228,8 +228,8 @@ export function rosterBioPersonNameKey(value: unknown): string {
 
 const STATES_RESEARCH =
   /\b(?:research(?!-(?:based|informed))(?:ers?|ing)?|stud(?:y|ies|ied|ying)(?!\s+cent(?:er|re))|investigat\w*|examin\w*|explor\w*|analy[sz]\w*|trials?|experiments?\w*|published)\b/i;
-const CLINICAL_TEACHING_OR_CONSULTATION =
-  /\b(?:clinical|care|patients?|therap(?:y|ies|eutic)|treatment|consultation|consults?|teaching|curricul(?:a|um)|instructor|trainees?|education|supervis\w*|advocacy|advocate)\b/i;
+const CLINICAL_OR_TEACHING_PRACTICE =
+  /\b(?:(?:in|beyond) (?:his|her|their) clinical (?:work|practice)|professional interests|trainee education|supervis(?:es|ed|ing) (?:\w+ ){0,3}(?:trainees|interns|residents|fellows|students)|(?:providing|provides|provide) clinical (?:care|consultation|services)|clinical consultation|(?:designing|designs|develops|developing) curricul(?:a|um)|teaching to|as an? instructor|helping (?:children|adolescents|patients|families|clients))\b/i;
 const QI_OR_PROGRAM_WORK =
   /\b(?:programs?|program development|systems?(?:-level)?|pathways?|quality|evaluat\w*|partnership|model)\b/i;
 const GENERIC_RESEARCH_WORDS = new Set(
@@ -247,7 +247,7 @@ export function rosterBioMintRefusal(
   const text = evidenceSentences.join(' ');
   if (
     !STATES_RESEARCH.test(text) &&
-    CLINICAL_TEACHING_OR_CONSULTATION.test(text) &&
+    evidenceSentences.every((sentence) => CLINICAL_OR_TEACHING_PRACTICE.test(sentence)) &&
     !QI_OR_PROGRAM_WORK.test(text)
   ) {
     return 'clinical_teaching_or_consultation_only';

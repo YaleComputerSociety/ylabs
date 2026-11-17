@@ -475,6 +475,40 @@ describe('a bio that states no research subject mints nothing (#4954)', () => {
     ).toBeUndefined();
   });
 
+  it('keeps a stated research subject that names a clinical word without a research verb', () => {
+    for (const sentence of [
+      'Her work focuses on the genetics of epilepsy and its treatment.',
+      'His interests include the molecular mechanisms of drug resistance in patients with leukemia.',
+      'She specializes in the neurobiology of addiction and its therapy.',
+      'Her scholarship addresses health disparities in maternal care.',
+      'He develops novel imaging methods for cancer therapy.',
+      'She is interested in how neonatal encephalopathy alters early brain development.',
+    ]) {
+      expect(rosterBioMintRefusal([sentence], 'Alex Example')).toBeUndefined();
+    }
+  });
+
+  it('refuses only when every sentence is clinical or teaching practice', () => {
+    expect(
+      rosterBioMintRefusal(
+        [
+          'She provides clinical consultation to pediatric practices.',
+          'Her interests include the genetics of childhood epilepsy.',
+        ],
+        'Alex Example',
+      ),
+    ).toBeUndefined();
+    expect(
+      rosterBioMintRefusal(
+        [
+          'Her professional interests include behavioral medicine and interdisciplinary care.',
+          'She supervised student trainees and interns at an outpatient clinic.',
+        ],
+        'Alex Example',
+      ),
+    ).toBe('clinical_teaching_or_consultation_only');
+  });
+
   it('leaves quality-improvement and program work for the owner to decide', () => {
     const { planned } = plan(
       'Alex Example focuses on improving the quality of care for patients with heart failure through care pathway redesign.',
