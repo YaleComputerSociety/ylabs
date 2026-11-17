@@ -16,7 +16,6 @@
  *   yarn --cwd server research-entity:audit-description-source-ownership --output ./tmp/ownership.json
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -34,6 +33,7 @@ import {
   type DescriptionSourceOwnershipFinding,
 } from './auditDescriptionSourceOwnershipCore';
 import { connectScriptMongo } from '../db/connections';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -114,7 +114,7 @@ async function main(): Promise<void> {
     }
 
     if (output) {
-      fs.writeFileSync(output, JSON.stringify({ report, findings }, null, 1));
+      writeReportFileSync(output, JSON.stringify({ report, findings }, null, 1));
       console.log(`\nreport written to ${output}`);
     }
   } finally {

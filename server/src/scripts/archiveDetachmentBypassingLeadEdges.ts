@@ -19,7 +19,6 @@
  *     --confirm-archive-detachment-bypassing-leads
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -41,6 +40,7 @@ import {
   type PastBypassArchiveClass,
   type PersonIdentityLike,
 } from './archiveDetachmentBypassingLeadEdgesCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 dotenv.config({ path: path.resolve(path.dirname(__filename), '../../.env'), quiet: true });
@@ -281,7 +281,7 @@ export async function runArchiveDetachmentBypassingLeadEdges(
   };
 
   if (options.output) {
-    fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+    writeReportFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
   }
   console.log(JSON.stringify(report, null, 2));
 

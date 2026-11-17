@@ -51,6 +51,7 @@ import {
   type DepartureAuditRunSelection,
   type FacultyDepartureLaneFacts,
 } from './auditFacultyDepartureLaneCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 export interface FacultyDepartureLaneAuditOptions {
   runId?: string;
@@ -314,7 +315,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const rows = plan?.plannedRows ?? [];
       fs.mkdirSync(path.dirname(options.output), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         options.output,
         `${JSON.stringify({ ...output, plannedRowCount: rows.length, plannedRows: rows }, null, 2)}\n`,
       );

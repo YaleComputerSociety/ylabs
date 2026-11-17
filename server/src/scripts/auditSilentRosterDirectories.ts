@@ -34,6 +34,7 @@ import {
 } from '../scrapers/sources/departmentRosterScraper';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const JOIN_CONCURRENCY = 8;
 
@@ -251,7 +252,7 @@ async function main(): Promise<void> {
   );
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(
+    writeReportFileSync(
       options.output,
       JSON.stringify({ generatedAt: new Date().toISOString(), ...result }, null, 2),
     );
