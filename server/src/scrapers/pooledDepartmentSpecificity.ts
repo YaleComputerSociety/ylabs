@@ -3,6 +3,7 @@ import {
   type ResolvedField,
   type ResolverObservation,
 } from './confidenceResolver';
+import { FIRST_HAND_DEPARTMENT_SOURCES } from './firstHandDepartmentSources';
 
 export interface DepartmentSpecificityCatalog {
   canonical(name: string): string | undefined;
@@ -14,16 +15,6 @@ const canonicalOf = (
   candidate: ResolvedField,
 ): string | undefined =>
   typeof candidate.value === 'string' ? catalog.canonical(candidate.value) : undefined;
-
-/**
- * The lanes that read a person's own department off their own Yale profile. Kept in step with
- * the lead-section rule's source set (#6381), so the two agree on what "first-hand" means.
- */
-export const FIRST_HAND_DEPARTMENT_SOURCES: ReadonlySet<string> = new Set([
-  'ysm-faculty-directory',
-  'yse-faculty-directory',
-  'official-profile-pi-backfill',
-]);
 
 const statedFirstHand = (candidate: ResolvedField): boolean =>
   candidate.contributingSources.some((source) => FIRST_HAND_DEPARTMENT_SOURCES.has(source));
