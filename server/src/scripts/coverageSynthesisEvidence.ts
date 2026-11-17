@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { MODEL_INPUT_DATA_PREAMBLE } from '../utils/modelInputGuard';
 import path from 'path';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -66,6 +67,7 @@ export const WRITER_EVIDENCE_FILE_VERSION = 1;
 export interface WriterEvidenceFile {
   version: typeof WRITER_EVIDENCE_FILE_VERSION;
   capturedAt: string;
+  dataPreamble?: string;
   db: string;
   rows: WriterRowEvidence[];
 }
@@ -241,6 +243,7 @@ export function writerEvidenceFileOf(
   return {
     version: WRITER_EVIDENCE_FILE_VERSION,
     capturedAt: capturedAt.toISOString(),
+    dataPreamble: MODEL_INPUT_DATA_PREAMBLE,
     db,
     rows: [...rows].sort((a, b) => a.slug.localeCompare(b.slug)),
   };

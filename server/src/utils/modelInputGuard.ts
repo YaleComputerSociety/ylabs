@@ -36,7 +36,7 @@ function firstAddressedInstruction(text: string, from = 0): RegExpExecArray | nu
 }
 
 export function isAiDirectedInstruction(text: string): boolean {
-  return firstAddressedInstruction(text) !== null;
+  return stripAiDirectedInstructions(text).removedSentences > 0;
 }
 
 const SENTENCE_END = /[.!?](?=\s|$)|\n/g;
@@ -57,8 +57,9 @@ function sentenceBoundsAround(text: string, index: number): [number, number] {
 const MAX_REMOVED_CHARS_BEYOND_MATCH = 300;
 
 function removalBounds(text: string, match: RegExpExecArray): [number, number] {
-  const [sentenceStart, sentenceEnd] = sentenceBoundsAround(text, match.index);
   const matchEnd = match.index + match[0].length;
+  const [sentenceStart] = sentenceBoundsAround(text, match.index);
+  const [, sentenceEnd] = sentenceBoundsAround(text, Math.max(match.index, matchEnd - 1));
   return [
     match.index - sentenceStart <= MAX_REMOVED_CHARS_BEYOND_MATCH ? sentenceStart : match.index,
     sentenceEnd - matchEnd <= MAX_REMOVED_CHARS_BEYOND_MATCH ? sentenceEnd : matchEnd,
@@ -78,14 +79,54 @@ export interface StrippedText {
   removedSentences: number;
 }
 
+const INVISIBLE_FORMAT_CHARACTERS = /[\u00AD\u200B-\u200D\u2060\uFEFF]/g;
+
+const LATIN_LOOKALIKES: Record<string, string> = {
+  Α: 'A',
+  α: 'a',
+  Ι: 'I',
+  ι: 'i',
+  Ϊ: 'I',
+  Μ: 'M',
+  Ν: 'N',
+  Ο: 'O',
+  Ε: 'E',
+  Τ: 'T',
+  А: 'A',
+  а: 'a',
+  І: 'I',
+  і: 'i',
+  Ӏ: 'I',
+  ӏ: 'l',
+  М: 'M',
+  О: 'O',
+  о: 'o',
+  Е: 'E',
+  е: 'e',
+  Т: 'T',
+  Р: 'P',
+  р: 'p',
+  С: 'C',
+  с: 'c',
+  Х: 'X',
+  х: 'x',
+  У: 'Y',
+  у: 'y',
+};
+
+const LATIN_LOOKALIKE_PATTERN = new RegExp(`[${Object.keys(LATIN_LOOKALIKES).join('')}]`, 'g');
+
+const comparableText = (text: string): string =>
+  text.replace(LATIN_LOOKALIKE_PATTERN, (character) => LATIN_LOOKALIKES[character] ?? character);
+
 export function stripAiDirectedInstructions(text: string): StrippedText {
-  let remaining = text;
+  let remaining = text.normalize('NFKC').replace(INVISIBLE_FORMAT_CHARACTERS, '');
   let removedSentences = 0;
-  for (let match = firstAddressedInstruction(remaining); match;) {
+  for (let match = firstAddressedInstruction(comparableText(remaining)); match;) {
     const [start, end] = removalBounds(remaining, match);
     remaining = joinAroundRemoval(remaining.slice(0, start), remaining.slice(end));
     removedSentences += 1;
-    match = firstAddressedInstruction(remaining, start);
+    match = firstAddressedInstruction(comparableText(remaining), start);
   }
   return { text: removedSentences > 0 ? remaining : text, removedSentences };
 }

@@ -679,7 +679,7 @@ A new model provider host must be added to the list, or its calls queue behind t
 
 Captured page text reaches a model only as data (#6396): `postChatCompletion` puts `MODEL_INPUT_DATA_PREAMBLE` first and removes sentences addressed to an AI from every user message, through `utils/modelInputGuard.ts`.
 Both sit outside every prompt file and cache key on purpose, so never move the preamble into a `prompts/*.md` file: each prompt's sha256 keys a cache or a content gate, and editing one re-runs that lane, including the paid extractors (#5076).
-The topic readings export and `--print-writer-prompt` apply the same guard for local-Claude drafting, and `research-page-text` counts rows holding such a sentence in its run notes and `aiDirectedInstructionRows` metric while storing the text as captured.
+The topic readings export and `--print-writer-prompt` apply the same guard for local-Claude drafting, the `--capture-evidence` writer evidence file carries the preamble but keeps its text raw (a harness reading it must call `stripAiDirectedInstructions`), and `research-page-text` counts rows holding such a sentence in its run notes and `aiDirectedInstructionRows` metric while storing the text as captured.
 The rendered fetch is the documented exception: its headless browser runs in a Python child that no axios hook reaches, and it takes its own host slot before each render.
 Its pacing is its own, to the same rules (#6255, the owner's condition for keeping the browser User-Agent):
 - `renderOnce` refuses a paused seed host with `HostPausedError` before the preflight or the render, so the lane skips the row as not observed.

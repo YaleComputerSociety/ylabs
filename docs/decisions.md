@@ -14,6 +14,9 @@ The preamble carries no extraction semantics, so a reading cached before it exis
 The frozen benchmark key (`snapshotBenchmarkMode.modelRequestKey`) is computed on the body as the caller built it, before the guard, which the model client hands the benchmark interceptor for the same reason, so frozen lane benchmarks keep replaying even for a row whose page text the guard changes.
 The filter is narrow on purpose: it removes a sentence only when it is addressed to a model (a conditional addressed to an AI, an instruction to disregard earlier instructions, or a note addressed to AI models), and never a quoted example or a sentence that is research about AI, which is common in this corpus.
 Local-Claude drafting packets get the same treatment where the repository builds them: the topic readings export filters each user message and carries the preamble, and `--print-writer-prompt` prints it first.
+The writer evidence file from `--capture-evidence` carries the preamble but keeps the captured text raw, because the writer's input hash is computed from it; a drafting harness that reads it directly must pass each snippet through `stripAiDirectedInstructions`.
+Matching runs on NFKC-normalised text with invisible format characters removed and Greek and Cyrillic look-alike letters folded to Latin, and an address that wraps a line break takes its command with it.
+Accepted residuals, missed by design to keep precision: an instruction to disregard earlier instructions in the middle of a sentence, an address by a product name rather than as an AI, and a role prefix such as "Assistant:".
 The guard does not change any input hash, so it moves no cache key.
 A new model call cannot skip it, because `modelClientIsTheOnlyOpenAiCaller` already refuses any OpenAI call outside the shared client, and its per-path test now also requires the preamble and an absent planted instruction on every chat path.
 
