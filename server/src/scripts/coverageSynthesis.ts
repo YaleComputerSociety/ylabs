@@ -279,7 +279,7 @@ async function settleRefusedRedraftBody(input: {
   leadPersonName: string;
   apply: boolean;
   report: CoverageEntityReport;
-  materializedEntityIds: string[];
+  onMaterialized: (entityId: string) => Promise<void>;
 }): Promise<void> {
   const { entity, liveBody, report } = input;
   const adoptedBodyStillSupported = adoptedWrittenBodyStillSupported({
@@ -330,7 +330,7 @@ async function settleRefusedRedraftBody(input: {
     refusedRedraftRetireReason(WRITER_CONTRACT_VERSION, input.refusal),
   );
   const materializedId = await materializeWrittenRow(entity);
-  if (materializedId) input.materializedEntityIds.push(materializedId);
+  if (materializedId) await input.onMaterialized(materializedId);
 }
 
 async function servesWrittenBody(entityId: string): Promise<boolean> {
@@ -897,7 +897,9 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
           leadPersonName: leadNames[0] ?? '',
           apply: Boolean(args.apply && context),
           report,
-          materializedEntityIds,
+          onMaterialized: async (entityId) => {
+            await regater.add([entityId]);
+          },
         });
       } catch (error) {
         entityErrors += 1;
