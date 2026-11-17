@@ -3,6 +3,7 @@ import {
   type ResolvedField,
   type ResolverObservation,
 } from './confidenceResolver';
+import { FIRST_HAND_DEPARTMENT_SOURCES } from './firstHandDepartmentSources';
 
 export interface DepartmentSpecificityCatalog {
   canonical(name: string): string | undefined;
@@ -15,6 +16,9 @@ const canonicalOf = (
 ): string | undefined =>
   typeof candidate.value === 'string' ? catalog.canonical(candidate.value) : undefined;
 
+const statedFirstHand = (candidate: ResolvedField): boolean =>
+  candidate.contributingSources.some((source) => FIRST_HAND_DEPARTMENT_SOURCES.has(source));
+
 /**
  * The department a researcher's pooled readings serve, keeping a stated SECTION over the
  * DEPARTMENT it sits directly under (docs/research-model.md, catalog altitudes). Pooling
@@ -22,7 +26,9 @@ const canonicalOf = (
  * profile that states the section, so the winner alone would narrow a correct section to
  * its parent. The rule fires only when the winner is a catalog department, exactly one
  * other candidate is a catalog section whose nearest ancestor is that department, and a
- * catalog is available; otherwise the resolver's winner stands.
+ * catalog is available; otherwise the resolver's winner stands. A section only a roster states
+ * never replaces a department the person's own profile states, because a roster files every
+ * member under its own unit and the first-hand reading outranks it (#6443).
  */
 export function pooledDepartmentWithStatedSection(
   ranked: readonly ResolvedField[],
@@ -37,7 +43,10 @@ export function pooledDepartmentWithStatedSection(
     return Boolean(unit) && catalog.parentDepartmentsFor(unit as string)[0] === winnerUnit;
   });
   const distinctSections = new Set(sections.map((candidate) => canonicalOf(catalog, candidate)));
-  return distinctSections.size === 1 ? sections[0] : winner;
+  if (distinctSections.size !== 1) return winner;
+  const [section] = sections;
+  if (statedFirstHand(winner) && !sections.some(statedFirstHand)) return winner;
+  return section;
 }
 
 export interface PooledDepartmentReading {

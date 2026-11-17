@@ -7,10 +7,10 @@ import {
   type DepartmentSpecificityCatalog,
 } from '../pooledDepartmentSpecificity';
 
-const candidate = (value: string): ResolvedField => ({
+const candidate = (value: string, sources: string[] = ['fixture-lane']): ResolvedField => ({
   value,
   confidence: 0.5,
-  contributingSources: ['fixture-lane'],
+  contributingSources: sources,
   hasConflict: false,
 });
 
@@ -29,6 +29,30 @@ const catalog: DepartmentSpecificityCatalog = {
 };
 
 describe('pooledDepartmentWithStatedSection', () => {
+  it('keeps a first-hand department over a section only a roster states (#6443)', () => {
+    const ranked = [
+      candidate('Internal Medicine', ['ysm-faculty-directory']),
+      candidate('Nephrology', ['dept-faculty-roster']),
+    ];
+    expect(pooledDepartmentWithStatedSection(ranked, catalog)?.value).toBe('Internal Medicine');
+  });
+
+  it('still keeps a first-hand section over a first-hand department (#6443)', () => {
+    const ranked = [
+      candidate('Internal Medicine', ['ysm-faculty-directory', 'dept-faculty-roster']),
+      candidate('Nephrology', ['official-profile-pi-backfill']),
+    ];
+    expect(pooledDepartmentWithStatedSection(ranked, catalog)?.value).toBe('Nephrology');
+  });
+
+  it('still keeps a roster section over a department no first-hand reading states (#6443)', () => {
+    const ranked = [
+      candidate('Internal Medicine', ['dept-faculty-roster', 'center-roster']),
+      candidate('Nephrology', ['dept-faculty-roster']),
+    ];
+    expect(pooledDepartmentWithStatedSection(ranked, catalog)?.value).toBe('Nephrology');
+  });
+
   it('keeps a stated section over the department it sits directly under', () => {
     const ranked = [candidate('Surgery'), candidate('Colon & Rectal Surgery')];
     expect(pooledDepartmentWithStatedSection(ranked, catalog)?.value).toBe(
