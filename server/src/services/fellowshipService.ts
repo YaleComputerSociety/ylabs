@@ -416,7 +416,6 @@ export const servedProgramDeadline = (program: any, now: Date): ServedProgramDea
   const rollingReview =
     Boolean(servedWindow.deadline) &&
     !servedWindow.closed &&
-    !servedWindow.projectedNextCycle &&
     programStatesRollingReview(program);
   return { ...servedWindow, rollingReview };
 };

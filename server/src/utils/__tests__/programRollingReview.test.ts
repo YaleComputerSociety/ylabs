@@ -41,13 +41,22 @@ describe('programStatesRollingReview (#6407)', () => {
     ).toBe(false);
   });
 
-  it('keeps a per-college copy whose college sets its own schedule', () => {
+  it('keeps a per-college copy whose shared schedule text never states rolling review', () => {
     expect(
       programStatesRollingReview({
         fullSourceDescription:
           'Each college should have a formal application process to select undergraduates for research awards. Each college determines its own schedule for accepting applications and for student presentations.',
       }),
     ).toBe(false);
+  });
+
+  it('reads rolling review beside a rolling deadline that does not recur', () => {
+    expect(
+      programStatesRollingReview({
+        description:
+          'This grant has a rolling deadline. Applications are reviewed on a rolling basis until funds run out.',
+      }),
+    ).toBe(true);
   });
 
   it('ignores rolling that is not about the application', () => {

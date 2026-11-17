@@ -843,7 +843,7 @@ describe('a rolling-review program serves its date as the close of the window (#
     expect(payload.deadlineRollingReview).toBe(false);
   });
 
-  it('keeps a per-college copy whose college sets its own schedule', () => {
+  it('keeps a per-college copy whose shared schedule text never states rolling review', () => {
     const payload = publicFellowshipForStudent(
       program({
         fullSourceDescription:
@@ -864,5 +864,17 @@ describe('a rolling-review program serves its date as the close of the window (#
       now,
     );
     expect(passed.rollingReview).toBe(false);
+
+    const projected = servedProgramDeadline(
+      program({
+        title: 'Synthetic Annual Research Fund',
+        sourceUrl: 'https://funding.example.edu/synthetic-fund',
+        deadline: new Date('2026-10-01T18:00:00.000Z'),
+        description: 'Applications are accepted on a rolling basis.',
+      }),
+      now,
+    );
+    expect(projected.projectedNextCycle).toBe(true);
+    expect(projected.rollingReview).toBe(false);
   });
 });
