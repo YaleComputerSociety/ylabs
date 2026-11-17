@@ -62,6 +62,7 @@ export interface SeedInputEntry {
   query: string;
   filters: ResearchGroupFilterInput;
   scores: Record<string, number>;
+  scoredTextHashes?: Record<string, string>;
 }
 
 export interface PlannedRerankCacheEntry {
@@ -112,6 +113,8 @@ export interface SeedSearchRerankCacheReport {
   upserted: number;
   textHashes: SeedTextHashSource;
   scoresWithTextHash: number;
+  scoresKeepingScoredTextHash: number;
+  plannedEntriesStaleAfterApply: number | null;
   seededEntries: number | null;
   staleSeededEntries: number | null;
   seededEntriesWithoutTextHashes: number | null;
@@ -204,7 +207,7 @@ export function parseSeedInput(raw: unknown): SeedInputEntry[] {
   if (!Array.isArray(raw)) throw new Error(`${SCRIPT_NAME} input must be a JSON array`);
   return raw.map((entry, index) => {
     if (!isPlainObject(entry)) throw new Error(`Entry ${index} is not an object`);
-    const { query, filters, scores } = entry;
+    const { query, filters, scores, scoredTextHashes } = entry;
     if (typeof query !== 'string' || query.trim() === '') {
       throw new Error(`Entry ${index} needs a non-empty query`);
     }
@@ -224,10 +227,25 @@ export function parseSeedInput(raw: unknown): SeedInputEntry[] {
         );
       }
     }
+    if (scoredTextHashes !== undefined) {
+      if (!isPlainObject(scoredTextHashes)) {
+        throw new Error(`Entry ${index} scoredTextHashes must be an object`);
+      }
+      for (const [slug, textHash] of Object.entries(scoredTextHashes)) {
+        if (!(slug in scores) || typeof textHash !== 'string' || textHash === '') {
+          throw new Error(
+            `Entry ${index} scoredTextHashes may only name a scored slug with a non-empty hash`,
+          );
+        }
+      }
+    }
     return {
       query,
       filters: (filters ?? {}) as ResearchGroupFilterInput,
       scores: scores as Record<string, number>,
+      ...(scoredTextHashes
+        ? { scoredTextHashes: scoredTextHashes as Record<string, string> }
+        : {}),
     };
   });
 }
@@ -310,18 +328,24 @@ export interface RerankCachePlan {
   mergeCollisions: SeedMergeCollisionReport;
 }
 
+type PlannedScore = { entityId: string; score: number; textHash?: string };
+
 const scoresKeptPerRow = (
   entryIndex: number,
-  resolved: ReadonlyArray<{ entityId: string; score: number }>,
+  resolved: ReadonlyArray<PlannedScore>,
   collisions: SeedMergeCollision[],
-): Array<{ entityId: string; score: number }> => {
-  const scoresByEntityId = new Map<string, number[]>();
-  for (const { entityId, score } of resolved) {
-    scoresByEntityId.set(entityId, [...(scoresByEntityId.get(entityId) ?? []), score]);
+): PlannedScore[] => {
+  const rowsByEntityId = new Map<string, PlannedScore[]>();
+  for (const row of resolved) {
+    rowsByEntityId.set(row.entityId, [...(rowsByEntityId.get(row.entityId) ?? []), row]);
   }
-  return [...scoresByEntityId].map(([entityId, scores]) => {
+  return [...rowsByEntityId].map(([entityId, rows]) => {
+    const scores = rows.map((row) => row.score);
     if (scores.length > 1) collisions.push({ entryIndex, survivorId: entityId, scores });
-    return { entityId, score: Math.max(...scores) };
+    const kept = rows.reduce((best, row) => (row.score > best.score ? row : best));
+    return kept.textHash
+      ? { entityId, score: kept.score, textHash: kept.textHash }
+      : { entityId, score: kept.score };
   });
 };
 
@@ -351,7 +375,12 @@ export function planRerankCacheEntries(
       }
       if (resolution.via === 'merge') resolvedThroughMerge += 1;
       if (resolution.via === 'redirect') resolvedThroughRedirect += 1;
-      return [{ entityId: resolution.entityId, score }];
+      const scoredTextHash = entry.scoredTextHashes?.[slug];
+      return [
+        scoredTextHash
+          ? { entityId: resolution.entityId, score, textHash: scoredTextHash }
+          : { entityId: resolution.entityId, score },
+      ];
     });
     return {
       queryKey,
@@ -453,6 +482,7 @@ const withTextHashes = (
     ? planned.map((entry) => ({
         ...entry,
         scores: entry.scores.map((row) => {
+          if (row.textHash) return row;
           const textHash = hashes.get(row.entityId);
           return textHash ? { ...row, textHash } : row;
         }),
@@ -525,6 +555,15 @@ export async function seedSearchRerankCache(options: {
       (total, entry) => total + entry.scores.filter((row) => row.textHash).length,
       0,
     ),
+    scoresKeepingScoredTextHash: plan.planned.reduce(
+      (total, entry) => total + entry.scores.filter((row) => row.textHash).length,
+      0,
+    ),
+    plannedEntriesStaleAfterApply: hashes
+      ? planned.filter((entry) =>
+          entry.scores.some((row) => row.textHash && hashes.get(row.entityId) !== row.textHash),
+        ).length
+      : null,
     ...seededStaleness,
   };
   if (!options.apply || planned.length === 0) return report;

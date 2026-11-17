@@ -88,6 +88,8 @@ describe('research-search:seed-rerank-cache', () => {
       upserted: 0,
       textHashes: 'not-requested',
       scoresWithTextHash: 0,
+      scoresKeepingScoredTextHash: 0,
+      plannedEntriesStaleAfterApply: null,
       seededEntries: null,
       staleSeededEntries: null,
       seededEntriesWithoutTextHashes: null,
@@ -172,6 +174,48 @@ describe('research-search:seed-rerank-cache', () => {
           textHash: buildSearchRerankTextHash(indexDocument('synthetic-coastal-lab')),
         },
         { entityId: entityIds['synthetic-marsh-lab'], score: 1 },
+      ]);
+    });
+
+    it('keeps the hash a carried-over score was graded against and stamps only new scores', async () => {
+      const gradedAgainst = buildSearchRerankTextHash(
+        indexDocument('synthetic-marsh-lab', ['Older Topic']),
+      );
+      const entries = parseSeedInput([
+        { ...SEED_INPUT[0], scoredTextHashes: { 'synthetic-marsh-lab': gradedAgainst } },
+      ]);
+      const readIndexTextHashes = hashesOf(
+        indexDocument('synthetic-coastal-lab'),
+        indexDocument('synthetic-marsh-lab'),
+      );
+
+      const dryRun = await seedSearchRerankCache({
+        entries,
+        apply: false,
+        source: 'test',
+        readIndexTextHashes,
+      });
+      expect(dryRun).toMatchObject({
+        scoresWithTextHash: 2,
+        scoresKeepingScoredTextHash: 1,
+        plannedEntriesStaleAfterApply: 1,
+      });
+
+      await seedSearchRerankCache({
+        entries,
+        apply: true,
+        indexVersion: 'full-synthetic-1',
+        source: 'test',
+        readIndexTextHashes,
+      });
+      const stored = await SearchRerankCache.findOne({ queryKey: coastalKey() }).lean();
+      expect(stored?.scores).toEqual([
+        {
+          entityId: entityIds['synthetic-coastal-lab'],
+          score: 3,
+          textHash: buildSearchRerankTextHash(indexDocument('synthetic-coastal-lab')),
+        },
+        { entityId: entityIds['synthetic-marsh-lab'], score: 1, textHash: gradedAgainst },
       ]);
     });
 
@@ -491,6 +535,15 @@ describe('research-search:seed-rerank-cache resolution of merged and renamed slu
 });
 
 describe('research-search:seed-rerank-cache input', () => {
+  it('refuses a scored text hash for a slug the entry does not score, or an empty one', () => {
+    expect(() =>
+      parseSeedInput([{ query: 'q', scores: { a: 1 }, scoredTextHashes: { b: 'h' } }]),
+    ).toThrow(/scoredTextHashes/);
+    expect(() =>
+      parseSeedInput([{ query: 'q', scores: { a: 1 }, scoredTextHashes: { a: '' } }]),
+    ).toThrow(/scoredTextHashes/);
+  });
+
   it('refuses a score outside 0 to 3 and a missing query', () => {
     expect(() => parseSeedInput([{ query: 'x', scores: { 'synthetic-lab': 4 } }])).toThrow(
       'from 0 to 3',
