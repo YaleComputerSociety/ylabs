@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ROSTER_BIO_EVIDENCE_FIELD,
   planRosterBioResearchRows,
+  rosterBioMintRefusal,
   rosterBioPersonKey,
   rosterBioPersonName,
   rosterBioRereadObservation,
@@ -421,5 +422,101 @@ describe('a credential the roster put where the given name belongs (#6372)', () 
     expect(rosterBioRereadObservations(reread[0]).map((obs) => obs.field)).toEqual([
       ROSTER_BIO_EVIDENCE_FIELD,
     ]);
+  });
+});
+
+describe('a bio that states no research subject mints nothing (#4954)', () => {
+  const plan = (bio: string) =>
+    planRosterBioResearchRows([person({ bio })], emptyCovered(), resolver);
+
+  it('refuses a bio that states only clinical care, consultation, or supervision', () => {
+    const { planned, skipped } = plan(
+      'Alex Example focuses on integrative care and provides clinical consultation to pediatric practices. She supervised student trainees at an outpatient clinic.',
+    );
+    expect(planned).toHaveLength(0);
+    expect(skipped.clinical_teaching_or_consultation_only).toBe(1);
+  });
+
+  it('refuses a bio that states only curriculum design for teaching', () => {
+    const { planned, skipped } = plan(
+      'Alex Example focuses on designing curricula for ultrasound use in clinical science teaching to medical students.',
+    );
+    expect(planned).toHaveLength(0);
+    expect(skipped.clinical_teaching_or_consultation_only).toBe(1);
+  });
+
+  it('does not read a Study Center in an affiliation as a stated study', () => {
+    const { planned } = plan(
+      'Alex Example focuses on integrative care and provides clinical consultation at the Synthetic Child Study Center.',
+    );
+    expect(planned).toHaveLength(0);
+  });
+
+  it('refuses research stated with no topic', () => {
+    expect(
+      rosterBioMintRefusal(
+        [
+          'Dr. Example is actively involved in both clinical and basic science research.',
+          'Her research and that of her collaborators have been presented at regional, national, and international conferences.',
+        ],
+        'Alex Example',
+      ),
+    ).toBe('no_stated_research_topic');
+  });
+
+  it('keeps clinical-trials research that has a clinical framing', () => {
+    expect(
+      rosterBioMintRefusal(
+        [
+          'She is a clinical investigator whose research focuses on clinical trials of targeted therapies for pediatric leukemia.',
+        ],
+        'Alex Example',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('keeps a stated research subject that names a clinical word without a research verb', () => {
+    for (const sentence of [
+      'Her work focuses on the genetics of epilepsy and its treatment.',
+      'His interests include the molecular mechanisms of drug resistance in patients with leukemia.',
+      'She specializes in the neurobiology of addiction and its therapy.',
+      'Her scholarship addresses health disparities in maternal care.',
+      'He develops novel imaging methods for cancer therapy.',
+      'She is interested in how neonatal encephalopathy alters early brain development.',
+    ]) {
+      expect(rosterBioMintRefusal([sentence], 'Alex Example')).toBeUndefined();
+    }
+  });
+
+  it('refuses only when every sentence is clinical or teaching practice', () => {
+    expect(
+      rosterBioMintRefusal(
+        [
+          'She provides clinical consultation to pediatric practices.',
+          'Her interests include the genetics of childhood epilepsy.',
+        ],
+        'Alex Example',
+      ),
+    ).toBeUndefined();
+    expect(
+      rosterBioMintRefusal(
+        [
+          'Her professional interests include behavioral medicine and interdisciplinary care.',
+          'She supervised student trainees and interns at an outpatient clinic.',
+        ],
+        'Alex Example',
+      ),
+    ).toBe('clinical_teaching_or_consultation_only');
+  });
+
+  it('leaves quality-improvement and program work for the owner to decide', () => {
+    const { planned } = plan(
+      'Alex Example focuses on improving the quality of care for patients with heart failure through care pathway redesign.',
+    );
+    expect(planned).toHaveLength(1);
+  });
+
+  it('keeps research with a topic', () => {
+    expect(plan(person().bio as string).planned).toHaveLength(1);
   });
 });

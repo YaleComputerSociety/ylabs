@@ -42,7 +42,9 @@ export type RosterBioSkipReason =
   | 'not_useful_after_filtering'
   | 'empty_bio'
   | 'teaching_appointment'
-  | 'credential_only_given_name';
+  | 'credential_only_given_name'
+  | 'clinical_teaching_or_consultation_only'
+  | 'no_stated_research_topic';
 
 export interface RosterBioPlannedRow {
   personKey: string;
@@ -224,6 +226,48 @@ export function rosterBioPersonNameKey(value: unknown): string {
   return `${tokens[0]} ${tokens[tokens.length - 1]}`;
 }
 
+const STATES_RESEARCH =
+  /\b(?:research(?!-(?:based|informed))(?:ers?|ing)?|stud(?:y|ies|ied|ying)(?!\s+cent(?:er|re))|investigat\w*|examin\w*|explor\w*|analy[sz]\w*|trials?|experiments?\w*|published)\b/i;
+const CLINICAL_OR_TEACHING_PRACTICE =
+  /\b(?:(?:in|beyond) (?:his|her|their) clinical (?:work|practice)|professional interests|trainee education|supervis(?:es|ed|ing) (?:\w+ ){0,3}(?:trainees|interns|residents|fellows|students)|(?:providing|provides|provide) clinical (?:care|consultation|services)|clinical consultation|(?:designing|designs|develops|developing) curricul(?:a|um)|teaching to|as an? instructor|helping (?:children|adolescents|patients|families|clients))\b/i;
+const QI_OR_PROGRAM_WORK =
+  /\b(?:programs?|program development|systems?(?:-level)?|pathways?|quality|evaluat\w*|partnership|model)\b/i;
+const GENERIC_RESEARCH_WORDS = new Set(
+  (
+    'a an and are as at basic be been both clinical collaborators conferences dr has have her his ' +
+    'in international involved is its national of on presented regional research researches science ' +
+    'sciences she that the their they translational was were with actively he also'
+  ).split(' '),
+);
+
+export function rosterBioMintRefusal(
+  evidenceSentences: readonly string[],
+  name: string,
+): RosterBioSkipReason | undefined {
+  const text = evidenceSentences.join(' ');
+  if (
+    !STATES_RESEARCH.test(text) &&
+    evidenceSentences.every((sentence) => CLINICAL_OR_TEACHING_PRACTICE.test(sentence)) &&
+    !QI_OR_PROGRAM_WORK.test(text)
+  ) {
+    return 'clinical_teaching_or_consultation_only';
+  }
+  const nameTokens = new Set(
+    name
+      .toLowerCase()
+      .split(/[^a-z]+/)
+      .filter(Boolean),
+  );
+  const topicWords = text
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(
+      (word) => word.length > 2 && !GENERIC_RESEARCH_WORDS.has(word) && !nameTokens.has(word),
+    );
+  if (topicWords.length === 0) return 'no_stated_research_topic';
+  return undefined;
+}
+
 export function planRosterBioResearchRows(
   people: readonly RosterBioPerson[],
   covered: RosterBioCoveredIdentities,
@@ -288,6 +332,11 @@ export function planRosterBioResearchRows(
     const derived = deriveBioResearchStatement(person.bio, { name });
     if (derived.rejection) {
       skip(derived.rejection);
+      continue;
+    }
+    const mintRefusal = rosterBioMintRefusal(derived.evidenceSentences, name);
+    if (mintRefusal) {
+      skip(mintRefusal);
       continue;
     }
     if (
