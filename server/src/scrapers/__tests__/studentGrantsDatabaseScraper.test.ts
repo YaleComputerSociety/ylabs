@@ -251,6 +251,39 @@ describe('parseFundDetailPage', () => {
     expect(fund?.globalRegions).toEqual(['Europe', 'Asia']);
   });
 
+  it('states no region for a fund that ticks every region, and keeps a partial list (#6475)', () => {
+    const regionsOf = (regions: string[]) =>
+      parseFundDetailPage(
+        FUND_A_DETAIL_HTML.replace(
+          facetPanel(4, 'Global Region or Country', [
+            'Europe',
+            '-- France (Western Europe)',
+            'Asia',
+            '-- Japan (East Asia)',
+          ]),
+          facetPanel(4, 'Global Region or Country', regions),
+        ),
+        { title: '', url: FUND_A_URL },
+        referenceDate,
+      )?.globalRegions;
+    const everyRegion = [
+      'Africa',
+      'Asia',
+      'Europe',
+      'Latin America and Caribbean',
+      'Middle East & Persian Gulf',
+      'North America',
+      'Oceania',
+    ];
+    expect(regionsOf(everyRegion)).toEqual([]);
+    expect(regionsOf([...everyRegion, '-- France (Western Europe)'])).toEqual([]);
+    expect(regionsOf(everyRegion.slice(0, 6))).toEqual(everyRegion.slice(0, 6));
+    expect(regionsOf([...everyRegion.slice(0, 6), '-- France (Western Europe)'])).toEqual(
+      everyRegion.slice(0, 6),
+    );
+    expect(regionsOf(['North America'])).toEqual(['North America']);
+  });
+
   it('never reads the contact block', () => {
     const fund = parseFundDetailPage(
       FUND_A_DETAIL_HTML,

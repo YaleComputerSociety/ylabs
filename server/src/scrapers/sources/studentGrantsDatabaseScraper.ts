@@ -74,6 +74,7 @@ import {
   type FundApplicationRoute,
   type FundProseSection,
 } from '../utils/fundApplicationRoute';
+import { collapseDefaultFillGlobalRegions } from '../../services/globalRegions';
 import { statedAdministeringOffice } from '../utils/administeringOffice';
 import { fundAwardAmount } from '../utils/fundAwardAmount';
 import {
@@ -245,7 +246,9 @@ function sectionProse($: cheerio.CheerioAPI, id: string): string | undefined {
 
 // The Global Region facet lists each country as its own "-- Country (Subregion)" item
 // under its region, and the stored catalog filters by region only, so country items
-// are dropped rather than stored as regions.
+// are dropped rather than stored as regions. A fund that ticks every region is
+// region-agnostic, which the source encodes as a full default fill, so it states no
+// region (#1072, #6475).
 function isCountryUnderRegion(field: FundFacetField, value: string): boolean {
   return field === 'globalRegions' && value.startsWith('--');
 }
@@ -270,6 +273,7 @@ function parseFacets($: cheerio.CheerioAPI): Record<FundFacetField, string[]> {
       .filter((value) => value.length >= 2 && value.length <= 80);
     facets[facet.field] = Array.from(new Set([...facets[facet.field], ...values]));
   });
+  facets.globalRegions = collapseDefaultFillGlobalRegions(facets.globalRegions);
   return facets;
 }
 
