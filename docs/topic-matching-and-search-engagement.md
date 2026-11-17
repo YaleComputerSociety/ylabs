@@ -16,6 +16,10 @@ A rising year is read the way the sources file it, under the year before it (`ri
 `rising` carries across a list of years, so `rising juniors and seniors` names `Sophomore` and `Junior`.
 Before #6397 the words matched program text, so `first-year` served 14 of the 75 programs stating that year and 4 that exclude it; through the served route it now serves 75 of 75 and none that exclude it.
 `journey:eval --case=programs-student-year-words-reach-sourced-year` checks that `freshman` and `freshmen` serve every row `first-year` serves, and `--case=programs-year-words-serve-the-stated-year` checks that each year query serves every row stating that year and none whose stated years exclude it.
+Pay, funding and thesis wording works the same way (#6398), with pay and funding as two intents: `paid`, `stipend` and their kin restrict results to programs with a stated `awardAmount` or a `compensationSummary` naming pay, while `funded`, `funding` and `grant` restrict them to programs that offer funding by kind or role or state pay; neither reads prose, and `thesis` and `essay` match each other.
+Before #6398, `paid` returned 6 programs and `senior thesis` reached 1 of the 17 senior-thesis funding programs; through the served route `paid` now returns all 112 programs stating pay and none without it, and `senior thesis` and `senior essay` each reach 17 of 17.
+`funded` moves from 122 text matches to the 147 programs that offer funding: 27 funds whose text never says "funded" join, including the amountless "funding when awarded" funds that `paid` leaves out, and 2 mentoring programs that were matched only by "funded by" a donor leave.
+`journey:eval --case=programs-pay-and-thesis-words-serve-the-stated-field` checks it.
 
 The same taxonomy normalizes saved-plan research areas and research-home names for fellowship matching.
 Topic overlap contributes to the match score alongside compensation, fellowship-compatible evidence, department overlap, application-route evidence, and cycle status.
