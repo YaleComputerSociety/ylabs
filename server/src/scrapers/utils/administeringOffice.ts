@@ -125,6 +125,9 @@ function officeName(raw: string): string | undefined {
  */
 const SYSTEM_PART_OPENER = /^(?:Summer|Fall|Spring|Winter|Autumn|Annual|Common|Applications?)$/;
 
+const MODIFIER_ENDING =
+  /^(?:International|Undergraduate|Graduate|Global|National|Professional|Regional|Public|Advanced|General|Special)$/;
+
 const PROGRAM_NOUN =
   /^(?:Fellowships?|Grants?|Awards?|Prizes?|Scholarships?|Internships?|Stipends?|Funds?|Competitions?)$/;
 
@@ -161,6 +164,7 @@ function officeOwningSystem(systemName: string): string | undefined {
     end = next;
     if (!NAME_CONNECTORS.has(boundary)) break;
   }
+  if (end > headIndex + 1 && MODIFIER_ENDING.test(words[end - 1])) return undefined;
   return officeName(words.slice(0, end).join(' '));
 }
 

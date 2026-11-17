@@ -207,5 +207,10 @@ describe('the administering office a program page states (#4589)', () => {
     expect(
       officeIn('Applications are accepted via the Office of Fixture Research'),
     ).toBeUndefined();
+    expect(
+      officeIn(
+        'Applications are accepted via the Office of International Summer Programs Application.',
+      ),
+    ).toBeUndefined();
   });
 });
