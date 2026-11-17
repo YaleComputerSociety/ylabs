@@ -51,9 +51,14 @@ describe('dedupeAccountlessResearcherShells re-gates every row the survivor lead
         _id: survivorId,
         displayName: 'Ada Fixture',
         archived: false,
-        identifiers: { email: 'directory.regate1@example.test' },
+        identifiers: { email: 'directory.regate1@example.test', netid: 'af101' },
       },
-      { _id: shellId, displayName: 'Ada Fixture', archived: false },
+      {
+        _id: shellId,
+        displayName: 'Ada Fixture',
+        archived: false,
+        identifiers: { netid: 'af101' },
+      },
       {
         _id: bystanderId,
         displayName: 'Bea Bystander',

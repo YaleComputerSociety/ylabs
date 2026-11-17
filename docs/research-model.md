@@ -409,6 +409,8 @@ No email or netid is written from a carried page, because `identifiers.email` de
 The directory materializer plans the ORCID link from the final `identifiers.orcid`, after any ORCID collision is forgiven, so a stored row that already holds a contradicting link gets the link its identifier backs, or none, and the contradiction is counted as a materialization conflict and logged instead of failing the key.
 Measured on Development on 2026-10-03, 4 of 2,354 researchers with an ORCID link held it without `identifiers.orcid`, all of them archived dedupe shells, and none held a link naming a different ORCID from a present identifier.
 `researchers:dedupe-accountless-shells` folds a shell into another record on these identities, in order: netid, a directory-paired listing address, an official page the shell cites, an ORCID its own listings state for a record holding only that ORCID, roster identity, a shared official primary profile the link-health lane last probed as `HEALTHY`, a shared live research row, a witnessed name variant on a shared row, a shared official profile page, then exact name.
+The exact-name arm folds only when the shell's netid or ORCID agrees with the target's; a pair joined by a name alone is refused (`NAME_ONLY_EVIDENCE`), listed in the dry-run report's `nameOnlyFoldCandidates` for operator review, and never applied (#6378).
+Every planned merge in the report carries `arm`, the arm that planned it, and `matchedEvidence`, the identifier, page URL, listing or row that joined it.
 A folded shell's role edge moves onto the survivor, or is archived as redundant when the survivor already holds that target and role.
 A current shell edge is redundant only beside a current or `DISPUTED` survivor edge, because the survivor's ended edge on that key is a past appointment, and archiving the current one against it left the person with history only (#5990).
 Measured on Development on 2026-11-12, read-only, earlier folds had archived 66 current shell edges beside a survivor edge that had already ended, and 25 memberships on 14 live rows were still lost.
@@ -471,6 +473,9 @@ Measured on Development on 2026-10-05 in dry run it raised the folded groups fro
 The survivor is the record with the most live role edges, then the most healthy verified primary links, then the record an ORCID identifies, then the oldest, so the choice is reproducible and never alphabetical.
 The ORCID step keeps the identified record's name when an older copy holds a name a label cleaner damaged (#4879).
 A page or name that any record outside the group also holds joins nobody, because the outranking arms already found it unable to tell those records apart.
+Those keys only group records, and a name never joins two members for a fold.
+Each part of a group that evidence connects (a shared verified page, a shared official profile, a cited official page, or an agreeing netid or ORCID) folds into its own survivor.
+A member only a name ties to the rest is counted under `refusedGroups.NAME_ONLY_EVIDENCE`, listed in `nameOnlyGroups`, and left unfolded (#6378).
 The whole group is refused on any disagreement of netid, ORCID, title rank, or surname, with every pair of surnames compared, and with credentials after a comma, generational suffixes and trailing periods read past.
 A standalone `Mc` or `Mac` token is read as part of the surname that follows it, because a label cleaner that split every case boundary stored such a surname as two words (#4879).
 Measured on Development on 2026-10-04 with that change: 3 groups, 2 folded, 1 refused on two different ORCIDs.

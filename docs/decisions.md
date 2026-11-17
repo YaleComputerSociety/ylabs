@@ -5,6 +5,19 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-16: A Matching Name Alone Never Folds Two Researcher Records (#6378)
+
+Decision (the manager, 2026-11-16): `researchers:dedupe-accountless-shells` never applies a fold whose only evidence is a matching name, with or without a department or a shared row, on the two paths below.
+The `name` arm, the last fallback in `decideShellMerge`, folds only when the shell's netid or ORCID agrees with the target's.
+The account-less cluster arm still groups records on a name plus a department, a name plus a live role on the same row, or a noisy spelling, but a name never joins two members for a fold: each part of a group that a shared verified page, a shared official profile, a cited official page or an agreeing netid or ORCID connects folds into its own survivor, and a member only a name ties to the rest stays unfolded.
+An identifier, rank or surname conflict anywhere in the group still refuses the whole group.
+The `shared-row` arm is unchanged: it folds a shell only into a stronger record that holds a role on the same live row, because a row lists its own lead twice only when two lanes minted that lead under two spellings, so the row is the join and the name only vetoes (#4911).
+A refused name-only candidate is listed in the dry-run report (`nameOnlyFoldCandidates`, `accountlessClusters.nameOnlyGroups`) for operator review, and the tool never applies it.
+
+Two different people can share a name and a department, and a fold is permanent once applied, so a name is a reason to look and never a reason to merge.
+On Development on 2026-11-16 the name arm's 2 candidates were already dropped downstream, one by the only-live-lead refusal and one by an operator's different-people verdict, and the cluster arm planned no fold, so the rule changes no current plan.
+The same change records the planning arm on every merge in the report, after a blind check of 10 planned merges could not tell from the report what joined them: they were 6 cited-official-page, 3 orcid-only-holder and 1 shared-row folds, none of them name-only.
+
 ## 2026-11-16: Topics Read From A Page The Lead Filter Refuses Retire, While A Vanished Page Keeps Them (#6386)
 
 Decision (manager, 2026-11-16, option A): this narrows the #6127 rule that a person row the lead filter leaves with no page keeps its stored page-derived topics.

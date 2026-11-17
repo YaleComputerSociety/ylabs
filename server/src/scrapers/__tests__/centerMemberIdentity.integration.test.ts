@@ -981,7 +981,14 @@ describe(
     it('archives a folded twin edge rather than handing a detached holder a live copy', async () => {
       const devon = await accountHolder('Devon');
       await edgeOn(devon, 'CORE_FACULTY', { archived: true, reviewStatus: 'DISPUTED' });
-      const twin = await nameOnlyShell('Devon');
+      const twin = (
+        await Researcher.create({
+          displayName: 'Devon Synthetic',
+          identifiers: { netid: 'devon9' },
+          profileLinks: [],
+          archived: false,
+        })
+      )._id as mongoose.Types.ObjectId;
       const twinEdge = await edgeOn(twin, 'CORE_FACULTY');
 
       await dedupeAccountlessResearcherShells({ apply: true });

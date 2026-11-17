@@ -12,6 +12,7 @@ import {
   parseDedupeAccountlessResearcherShellsArgs,
 } from '../dedupeAccountlessResearcherShells';
 import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+import { PLANNED_MERGE_ARMS } from '../dedupeAccountlessResearcherShellsCore';
 
 const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
@@ -19,6 +20,15 @@ const SYNTHETIC_ORCID_3 = syntheticPersonOrcid(502);
 const SYNTHETIC_ORCID_4 = syntheticPersonOrcid(503);
 const SYNTHETIC_ORCID_5 = syntheticPersonOrcid(504);
 const SYNTHETIC_ORCID_6 = syntheticPersonOrcid(505);
+const SYNTHETIC_ORCID_7 = syntheticPersonOrcid(506);
+
+const sharedOfficialProfile = (url: string) => ({
+  kind: 'YALE_OFFICIAL',
+  purpose: 'PRIMARY_IDENTITY',
+  url,
+  verifiedAt: new Date('2026-01-01T00:00:00Z'),
+  healthStatus: 'HEALTHY',
+});
 
 const canonicalId = new mongoose.Types.ObjectId();
 const shellId = new mongoose.Types.ObjectId();
@@ -61,7 +71,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
         displayName: 'Jane Roe',
         archived: false,
         profileLinks: [{ kind: 'YALE_OFFICIAL', url: 'https://canonical.yale.edu' }],
-        identifiers: { email: 'directory.fixture1@example.test' },
+        identifiers: { email: 'directory.fixture1@example.test', netid: 'jr11' },
         profile: { title: 'Professor' },
       },
       {
@@ -72,7 +82,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
           { kind: 'GOOGLE_SCHOLAR', url: 'https://scholar.google.com/citations?user=abc' },
           { kind: 'YALE_OFFICIAL', url: 'https://shell.yale.edu' },
         ],
-        identifiers: { orcid: SYNTHETIC_ORCID_1, googleScholarId: 'abc' },
+        identifiers: { orcid: SYNTHETIC_ORCID_1, googleScholarId: 'abc', netid: 'jr11' },
         profile: {
           title: 'Adjunct',
           primaryDepartment: 'Immunobiology',
@@ -147,7 +157,9 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
       NO_IDENTITY_WITNESS: 0,
       VARIANT_SHAPE_NOT_ALLOWED: 0,
       STATED_MIDDLE_INITIAL_CONFLICT: 0,
+      NAME_ONLY_EVIDENCE: 0,
     });
+    expect(result.foldsByMatchedIdentity.netid).toBe(1);
     expect(result.shellsMerged).toBe(1);
     expect(result.roleAssignmentsRepointed).toBe(1);
     expect(result.roleAssignmentsArchivedRedundant).toBe(1);
@@ -212,6 +224,19 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
     expect(result.mode).toBe('dry-run');
     expect(result.shellsMerged).toBe(1);
 
+    expect(result.merges).toHaveLength(1);
+    for (const merge of result.merges) {
+      expect(PLANNED_MERGE_ARMS).toContain(merge.arm);
+      expect(merge.matchedEvidence).not.toBe('unrecorded');
+    }
+    for (const [arm, count] of Object.entries(result.foldsByMatchedIdentity)) {
+      expect(result.merges.filter((merge) => merge.arm === arm)).toHaveLength(count);
+    }
+    expect(result.merges[0]).toMatchObject({
+      arm: 'netid',
+      matchedEvidence: expect.stringMatching(/^netid /),
+    });
+
     const db = mongoose.connection.db!;
     const shell = await db.collection('researchers').findOne({ _id: shellId });
     expect(shell!.archived).toBe(false);
@@ -253,12 +278,14 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
         displayName: 'Rosa Vega',
         archived: false,
         identifiers: { email: 'directory.fixture5@example.test' },
+        profileLinks: [sharedOfficialProfile('https://fixture.yale.edu/profile/rosa-vega')],
       },
       {
         _id: orcidShell,
         displayName: 'Rosa Vega',
         archived: false,
         identifiers: { orcid: SYNTHETIC_ORCID_3 },
+        profileLinks: [sharedOfficialProfile('https://fixture.yale.edu/profile/rosa-vega')],
       },
     ]);
 
@@ -293,12 +320,14 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
         displayName: 'Ines Fixture',
         archived: false,
         identifiers: { email: 'directory.fixture9@example.test' },
+        profileLinks: [sharedOfficialProfile('https://fixture.yale.edu/profile/ines-fixture')],
         profile: { primaryDepartment: refusedDepartment },
       },
       {
         _id: refusingShell,
         displayName: 'Ines Fixture',
         archived: false,
+        profileLinks: [sharedOfficialProfile('https://fixture.yale.edu/profile/ines-fixture')],
         profile: { websiteUrl: refusedSite, title: 'Fixture Professor' },
         fieldValueRefusals: {
           websiteUrl: [refusal('school.example.test/about/fixture-fund-story')],
@@ -308,7 +337,8 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
       },
     ]);
 
-    await dedupeAccountlessResearcherShells({ apply: true });
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(result.shellsMerged).toBe(1);
 
     const kept = await db.collection('researchers').findOne({ _id: survivor });
     expect(kept!.profile?.websiteUrl).toBeUndefined();
@@ -337,6 +367,7 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
       verifiedAt: new Date('2026-01-01T00:00:00Z'),
       healthStatus: 'UNKNOWN',
     };
+    const officialProfile = sharedOfficialProfile('https://fixture.yale.edu/profile/rosa-vega');
     const canonicalOnly = new mongoose.Types.ObjectId();
     const orcidShell = new mongoose.Types.ObjectId();
     const db = mongoose.connection.db!;
@@ -346,14 +377,14 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
         displayName: 'Rosa Vega',
         archived: false,
         identifiers: { email: 'directory.fixture6@example.test' },
-        profileLinks: [],
+        profileLinks: [officialProfile],
       },
       {
         _id: orcidShell,
         displayName: 'Rosa Vega',
         archived: false,
         identifiers: { orcid },
-        profileLinks: [orcidLink],
+        profileLinks: [officialProfile, orcidLink],
       },
     ]);
 
@@ -364,10 +395,13 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     const shell = await db.collection('researchers').findOne({ _id: orcidShell });
     expect(canonical!.identifiers).toMatchObject({ orcid });
     expect(canonical!.profileLinks.map((link: { url: string }) => link.url)).toEqual([
+      officialProfile.url,
       orcidLink.url,
     ]);
     expect((shell!.identifiers as { orcid?: string } | undefined)?.orcid).toBeUndefined();
-    expect(shell!.profileLinks).toEqual([]);
+    expect(shell!.profileLinks.map((link: { kind: string }) => link.kind)).toEqual([
+      'YALE_OFFICIAL',
+    ]);
     expect(Researcher.hydrate(canonical!).validateSync()).toBeUndefined();
     expect(Researcher.hydrate(shell!).validateSync()).toBeUndefined();
   });
@@ -444,10 +478,15 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
       email: `directory.scope${index}@example.test`,
     }));
     await db.collection('researchers').insertMany(
-      pairs.flatMap(({ canonical, shell, displayName, email }) => [
-        { _id: canonical, displayName, archived: false, identifiers: { email } },
-        { _id: shell, displayName, archived: false, identifiers: {} },
-      ]),
+      pairs.flatMap(({ canonical, shell, displayName, email }, index) => {
+        const profileLinks = [
+          sharedOfficialProfile(`https://fixture.yale.edu/profile/scope-${index}`),
+        ];
+        return [
+          { _id: canonical, displayName, archived: false, identifiers: { email }, profileLinks },
+          { _id: shell, displayName, archived: false, identifiers: {}, profileLinks },
+        ];
+      }),
     );
     const [scoped, unscoped] = pairs;
     const notPlanned = new mongoose.Types.ObjectId().toHexString();
@@ -584,32 +623,70 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     expect(result.foldedOfficialPagesCarried).toBe(0);
   });
 
-  it('folds a name-only shell into a netid-backed accountless canonical (FRA lead)', async () => {
+  const seedNetidCanonicalAndNameOnlyShell = async (profileLinks: unknown[]) => {
     const netidCanonical = new mongoose.Types.ObjectId();
     const nameOnlyShell = new mongoose.Types.ObjectId();
     const db = mongoose.connection.db!;
-    await db.collection('researchers').deleteMany({});
-    await db.collection('role_assignments').deleteMany({});
     await db.collection('researchers').insertMany([
       {
         _id: netidCanonical,
         displayName: 'Nate Netid',
         archived: false,
         identifiers: { netid: 'nn7' },
-        profileLinks: [],
+        profileLinks,
       },
       {
         _id: nameOnlyShell,
         displayName: 'Nate Netid',
         archived: false,
         identifiers: {},
-        profileLinks: [],
+        profileLinks,
       },
+    ]);
+    return { netidCanonical, nameOnlyShell };
+  };
+
+  it('never folds a name-only shell into a netid-backed accountless canonical on the name alone', async () => {
+    const { netidCanonical, nameOnlyShell } = await seedNetidCanonicalAndNameOnlyShell([]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(result.byReason.MERGEABLE).toBe(0);
+    expect(result.byReason.NAME_ONLY_EVIDENCE).toBe(1);
+    expect(result.nameOnlyFoldCandidates).toEqual([
+      { shellId: String(nameOnlyShell), canonicalId: String(netidCanonical) },
+    ]);
+    expect(result.shellsMerged).toBe(0);
+    expect(result.foldsByMatchedIdentity.name).toBe(0);
+
+    const db = mongoose.connection.db!;
+    const shell = await db.collection('researchers').findOne({ _id: nameOnlyShell });
+    expect(shell!.archived).toBe(false);
+    expect(shell!.dedupedIntoResearcherId).toBeUndefined();
+  });
+
+  it('does not list a name-only pair the operator already recorded as different people', async () => {
+    const { netidCanonical, nameOnlyShell } = await seedNetidCanonicalAndNameOnlyShell([]);
+    await mongoose.connection
+      .db!.collection('researchers')
+      .updateOne({ _id: netidCanonical }, { $set: { distinctFromResearcherIds: [nameOnlyShell] } });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: false });
+    expect(result.byReason.NAME_ONLY_EVIDENCE).toBe(1);
+    expect(result.nameOnlyFoldCandidates).toEqual([]);
+    expect(result.shellsMerged).toBe(0);
+  });
+
+  it('folds a name-only shell into a netid-backed accountless canonical sharing its official profile (FRA lead)', async () => {
+    const { netidCanonical, nameOnlyShell } = await seedNetidCanonicalAndNameOnlyShell([
+      { kind: 'YALE_OFFICIAL', url: 'https://fixture.yale.edu/profile/nate-netid' },
     ]);
 
     const result = await dedupeAccountlessResearcherShells({ apply: true });
     expect(result.byReason.MERGEABLE).toBe(1);
+    expect(result.nameOnlyFoldCandidates).toEqual([]);
+    expect(result.foldsByMatchedIdentity['shared-official-profile']).toBe(1);
 
+    const db = mongoose.connection.db!;
     const shell = await db.collection('researchers').findOne({ _id: nameOnlyShell });
     expect(shell!.archived).toBe(true);
     expect(String(shell!.dedupedIntoResearcherId)).toBe(String(netidCanonical));
@@ -627,6 +704,10 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     const nameOnlyShellEdge = new mongoose.Types.ObjectId();
     const twinEntity = new mongoose.Types.ObjectId();
     const shellEntity = new mongoose.Types.ObjectId();
+    const janeRoeProfile = {
+      kind: 'YALE_OFFICIAL',
+      url: 'https://fixture.yale.edu/profile/jane-roe',
+    };
     const db = mongoose.connection.db!;
     await db.collection('researchers').insertMany([
       {
@@ -634,21 +715,21 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
         displayName: 'Jane Roe',
         archived: false,
         identifiers: { email: 'directory.fixture7@example.test' },
-        profileLinks: [],
+        profileLinks: [janeRoeProfile],
       },
       {
         _id: netidTwin,
         displayName: 'Jane Roe',
         archived: false,
         identifiers: { netid: 'jr55' },
-        profileLinks: [],
+        profileLinks: [janeRoeProfile],
       },
       {
         _id: nameOnlyShell,
         displayName: 'Jane Roe',
         archived: false,
         identifiers: {},
-        profileLinks: [],
+        profileLinks: [janeRoeProfile],
       },
     ]);
     await db.collection('role_assignments').insertMany([
@@ -701,6 +782,10 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     const directoryCanonical = new mongoose.Types.ObjectId();
     const netidTwin = new mongoose.Types.ObjectId();
     const nameOnlyShell = new mongoose.Types.ObjectId();
+    const janeRoeProfile = {
+      kind: 'YALE_OFFICIAL',
+      url: 'https://fixture.yale.edu/profile/jane-roe',
+    };
     const db = mongoose.connection.db!;
     await db.collection('accounts').deleteMany({});
     await db.collection('researchers').insertMany([
@@ -709,21 +794,21 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
         displayName: 'Jane Roe',
         archived: false,
         identifiers: { email: 'jane.roe@example.test' },
-        profileLinks: [],
+        profileLinks: [janeRoeProfile],
       },
       {
         _id: netidTwin,
         displayName: 'Jane Roe',
         archived: false,
         identifiers: { netid: 'jr55' },
-        profileLinks: [],
+        profileLinks: [janeRoeProfile],
       },
       {
         _id: nameOnlyShell,
         displayName: 'Jane Roe',
         archived: false,
         identifiers: {},
-        profileLinks: [],
+        profileLinks: [janeRoeProfile],
       },
     ]);
 
@@ -923,6 +1008,21 @@ describe('dedupeAccountlessResearcherShells name-variant twins (#5592)', () => {
     return { holder, shell };
   };
 
+  const seedSameNamePairAgreeingOnOrcid = async () => {
+    const pair = await seedPair({
+      shellName: 'Avery Synthetic',
+      holderName: 'Avery Synthetic',
+      linkedProfile: HOLDER_PROFILE,
+    });
+    await mongoose.connection
+      .db!.collection('researchers')
+      .updateMany(
+        { _id: { $in: [pair.holder, pair.shell] } },
+        { $set: { 'identifiers.orcid': SYNTHETIC_ORCID_7 } },
+      );
+    return pair;
+  };
+
   it('folds a name-only variant into the stronger record its own listing links, on a large center too', async () => {
     const { holder, shell } = await seedPair({
       shellName: 'Avery Synthetic',
@@ -1000,11 +1100,9 @@ describe('dedupeAccountlessResearcherShells name-variant twins (#5592)', () => {
   });
 
   it('records a distinct-people pair on both records, once, and the dedupe then refuses it', async () => {
-    const { holder, shell } = await seedPair({
-      shellName: 'Avery Synthetic',
-      holderName: 'Avery Synthetic',
-      linkedProfile: HOLDER_PROFILE,
-    });
+    const { holder, shell } = await seedSameNamePairAgreeingOnOrcid();
+    const planned = await dedupeAccountlessResearcherShells({ apply: false });
+    expect(planned.shellsMerged).toBe(1);
     const dry = await recordDistinctResearchers(String(holder), String(shell), false);
     expect(dry).toMatchObject({ found: 2, applied: false, alreadyRecorded: false });
     expect(await recordDistinctResearchers(String(holder), String(shell), true)).toMatchObject({
@@ -1023,11 +1121,7 @@ describe('dedupeAccountlessResearcherShells name-variant twins (#5592)', () => {
   });
 
   it('never folds a pair an operator recorded as different people, whichever arm planned it', async () => {
-    const { holder, shell } = await seedPair({
-      shellName: 'Avery Synthetic',
-      holderName: 'Avery Synthetic',
-      linkedProfile: HOLDER_PROFILE,
-    });
+    const { holder, shell } = await seedSameNamePairAgreeingOnOrcid();
     await mongoose.connection
       .db!.collection('researchers')
       .updateOne({ _id: holder }, { $set: { distinctFromResearcherIds: [shell] } });
@@ -1043,11 +1137,7 @@ describe('dedupeAccountlessResearcherShells name-variant twins (#5592)', () => {
   });
 
   it('honours a verdict recorded on a researcher record that was later folded into the holder', async () => {
-    const { holder, shell } = await seedPair({
-      shellName: 'Avery Synthetic',
-      holderName: 'Avery Synthetic',
-      linkedProfile: HOLDER_PROFILE,
-    });
+    const { holder, shell } = await seedSameNamePairAgreeingOnOrcid();
     const earlierRecord = new mongoose.Types.ObjectId();
     await mongoose.connection.db!.collection('researchers').insertOne({
       _id: earlierRecord,
