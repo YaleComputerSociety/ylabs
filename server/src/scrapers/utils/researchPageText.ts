@@ -39,6 +39,11 @@ export interface FetchedResearchPage {
 }
 
 const PRIVATE_USE_HEADING_SENTINEL = '\uE000';
+const HEADING_LEVEL_MARK_BASE = 0xe010;
+const HEADING_MARKS = /[\uE000\uE011-\uE016]/g;
+
+const headingLevelMark = (tagName: string): string =>
+  String.fromCharCode(HEADING_LEVEL_MARK_BASE + Number(tagName.slice(1)));
 
 const RESEARCH_HEADING =
   /\b(?:research|interests?|projects?|focus|about|overview|mission|stud(?:y|ies)|areas?|themes?|questions?|approach)\b/i;
@@ -52,6 +57,11 @@ type SectionKind = 'research' | 'neutral' | 'publications-or-contact';
 
 interface PageSection {
   kind: SectionKind;
+  /**
+   * The section sits under an open research heading, so its lines are research for the cap's
+   * budget even when its own heading names no research (#6109). Ordering still follows `kind`.
+   */
+  insideResearch: boolean;
   lines: string[];
 }
 
@@ -380,7 +390,9 @@ function pageLinesWithHeadingMarks(html: string, pageUrl: string): string[] {
   removeRelatedEntityTeaserCards($, pageUrl);
   $('h1, h2, h3, h4, h5, h6').each((_index, element) => {
     if (isInsideMenuContainer($, element)) return;
-    $(element).prepend(PRIVATE_USE_HEADING_SENTINEL);
+    $(element).prepend(
+      `${PRIVATE_USE_HEADING_SENTINEL}${headingLevelMark((element as { tagName: string }).tagName)}`,
+    );
   });
   return extractElementTextWithLineBreaks($('body')[0] ?? $.root()[0])
     .split('\n')
@@ -388,18 +400,31 @@ function pageLinesWithHeadingMarks(html: string, pageUrl: string): string[] {
     .filter(Boolean);
 }
 
+function headingLevelOf(line: string): number {
+  const mark = line.charCodeAt(PRIVATE_USE_HEADING_SENTINEL.length) - HEADING_LEVEL_MARK_BASE;
+  return mark >= 1 && mark <= 6 ? mark : 6;
+}
+
+/**
+ * The page's sections in order. A heading nested below an open research heading keeps its own
+ * `kind` but is marked `insideResearch`, unless it names publications or contact details.
+ */
 function pageSections(lines: readonly string[]): PageSection[] {
-  const sections: PageSection[] = [{ kind: 'neutral', lines: [] }];
+  const sections: PageSection[] = [{ kind: 'neutral', insideResearch: false, lines: [] }];
+  const open: Array<{ level: number; research: boolean }> = [];
   for (const line of lines) {
     if (line.startsWith(PRIVATE_USE_HEADING_SENTINEL)) {
-      const heading = line.replaceAll(PRIVATE_USE_HEADING_SENTINEL, '').trim();
+      const level = headingLevelOf(line);
+      const heading = line.replace(HEADING_MARKS, '').trim();
       const kind = sectionKindOfHeading(heading);
-      sections.push({ kind, lines: heading ? [heading] : [] });
+      while (open.length > 0 && open[open.length - 1].level >= level) open.pop();
+      const insideResearch =
+        kind !== 'publications-or-contact' && open.some((ancestor) => ancestor.research);
+      open.push({ level, research: kind === 'research' || insideResearch });
+      sections.push({ kind, insideResearch, lines: heading ? [heading] : [] });
       continue;
     }
-    sections[sections.length - 1].lines.push(
-      line.replaceAll(PRIVATE_USE_HEADING_SENTINEL, '').trim(),
-    );
+    sections[sections.length - 1].lines.push(line.replace(HEADING_MARKS, '').trim());
   }
   return sections;
 }
@@ -414,24 +439,43 @@ function pageSections(lines: readonly string[]): PageSection[] {
  * sit, a flagged paragraph keeping its research sentences. Every line is kept only once.
  */
 export function researchStatementTextOfPage(html: string, pageUrl: string): string {
-  if (!html) return '';
+  const { research, neutral } = researchStatementPartsOfPage(html, pageUrl);
+  return [research, neutral].filter(Boolean).join('\n');
+}
+
+/**
+ * `researchStatementTextOfPage` split at the point where the page's research sections end, so
+ * the cap can spend a row's budget on research lines before neutral ones (#6109). `researchLines`
+ * also holds the lines of sections nested below a research heading, which keep their place in
+ * the text but share the research budget.
+ */
+export function researchStatementPartsOfPage(
+  html: string,
+  pageUrl: string,
+): { research: string; neutral: string; researchLines: string[] } {
+  if (!html) return { research: '', neutral: '', researchLines: [] };
   const sections = pageSections(pageLinesWithHeadingMarks(html, pageUrl)).filter(
     (section) => section.kind !== 'publications-or-contact',
   );
-  const ordered = [
-    ...sections.filter((section) => section.kind === 'research'),
-    ...sections.filter((section) => section.kind === 'neutral'),
-  ];
   const ownerTokens = pageOwnerTokens(pageUrl);
   const seen = new Set<string>();
-  const kept: string[] = [];
-  for (const line of ordered.flatMap((section) => section.lines)) {
-    const statement = statementTextOfLine(line, ownerTokens);
-    if (!statement || seen.has(statement)) continue;
-    seen.add(statement);
-    kept.push(statement);
-  }
-  return kept.join('\n');
+  const researchLines: string[] = [];
+  const statementsOf = (kind: PageSection['kind']): string[] => {
+    const kept: string[] = [];
+    for (const section of sections.filter((candidate) => candidate.kind === kind)) {
+      for (const line of section.lines) {
+        const statement = statementTextOfLine(line, ownerTokens);
+        if (!statement || seen.has(statement)) continue;
+        seen.add(statement);
+        kept.push(statement);
+        if (kind === 'research' || section.insideResearch) researchLines.push(statement);
+      }
+    }
+    return kept;
+  };
+  const research = statementsOf('research').join('\n');
+  const neutral = statementsOf('neutral').join('\n');
+  return { research, neutral, researchLines };
 }
 
 const SENTENCE_END = /[.!?]["')\]’”]?(?=\s|$)/g;
@@ -454,30 +498,172 @@ export function truncateAtSentenceBoundary(text: string, maxChars: number): stri
   return (lastSpace > 0 ? text.slice(0, lastSpace) : text.slice(0, maxChars)).trim();
 }
 
+/** A page's text before the cap, with the lines that share the research budget. */
+export interface ResearchPageTextCapEntry extends ResearchPageTextEntry {
+  researchLines?: ReadonlySet<string>;
+}
+
 /**
- * Shares the total budget fairly: pages are served shortest first, each taking at most an
- * even share of what is left, so a short page keeps all of its text and a long one gives
- * up only its tail. Page order is preserved in the result.
+ * Fair shares of `budget` over `lengths`: shortest first, each taking at most an even share of
+ * what is left, so a short part keeps all of its text and a long one gives up only its tail.
  */
-export function capResearchPageText(
-  entries: readonly ResearchPageTextEntry[],
-  maxChars: number = MAX_RESEARCH_PAGE_TEXT_CHARS,
-): ResearchPageTextEntry[] {
-  const allowance = new Map<number, number>();
-  let remaining = maxChars;
-  const byLength = entries
-    .map((entry, index) => ({ index, length: entry.text.length }))
+function fairShares(lengths: readonly number[], budget: number): number[] {
+  const shares = lengths.map(() => 0);
+  let remaining = budget;
+  const byLength = lengths
+    .map((length, index) => ({ index, length }))
     .sort((a, b) => a.length - b.length || a.index - b.index);
-  byLength.forEach((page, position) => {
+  byLength.forEach((part, position) => {
     const share = Math.floor(remaining / (byLength.length - position));
-    const granted = Math.min(page.length, share);
-    allowance.set(page.index, granted);
+    const granted = Math.min(part.length, share);
+    shares[part.index] = granted;
     remaining -= granted;
   });
-  return entries
-    .map((entry, index) => ({
-      url: entry.url,
-      text: truncateAtSentenceBoundary(entry.text, allowance.get(index) ?? 0),
+  return shares;
+}
+
+const LINE_BREAK_CHARS = 1;
+
+const lengthOfLines = (lines: readonly string[]): number =>
+  lines.reduce((sum, line, index) => sum + line.length + (index > 0 ? LINE_BREAK_CHARS : 0), 0);
+
+/**
+ * The lines of `lines` that fit `budget`, by index, in order; the first one that does not fit is
+ * cut at a sentence boundary and nothing after it is kept.
+ */
+function linesWithin(lines: readonly string[], budget: number): Map<number, string> {
+  const kept = new Map<number, string>();
+  let remaining = budget;
+  for (const [index, line] of lines.entries()) {
+    const separator = kept.size > 0 ? LINE_BREAK_CHARS : 0;
+    if (line.length + separator <= remaining) {
+      kept.set(index, line);
+      remaining -= line.length + separator;
+      continue;
+    }
+    const partial = truncateAtSentenceBoundary(line, remaining - separator);
+    if (partial) kept.set(index, partial);
+    break;
+  }
+  return kept;
+}
+
+const MIN_STATEMENT_SENTENCE_WORDS = 6;
+const MIN_LISTED_TITLE_WORDS = 4;
+const MIN_LISTED_TITLE_RUN = 3;
+
+function isStatementSentence(line: string): boolean {
+  return (
+    ENDS_AS_A_SENTENCE.test(line) &&
+    wordCount(line) >= MIN_STATEMENT_SENTENCE_WORDS &&
+    !isBibliographicCitationSentence(line)
+  );
+}
+
+/**
+ * Lines of a research section that are one entry of a run of grant, publication or project
+ * titles: unpunctuated multi-word lines, at least `MIN_LISTED_TITLE_RUN` in a row. A lone
+ * unpunctuated line (a labelled interest list) is not a listed title.
+ */
+function listedTitleLines(lines: readonly string[]): boolean[] {
+  const looksLikeTitle = lines.map(
+    (line) => !ENDS_AS_A_SENTENCE.test(line) && wordCount(line) >= MIN_LISTED_TITLE_WORDS,
+  );
+  const listed = lines.map(() => false);
+  let runStart = 0;
+  for (let index = 0; index <= lines.length; index += 1) {
+    if (index < lines.length && looksLikeTitle[index]) continue;
+    if (index - runStart >= MIN_LISTED_TITLE_RUN) listed.fill(true, runStart, index);
+    runStart = index + 1;
+  }
+  return listed;
+}
+
+const CapTier = { OwnStatement: 0, Research: 1, Rest: 2 } as const;
+type CapTier = (typeof CapTier)[keyof typeof CapTier];
+
+const CAP_TIERS: readonly CapTier[] = [CapTier.OwnStatement, CapTier.Research, CapTier.Rest];
+
+interface CapLine {
+  index: number;
+  tier: CapTier;
+  research: boolean;
+}
+
+/**
+ * Which budget a line draws on. Statement sentences come first wherever they sit, so every page
+ * keeps its own prose up to a fair share before any page's lists. Research-section lines that
+ * are not sentences come next, except citations and runs of listed titles. Everything else shares
+ * what is left. With no research marks every line is `Rest`, which is the even share per page.
+ */
+function capLinesOf(lines: readonly string[], researchLines?: ReadonlySet<string>): CapLine[] {
+  if (!researchLines) {
+    return lines.map((_line, index) => ({ index, tier: CapTier.Rest, research: false }));
+  }
+  const listedTitle = listedTitleLines(lines);
+  return lines.map((line, index) => {
+    const research = researchLines.has(line);
+    if (isStatementSentence(line) && !listedTitle[index]) {
+      return { index, tier: CapTier.OwnStatement, research };
+    }
+    if (research && !listedTitle[index] && !isBibliographicCitationSentence(line)) {
+      return { index, tier: CapTier.Research, research };
+    }
+    return { index, tier: CapTier.Rest, research };
+  });
+}
+
+/** A tier's lines in the order the budget takes them: research lines first, then page order. */
+const selectionOrder = (capLines: readonly CapLine[], tier: CapTier): CapLine[] => {
+  const ofTier = capLines.filter((line) => line.tier === tier);
+  return [...ofTier.filter((line) => line.research), ...ofTier.filter((line) => !line.research)];
+};
+
+/**
+ * Caps a row's pages to `maxChars` in total (#6109). The budget is spent tier by tier, each tier
+ * shared fairly over the pages from what the tiers before it left: statement sentences first,
+ * a page's research sentences before its other ones, then research lines that are not sentences,
+ * then the rest. So each page keeps its own statements up to a fair share before another page's
+ * people list, chrome or list of grant titles takes any budget, and a long research page cannot
+ * push the other pages out. Kept lines stay in their page order, and a row under the cap is
+ * unchanged.
+ */
+export function capResearchPageText(
+  entries: readonly ResearchPageTextCapEntry[],
+  maxChars: number = MAX_RESEARCH_PAGE_TEXT_CHARS,
+): ResearchPageTextEntry[] {
+  const total = entries.reduce((sum, entry) => sum + entry.text.length, 0);
+  if (total <= maxChars) {
+    return entries
+      .map((entry) => ({ url: entry.url, text: entry.text }))
+      .filter((entry) => entry.text.length >= MIN_RESEARCH_PAGE_TEXT_CHARS);
+  }
+  const pages = entries.map((entry) => {
+    const lines = entry.text.split('\n');
+    const capLines = capLinesOf(lines, entry.researchLines);
+    return { entry, lines, order: CAP_TIERS.map((tier) => selectionOrder(capLines, tier)) };
+  });
+  const kept = pages.map(() => new Map<number, string>());
+  let left = maxChars;
+  for (const tier of CAP_TIERS) {
+    const budget = tier === CAP_TIERS[0] ? left : left - pages.length * LINE_BREAK_CHARS;
+    const tierLines = pages.map((page) => page.order[tier].map((line) => page.lines[line.index]));
+    const shares = fairShares(tierLines.map(lengthOfLines), Math.max(0, budget));
+    left = Math.max(0, budget - shares.reduce((sum, share) => sum + share, 0));
+    pages.forEach((page, pageIndex) => {
+      for (const [position, line] of linesWithin(tierLines[pageIndex], shares[pageIndex])) {
+        kept[pageIndex].set(page.order[tier][position].index, line);
+      }
+    });
+  }
+  return pages
+    .map((page, pageIndex) => ({
+      url: page.entry.url,
+      text: page.lines
+        .map((_line, index) => kept[pageIndex].get(index))
+        .filter((line): line is string => Boolean(line))
+        .join('\n')
+        .trim(),
     }))
     .filter((entry) => entry.text.length >= MIN_RESEARCH_PAGE_TEXT_CHARS);
 }
@@ -492,19 +678,66 @@ export function capResearchPageText(
 export function researchPageTextValue(
   pages: readonly FetchedResearchPage[],
 ): ResearchPageTextEntry[] {
+  return researchPageTextEntriesWithoutChrome(capResearchPageText(uncappedResearchPageText(pages)));
+}
+
+/** Each page's text before the cap, with the length of its leading research part. */
+function uncappedResearchPageText(
+  pages: readonly FetchedResearchPage[],
+): ResearchPageTextCapEntry[] {
   const seenUrls = new Set<string>();
-  const entries: ResearchPageTextEntry[] = [];
+  const entries: ResearchPageTextCapEntry[] = [];
+  const prose = (text: string): string =>
+    withoutResearchPageChromeMenusAndListings(redactDirectContactInfo(text)).trim();
   for (const page of pages) {
     if (seenUrls.has(page.url)) continue;
     seenUrls.add(page.url);
-    const text = withoutResearchPageChromeMenusAndListings(
-      redactDirectContactInfo(researchStatementTextOfPage(page.html, page.url)),
-    ).trim();
+    const parts = researchStatementPartsOfPage(page.html, page.url);
+    const text = prose([parts.research, parts.neutral].filter(Boolean).join('\n'));
     if (text.length < MIN_RESEARCH_PAGE_TEXT_CHARS) continue;
     if (entries.some((entry) => entry.text === text)) continue;
-    entries.push({ url: page.url, text });
+    entries.push({
+      url: page.url,
+      text,
+      researchLines: new Set(parts.researchLines.map(prose).filter(Boolean)),
+    });
   }
-  return researchPageTextEntriesWithoutChrome(capResearchPageText(entries));
+  return entries;
+}
+
+export interface ResearchPageTextCapComparison {
+  changed: boolean;
+  linesKeptOnlyByResearchFirst: number;
+  linesKeptOnlyByEvenShare: number;
+}
+
+/**
+ * The stored value under the research-first cap compared with the even share per page it
+ * replaced (#6109), read from the same fetched pages so a dry run can measure the change with
+ * no second fetch. Lines are compared as sets across the row.
+ */
+export function researchPageTextCapComparison(
+  pages: readonly FetchedResearchPage[],
+): ResearchPageTextCapComparison {
+  const uncapped = uncappedResearchPageText(pages);
+  const linesOf = (entries: readonly ResearchPageTextEntry[]): Set<string> =>
+    new Set(entries.flatMap((entry) => entry.text.split('\n')));
+  const researchFirst = linesOf(
+    researchPageTextEntriesWithoutChrome(capResearchPageText(uncapped)),
+  );
+  const evenShare = linesOf(
+    researchPageTextEntriesWithoutChrome(
+      capResearchPageText(uncapped.map(({ url, text }) => ({ url, text }))),
+    ),
+  );
+  const onlyIn = (a: Set<string>, b: Set<string>) => [...a].filter((line) => !b.has(line)).length;
+  const linesKeptOnlyByResearchFirst = onlyIn(researchFirst, evenShare);
+  const linesKeptOnlyByEvenShare = onlyIn(evenShare, researchFirst);
+  return {
+    changed: linesKeptOnlyByResearchFirst + linesKeptOnlyByEvenShare > 0,
+    linesKeptOnlyByResearchFirst,
+    linesKeptOnlyByEvenShare,
+  };
 }
 
 const textOf = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');

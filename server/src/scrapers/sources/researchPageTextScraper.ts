@@ -34,6 +34,7 @@ import {
   RESEARCH_PAGE_TEXT_CONTRACT,
   RESEARCH_PAGE_TEXT_FIELD,
   RESEARCH_PAGE_TEXT_SOURCE,
+  researchPageTextCapComparison,
   researchPageTextValue,
   type ResearchPageTextEntry,
 } from '../utils/researchPageText';
@@ -489,6 +490,10 @@ interface LaneCounts {
   hostReadOutcomes: HostReadOutcomes;
   contentUnchanged: number;
   charsStored: number;
+  capComparedRows: number;
+  capChangedRows: number;
+  capLinesGained: number;
+  capLinesLost: number;
 }
 
 /**
@@ -676,6 +681,18 @@ export class ResearchPageTextScraper implements IScraper {
       return { observations: [] };
     }
     const value = researchPageTextValue(fetched);
+    if (ctx.options.dryRun) {
+      const comparison = researchPageTextCapComparison(fetched);
+      counts.capComparedRows += 1;
+      if (comparison.changed) {
+        counts.capChangedRows += 1;
+        counts.capLinesGained += comparison.linesKeptOnlyByResearchFirst;
+        counts.capLinesLost += comparison.linesKeptOnlyByEvenShare;
+        ctx.log(
+          `[${row.slug || 'candidate'}] research-first cap changes this row: ${comparison.linesKeptOnlyByResearchFirst} lines kept that the even share cut, ${comparison.linesKeptOnlyByEvenShare} cut that it kept`,
+        );
+      }
+    }
     const contentHash = researchPageTextContentHash(value);
     const storedHash = await this.storedHashLoader(this.name, entityRef);
     if (contentUnchanged(storedHash, contentHash, false)) {
@@ -722,6 +739,10 @@ export class ResearchPageTextScraper implements IScraper {
       hostReadOutcomes: new Map(),
       contentUnchanged: 0,
       charsStored: 0,
+      capComparedRows: 0,
+      capChangedRows: 0,
+      capLinesGained: 0,
+      capLinesLost: 0,
     };
     let observationCount = 0;
     const concurrency = resolveSourceConcurrency(
@@ -838,7 +859,10 @@ export class ResearchPageTextScraper implements IScraper {
         (throttledNote ? ` Throttled rows, by host: ${throttledNote}.` : '') +
         (deferredNote ? ` Deferred, by host: ${deferredNote}.` : '') +
         (pausesMet ? ` Paused hosts: ${pausesMet}.` : '') +
-        (sustainedNote ? ` Refusing for a sustained period: ${sustainedNote}.` : ''),
+        (sustainedNote ? ` Refusing for a sustained period: ${sustainedNote}.` : '') +
+        (counts.capComparedRows > 0
+          ? ` Research-first cap (dry run): ${counts.capChangedRows} of ${counts.capComparedRows} rows change, ${counts.capLinesGained} lines kept that the even share cut, ${counts.capLinesLost} cut that it kept.`
+          : ''),
       metrics: {
         throttledRowsByHost,
         deferredRowsByHost,

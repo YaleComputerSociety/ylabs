@@ -3,6 +3,7 @@ import {
   MAX_RESEARCH_PAGE_TEXT_CHARS,
   capResearchPageText,
   researchPageTextEntries,
+  researchPageTextCapComparison,
   researchPageTextValue,
   researchStatementTextOfPage,
   truncateAtSentenceBoundary,
@@ -263,6 +264,180 @@ describe('capResearchPageText', () => {
   });
 });
 
+describe('capResearchPageText spends the budget on research lines first (#6109)', () => {
+  const sentence = (subject: string, n: number) =>
+    Array.from({ length: n }, (_v, i) => `The group studies ${subject} in setting ${i + 1}.`).join(
+      '\n',
+    );
+  const peopleList = (n: number) =>
+    Array.from({ length: n }, (_v, i) => `Member Fixture ${i + 1} Graduate Student`).join('\n');
+  const research = `${sentence('kelp forest recovery', 110)}\nThe last research sentence names coral bleaching.`;
+  const neutral = peopleList(60);
+
+  it("keeps a research sentence past the even share and cuts another page's people list first", () => {
+    const otherPage = peopleList(220);
+    const capped = capResearchPageText(
+      [
+        {
+          url: HOME,
+          text: `${research}\n${neutral}`,
+          researchLines: new Set(research.split('\n')),
+        },
+        { url: RESEARCH, text: otherPage, researchLines: new Set<string>() },
+      ],
+      research.length + 500,
+    );
+    expect(capped[0].text).toContain('The last research sentence names coral bleaching.');
+    expect(capped.reduce((sum, entry) => sum + entry.text.length, 0)).toBeLessThanOrEqual(
+      research.length + 500,
+    );
+    expect(capped[1].text.length).toBeLessThan(otherPage.length);
+  });
+
+  it('would have dropped that sentence under an even share per page', () => {
+    const otherPage = peopleList(220);
+    const capped = capResearchPageText(
+      [
+        { url: HOME, text: `${research}\n${neutral}` },
+        { url: RESEARCH, text: otherPage },
+      ],
+      research.length + 500,
+    );
+    expect(capped[0].text).not.toContain('The last research sentence names coral bleaching.');
+  });
+
+  it('leaves a row under the cap unchanged', () => {
+    const entries = [
+      { url: HOME, text: `${research}\n${neutral}`, researchLines: new Set(research.split('\n')) },
+      { url: RESEARCH, text: peopleList(5), researchLines: new Set<string>() },
+    ];
+    expect(capResearchPageText(entries, 100000)).toEqual(
+      entries.map(({ url, text }) => ({ url, text })),
+    );
+  });
+
+  it('shares the research budget fairly when research alone exceeds the cap', () => {
+    const capped = capResearchPageText(
+      [
+        {
+          url: HOME,
+          text: `${research}\n${neutral}`,
+          researchLines: new Set(research.split('\n')),
+        },
+        { url: RESEARCH, text: research, researchLines: new Set(research.split('\n')) },
+      ],
+      research.length,
+    );
+    expect(capped.every((entry) => !entry.text.includes('Member Fixture'))).toBe(true);
+    expect(capped.reduce((sum, entry) => sum + entry.text.length, 0)).toBeLessThanOrEqual(
+      research.length,
+    );
+  });
+
+  it('stores no cap bookkeeping in the value', () => {
+    const [entry] = capResearchPageText(
+      [{ url: HOME, text: research, researchLines: new Set(research.split('\n')) }],
+      100000,
+    );
+    expect(Object.keys(entry).sort()).toEqual(['text', 'url']);
+  });
+});
+
+describe('capResearchPageText keeps own statements ahead of listed titles (#6109)', () => {
+  const grantTitles = (n: number) =>
+    Array.from(
+      { length: n },
+      (_v, i) => `Mechanisms of Fixture Signaling in Model Tissue Number ${i + 1}`,
+    ).join('\n');
+  const citations = (n: number) =>
+    Array.from(
+      { length: n },
+      (_v, i) => `Fixture A, Fixture B. A fixture study ${i + 1}. J Fixture. 2019;12(3):45-67.`,
+    ).join('\n');
+  const biography = [
+    'Fixture Person is a physician scientist who studies kidney injury repair.',
+    'She is currently involved in a cohort study and continues writing on tissue fibrosis.',
+  ].join('\n');
+
+  it("keeps a biography's own research statements when a research section holds only titles and citations", () => {
+    const researchText = `${grantTitles(80)}\n${citations(40)}`;
+    const capped = capResearchPageText(
+      [
+        { url: RESEARCH, text: researchText, researchLines: new Set(researchText.split('\n')) },
+        { url: HOME, text: biography, researchLines: new Set<string>() },
+      ],
+      3000,
+    );
+    const home = capped.find((entry) => entry.url === HOME)?.text ?? '';
+    expect(home).toContain('who studies kidney injury repair.');
+    expect(home).toContain('continues writing on tissue fibrosis.');
+    expect(capped.reduce((sum, entry) => sum + entry.text.length, 0)).toBeLessThanOrEqual(3000);
+  });
+
+  it("keeps every page's own statements when a research page of long abstracts fills the cap", () => {
+    const abstracts = Array.from(
+      { length: 120 },
+      (_v, i) =>
+        `This fixture abstract ${i + 1} reports that tissue fibrosis follows injury in a model cohort of adults.`,
+    ).join('\n');
+    const otherPage = (subject: string) =>
+      `The program studies ${subject} across several fixture cohorts of adults and children.\nIt also trains graduate students in ${subject} methods and analysis.`;
+    const pages = [
+      { url: RESEARCH, text: abstracts, researchLines: new Set(abstracts.split('\n')) },
+      { url: HOME, text: biography, researchLines: new Set<string>() },
+      { url: `${HOME}/a`, text: otherPage('kidney imaging'), researchLines: new Set<string>() },
+      {
+        url: `${HOME}/b`,
+        text: otherPage('transplant outcomes'),
+        researchLines: new Set<string>(),
+      },
+    ];
+    const capped = capResearchPageText(pages, 6000);
+    expect(capped.map((entry) => entry.url).sort()).toEqual(pages.map((page) => page.url).sort());
+    expect(capped.find((entry) => entry.url === HOME)?.text).toBe(biography);
+    expect(capped.reduce((sum, entry) => sum + entry.text.length, 0)).toBeLessThanOrEqual(6000);
+  });
+
+  it('still gives a lone unpunctuated interest line in a research section the research budget', () => {
+    const interests =
+      'Research interests include kidney fibrosis, tissue repair, organ transplantation, immune tolerance and the long-term outcomes of kidney transplant recipients';
+    const people = Array.from(
+      { length: 400 },
+      (_v, i) => `Member Fixture ${i + 1} Graduate Student`,
+    ).join('\n');
+    const capped = capResearchPageText(
+      [
+        { url: RESEARCH, text: interests, researchLines: new Set([interests]) },
+        { url: HOME, text: people, researchLines: new Set<string>() },
+      ],
+      interests.length + 200,
+    );
+    expect(capped.find((entry) => entry.url === RESEARCH)?.text).toBe(interests);
+  });
+});
+
+describe('researchPageTextValue caps research sections before neutral ones (#6109)', () => {
+  const researchHtml = (n: number) =>
+    `<h2>Research</h2>${Array.from({ length: n }, (_v, i) => `<p>Our group studies coastal kelp recovery after marine heatwave number ${i + 1}.</p>`).join('')}<p>Our final research aim is coral reef resilience under warming.</p>`;
+  const peopleHtml = (n: number) =>
+    `<h2>People</h2><ul>${Array.from({ length: n }, (_v, i) => `<li>Member Fixture Number ${i + 1}, Graduate Student</li>`).join('')}</ul>`;
+
+  it('keeps the last research sentence of a long research section on a row at the cap', () => {
+    const value = researchPageTextValue([
+      {
+        url: HOME,
+        html: `<html><body><main>${peopleHtml(120)}${researchHtml(150)}</main></body></html>`,
+      },
+      { url: RESEARCH, html: `<html><body><main>${peopleHtml(500)}</main></body></html>` },
+    ] as any);
+    const total = value.reduce((sum, entry) => sum + entry.text.length, 0);
+    expect(total).toBeLessThanOrEqual(MAX_RESEARCH_PAGE_TEXT_CHARS);
+    expect(value.find((entry) => entry.url === HOME)?.text).toContain(
+      'Our final research aim is coral reef resilience under warming.',
+    );
+  });
+});
+
 describe('truncateAtSentenceBoundary', () => {
   it('cuts at the last sentence end inside the window', () => {
     expect(truncateAtSentenceBoundary('One two three. Four five six. Seven', 32)).toBe(
@@ -292,5 +467,67 @@ describe('researchPageTextEntries', () => {
       ]),
     ).toEqual([{ url: HOME, text: 'kelp' }]);
     expect(researchPageTextEntries(undefined)).toEqual([]);
+  });
+});
+
+describe('researchPageTextCapComparison (#6109)', () => {
+  const researchHtml = (n: number) =>
+    `<h2>Research</h2>${Array.from({ length: n }, (_v, i) => `<p>Our group studies coastal kelp recovery after marine heatwave number ${i + 1}.</p>`).join('')}<p>Our final research aim is coral reef resilience under warming.</p>`;
+  const peopleHtml = (n: number) =>
+    `<h2>People</h2><ul>${Array.from({ length: n }, (_v, i) => `<li>Member Fixture Number ${i + 1}, Graduate Student</li>`).join('')}</ul>`;
+
+  it('reports a row the research-first cap changes, from one set of fetched pages', () => {
+    const comparison = researchPageTextCapComparison([
+      {
+        url: HOME,
+        html: `<html><body><main>${peopleHtml(120)}${researchHtml(150)}</main></body></html>`,
+      },
+      { url: RESEARCH, html: `<html><body><main>${peopleHtml(500)}</main></body></html>` },
+    ] as any);
+    expect(comparison.changed).toBe(true);
+    expect(comparison.linesKeptOnlyByResearchFirst).toBeGreaterThan(0);
+  });
+
+  it('reports no change for a row under the cap', () => {
+    expect(
+      researchPageTextCapComparison([
+        {
+          url: HOME,
+          html: `<html><body><main>${researchHtml(5)}${peopleHtml(5)}</main></body></html>`,
+        },
+      ] as any),
+    ).toEqual({ changed: false, linesKeptOnlyByResearchFirst: 0, linesKeptOnlyByEvenShare: 0 });
+  });
+});
+
+describe('the research budget follows sections nested below a research heading (#6109)', () => {
+  const sentences = (subject: string, n: number) =>
+    Array.from(
+      { length: n },
+      (_v, i) => `<p>The group studies ${subject} in cohort ${i + 1}.</p>`,
+    ).join('');
+  const people = (n: number) =>
+    `<h2>People</h2><ul>${Array.from({ length: n }, (_v, i) => `<li>Member Fixture Number ${i + 1}, Graduate Student</li>`).join('')}</ul>`;
+  const nestedResearchPage = `<html><body><main><h2>Research</h2><p>Our laboratory works on blood cell development.</p><h3>Stem cell self-renewal</h3>${sentences('stem cell self-renewal', 120)}<p>The nested section ends by naming leukemia relapse.</p>${people(40)}</main></body></html>`;
+  const profilePage = `<html><body><main><h2>Research interests</h2>${sentences('immune signalling', 140)}${people(200)}</main></body></html>`;
+
+  it('keeps a research sentence under a nested sub-heading when the row is at the cap', () => {
+    const value = researchPageTextValue([
+      { url: HOME, html: nestedResearchPage },
+      { url: RESEARCH, html: profilePage },
+    ] as any);
+    expect(value.reduce((sum, entry) => sum + entry.text.length, 0)).toBeLessThanOrEqual(
+      MAX_RESEARCH_PAGE_TEXT_CHARS,
+    );
+    expect(value.find((entry) => entry.url === HOME)?.text).toContain(
+      'The nested section ends by naming leukemia relapse.',
+    );
+  });
+
+  it('leaves the stored text of a page under the cap in its existing order', () => {
+    const page = `<html><body><main><h2>Research</h2><p>Our laboratory works on blood cell development.</p><h3>Stem cell self-renewal</h3><p>The group studies stem cell self-renewal in cohort one.</p></main></body></html>`;
+    expect(researchPageTextValue([{ url: HOME, html: page }] as any)[0].text).toBe(
+      researchStatementTextOfPage(page, HOME),
+    );
   });
 });
