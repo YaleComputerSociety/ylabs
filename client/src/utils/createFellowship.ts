@@ -61,6 +61,7 @@ export function createFellowship(data: any): Fellowship {
     deadlineStale: data.deadlineStale === true,
     deadlineTextConflict:
       typeof data.deadlineTextConflict === 'string' ? data.deadlineTextConflict : null,
+    proseStatesPastCycleDates: data.proseStatesPastCycleDates === true,
     contactName: data.contactName || '',
     contactEmail: data.contactEmail || '',
     contactPhone: data.contactPhone || '',

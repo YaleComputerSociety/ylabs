@@ -65,6 +65,7 @@ export type Fellowship = {
   deadlineProjectedNextCycle?: boolean;
   deadlineStale?: boolean;
   deadlineTextConflict?: string | null;
+  proseStatesPastCycleDates?: boolean;
   citizenshipCondition?: string | null;
   contactName: string;
   contactEmail: string;

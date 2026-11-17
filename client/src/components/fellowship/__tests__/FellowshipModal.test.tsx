@@ -335,6 +335,22 @@ describe('FellowshipModal', () => {
     ).toBeTruthy();
   });
 
+  it('labels past-cycle dates in the description beside a current deadline (#6412)', () => {
+    renderModal({ proseStatesPastCycleDates: true });
+
+    expect(
+      within(screen.getByRole('dialog')).getByText(
+        'Dates in the description are from a past cycle; the deadline above is current.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('adds no past-cycle note when the prose dates agree with the deadline', () => {
+    renderModal({ proseStatesPastCycleDates: false });
+
+    expect(within(screen.getByRole('dialog')).queryByText(/from a past cycle/)).toBeNull();
+  });
+
   it('says nothing about the text when it agrees with the deadline', () => {
     renderModal({ deadlineTextConflict: null });
 

@@ -145,3 +145,23 @@ describe('createFellowship application materials (#5302)', () => {
     ).toEqual([]);
   });
 });
+
+describe('createFellowship past-cycle prose flag (#6412)', () => {
+  const served = (proseStatesPastCycleDates: unknown) =>
+    createFellowship({
+      _id: 'p-past-cycle-prose',
+      title: 'Synthetic Past Cycle Program',
+      deadline: '2027-03-05T23:59:59.999Z',
+      proseStatesPastCycleDates,
+      isAcceptingApplications: true,
+    });
+
+  it('carries the flag when the server sends it', () => {
+    expect(served(true).proseStatesPastCycleDates).toBe(true);
+  });
+
+  it('reads no flag when the server sends none', () => {
+    expect(served(undefined).proseStatesPastCycleDates).toBe(false);
+    expect(served('yes').proseStatesPastCycleDates).toBe(false);
+  });
+});

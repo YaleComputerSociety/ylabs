@@ -498,6 +498,12 @@ const FellowshipModal = ({
                                 the deadline on the official page.
                               </p>
                             )}
+                            {fellowship.proseStatesPastCycleDates && (
+                              <p className="mt-1 text-xs text-brand">
+                                Dates in the description are from a past cycle; the deadline above
+                                is current.
+                              </p>
+                            )}
                           </div>
                         </>
                       )}
