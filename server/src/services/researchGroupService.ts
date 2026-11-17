@@ -45,6 +45,10 @@ import {
   catalogDepartmentWithAncestors,
   getOrgUnitCanonicalizer,
 } from '../scrapers/orgUnitCanonicalization';
+import {
+  servedDepartmentCanonicalizer,
+  withCatalogDepartmentName,
+} from '../utils/catalogDepartmentDisplayName';
 import { resolveOrCreateResearcherIdUnlessRemoved } from '../scrapers/canonicalMembershipMaterializer';
 import { meshHeadingSpellings } from '../scrapers/meshNaturalOrder';
 import { currentDirectoryRemovalMintGuard, REMOVED_BY_REQUEST } from './directoryRemovalMintGuard';
@@ -5315,6 +5319,7 @@ export async function getResearchGroupDetail(
       member.row?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
       publicRosterMemberRows.has(member.row),
   );
+  const orgUnits = await servedDepartmentCanonicalizer();
   const members = boundedMembersWithRows.map(({ row, ...member }) => {
     const rosterEvidence = isFreshVerifiedOfficialRosterRow(
       row,
@@ -5336,7 +5341,7 @@ export async function getResearchGroupDetail(
       ...member,
       user: withPublicMemberLeadEmail(
         {
-          ...publicMemberUserForResearchDetail(member.user),
+          ...withCatalogDepartmentName(orgUnits, publicMemberUserForResearchDetail(member.user)),
           ...(rosterEvidence && !member.user?.title && row?.listingTitle
             ? { title: row.listingTitle }
             : {}),

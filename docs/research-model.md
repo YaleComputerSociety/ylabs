@@ -27,6 +27,8 @@ Eight live collections carry runtime research data.
 Public research identity, and a first-class findable entity in its own right: a grad student, PhD student, or researcher is findable even with no lab.
 [`server/src/models/researcher.ts`](../server/src/models/researcher.ts) defines `displayName`, an optional `accountId` link to the private login principal, `profileLinks[]` (`kind`: `YALE_OFFICIAL` | `LAB_ABOUT` | `PERSONAL_ACADEMIC` | `GOOGLE_SCHOLAR` | `ORCID`, each with `url`, `verifiedAt`, and `healthStatus`), an optional `identifiers.orcid`, `identifiers.netid` (the netid disambiguation spine) and `identifiers.email`, a `profile` display projection (`title`, `primaryDepartment`, `imageUrl`, `websiteUrl`), `status` (`ACTIVE` | `DEPARTED` | `UNKNOWN`), and `archived`.
 `Researcher` rows are created only from Yale-confirmed evidence; an external identifier such as ORCID never creates one by itself.
+`profile.primaryDepartment` is stored as its source spelled it, and a research detail member card serves it under the catalog unit's name when the org-unit catalog resolves it (`server/src/utils/catalogDepartmentDisplayName.ts`), so the card reads the same name the department filter does (#6380).
+The mapping runs after member ordering and same-person dedupe, which still compare the stored spelling, and a value the catalog does not resolve is served unchanged.
 
 `identifiers.email` is the researcher's own address, and the roster (`researchEntityMembershipAccessor.ts`) serves `identifiers.netid` and `identifiers.email`; a researcher holds no account link (#5092).
 They exist because `accounts` is becoming login-only (#5000): an account nobody signed into cannot be removed while it is the only place a researcher's identity lives.

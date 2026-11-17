@@ -81,6 +81,12 @@ vi.mock('../../models/researcher', () => ({
   },
 }));
 
+vi.mock('../../models/orgUnit', () => ({
+  OrgUnit: {
+    find: () => ({ select: () => ({ lean: async () => [] }) }),
+  },
+}));
+
 vi.mock('../../models/account', () => ({
   Account: {
     find: mocks.accountFind,
