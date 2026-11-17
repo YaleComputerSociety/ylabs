@@ -72,6 +72,7 @@ export function userKeysFromJson(text: string): string[] {
 
 export interface UserKeyPassRow {
   entityKey: string;
+  researcherId?: string;
   fieldsWritten: number;
   plannedPaths: string[];
   outOfScopePaths?: string[];
@@ -118,4 +119,43 @@ export function summarizeUserKeyPass(
     plannedPathSet: pathSet(rows.map((row) => row.plannedPaths)),
     outOfScopePathSet: pathSet(rows.map((row) => row.outOfScopePaths)),
   };
+}
+
+export function researcherIdsWrittenBy(rows: readonly UserKeyPassRow[]): string[] {
+  return [
+    ...new Set(
+      rows
+        .filter((row) => row.fieldsWritten > 0 && !row.error && row.researcherId)
+        .map((row) => row.researcherId as string),
+    ),
+  ];
+}
+
+export interface LedRowRegater {
+  add(entityIds: readonly string[]): Promise<void>;
+}
+
+/**
+ * Visits each key in order and, when a visit wrote the researcher, re-gates the research rows
+ * linked to that person before the next key, because a user-row write changes inputs those
+ * rows' tiers read and the materializer never recomputes a tier (#6374).
+ */
+export async function visitUserKeysRegatingLinkedRows(input: {
+  keys: readonly string[];
+  visit: (key: string) => Promise<UserKeyPassRow>;
+  linkedResearchEntityIds: (researcherIds: string[]) => Promise<string[]>;
+  regater?: LedRowRegater;
+  onRow?: (row: UserKeyPassRow) => void;
+}): Promise<UserKeyPassRow[]> {
+  const rows: UserKeyPassRow[] = [];
+  for (const key of input.keys) {
+    const row = await input.visit(key);
+    rows.push(row);
+    input.onRow?.(row);
+    const researcherIds = researcherIdsWrittenBy([row]);
+    if (input.regater && researcherIds.length > 0) {
+      await input.regater.add(await input.linkedResearchEntityIds(researcherIds));
+    }
+  }
+  return rows;
 }
