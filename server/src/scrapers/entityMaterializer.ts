@@ -767,6 +767,7 @@ interface MaterializeOptions {
   chunkPrefetch?: MaterializationReadSource;
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: CardSynthesizer;
+  readCachedWrittenBodyCard?: CardSynthesizer;
   resynthesizeCutCards?: boolean;
   resynthesizeWeakCards?: boolean;
   cardModel?: string;
@@ -1206,7 +1207,8 @@ export function writtenBodyCardShowsWhole(card: string, body: unknown): boolean 
 /**
  * The card a written body serves with. A candidate is acceptable when it is not a
  * topic-chip echo or the body itself and the serving bar accepts it; stored and observed
- * cards must also be grounded in the written body. The order is: the first acceptable
+ * cards must also be grounded in the written body. The order is: the card cached for this
+ * exact body when it is acceptable and shows whole (#6486); else the first acceptable
  * candidate (stored, then each copied card observation, then the body's own lead
  * sentence) that shows whole on the browse card; else a synthesized line that shows whole;
  * else the first acceptable candidate even though the browse card cuts it; else a
@@ -1229,6 +1231,7 @@ export async function resolveWrittenBodyCard(input: {
   evidenceTexts?: readonly string[];
   synthesize?: CardSynthesizer;
   isWeak?: (card: string) => boolean;
+  cachedCard?: unknown;
 }): Promise<WrittenBodyCardChoice> {
   const preferred = (card: string): boolean =>
     writtenBodyCardShowsWhole(card, input.body) && !(input.isWeak?.(card) ?? false);
@@ -1241,6 +1244,10 @@ export async function resolveWrittenBodyCard(input: {
       requireGrounding,
       evidenceTexts: input.evidenceTexts,
     });
+  const cached = textValue(input.cachedCard);
+  if (cached && acceptable(cached, false) && preferred(cached)) {
+    return { kind: 'synthesized', card: cached };
+  }
   const stored = textValue(input.storedCard);
   const candidates: Exclude<WrittenBodyCardChoice, { kind: 'none' }>[] = [];
   if (stored && acceptable(stored, true)) candidates.push({ kind: 'stored', card: stored });
@@ -11440,6 +11447,7 @@ export interface ProjectFromLogInput {
   mergedInRows?: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>;
   now: Date;
   synthesizeCardDescription?: CardSynthesizer;
+  readCachedWrittenBodyCard?: CardSynthesizer;
   resynthesizeCutCards?: boolean;
   resynthesizeWeakCards?: boolean;
   cardModel?: string;
@@ -13420,7 +13428,12 @@ export async function projectFromLog(
       const writtenBodyChanged =
         fullDescription !==
         sanitizeResearchEntityDescription(textValue(entityDoc?.fullDescription));
+      const readCachedCard =
+        input.readCachedWrittenBodyCard ??
+        ((body: string, evidenceTexts?: readonly string[]) =>
+          cachedCardFor({ fullDescription: body, evidenceTexts, entityName }));
       const choice = await resolveWrittenBodyCard({
+        cachedCard: await readCachedCard(fullDescription, cardEvidenceTexts),
         body: fullDescription,
         storedCard,
         observedCards: observedCards.map((candidate) => candidate.value),
@@ -15849,6 +15862,7 @@ async function materializeEntityUnderRemovalGuard(
     mergedInRows,
     now: projectionNow,
     synthesizeCardDescription: options.synthesizeCardDescription,
+    readCachedWrittenBodyCard: options.readCachedWrittenBodyCard,
     resynthesizeCutCards: options.resynthesizeCutCards,
     resynthesizeWeakCards: options.resynthesizeWeakCards,
     cardModel: options.cardModel,
