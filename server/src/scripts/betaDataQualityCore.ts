@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import type { ReferenceEdge } from './referenceEdgeAudit';
 import { resolveSafeJsonReportOutputPath, resolveSafeJsonReportPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 export type BetaDataQualitySeverity = 'ok' | 'warn' | 'error';
 export type DataQualityWarningClassification =
@@ -1405,7 +1406,7 @@ export function writeScorecardOutput(
   }
   const safeOutput = resolveSafeJsonReportOutputPath(outputPath);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(scorecard, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(scorecard, null, 2)}\n`);
 }
 
 export function buildBetaDataQualityOutput<T extends object>(

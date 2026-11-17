@@ -12,6 +12,7 @@ import {
   planGlobalRegionsDefaultFillCollapse,
   type GlobalRegionsDoc,
 } from './backfillGlobalRegionsDefaultFillCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -75,7 +76,7 @@ export function writeBackfillGlobalRegionsOutput(report: unknown, output?: strin
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function assertDevelopmentTarget(mongoUrl: string | undefined): void {

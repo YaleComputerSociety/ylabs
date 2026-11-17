@@ -31,6 +31,7 @@ import {
 } from './canonicalLegacyWriteSurfaceAuditCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import '../models';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,7 +114,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ ...report, target: summarizeMongoUrl(mongoUrl) }, null, 2));
     if (args.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(args.output);
-      fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+      writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
     }
   } finally {
     await client.close();

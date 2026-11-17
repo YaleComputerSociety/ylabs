@@ -8,6 +8,7 @@ import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -76,7 +77,7 @@ export function writeBetaReadinessGateOutput(result: unknown, output?: string): 
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
 }
 
 export function buildBetaReadinessGateOutput<T extends object>(

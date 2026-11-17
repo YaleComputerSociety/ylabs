@@ -37,6 +37,7 @@ import {
   type ResearchAreaBackfillPlanRow,
   type ResearchAreaBackfillSummary,
 } from './backfillResearchAreasCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -303,7 +304,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+      writeReportFileSync(safeOutput, JSON.stringify(payload, null, 2));
       console.log(`Saved research-area backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result.summary, null, 2));

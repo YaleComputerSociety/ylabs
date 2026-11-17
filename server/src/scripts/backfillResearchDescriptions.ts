@@ -128,6 +128,7 @@ import {
 } from '../utils/groundedCardSynthesis';
 import { planStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { postChatCompletion } from '../utils/modelClient';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -700,7 +701,7 @@ function writeBackfillReport(
   if (!options.output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(options.output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+  writeReportFileSync(safeOutput, JSON.stringify(payload, null, 2));
   console.log(`Saved ${label} report to ${safeOutput}`);
 }
 
