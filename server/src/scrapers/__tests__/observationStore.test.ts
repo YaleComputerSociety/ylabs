@@ -1688,6 +1688,10 @@ describe('collapseLatestWins on a directory or centres record retyped by a re-re
 });
 
 describe('every observation the store does not keep is named by its guard (#6441)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   const DEPLOY_HOST =
     'https://ysoa-2025-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff/example-person';
   const batch = () => [
@@ -1783,5 +1787,151 @@ describe('every observation the store does not keep is named by its guard (#6441
       0,
     );
     expect(result.skipped).toBe(fromGuards);
+  });
+});
+
+describe('each guard counts exactly the observation it holds (#6441)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const SHARED_PAGE = 'https://shared-center.example.edu/research/overview';
+  const run = (dryRun: boolean, overrides: Record<string, unknown> = {}) => ({
+    scrapeRunId: 'run-1',
+    sourceId: 'source-1',
+    sourceName: 'lab-microsite-description-llm',
+    sourceWeight: 0.82,
+    dryRun,
+    ...overrides,
+  });
+  const cases: Array<{
+    guard: string;
+    field: string;
+    inputs: () => any[];
+    ctx?: Record<string, unknown>;
+    opts?: Record<string, unknown>;
+    arrange?: () => void;
+    dryRun?: boolean;
+  }> = [
+    {
+      guard: 'removed-by-request',
+      field: 'name',
+      inputs: () => [
+        { entityType: 'user', entityKey: 'removed-person', field: 'name', value: 'Removed Person' },
+      ],
+      ctx: {
+        directoryRemovalGuard: async () => ({
+          active: true,
+          removedByRequest: 1,
+          withoutRemovedPeople: async (inputs: any[]) => ({ kept: [], refused: inputs }),
+        }),
+      },
+    },
+    {
+      guard: 'description-on-shared-page',
+      field: 'fullDescription',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'shared-page-lab',
+          field: 'fullDescription',
+          value: USEFUL_DESCRIPTION,
+          sourceUrl: SHARED_PAGE,
+        },
+      ],
+      arrange: () => {
+        vi.spyOn(Observation, 'find').mockImplementation((() => ({
+          lean: async () => [
+            { sourceUrl: SHARED_PAGE, entityKey: 'other-row-one' },
+            { sourceUrl: SHARED_PAGE, entityKey: 'other-row-two' },
+          ],
+        })) as never);
+      },
+      opts: { loadActiveProse: async () => undefined },
+    },
+    {
+      guard: 'furniture',
+      field: 'title',
+      inputs: () => [
+        {
+          entityType: 'user',
+          entityKey: 'abc123',
+          field: 'title',
+          value: 'HomeAboutPeopleContact',
+        },
+      ],
+    },
+    {
+      guard: 'invalid-enum',
+      field: 'entityType',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'entityType',
+          value: 'FACULTY_RESEARCH',
+        },
+      ],
+    },
+    {
+      guard: 'self-defeating-card',
+      field: 'shortDescription',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'shortDescription',
+          value: USEFUL_DESCRIPTION,
+        },
+      ],
+      opts: {
+        loadActiveProse: async (query: { field: string }) =>
+          query.field === 'fullDescription' ? USEFUL_DESCRIPTION : undefined,
+      },
+    },
+    {
+      guard: 'card-losing-pair',
+      field: 'fullDescription',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'card-lab',
+          field: 'fullDescription',
+          value: OTHER_RESEARCH,
+        },
+      ],
+      opts: {
+        loadActiveProse: async (query: { field: string }) =>
+          query.field === 'fullDescription' ? USEFUL_DESCRIPTION : undefined,
+        judgeDescriptionCard: async (_subject: unknown, pair: { fullDescription?: string }) =>
+          pair.fullDescription === USEFUL_DESCRIPTION,
+      },
+    },
+    {
+      guard: 'not-landed',
+      field: 'title',
+      dryRun: false,
+      inputs: () => [
+        { entityType: 'user', entityKey: 'synthetic-user', field: 'name', value: 'Synthetic Name' },
+        { entityType: 'user', entityKey: 'synthetic-user', field: 'title', value: 'Professor' },
+      ],
+      arrange: () => {
+        vi.spyOn(Observation, 'insertMany').mockImplementation((async (pending: any[]) =>
+          pending.filter((doc) => doc.field !== 'title')) as never);
+        vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as never);
+      },
+    },
+  ];
+
+  it.each(cases)('$guard holds its $field and the batch reconciles', async (testCase) => {
+    testCase.arrange?.();
+    const inputs = testCase.inputs();
+    const result = await appendObservations(
+      inputs,
+      run(testCase.dryRun ?? true, testCase.ctx) as never,
+      (testCase.opts ?? {}) as never,
+    );
+    expect(result.heldByGuard?.[testCase.guard as never]?.[testCase.field]).toBe(1);
+    expect(result.inserted + heldObservationCount(result.heldByGuard ?? {})).toBe(inputs.length);
   });
 });
