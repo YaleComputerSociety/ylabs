@@ -39,6 +39,7 @@ import {
   type StaffMintedEntityReason,
   type StaffMintedEntityRefused,
 } from './retireStaffMintedResearchEntitiesCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -649,7 +650,7 @@ async function main(): Promise<void> {
   const writeReport = () => {
     if (!outputPath) return;
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, JSON.stringify(report, null, 2), { mode: 0o600 });
+    writeReportFileSync(outputPath, JSON.stringify(report, null, 2));
   };
 
   writeReport();

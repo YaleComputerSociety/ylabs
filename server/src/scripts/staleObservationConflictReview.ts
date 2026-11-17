@@ -17,6 +17,7 @@ import {
   resolveSafeJsonReportPath,
 } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -547,7 +548,7 @@ export function writeStaleObservationConflictReviewOutput(summary: object, outpu
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(summary, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(summary, null, 2)}\n`);
 }
 
 export function buildStaleObservationConflictReviewOutput<T extends object>(
@@ -638,7 +639,9 @@ export function writeStaleObservationDecisionTemplate(
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output, '--decision-template-output');
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`, {
+    flag: '--decision-template-output',
+  });
 }
 
 export function readStaleObservationReviewDecisions(

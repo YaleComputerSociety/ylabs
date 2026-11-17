@@ -11,7 +11,6 @@
  *   SCRAPER_ENV=beta MONGODBURL="mongodb://..." tsx src/scripts/signalConsolidationMigration.ts --apply --confirm-signal-consolidation
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -22,6 +21,7 @@ import {
   type SignalConsolidationPlan,
 } from './signalConsolidationMigrationCore';
 import { connectScriptMongo } from '../db/connections';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -127,7 +127,7 @@ async function main() {
   };
   console.log(JSON.stringify(output, null, 2));
   if (options.output) {
-    fs.writeFileSync(options.output, JSON.stringify(output, null, 2));
+    writeReportFileSync(options.output, JSON.stringify(output, null, 2));
   }
 }
 

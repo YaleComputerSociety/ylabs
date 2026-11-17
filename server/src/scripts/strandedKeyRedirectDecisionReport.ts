@@ -74,6 +74,7 @@ import {
   type StrandedKeyTarget,
 } from './strandedKeyRedirectDecisionCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 export const STRANDED_KEY_REDIRECT_REASON = 'stranded_key_evidence_merge';
 export const STRANDED_KEY_RETIRE_REASON = 'stranded_key_retired';
@@ -534,7 +535,7 @@ async function main(): Promise<void> {
 
   if (safeOutput) {
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(
+    writeReportFileSync(
       safeOutput,
       `${JSON.stringify({ ...report, outcomes, researchPlanCarry }, null, 2)}\n`,
     );
