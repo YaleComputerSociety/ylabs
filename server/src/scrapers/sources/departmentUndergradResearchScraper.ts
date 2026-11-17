@@ -4,6 +4,7 @@
  * This source captures source-backed undergraduate research routes from Yale
  * department pages. It emits access evidence, not active posted opportunities.
  */
+import { sanitizedObservedFellowshipProse } from '../fellowshipProse';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
@@ -78,6 +79,7 @@ export interface DepartmentUndergradResearchRecord {
   description: string;
   shortDescription?: string;
   evidenceQuote: string;
+  sourceText?: string;
   undergradAccessEvidence: boolean;
   contactName?: string;
   contactEmail?: string;
@@ -691,6 +693,7 @@ export function parsePhysicsUndergradResearchPage(
       description: fullDescription,
       shortDescription: projectShortDescription(fullDescription),
       evidenceQuote: conciseText(body),
+      sourceText: body,
       undergradAccessEvidence: true,
       contactName: name,
       contactEmail: email,
@@ -725,6 +728,7 @@ export function parseGeneralDepartmentResearchPage(
       description: description.fullDescription,
       shortDescription: description.shortDescription,
       evidenceQuote: description.evidenceQuote,
+      sourceText: text,
       undergradAccessEvidence: true,
       contactRole: 'Faculty member for undergraduate research',
       pageTitle,
@@ -762,6 +766,7 @@ export function parseStructuredOpportunityPage(
       description: description.fullDescription,
       shortDescription: description.shortDescription,
       evidenceQuote: description.evidenceQuote,
+      sourceText: text,
       undergradAccessEvidence: true,
       contactEmail,
       contactRole: contactEmail ? 'Program contact for undergraduate research' : undefined,
@@ -821,6 +826,10 @@ function programRecordToFellowshipObservations(
   }
   if (record.pageTitle) {
     observations.push({ ...base, field: 'sourcePageTitle', value: record.pageTitle });
+  }
+  const fullSourceDescription = sanitizedObservedFellowshipProse(record.sourceText);
+  if (fullSourceDescription) {
+    observations.push({ ...base, field: 'fullSourceDescription', value: fullSourceDescription });
   }
   return observations;
 }

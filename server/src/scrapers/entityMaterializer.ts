@@ -559,6 +559,10 @@ import { withResearchEntityWriteTransaction } from '../services/researchEntityWr
 import { carryResearchPlansToSurvivor } from '../services/researchPlanMergeCarry';
 import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import {
+  advancedSourceLastVerifiedAt,
+  latestFellowshipSourceReadAt,
+} from './fellowshipSourceVerification';
+import {
   applyResearchEntityOrgUnitCanonicalization,
   getOrgUnitCanonicalizer,
   researchEntityOrgUnitProfileUrls,
@@ -14204,6 +14208,14 @@ export async function projectFromLog(
     lockedFields: manuallyLockedFields,
   });
   Object.assign(set, storedTextNormalization.set);
+
+  if (entityType === 'fellowship') {
+    const sourceLastVerifiedAt = advancedSourceLastVerifiedAt(
+      entityDoc?.sourceLastVerifiedAt,
+      latestFellowshipSourceReadAt(materializationObs, set.sourceName ?? entityDoc?.sourceName),
+    );
+    if (sourceLastVerifiedAt) set.sourceLastVerifiedAt = sourceLastVerifiedAt;
+  }
 
   if (entityType === 'fellowship') {
     for (const field of fellowshipFieldsWithheldBySourcePrecedence({
