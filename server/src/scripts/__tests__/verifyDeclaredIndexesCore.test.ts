@@ -222,7 +222,7 @@ describe('verifyDeclaredIndexes on the real models', () => {
     for (const modelName of mongoose.connection.modelNames()) {
       await mongoose.connection.model(modelName).createIndexes();
     }
-  }, 120_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
