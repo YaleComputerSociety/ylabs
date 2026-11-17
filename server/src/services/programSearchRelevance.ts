@@ -284,6 +284,8 @@ const FUNDING_PROGRAM_KINDS: ReadonlySet<string> = new Set([
 
 const STATED_PAY_SUMMARY = /\bstipends?\b|\bpaid\b|\$\s?\d|\bhourly\b|\bwages?\b/i;
 
+const NEGATED_PAY_SUMMARY = /\b(?:no|not|without|unpaid|volunteer)\b/i;
+
 const hasText = (value: unknown): value is string =>
   typeof value === 'string' && value.trim() !== '';
 
@@ -293,8 +295,10 @@ const hasText = (value: unknown): value is string =>
  * (#6398).
  */
 const statesPay = (program: Record<string, unknown>): boolean =>
-  hasText(program.awardAmount) ||
-  (hasText(program.compensationSummary) && STATED_PAY_SUMMARY.test(program.compensationSummary));
+  (hasText(program.awardAmount) && /\d/.test(program.awardAmount)) ||
+  (hasText(program.compensationSummary) &&
+    STATED_PAY_SUMMARY.test(program.compensationSummary) &&
+    !NEGATED_PAY_SUMMARY.test(program.compensationSummary));
 
 /**
  * "funded", "funding" and "grant" ask for a program that offers funding, which its kind or role
@@ -389,18 +393,20 @@ export const rankProgramSearch = <T extends Record<string, unknown>>(
   const asksForPay = payWords.length > 0;
   const asksForFunding = fundingWords.length > 0;
   const contentWords = otherWords.filter((word) => !isIntentWord(word));
+  const titleMayAnswer = (program: T, words: readonly string[]) =>
+    contentWords.length > 0 && titleNamesAny(program, words);
   const standing = (program: T) => (years.size > 0 ? yearStanding(program, years) : 'unstated');
   const eligible = programs
     .map((program, order) => ({ program, order, standing: standing(program) }))
     .filter((entry) => entry.standing !== 'excludes')
     .filter(
-      (entry) => !asksForPay || statesPay(entry.program) || titleNamesAny(entry.program, payWords),
+      (entry) => !asksForPay || statesPay(entry.program) || titleMayAnswer(entry.program, payWords),
     )
     .filter(
       (entry) =>
         !asksForFunding ||
         offersFunding(entry.program) ||
-        titleNamesAny(entry.program, fundingWords),
+        titleMayAnswer(entry.program, fundingWords),
     );
   if (contentWords.length === 0) {
     const answeredByStatedFields = years.size > 0 || asksForPay || asksForFunding;

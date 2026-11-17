@@ -393,7 +393,6 @@ describe('rankProgramSearch pay and thesis wording (#6398)', () => {
     ]);
     expect(titles(rankedPrograms('stipend', catalog)).sort()).toEqual([
       'Internship Program',
-      'Painting Stipend',
       'Summer Lab Fellowship',
       'Thesis Support Grant',
     ]);
@@ -408,6 +407,33 @@ describe('rankProgramSearch pay and thesis wording (#6398)', () => {
     ]);
     expect(titles(rankedPrograms('painting stipend', catalog))).toEqual(['Painting Stipend']);
     expect(titles(rankedPrograms('painting paid', catalog))).toEqual([]);
+  });
+
+  it('never lets a title that only mentions a pay or funding word answer a bare intent query', () => {
+    const mentionsOnly = [
+      program('Grant Writing Workshop', 'Learn to write proposals.', { programKind: 'OTHER' }),
+      program('Stipend Policy', 'How stipends are taxed.', { programKind: 'OTHER' }),
+      program('Harbor Mentoring Fund', 'Mentoring for new students.', {
+        programKind: 'MENTOR_MATCHING',
+        programRole: 'STARTS_RESEARCH',
+      }),
+    ];
+    expect(titles(rankedPrograms('grant', mentionsOnly))).toEqual([]);
+    expect(titles(rankedPrograms('stipend', mentionsOnly))).toEqual([]);
+    expect(titles(rankedPrograms('funded', mentionsOnly))).toEqual([]);
+    expect(titles(rankedPrograms('grant writing', mentionsOnly))).toEqual([
+      'Grant Writing Workshop',
+    ]);
+  });
+
+  it('reads no pay from an amount with no figure or a summary that negates pay', () => {
+    const unpaid = [
+      program('Volunteer Lab Placement', 'Lab placement.', {
+        awardAmount: 'Varies',
+        compensationSummary: 'Unpaid volunteer placement, no stipend',
+      }),
+    ];
+    expect(titles(rankedPrograms('paid', unpaid))).toEqual([]);
   });
 
   it('never infers pay from prose or from a summary that only says funding when awarded', () => {
