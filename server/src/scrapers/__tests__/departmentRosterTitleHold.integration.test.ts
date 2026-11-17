@@ -161,6 +161,36 @@ describe('pickRosterTitleForRunEnd (#5801)', () => {
   });
 });
 
+describe('pickRosterTitleForRunEnd across runs (#6345)', () => {
+  it('withholds a staff-only listing while the lane holds a live faculty title', () => {
+    expect(pickRosterTitleForRunEnd([held('Laboratory Manager')], false, true)).toEqual({
+      outcome: 'withheld-beside-live-faculty-title',
+    });
+  });
+
+  it('still emits a listing that states a faculty appointment', () => {
+    const pick = pickRosterTitleForRunEnd([held('Lecturer in Chemistry')], false, true);
+    expect(pick.outcome).toBe('listing');
+    expect(pick.observation?.value).toBe('Lecturer in Chemistry');
+  });
+
+  it('lets a fresh profile read replace the live faculty title', () => {
+    const pick = pickRosterTitleForRunEnd(
+      [held('Laboratory Manager', { fromProfilePage: true })],
+      false,
+      true,
+    );
+    expect(pick.outcome).toBe('profile');
+    expect(pick.observation?.value).toBe('Laboratory Manager');
+  });
+
+  it('emits the staff listing once no faculty title is live', () => {
+    const pick = pickRosterTitleForRunEnd([held('Laboratory Manager')], false, false);
+    expect(pick.outcome).toBe('listing');
+    expect(pick.observation?.value).toBe('Laboratory Manager');
+  });
+});
+
 describe('dept-faculty-roster holds titles to the end of the run (#5801), live', () => {
   let replSet: MongoMemoryReplSet;
   let server: http.Server;
@@ -258,6 +288,45 @@ describe('dept-faculty-roster holds titles to the end of the run (#5801), live',
     secondListing.title = 'Lecturer in Physics';
     await scrape([physics]);
     expect(await liveTitles()).toEqual(['Associate Professor of Chemistry']);
+  });
+
+  it('keeps a faculty title when a later run reads only a staff listing (#6345)', async () => {
+    firstListing.title = 'Professor of Chemistry';
+    await scrape([chemistry]);
+    expect(await liveTitles()).toEqual(['Professor of Chemistry']);
+
+    secondListing.title = 'Laboratory Manager';
+    await scrape([physics]);
+    expect(await liveTitles()).toEqual(['Professor of Chemistry']);
+  });
+
+  it('takes the staff listing when the faculty title is no longer live (#6345)', async () => {
+    firstListing.title = 'Professor of Chemistry';
+    await scrape([chemistry]);
+    await Observation.updateMany(
+      { sourceName: SOURCE_NAME, entityKey: PERSON_KEY, field: 'title' },
+      { $set: { superseded: true } },
+    );
+
+    secondListing.title = 'Laboratory Manager';
+    await scrape([physics]);
+    expect(await liveTitles()).toEqual(['Laboratory Manager']);
+  });
+
+  it('does not let a truncated faculty title block a staff listing (#6345)', async () => {
+    await mongoose.connection.db!.collection('observations').insertOne({
+      sourceName: SOURCE_NAME,
+      entityType: 'user',
+      entityKey: PERSON_KEY,
+      field: 'title',
+      value: 'Professor of',
+      superseded: false,
+      observedAt: new Date('2026-11-01T00:00:00Z'),
+    });
+
+    secondListing.title = 'Laboratory Manager';
+    await scrape([physics]);
+    expect(await liveTitles()).toContain('Laboratory Manager');
   });
 
   it('leaves the stored title standing when a later run reads only disagreeing listings', async () => {

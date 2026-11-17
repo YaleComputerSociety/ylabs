@@ -4559,7 +4559,8 @@ export type RosterTitleOutcome =
   | 'home-department-listing'
   | 'withheld-beside-stored-profile-read'
   | 'conflicting-profile-reads'
-  | 'conflicting-listings';
+  | 'conflicting-listings'
+  | 'withheld-beside-live-faculty-title';
 
 const distinctTitleValues = (held: readonly HeldRosterTitle[]): string[] => [
   ...new Set(held.map((title) => String(title.observation.value).replace(/\s+/g, ' ').trim())),
@@ -4573,7 +4574,28 @@ const soleTitle = (held: readonly HeldRosterTitle[]): HeldRosterTitle | undefine
 // profile read (cause 3).
 // A faculty-appointment listing outranks a staff one, as for typing. Emitting nothing on
 // ambiguity is deliberate: it leaves the stored title standing.
+// Across runs the same rank applies: a later scoped run that reads only a staff listing must not
+// replace the faculty appointment the lane already holds live, the way `userType` is spared
+// (#6345). A profile read still wins, and a key whose faculty title is no longer live takes the
+// staff listing, because then nothing first-hand states the appointment any more.
 export function pickRosterTitleForRunEnd(
+  held: readonly HeldRosterTitle[],
+  hasStoredProfileRead: boolean,
+  hasLiveFacultyTitle = false,
+): { observation?: ObservationInput; outcome: RosterTitleOutcome } {
+  const pick = pickRosterTitleWithinRun(held, hasStoredProfileRead);
+  if (
+    hasLiveFacultyTitle &&
+    pick.observation &&
+    pick.outcome !== 'profile' &&
+    !statesAnyFacultyAppointment(String(pick.observation.value))
+  ) {
+    return { outcome: 'withheld-beside-live-faculty-title' };
+  }
+  return pick;
+}
+
+function pickRosterTitleWithinRun(
   held: readonly HeldRosterTitle[],
   hasStoredProfileRead: boolean,
 ): { observation?: ObservationInput; outcome: RosterTitleOutcome } {
@@ -4666,6 +4688,7 @@ export async function loadUserKeysWithALiveFacultyTitle(
         (title) =>
           title.entityKey &&
           typeof title.value === 'string' &&
+          !isTruncatedPersonTitle(title.value) &&
           statesAnyFacultyAppointment(title.value),
       )
       .map((title) => title.entityKey as string),
@@ -5878,6 +5901,7 @@ export class DepartmentRosterScraper implements IScraper {
       const { observation, outcome } = pickRosterTitleForRunEnd(
         held,
         profileTitledUserKeys.has(entityKey),
+        facultyTitledUserKeys.has(entityKey),
       );
       titleOutcomes.set(outcome, (titleOutcomes.get(outcome) ?? 0) + 1);
       if (observation) heldTitles.push(observation);
