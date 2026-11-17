@@ -170,6 +170,38 @@ export function storedValueCountsAsPresent(
   return Boolean(storedWriter(writers, field));
 }
 
+const nameTokens = (value: unknown): string[] =>
+  typeof value === 'string'
+    ? value
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z\s'-]/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean)
+    : [];
+
+export type FillOnlyNameStanding = 'fuller' | 'shorter';
+
+/**
+ * How a candidate name compares with the stored one when both are held on fill-only evidence
+ * (#6431). A directory or roster lists a first and last name only, so between fill-only
+ * writers the stated name with more tokens wins when the two agree on the first and the last
+ * name and the shorter one's tokens all appear in it; any other pair is left to the rank.
+ */
+export function fillOnlyNameStanding(
+  candidate: unknown,
+  stored: unknown,
+): FillOnlyNameStanding | undefined {
+  const next = nameTokens(candidate);
+  const held = nameTokens(stored);
+  if (next.length < 2 || held.length < 2 || next.length === held.length) return undefined;
+  const [shorter, longer] = next.length < held.length ? [next, held] : [held, next];
+  const sameEnds = shorter[0] === longer[0] && shorter.at(-1) === longer.at(-1);
+  if (!sameEnds || !shorter.every((token) => longer.includes(token))) return undefined;
+  return next.length > held.length ? 'fuller' : 'shorter';
+}
+
 export type ResearcherFieldWriteDecision =
   | { write: true; writer: ResearcherFieldWriter; writerChanged: boolean }
   | { write: false; releaseWriter: boolean };
@@ -238,6 +270,7 @@ export function decideResearcherFieldWrite(
   hasValue: boolean,
   storedValuePresent = false,
   valueOutranksStored = false,
+  nameStanding?: FillOnlyNameStanding,
 ): ResearcherFieldWriteDecision {
   const recorded = storedWriter(writers, field);
   const current =
@@ -249,7 +282,18 @@ export function decideResearcherFieldWrite(
   if (candidate.fillOnly && !holdsField && storedValuePresent && !current?.fillOnly) {
     return { write: false, releaseWriter: false };
   }
-  if (current && !holdsField && !valueOutranksStored && !writerOutranks(candidate, current)) {
+  const settlesAsFillOnlyNames = Boolean(candidate.fillOnly && current?.fillOnly && !holdsField);
+  if (settlesAsFillOnlyNames && nameStanding === 'shorter') {
+    return { write: false, releaseWriter: false };
+  }
+  const outranksByName = settlesAsFillOnlyNames && nameStanding === 'fuller';
+  if (
+    current &&
+    !holdsField &&
+    !valueOutranksStored &&
+    !outranksByName &&
+    !writerOutranks(candidate, current)
+  ) {
     return { write: false, releaseWriter: false };
   }
   const writerChanged =

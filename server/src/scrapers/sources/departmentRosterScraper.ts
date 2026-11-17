@@ -119,6 +119,7 @@ import {
   isPostingPageUrl,
   isPersonProfileOrDirectoryUrl,
   isSharedPeopleRosterUrl,
+  isStagingSiteUrl,
 } from '../../utils/researchHomeWebsiteUrl';
 import { personIdentityTokens } from '../../utils/researchHomeNameIdentityAuthority';
 import {
@@ -5095,6 +5096,17 @@ export function withoutTrailingPostNominals(name: string): string {
 }
 
 /**
+ * A roster entry whose lab link is a hosting provider's environment or a staging copy keeps no
+ * lab link, so the lane neither files it as the person's website nor mints a lab from it
+ * (#6432).
+ */
+export function withoutStagingSiteLabUrl(entry: FacultyEntry): FacultyEntry {
+  if (!entry.labUrl || !isStagingSiteUrl(entry.labUrl)) return entry;
+  const { labUrl: _stagingSite, ...rest } = entry;
+  return rest;
+}
+
+/**
  * A roster entry whose given-name position holds a credential ("PhD <surname>") names no
  * person, so the lane mints no person and no research row from it (#5969). A given name
  * that is spelled like a credential but written as a name ("Ma", "Do") is a name and stays.
@@ -5525,7 +5537,8 @@ export class DepartmentRosterScraper implements IScraper {
         ? await this.legacyKeyRowLoader(rekeyedSlugs)
         : new Map();
 
-      for (const { entry } of withoutSharedGroupWebsites(enriched)) {
+      for (const { entry: listedEntry } of withoutSharedGroupWebsites(enriched)) {
+        const entry = withoutStagingSiteLabUrl(listedEntry);
         if (rosterEntryGivenNameIsACredential(entry)) {
           const withdrawnKey = rosterMintWithdrawnEntityKey(entry, dept, {
             observations: [],

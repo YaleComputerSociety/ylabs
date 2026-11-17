@@ -38,6 +38,7 @@ import {
   decideUnprovenKeyFieldWrite,
   isUnprovenNetidKeyOnNameJoin,
   isFillOnlyFieldValue,
+  fillOnlyNameStanding,
   isFillOnlyIdentityJoin,
   writerHeldOnFillOnlyEvidence,
   researcherFieldWriter,
@@ -749,6 +750,7 @@ import {
   mergeGroupJoinsDistinctPeople,
 } from '../services/distinctPeopleVerdicts';
 import { distinctPeopleVerdictPairsJoinedByFold } from './distinctPeopleVerdict';
+import { nameJoinedWebsiteFillIsWitnessed } from './nameJoinedWebsiteFill';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -9037,6 +9039,7 @@ export interface UserIdentityJoinResult {
   imageUrl: string | undefined;
   websiteUrl: string | undefined;
   websiteUrlConfidence: number | undefined;
+  websiteUrlSources?: readonly string[];
   orcid: string | undefined;
   profileUrls: Record<string, unknown> | undefined;
   account: any;
@@ -9318,6 +9321,7 @@ function deriveUserIdentityFields(materializationObs: any[], now: Date) {
   ]);
   const websiteUrl = textValue(websiteCandidate?.value) || undefined;
   const websiteUrlConfidence = websiteCandidate?.confidence;
+  const websiteUrlSources = websiteCandidate?.contributingSources;
   const orcid = plausiblePersonOrcid(resolvedValue('orcid')) || undefined;
   const profileUrls =
     resolvedValue('profileUrls') && typeof resolvedValue('profileUrls') === 'object'
@@ -10689,6 +10693,7 @@ async function materializeUserIdentityToResearcher(
     imageUrl,
     websiteUrl,
     websiteUrlConfidence,
+    websiteUrlSources,
     orcid,
     profileUrls,
     personNameHeldByNobody,
@@ -10926,6 +10931,7 @@ async function materializeUserIdentityToResearcher(
       Boolean(value),
       storedValuePresent,
       valueOutranksStored,
+      field === 'displayName' ? fillOnlyNameStanding(value, researcher.displayName) : undefined,
     );
     if (!decision.write) {
       if (decision.releaseWriter) researcher.profileFieldWriters.delete(field);
@@ -11049,6 +11055,19 @@ async function materializeUserIdentityToResearcher(
       key === 'websiteUrl' &&
       websiteStandsBelowStored(bounded, storedWebsiteSurvivingScreens) &&
       !storedValueHeldOnlyOnFillOnlyEvidence(key)
+    ) {
+      continue;
+    }
+    if (
+      key === 'websiteUrl' &&
+      bounded &&
+      !textValue(storedWebsiteSurvivingScreens) &&
+      isFillOnlyIdentityJoin('websiteUrl', identityJoin) &&
+      !nameJoinedWebsiteFillIsWitnessed({
+        url: bounded,
+        personName: displayName || researcher.displayName,
+        contributingSources: websiteUrlSources,
+      })
     ) {
       continue;
     }
