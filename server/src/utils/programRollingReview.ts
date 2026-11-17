@@ -38,7 +38,8 @@ export function programStatesRollingReview(program: unknown): boolean {
   const texts = PROGRAM_TEXT_FIELDS.map((field) => record[field]).filter(
     (text): text is string => typeof text === 'string',
   );
-  if (texts.some((text) => ROLLING_DEADLINE.test(text) && RECURRING_CUTOFF.test(text))) return false;
+  if (texts.some((text) => ROLLING_DEADLINE.test(text) && RECURRING_CUTOFF.test(text)))
+    return false;
   return texts.some((text) =>
     text.replace(/\s+/g, ' ').split(SENTENCE_BREAK).some(sentenceStatesRollingReview),
   );

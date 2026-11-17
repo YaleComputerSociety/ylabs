@@ -414,9 +414,7 @@ export interface ServedProgramDeadline {
 export const servedProgramDeadline = (program: any, now: Date): ServedProgramDeadline => {
   const servedWindow = servedProgramDeadlineWindow(program, now);
   const rollingReview =
-    Boolean(servedWindow.deadline) &&
-    !servedWindow.closed &&
-    programStatesRollingReview(program);
+    Boolean(servedWindow.deadline) && !servedWindow.closed && programStatesRollingReview(program);
   return { ...servedWindow, rollingReview };
 };
 

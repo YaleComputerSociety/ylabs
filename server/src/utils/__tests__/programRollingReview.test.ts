@@ -37,7 +37,9 @@ describe('programStatesRollingReview (#6407)', () => {
       }),
     ).toBe(false);
     expect(
-      programStatesRollingReview({ description: 'Applications are reviewed monthly on a rolling basis.' }),
+      programStatesRollingReview({
+        description: 'Applications are reviewed monthly on a rolling basis.',
+      }),
     ).toBe(false);
   });
 
@@ -62,7 +64,8 @@ describe('programStatesRollingReview (#6407)', () => {
   it('ignores rolling that is not about the application', () => {
     expect(
       programStatesRollingReview({
-        description: 'Fieldwork takes place in the rolling hills of the study region. Applications are due March 1.',
+        description:
+          'Fieldwork takes place in the rolling hills of the study region. Applications are due March 1.',
       }),
     ).toBe(false);
   });

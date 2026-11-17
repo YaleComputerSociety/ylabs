@@ -823,7 +823,8 @@ describe('a rolling-review program serves its date as the close of the window (#
   it('marks the served deadline as a rolling window when the stored source text says so', () => {
     const payload = publicFellowshipForStudent(
       program({
-        fullSourceDescription: 'Applications are accepted throughout the semester on a rolling basis.',
+        fullSourceDescription:
+          'Applications are accepted throughout the semester on a rolling basis.',
       }),
       now,
     );
