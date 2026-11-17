@@ -288,7 +288,7 @@ describe('rankProgramSearch year words (#6397)', () => {
   });
 
   it('never returns a program whose stated years exclude the year, even when its text names it', () => {
-    for (const query of ['first-year', 'freshman research', 'first year research grant']) {
+    for (const query of ['first-year', 'freshman research', 'first year research']) {
       const returned = titles(rankedPrograms(query, catalog));
       expect(returned).not.toContain('Upper Year Research Grant');
       expect(returned).not.toContain('Graduate Field Grant');
@@ -303,7 +303,7 @@ describe('rankProgramSearch year words (#6397)', () => {
   });
 
   it('leaves a query with no year word unchanged', () => {
-    expect(titles(rankedPrograms('research grant', catalog)).sort()).toEqual([
+    expect(titles(rankedPrograms('research', catalog)).sort()).toEqual([
       'Graduate Field Grant',
       'Open Research Grant',
       'Starter Research Grant',
@@ -355,5 +355,108 @@ describe('rankProgramSearch year words (#6397)', () => {
     expect(titles(rankedPrograms('rising freshmen', [...catalog, incomingGrant]))).toEqual([
       'Incoming Scholar Grant',
     ]);
+  });
+});
+
+describe('rankProgramSearch pay and thesis wording (#6398)', () => {
+  const catalog = [
+    program('Summer Lab Fellowship', 'Supports summer lab research.', { awardAmount: '$4,000' }),
+    program('Painting Stipend', 'A paid stipend for studio work in the summer.'),
+    program('Internship Program', 'A research internship.', {
+      compensationSummary: 'Paid internship',
+    }),
+    program('Travel Grant', 'Research travel.', {
+      compensationSummary: 'Fieldwork travel support when awarded',
+    }),
+    program('Essay Support Grant', 'Funds senior essay research.', {
+      programKind: 'SENIOR_THESIS_FUNDING',
+    }),
+    program('Thesis Support Grant', 'Funds senior thesis research.', { awardAmount: '$500' }),
+  ];
+
+  const fundingCatalog = [
+    program('Summer Lab Fellowship', 'Supports summer lab research.', { awardAmount: '$4,000' }),
+    program('Amountless Travel Fund', 'Research travel.', {
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      compensationSummary: 'Fieldwork travel support when awarded',
+    }),
+    program('Donor Program', 'A mentoring program funded by a generous donor.', {
+      programKind: 'STRUCTURED_PROGRAM',
+    }),
+  ];
+
+  it('answers paid from a stated award amount or a compensation summary that names pay', () => {
+    expect(titles(rankedPrograms('paid', catalog))).toEqual([
+      'Summer Lab Fellowship',
+      'Internship Program',
+      'Thesis Support Grant',
+    ]);
+    expect(titles(rankedPrograms('stipend', catalog)).sort()).toEqual([
+      'Internship Program',
+      'Summer Lab Fellowship',
+      'Thesis Support Grant',
+    ]);
+  });
+
+  it('still finds a program by its own title when the title carries a pay or funding word', () => {
+    const namedGrant = program('Harbor Research Grant', 'Recognizes research.', {
+      programKind: 'RESEARCH_AWARD',
+    });
+    expect(titles(rankedPrograms('harbor grant', [...catalog, namedGrant]))).toEqual([
+      'Harbor Research Grant',
+    ]);
+    expect(titles(rankedPrograms('painting stipend', catalog))).toEqual(['Painting Stipend']);
+    expect(titles(rankedPrograms('painting paid', catalog))).toEqual([]);
+  });
+
+  it('never lets a title that only mentions a pay or funding word answer a bare intent query', () => {
+    const mentionsOnly = [
+      program('Grant Writing Workshop', 'Learn to write proposals.', { programKind: 'OTHER' }),
+      program('Stipend Policy', 'How stipends are taxed.', { programKind: 'OTHER' }),
+      program('Harbor Mentoring Fund', 'Mentoring for new students.', {
+        programKind: 'MENTOR_MATCHING',
+        programRole: 'STARTS_RESEARCH',
+      }),
+    ];
+    expect(titles(rankedPrograms('grant', mentionsOnly))).toEqual([]);
+    expect(titles(rankedPrograms('stipend', mentionsOnly))).toEqual([]);
+    expect(titles(rankedPrograms('funded', mentionsOnly))).toEqual([]);
+    expect(titles(rankedPrograms('grant writing', mentionsOnly))).toEqual([
+      'Grant Writing Workshop',
+    ]);
+  });
+
+  it('reads no pay from an amount with no figure or a summary that negates pay', () => {
+    const unpaid = [
+      program('Volunteer Lab Placement', 'Lab placement.', {
+        awardAmount: 'Varies',
+        compensationSummary: 'Unpaid volunteer placement, no stipend',
+      }),
+    ];
+    expect(titles(rankedPrograms('paid', unpaid))).toEqual([]);
+  });
+
+  it('never infers pay from prose or from a summary that only says funding when awarded', () => {
+    const returned = titles(rankedPrograms('paid summer', catalog));
+    expect(returned).toEqual(['Summer Lab Fellowship']);
+    expect(returned).not.toContain('Painting Stipend');
+    expect(titles(rankedPrograms('paid', catalog))).not.toContain('Travel Grant');
+  });
+
+  it('answers funded and grant from a funding kind or role, so an amountless fund still counts', () => {
+    for (const query of ['funded', 'grant', 'funding']) {
+      expect(titles(rankedPrograms(query, fundingCatalog)).sort()).toEqual([
+        'Amountless Travel Fund',
+        'Summer Lab Fellowship',
+      ]);
+    }
+    expect(titles(rankedPrograms('paid', fundingCatalog))).toEqual(['Summer Lab Fellowship']);
+  });
+
+  it('reads thesis and essay as the same piece of work', () => {
+    const thesis = titles(rankedPrograms('senior thesis', catalog)).sort();
+    const essay = titles(rankedPrograms('senior essay', catalog)).sort();
+    expect(thesis).toEqual(['Essay Support Grant', 'Thesis Support Grant']);
+    expect(essay).toEqual(thesis);
   });
 });

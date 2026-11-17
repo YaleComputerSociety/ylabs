@@ -21,6 +21,7 @@ import {
   checkServedRowsAreInServedTier,
   checkServedRowsPassTheGate,
   checkWalkCoversReportedTotal,
+  checkStatedFieldQueriesServeTheirRows,
   checkYearQueriesServeTheStatedYear,
   tallyProgramFieldAttribution,
   tallyServedRowGate,
@@ -759,6 +760,104 @@ const yearWordsServeTheStatedYear: ProgramJourneyCase = {
   },
 };
 
+const PAY_WORD_QUERIES = [
+  { query: 'paid', intentWord: 'paid' },
+  { query: 'stipend', intentWord: 'stipend' },
+  { query: 'paid research', intentWord: 'paid' },
+] as const;
+
+const FUNDING_WORD_QUERIES = [
+  { query: 'funded', intentWord: 'funded' },
+  { query: 'grant', intentWord: 'grant' },
+] as const;
+
+const THESIS_WORD_QUERIES = ['senior thesis', 'senior essay'] as const;
+
+const STATED_DOLLAR_AMOUNT = /\$\s?\d/;
+
+const COMPENSATION_NAMING_PAY = /\d|\b(?:paid|pays?|stipends?|wages?|salary|salaried|hourly)\b/i;
+
+const titleCarriesWord = (row: Record<string, unknown>, word: string): boolean =>
+  typeof row.title === 'string' &&
+  row.title
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .some((titleWord) => titleWord === word || titleWord === `${word}s`);
+
+const payAndThesisWordsServeTheStatedField: ProgramJourneyCase = {
+  id: 'programs-pay-and-thesis-words-serve-the-stated-field',
+  title:
+    'A pay or thesis query serves every program that states an amount or is senior-thesis funding',
+  surface: PROGRAMS_SURFACE.id,
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const catalog = (await walkProgramBrowseLikeTheClient(context, {})).rows.filter((row) =>
+      rowKey(row),
+    );
+    const keysWhere = (predicate: (row: Record<string, unknown>) => boolean) =>
+      catalog.filter(predicate).map(rowKey);
+    const statesAmount = (row: Record<string, unknown>) =>
+      hasText(row.awardAmount) ||
+      (typeof row.compensationSummary === 'string' &&
+        STATED_DOLLAR_AMOUNT.test(row.compensationSummary));
+    const namesPay = (row: Record<string, unknown>) =>
+      hasText(row.awardAmount) ||
+      (typeof row.compensationSummary === 'string' &&
+        COMPENSATION_NAMING_PAY.test(row.compensationSummary));
+    const thesisFunding = keysWhere((row) => row.programKind === 'SENIOR_THESIS_FUNDING');
+    const fundingKinds = new Set([
+      'FELLOWSHIP_FUNDING',
+      'TRAVEL_RESEARCH_GRANT',
+      'SENIOR_THESIS_FUNDING',
+    ]);
+    const isFundingProgram = (row: Record<string, unknown>) =>
+      (typeof row.programKind === 'string' && fundingKinds.has(row.programKind)) ||
+      row.programRole === 'FUNDS_RESEARCH';
+    const walks = [];
+    for (const { query, intentWord } of PAY_WORD_QUERIES) {
+      const { rows } = await walkProgramBrowseLikeTheClient(context, { query });
+      walks.push({
+        query,
+        servedKeys: rows.map(rowKey).filter(Boolean),
+        requiredKeys: keysWhere(statesAmount),
+        allowedKeys: keysWhere((row) => namesPay(row) || titleCarriesWord(row, intentWord)),
+      });
+    }
+    for (const { query, intentWord } of FUNDING_WORD_QUERIES) {
+      const { rows } = await walkProgramBrowseLikeTheClient(context, { query });
+      walks.push({
+        query,
+        servedKeys: rows.map(rowKey).filter(Boolean),
+        requiredKeys: keysWhere(isFundingProgram),
+        allowedKeys: keysWhere(
+          (row) => isFundingProgram(row) || namesPay(row) || titleCarriesWord(row, intentWord),
+        ),
+      });
+    }
+    for (const query of THESIS_WORD_QUERIES) {
+      const { rows } = await walkProgramBrowseLikeTheClient(context, { query });
+      walks.push({
+        query,
+        servedKeys: rows.map(rowKey).filter(Boolean),
+        requiredKeys: thesisFunding,
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkStatedFieldQueriesServeTheirRows(
+          'programs-pay-and-thesis-queries-serve-stated-rows',
+          'Pay queries serve every program stating an amount and none whose compensation names no pay; thesis and essay queries serve every senior-thesis funding program',
+          walks,
+          corpusBefore,
+          corpusAfter,
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
 const studentYearWordsReachSourcedYear: ProgramJourneyCase = {
   id: 'programs-student-year-words-reach-sourced-year',
   title: "A student's word for their year reaches the programs the source files under it",
@@ -836,5 +935,6 @@ export const programJourneyCases: readonly ProgramJourneyCase[] = [
   ...programSurfaceCases(PROGRAMS_SURFACE),
   studentYearWordsReachSourcedYear,
   yearWordsServeTheStatedYear,
+  payAndThesisWordsServeTheStatedField,
   anAddedWordNarrowsTheResults,
 ];
