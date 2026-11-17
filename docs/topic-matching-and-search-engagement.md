@@ -83,3 +83,8 @@ The same holds for search success (#4007): engaged searches, returned-but-ignore
 Without that, an outage alone lowers Search success, because a degraded search that returned nothing cannot be engaged, and the low-result list can surface a query whose only low counts came from the fallback.
 The client `research_search` event reports the same case as the `degraded` outcome rather than `zero_results`, and the research page replaces its coverage-gap recovery with a limited-search notice.
 Attribution is computed from existing bounded analytics events and does not copy query text or direct contact information onto action events.
+
+## Query length
+
+Live research searches are short: of 997 Production searches from 2026-07 to 2026-11-17, 94% had one or two words and 1.6% had four or more, so a retrieval change aimed at long goal phrasings was not built (#6421).
+Re-measure the word-count share monthly from `analytics_events` (`eventType: 'search'`), returning counts only and never query text, before reopening that decision.

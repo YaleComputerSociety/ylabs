@@ -165,6 +165,16 @@ A read-only harness scores the real ranking path against a frozen judged set and
 - Queries: real Production topic queries, names and lab names removed.
 - Judgements: graded 0 to 3 on the pooled top 10 of keyword-only, semantic-only and fused rankings, by a written guide; the owner calibrates the judge on a sample.
 - Use: advisory, never a merge gate, compared against a stored baseline, in line with how `journey:eval` treats rates.
+- Reporting: every search gate, this benchmark and the rerank sets alike, reports its result weighted to the live word-count mix beside the unweighted result, and names the weights' source and date.
+Weight by word-count band (one, two, three, four or more words) and bootstrap within each band.
+The weights come from Production `analytics_events` search counts read through the read-only credential, counts only, and are re-measured monthly (see `docs/topic-matching-and-search-engagement.md`, "Query length").
+The unweighted set over-represents long queries: on 2026-11-17 the blind 170 was 47% four-or-more-word queries against 1.6% of live searches, and 3.5% one-word queries against 66%, so an unweighted gain can sit almost entirely in a query shape students rarely type (#6421).
+A band with fewer than about 20 queries makes its weighted interval underpowered, and the report says so.
+- One-word stratum: a permanent blind stratum of 120 one-word queries (W1 to W120) is part of the gate set beside the blind 170.
+It was drawn on 2026-11-17 by class from Production search logs through the read-only credential: field names 40, topics 33, abbreviations 15, misspellings 12, methods 9, molecular terms 6, organisms 5.
+Any query matching a researcher name token was dropped, and queries about access rather than a topic (such as undergraduate, fellowship or first-year wording) are excluded.
+Its queries and grades stay local, like the blind 170's, and every gate reports it with the other strata.
+It exists because one-word queries are 66% of live traffic but 6 of the blind 170, so without it the most heavily weighted band is always underpowered.
 - Privacy: Production queries are student input, so the committed fixture holds only queries searched at least twice, after the person-identifier scan and owner review; anything else stays outside the repository.
 
 A second instrument stays separate: the lane scorecard over frozen pages (`lane_benchmark_pages`) labelled with the sampled rows' topic lists, which moves only when lane code changes.
