@@ -224,6 +224,9 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
    */
   titleCoveredKeys?: string[];
   removedByRequest?: number;
+  /** Observations the lane emitted, and per guard the ones the store held, by field (#6441). */
+  observationsEmitted?: number;
+  observationsHeldByGuard?: Record<string, Record<string, number>>;
   rekeyedPersonKeys?: RekeyedPersonKeyRunSummary;
   descriptionSlotAttestation?: {
     vocabulary: number;

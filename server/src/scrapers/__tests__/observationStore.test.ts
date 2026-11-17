@@ -16,6 +16,7 @@ import {
   selfDefeatingCardRestatesFullDescription,
   usesLatestWinsFingerprint,
 } from '../observationStore';
+import { heldObservationCount } from '../observationHolds';
 import {
   fullDescriptionQuality,
   shortDescriptionQuality,
@@ -411,7 +412,7 @@ describe('appendObservations deploy-host citation refusal (#2805)', () => {
     );
 
     expect(insertMany).not.toHaveBeenCalled();
-    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
   });
 
   it('still writes the same observation cited to the Yale page that serves it', async () => {
@@ -423,7 +424,7 @@ describe('appendObservations deploy-host citation refusal (#2805)', () => {
     const result = await append('https://www.art.yale.edu/people/faculty-and-staff/example-person');
 
     expect(insertMany).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ inserted: 1, skipped: 0, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 1, skipped: 0, superseded: 0 });
   });
 });
 
@@ -466,7 +467,7 @@ describe('appendObservations', () => {
     expect(insertMany).toHaveBeenCalledTimes(1);
     const inserted = insertMany.mock.calls[0][0] as Array<{ field: string }>;
     expect(inserted.map((doc) => doc.field)).toEqual(['fullDescription']);
-    expect(result).toEqual({ inserted: 1, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 1, skipped: 1, superseded: 0 });
   });
 
   it('drops a card that restates a full already active for the same source', async () => {
@@ -495,7 +496,7 @@ describe('appendObservations', () => {
     );
 
     expect(insertMany).not.toHaveBeenCalled();
-    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
   });
 
   it('still persists a distinct card emitted alongside its full', async () => {
@@ -561,7 +562,7 @@ describe('appendObservations', () => {
     );
 
     expect(insertMany).not.toHaveBeenCalled();
-    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
   });
 
   it('does not persist a degraded short that would supersede a clean same-source one', async () => {
@@ -589,7 +590,7 @@ describe('appendObservations', () => {
     );
 
     expect(insertMany).not.toHaveBeenCalled();
-    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
   });
 
   it('persists a degraded description when no clean same-source value exists', async () => {
@@ -674,7 +675,7 @@ describe('appendObservations', () => {
         },
       },
     });
-    expect(result).toEqual({ inserted: 2, skipped: 0, superseded: 2 });
+    expect(result).toMatchObject({ inserted: 2, skipped: 0, superseded: 2 });
   });
 
   it('supersedes duplicate fingerprints with one bulk write per append batch', async () => {
@@ -718,7 +719,7 @@ describe('appendObservations', () => {
 
     expect(bulkWrite).toHaveBeenCalledTimes(1);
     expect(bulkWrite.mock.calls[0][0]).toHaveLength(2);
-    expect(result).toEqual({ inserted: 2, skipped: 0, superseded: 2 });
+    expect(result).toMatchObject({ inserted: 2, skipped: 0, superseded: 2 });
   });
 
   it('supersedes over every observation that landed when a transient insert failure is retried', async () => {
@@ -781,7 +782,7 @@ describe('appendObservations', () => {
         String(op.updateMany.update.$set.supersededBy),
       );
       expect(supersededBy).toEqual(firstBatch.map((doc) => String(doc._id)));
-      expect(result).toEqual({ inserted: 2, skipped: 0, superseded: 2 });
+      expect(result).toMatchObject({ inserted: 2, skipped: 0, superseded: 2 });
     } finally {
       vi.useRealTimers();
     }
@@ -873,7 +874,7 @@ describe('appendObservations', () => {
       field: 'name',
       sourceUrl: 'https://medicine.yale.edu/lab/qin-yan/',
     });
-    expect(result).toEqual({ inserted: 1, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 1, skipped: 1, superseded: 0 });
   });
 
   it('skips the whole batch when every observation is sourced from our own site', async () => {
@@ -901,7 +902,7 @@ describe('appendObservations', () => {
 
     expect(insertMany).not.toHaveBeenCalled();
     expect(bulkWrite).not.toHaveBeenCalled();
-    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
   });
 
   it('coerces a bare-string sourceUrls value into a single-element array before insert (#observation-array-integrity)', async () => {
@@ -959,7 +960,7 @@ describe('appendObservations', () => {
 
     expect(insertMany).not.toHaveBeenCalled();
     expect(bulkWrite).not.toHaveBeenCalled();
-    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
   });
 
   it('rejects an entityType observation value outside the researchEntityTypes enum before insert (#observation-array-integrity)', async () => {
@@ -986,7 +987,7 @@ describe('appendObservations', () => {
 
     expect(insertMany).not.toHaveBeenCalled();
     expect(bulkWrite).not.toHaveBeenCalled();
-    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
   });
 
   it('rejects a furniture-shaped person title at ingest and stores the sanitized name (#1375)', async () => {
@@ -1022,7 +1023,7 @@ describe('appendObservations', () => {
     const insertedDocs = insertMany.mock.calls[0][0] as any[];
     expect(insertedDocs).toHaveLength(1);
     expect(insertedDocs[0]).toMatchObject({ field: 'name', value: 'Ada Lovelace' });
-    expect(result).toEqual({ inserted: 1, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 1, skipped: 1, superseded: 0 });
   });
 
   it('stores a chrome-stripped description with its public contact at ingest (#1375, #5046)', async () => {
@@ -1082,7 +1083,7 @@ describe('appendObservations', () => {
 
     expect(insertMany).not.toHaveBeenCalled();
     expect(bulkWrite).not.toHaveBeenCalled();
-    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
   });
 });
 
@@ -1329,7 +1330,7 @@ describe('appendObservations weaker-prose write path (#2232)', () => {
     const result = await append(MISSION, RESEARCH);
 
     expect(insertMany).not.toHaveBeenCalled();
-    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
   });
 
   it('persists research prose over a mission incumbent, so the home can recover', async () => {
@@ -1683,5 +1684,280 @@ describe('collapseLatestWins on a directory or centres record retyped by a re-re
     expect(
       collapsed.filter((observation) => observation.sourceName === 'nih-reporter'),
     ).toHaveLength(2);
+  });
+});
+
+describe('every observation the store does not keep is named by its guard (#6441)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const DEPLOY_HOST =
+    'https://ysoa-2025-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff/example-person';
+  const batch = () => [
+    {
+      entityType: 'researchEntity' as const,
+      entityKey: 'guard-fixture-lab',
+      field: 'websiteUrl',
+      value: 'https://guard-fixture-lab.example.edu/',
+      sourceUrl: DEPLOY_HOST,
+    },
+    {
+      entityType: 'researchEntity' as const,
+      entityKey: 'guard-fixture-lab',
+      field: 'kind',
+      value: 'lab',
+      sourceUrl: 'https://guard-fixture-lab.example.edu/',
+    },
+    {
+      entityType: 'researchEntity' as const,
+      entityKey: 'guard-fixture-lab',
+      field: 'fullDescription',
+      value: MISSION,
+    },
+    {
+      entityType: 'researchEntity' as const,
+      entityKey: 'guard-fixture-lab',
+      field: 'researchAreas',
+      value: ['tissue regeneration'],
+      sourceUrl: 'https://guard-fixture-lab.example.edu/',
+    },
+  ];
+  const ctx = (dryRun: boolean) => ({
+    scrapeRunId: 'run-1',
+    sourceId: 'source-1',
+    sourceName: 'lab-microsite-description-llm',
+    sourceWeight: 0.82,
+    dryRun,
+  });
+
+  it('reconciles a dry run exactly: emitted equals held, by guard and field', async () => {
+    const inputs = batch();
+    const result = await appendObservations(inputs, ctx(true), {
+      loadActiveProse: async () => RESEARCH,
+    });
+
+    expect(result.inserted).toBe(0);
+    expect(heldObservationCount(result.heldByGuard ?? {})).toBe(inputs.length);
+    expect(result.heldByGuard?.['uncitable-host']).toEqual({ websiteUrl: 1 });
+    expect(result.heldByGuard?.['retired-field']).toEqual({ kind: 1 });
+    expect(result.heldByGuard?.['dry-run']).toEqual({ researchAreas: 1 });
+    const proseHeld =
+      (result.heldByGuard?.['weaker-prose']?.fullDescription ?? 0) +
+      (result.heldByGuard?.['regressive-prose']?.fullDescription ?? 0);
+    expect(proseHeld).toBe(1);
+  });
+
+  it('reconciles an apply exactly: emitted equals stored plus held', async () => {
+    vi.spyOn(Observation, 'insertMany').mockImplementation(
+      (async (docs: unknown[]) => docs) as never,
+    );
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as never);
+    const inputs = batch();
+    const result = await appendObservations(inputs, ctx(false), {
+      loadActiveProse: async () => RESEARCH,
+    });
+
+    expect(result.inserted).toBe(1);
+    expect(result.inserted + heldObservationCount(result.heldByGuard ?? {})).toBe(inputs.length);
+    expect(result.heldByGuard?.['dry-run']).toBeUndefined();
+  });
+
+  it('keeps the existing skipped total unchanged', async () => {
+    vi.spyOn(Observation, 'insertMany').mockImplementation(
+      (async (docs: unknown[]) => docs) as never,
+    );
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as never);
+    const result = await appendObservations(batch(), ctx(false), {
+      loadActiveProse: async () => RESEARCH,
+    });
+    const guardsInSkipped = [
+      'uncitable-host',
+      'furniture',
+      'retired-field',
+      'invalid-enum',
+      'self-defeating-card',
+      'regressive-prose',
+      'weaker-prose',
+      'card-losing-pair',
+    ] as const;
+    const fromGuards = guardsInSkipped.reduce(
+      (total, guard) =>
+        total + Object.values(result.heldByGuard?.[guard] ?? {}).reduce((sum, n) => sum + n, 0),
+      0,
+    );
+    expect(result.skipped).toBe(fromGuards);
+  });
+});
+
+describe('each guard counts exactly the observation it holds (#6441)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const SHARED_PAGE = 'https://shared-center.example.edu/research/overview';
+  const run = (dryRun: boolean, overrides: Record<string, unknown> = {}) => ({
+    scrapeRunId: 'run-1',
+    sourceId: 'source-1',
+    sourceName: 'lab-microsite-description-llm',
+    sourceWeight: 0.82,
+    dryRun,
+    ...overrides,
+  });
+  const cases: Array<{
+    guard: string;
+    field: string;
+    inputs: () => any[];
+    ctx?: Record<string, unknown>;
+    opts?: Record<string, unknown>;
+    arrange?: () => void;
+    dryRun?: boolean;
+  }> = [
+    {
+      guard: 'removed-by-request',
+      field: 'name',
+      inputs: () => [
+        { entityType: 'user', entityKey: 'removed-person', field: 'name', value: 'Removed Person' },
+      ],
+      ctx: {
+        directoryRemovalGuard: async () => ({
+          active: true,
+          removedByRequest: 1,
+          withoutRemovedPeople: async (inputs: any[]) => ({ kept: [], refused: inputs }),
+        }),
+      },
+    },
+    {
+      guard: 'description-on-shared-page',
+      field: 'fullDescription',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'shared-page-lab',
+          field: 'fullDescription',
+          value: USEFUL_DESCRIPTION,
+          sourceUrl: SHARED_PAGE,
+        },
+      ],
+      arrange: () => {
+        vi.spyOn(Observation, 'find').mockImplementation((() => ({
+          lean: async () => [
+            { sourceUrl: SHARED_PAGE, entityKey: 'other-row-one' },
+            { sourceUrl: SHARED_PAGE, entityKey: 'other-row-two' },
+          ],
+        })) as never);
+      },
+      opts: { loadActiveProse: async () => undefined },
+    },
+    {
+      guard: 'furniture',
+      field: 'title',
+      inputs: () => [
+        {
+          entityType: 'user',
+          entityKey: 'abc123',
+          field: 'title',
+          value: 'HomeAboutPeopleContact',
+        },
+      ],
+    },
+    {
+      guard: 'invalid-enum',
+      field: 'entityType',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'entityType',
+          value: 'FACULTY_RESEARCH',
+        },
+      ],
+    },
+    {
+      guard: 'self-defeating-card',
+      field: 'shortDescription',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'shortDescription',
+          value: USEFUL_DESCRIPTION,
+        },
+      ],
+      opts: {
+        loadActiveProse: async (query: { field: string }) =>
+          query.field === 'fullDescription' ? USEFUL_DESCRIPTION : undefined,
+      },
+    },
+    {
+      guard: 'regressive-prose',
+      field: 'fullDescription',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'fullDescription',
+          value: DEGRADED_DESCRIPTION,
+        },
+      ],
+      opts: { loadActiveProse: async () => USEFUL_DESCRIPTION },
+    },
+    {
+      guard: 'weaker-prose',
+      field: 'fullDescription',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'horsley-lab',
+          field: 'fullDescription',
+          value: MISSION,
+        },
+      ],
+      opts: { loadActiveProse: async () => RESEARCH },
+    },
+    {
+      guard: 'card-losing-pair',
+      field: 'fullDescription',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'card-lab',
+          field: 'fullDescription',
+          value: OTHER_RESEARCH,
+        },
+      ],
+      opts: {
+        loadActiveProse: async (query: { field: string }) =>
+          query.field === 'fullDescription' ? USEFUL_DESCRIPTION : undefined,
+        judgeDescriptionCard: async (_subject: unknown, pair: { fullDescription?: string }) =>
+          pair.fullDescription === USEFUL_DESCRIPTION,
+      },
+    },
+    {
+      guard: 'not-landed',
+      field: 'title',
+      dryRun: false,
+      inputs: () => [
+        { entityType: 'user', entityKey: 'synthetic-user', field: 'name', value: 'Synthetic Name' },
+        { entityType: 'user', entityKey: 'synthetic-user', field: 'title', value: 'Professor' },
+      ],
+      arrange: () => {
+        vi.spyOn(Observation, 'insertMany').mockImplementation((async (pending: any[]) =>
+          pending.filter((doc) => doc.field !== 'title')) as never);
+        vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as never);
+      },
+    },
+  ];
+
+  it.each(cases)('$guard holds its $field and the batch reconciles', async (testCase) => {
+    testCase.arrange?.();
+    const inputs = testCase.inputs();
+    const result = await appendObservations(
+      inputs,
+      run(testCase.dryRun ?? true, testCase.ctx) as never,
+      (testCase.opts ?? {}) as never,
+    );
+    expect(result.heldByGuard?.[testCase.guard as never]?.[testCase.field]).toBe(1);
+    expect(result.inserted + heldObservationCount(result.heldByGuard ?? {})).toBe(inputs.length);
   });
 });

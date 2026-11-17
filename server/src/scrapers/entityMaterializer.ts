@@ -5,6 +5,7 @@
  * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
+import { loadStatedLabDeparture } from './statedLabDepartureEvidence';
 import { startLongRunProgress } from '../utils/longRunProgress';
 import { withholdLastCitationRemovals } from '../services/lastCitationGuard';
 import {
@@ -15772,10 +15773,22 @@ async function materializeEntityUnderRemovalGuard(
       storedFieldIsCreditedToACoursePage(entityDoc, 'researchAreas') ||
       (await storedResearchAreasSourceRetiredItsClaim(entityDoc, mergedInRows)));
 
-  const leadPageDeparture =
+  const leadOwnPageDeparture =
     isResearchEntityObservationType(entityType) && entityDoc?._id
       ? await loadResearchEntityLeadPageDeparture(String(entityDoc._id), options.now ?? new Date())
       : undefined;
+  const leadPageDeparture: PersonPageDeparture | undefined =
+    leadOwnPageDeparture ??
+    (isResearchEntityObservationType(entityType) &&
+    entityDoc?._id &&
+    (
+      await loadStatedLabDeparture({
+        researchEntityId: String(entityDoc._id),
+        slug: String(entityDoc.slug ?? ''),
+      })
+    )?.departed
+      ? 'departed'
+      : undefined);
   const projection = await projectFromLog(entityType, {
     leadPageDeparture,
     resolved,

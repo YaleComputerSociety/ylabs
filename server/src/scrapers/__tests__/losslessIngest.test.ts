@@ -60,7 +60,7 @@ describe('C4_LOSSLESS_INGEST ingest gating', () => {
       { loadActiveProse: async () => USEFUL_DESCRIPTION },
     );
     expect(insertMany).not.toHaveBeenCalled();
-    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(result).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
   });
 
   it('flag ON: keeps the degraded description (lossless) and does not supersede latest-wins rows', async () => {

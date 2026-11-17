@@ -6,6 +6,11 @@
  * Never updates existing rows (appends only — supersession is handled by the resolver).
  */
 import mongoose from 'mongoose';
+import {
+  describeHeldByGuard,
+  type ObservationHoldGuard,
+  type ObservationsHeldByGuard,
+} from './observationHolds';
 import { Observation } from '../models/observation';
 import type { ObservedEntityType } from '../models/observation';
 import { Source } from '../models/source';
@@ -657,13 +662,20 @@ export async function appendObservations(
   skipped: number;
   superseded: number;
   refusedByRequest?: ObservationInput[];
+  heldByGuard?: ObservationsHeldByGuard;
 }> {
-  if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
+  const heldByGuard: ObservationsHeldByGuard = {};
+  const hold = (guard: ObservationHoldGuard, field: string): void => {
+    const byField = (heldByGuard[guard] ??= {});
+    byField[field] = (byField[field] ?? 0) + 1;
+  };
+  if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0, heldByGuard };
   const removal = await withoutRemovedPeople(await withRenamedResearchEntityIds(inputs), ctx);
+  for (const obs of removal.refused) hold('removed-by-request', obs.field);
   const refusedByRequest = removal.refused.length > 0 ? { refusedByRequest: removal.refused } : {};
   if (removal.kept.length === 0) {
     opts.reportDrops?.(observationDropCounts({ removedPersonRequest: removal.refused.length }));
-    return { inserted: 0, skipped: 0, superseded: 0, ...refusedByRequest };
+    return { inserted: 0, skipped: 0, superseded: 0, ...refusedByRequest, heldByGuard };
   }
   const loadActiveProse = opts.loadActiveProse ?? loadActiveProseValue;
 
@@ -680,8 +692,10 @@ export async function appendObservations(
   const candidateInputs: ObservationInput[] = [];
   let rejectedUncitableHost = 0;
   for (const obs of removal.kept) {
-    if (isUncitableHostUrl(obs.sourceUrl)) rejectedUncitableHost += 1;
-    else candidateInputs.push(obs);
+    if (isUncitableHostUrl(obs.sourceUrl)) {
+      rejectedUncitableHost += 1;
+      hold('uncitable-host', obs.field);
+    } else candidateInputs.push(obs);
   }
   // A page several rows already cite as their description cannot be the description
   // of this one either. The judgement sits here for the same reason the uncitable-host
@@ -702,9 +716,10 @@ export async function appendObservations(
       : [];
     const ownName = citers?.get(own) ?? foreignCiters.nameOf(storedCiterKey(obs));
     const ownSite = foreignCiters.siteOf(storedCiterKey(obs));
-    if (refusesDescriptionOnSharedPage({ ...obs, ownName, ownSite }, foreignNames))
+    if (refusesDescriptionOnSharedPage({ ...obs, ownName, ownSite }, foreignNames)) {
       ownershipRejected.push(obs);
-    else ownedInputs.push(obs);
+      hold('description-on-shared-page', obs.field);
+    } else ownedInputs.push(obs);
   }
   if (ownershipRejected.length > 0) {
     console.warn(
@@ -718,6 +733,7 @@ export async function appendObservations(
     const sanitized = sanitizeObservationField(obs.entityType, obs.field, obs.value);
     if (sanitized.rejected) {
       rejectedFurniture += 1;
+      hold('furniture', obs.field);
       continue;
     }
     sanitizedInputs.push(sanitized.value === obs.value ? obs : { ...obs, value: sanitized.value });
@@ -731,6 +747,7 @@ export async function appendObservations(
   const liveFieldInputs = sanitizedInputs.filter(
     (obs) => !isRefusedObservationField(obs.entityType, obs.field),
   );
+  for (const obs of rejectedRetiredField) hold('retired-field', obs.field);
   if (rejectedRetiredField.length > 0) {
     console.warn(
       `[observation-store] ${ctx.sourceName} asserted ${rejectedRetiredField.length} observation(s) on a retired field; nothing reads them, so they are refused at ingest (#3362).`,
@@ -739,6 +756,7 @@ export async function appendObservations(
   const rejectedInvalidEnum = liveFieldInputs.filter((obs) =>
     isObservationValueRejected(obs.field, obs.value),
   );
+  for (const obs of rejectedInvalidEnum) hold('invalid-enum', obs.field);
   const acceptedInputs = liveFieldInputs.filter(
     (obs) => !isObservationValueRejected(obs.field, obs.value),
   );
@@ -803,6 +821,7 @@ export async function appendObservations(
         selfDefeatingCardRestatesFullDescription(obs.field, obs.value, incomingContext)
       ) {
         selfDefeatingCardGuarded += 1;
+        hold('self-defeating-card', obs.field);
         continue;
       }
       if (
@@ -815,6 +834,7 @@ export async function appendObservations(
         })
       ) {
         regressiveProseGuarded += 1;
+        hold('regressive-prose', obs.field);
         continue;
       }
       if (
@@ -827,12 +847,14 @@ export async function appendObservations(
         })
       ) {
         weakerProseGuarded += 1;
+        hold('weaker-prose', obs.field);
         continue;
       }
     }
     keptInputs.push(obs);
   }
 
+  const beforeCardPairGuard = [...keptInputs];
   const cardRegressionGuarded = losslessIngest
     ? { rows: 0, observations: 0 }
     : await dropCardLosingDescriptionRefreshes(
@@ -841,6 +863,11 @@ export async function appendObservations(
         incomingResearchAreasByEntity,
         opts.judgeDescriptionCard ?? createDescriptionCardJudge(),
       );
+  if (cardRegressionGuarded.observations > 0) {
+    const stillKept = new Set(keptInputs);
+    for (const obs of beforeCardPairGuard)
+      if (!stillKept.has(obs)) hold('card-losing-pair', obs.field);
+  }
   if (cardRegressionGuarded.rows > 0) {
     console.warn(
       `[observation-store] ${ctx.sourceName} kept the current description for ${cardRegressionGuarded.rows} row(s) whose refresh would lose the card the current one gives.`,
@@ -877,9 +904,13 @@ export async function appendObservations(
     weakerProse: weakerProseGuarded,
     cardLoss: cardRegressionGuarded.observations,
   });
+  const heldAtIngest = describeHeldByGuard(heldByGuard);
+  if (heldAtIngest) {
+    console.warn(`[observation-store] ${ctx.sourceName} held at ingest: ${heldAtIngest} (#6441).`);
+  }
   if (keptInputs.length === 0) {
     opts.reportDrops?.(droppedBy);
-    return { inserted: 0, skipped: skippedCount, superseded: 0, ...refusedByRequest };
+    return { inserted: 0, skipped: skippedCount, superseded: 0, ...refusedByRequest, heldByGuard };
   }
 
   const docs = keptInputs.map((obs) => {
@@ -919,8 +950,15 @@ export async function appendObservations(
   });
 
   if (ctx.dryRun) {
+    for (const doc of docs) hold('dry-run', doc.field);
     opts.reportDrops?.({ ...droppedBy, dryRun: docs.length });
-    return { inserted: 0, skipped: docs.length + skippedCount, superseded: 0, ...refusedByRequest };
+    return {
+      inserted: 0,
+      skipped: docs.length + skippedCount,
+      superseded: 0,
+      ...refusedByRequest,
+      heldByGuard,
+    };
   }
 
   if (docs.some(writesOwnershipGuardedDescriptionField)) resetDescriptionOwnershipCitersCache();
@@ -937,6 +975,13 @@ export async function appendObservations(
     },
     { label: `${ctx.sourceName} observation insert (${docs.length} docs)` },
   );
+  if (landed.length < docs.length) {
+    const landedInputs = new Set(landed.map(({ input }) => input));
+    for (const doc of docs) if (!landedInputs.has(doc)) hold('not-landed', doc.field);
+    console.warn(
+      `[observation-store] ${ctx.sourceName} did not land ${docs.length - landed.length} of ${docs.length} observation(s) (#6441).`,
+    );
+  }
   const latestByFingerprint = new Map<string, { id: any; input: (typeof docs)[number] }>();
   for (const { inserted, input } of landed) {
     const fingerprint = (inserted as { observationFingerprint?: string }).observationFingerprint;
@@ -988,6 +1033,7 @@ export async function appendObservations(
     skipped: skippedCount,
     superseded: superseded + emailsANewerReadReplaced,
     ...refusedByRequest,
+    heldByGuard,
   };
 }
 
