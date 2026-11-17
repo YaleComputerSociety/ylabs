@@ -322,7 +322,9 @@ describe('rankProgramSearch year words (#6397)', () => {
       program('Bridge Summer Grant', 'Open to rising juniors.', { yearOfStudy: ['Sophomore'] }),
       program('Capstone Grant', 'Open to juniors.', { yearOfStudy: ['Junior'] }),
     ];
-    expect(titles(rankedPrograms('rising juniors', risingCatalog))).toEqual(['Bridge Summer Grant']);
+    expect(titles(rankedPrograms('rising juniors', risingCatalog))).toEqual([
+      'Bridge Summer Grant',
+    ]);
     expect(titles(rankedPrograms('rising seniors', risingCatalog))).toEqual(['Capstone Grant']);
   });
 
