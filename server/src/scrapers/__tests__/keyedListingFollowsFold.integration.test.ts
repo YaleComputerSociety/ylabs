@@ -94,6 +94,10 @@ const profilePage = (options: { email?: string; netid?: string } = {}) => {
   return `<html><head>${jsonLd}</head><body><h1>Profile</h1>${mail}</body></html>`;
 };
 
+const CORROBORATED: ProfilePages = {
+  [LISTING_PROFILE_URL]: profilePage({ email: 'avery.synthetic@yale.edu' }),
+};
+
 const afterAMoment = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 async function runLane(profiles: ProfilePages = {}, roster: CenterMember[] = [LISTING]) {
@@ -151,7 +155,7 @@ const listingShell = async () => {
 };
 
 const survivorRecord = async (
-  identifiers: { email?: string; netid?: string } = { email: 'fold.survivor1@yale.edu' },
+  identifiers: { email?: string; netid?: string } = { email: 'avery.synthetic@yale.edu' },
   displayName = 'Avery J. Quillon',
 ) => {
   const survivor = await Researcher.create({
@@ -198,7 +202,7 @@ const expectListingStaysOn = async (
 };
 
 describe(
-  'a keyed listing held by a name-only shell follows the fold to its survivor (#6019)',
+  'a listing whose evidence names the fold survivor of its name resolves to that survivor (#6019)',
   { timeout: 120000 },
   () => {
     let replSet: MongoMemoryReplSet;
@@ -233,13 +237,13 @@ describe(
       await runLane({}, []);
     });
 
-    it('moves the listing to the survivor and ends the shell edge through the superseded-holder path', async () => {
+    it('moves the listing to the survivor and leaves the shell edge as the twin the shell dedupe joins', async () => {
       await runLane();
       const shell = await listingShell();
       const survivor = await survivorRecord();
       await archivedNamesake(survivor);
 
-      await runLane();
+      await runLane(CORROBORATED);
 
       const survivorEdges = await liveEdgesOf(survivor);
       expect(survivorEdges).toHaveLength(1);
@@ -247,17 +251,32 @@ describe(
         sourceName: SOURCE_NAME,
         membershipKey: LISTING_KEY,
       });
-      expect(await liveEdgesOf(shell)).toHaveLength(0);
-      const shellEdge = (await RoleAssignment.findOne({ personId: shell }).lean()) as any;
-      expect(shellEdge.state).toBe('HISTORICAL');
+      expect(survivorEdges[0].rosterProvenance.identityBasis).toBeDefined();
+      const shellEdges = await liveEdgesOf(shell);
+      expect(shellEdges).toHaveLength(1);
+      expect(shellEdges[0].rosterProvenance).toMatchObject({
+        sourceName: SOURCE_NAME,
+        membershipKey: LISTING_KEY,
+      });
+      expect(shellEdges[0].rosterProvenance.identityBasis).toBeUndefined();
       expect(await Researcher.countDocuments({ displayName: LISTED_NAME })).toBe(2);
 
-      await runLane();
+      await runLane(CORROBORATED);
       expect(await liveEdgesOf(survivor)).toHaveLength(1);
-      expect(await liveEdgesOf(shell)).toHaveLength(0);
     });
 
-    it('still follows the fold when the listing states an identifier the survivor holds no value of', async () => {
+    it('does not follow the fold on a shared name when the listing states nothing the survivor holds', async () => {
+      await runLane();
+      const shell = await listingShell();
+      const survivor = await survivorRecord();
+      await archivedNamesake(survivor);
+
+      await runLane();
+
+      await expectListingStaysOn(shell, survivor);
+    });
+
+    it('does not follow the fold on a stated identifier the survivor holds no value of', async () => {
       const pages = { [LISTING_PROFILE_URL]: profilePage({ netid: 'fq17' }) };
       await runLane(pages);
       const shell = await listingShell();
@@ -266,8 +285,7 @@ describe(
 
       await runLane(pages);
 
-      expect(await liveEdgesOf(survivor)).toHaveLength(1);
-      expect(await liveEdgesOf(shell)).toHaveLength(0);
+      await expectListingStaysOn(shell, survivor);
     });
 
     it('does not follow an archived namesake that names no survivor', async () => {
@@ -276,7 +294,7 @@ describe(
       const lookalike = await survivorRecord();
       await archivedNamesake();
 
-      await runLane();
+      await runLane(CORROBORATED);
 
       await expectListingStaysOn(shell, lookalike);
     });
@@ -287,7 +305,7 @@ describe(
       const survivor = await survivorRecord();
       await archivedNamesake(survivor, 'Avery Q. Synthetic');
 
-      await runLane();
+      await runLane(CORROBORATED);
 
       await expectListingStaysOn(shell, survivor);
     });
@@ -299,7 +317,7 @@ describe(
       await Researcher.updateOne({ _id: survivor }, { $set: { archived: true } });
       await archivedNamesake(survivor);
 
-      await runLane();
+      await runLane(CORROBORATED);
 
       await expectListingStaysOn(shell, survivor);
     });
@@ -312,7 +330,7 @@ describe(
       await archivedNamesake(first);
       await archivedNamesake(second);
 
-      await runLane();
+      await runLane(CORROBORATED);
 
       await expectListingStaysOn(shell, first, second);
     });
@@ -358,52 +376,19 @@ describe(
           ],
         },
       },
-    ])('does not move the listing off a holder that has $holds', async ({ update }) => {
-      await runLane();
-      const shell = await listingShell();
-      await Researcher.updateOne({ _id: shell }, { $set: update });
-      const survivor = await survivorRecord();
-      await archivedNamesake(survivor);
+    ])(
+      'does not move a listing that states nothing off a holder that has $holds',
+      async ({ update }) => {
+        await runLane();
+        const shell = await listingShell();
+        await Researcher.updateOne({ _id: shell }, { $set: update });
+        const survivor = await survivorRecord();
+        await archivedNamesake(survivor);
 
-      await runLane();
+        await runLane();
 
-      await expectListingStaysOn(shell, survivor);
-    });
-
-    it('lets a keyed listing past the namesake guard when the identified namesake is the fold survivor of its name', async () => {
-      const survivor = await survivorRecord({ netid: 'fq17' }, LISTED_NAME);
-      await archivedNamesake(survivor);
-
-      await runLane();
-
-      expect(await liveEdgesOf(survivor)).toHaveLength(1);
-      expect(
-        await Researcher.countDocuments({ displayName: LISTED_NAME, archived: { $ne: true } }),
-      ).toBe(1);
-    });
-
-    it('keeps the namesake guard for an identified namesake its name was never folded into', async () => {
-      const namesake = await survivorRecord({ netid: 'fq17' }, LISTED_NAME);
-
-      await runLane();
-
-      expect(await liveEdgesOf(namesake)).toHaveLength(0);
-      expect(
-        await Researcher.countDocuments({ displayName: LISTED_NAME, archived: { $ne: true } }),
-      ).toBe(1);
-    });
-
-    it('keeps the namesake guard when the fold survivor holds a different value the listing states', async () => {
-      const pages = { [LISTING_PROFILE_URL]: profilePage({ netid: 'av42' }) };
-      const survivor = await survivorRecord({ netid: 'fq17' }, LISTED_NAME);
-      await archivedNamesake(survivor);
-
-      await runLane(pages);
-
-      expect(await liveEdgesOf(survivor)).toHaveLength(0);
-      expect(
-        await Researcher.countDocuments({ displayName: LISTED_NAME, archived: { $ne: true } }),
-      ).toBe(1);
-    });
+        await expectListingStaysOn(shell, survivor);
+      },
+    );
   },
 );

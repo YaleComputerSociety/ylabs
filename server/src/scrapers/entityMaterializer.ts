@@ -588,8 +588,8 @@ import {
   adoptUnprovenancedRoleAssignments,
   archiveSupersededCanonicalRoleAssignments,
   canonicalMemberIsRemovedByRequest,
+  foldSurvivorOfListedName,
   identifiedResearcherHoldsDisplayName,
-  keyedListingReachesFoldSurvivor,
   materializeCanonicalMembership,
   nameOnlyResolutionName,
   writeCanonicalMembership,
@@ -597,7 +597,6 @@ import {
   type CanonicalMemberFacts,
   resolveCanonicalResearcherId,
   type CanonicalMemberIdentity,
-  type KeyedListingStatement,
 } from './canonicalMembershipMaterializer';
 import {
   getResearchEntityRoster,
@@ -3740,6 +3739,11 @@ async function resolveRosterMemberIdentityFromEvidence(
     named.filter((researcher) => observedPersonNameAgreesWith(researcher.displayName, listedName)),
   );
   if (agreeing.length === 0) {
+    const foldSurvivorId =
+      named.length === 1 ? await foldSurvivorOfListedName(listedName) : undefined;
+    if (foldSurvivorId && String(named[0]._id) === String(foldSurvivorId)) {
+      return { researcher: named[0], basis: 'identity-evidence' };
+    }
     return {
       researcher: null,
       unresolved: 'evidence-names-someone-else',
@@ -3760,26 +3764,6 @@ async function resolveRosterMemberIdentityFromEvidence(
 const SOURCES_THAT_REFUSE_A_NAMESAKE_MINT: ReadonlySet<string> = new Set([
   CENTERS_INSTITUTES_SOURCE_NAME,
 ]);
-
-/**
- * What an unresolved keyed listing states about the person, so a name-only shell holding its
- * edge can follow the fold to a survivor only when the survivor contradicts none of it (#6019).
- * A conflicted evidence field states nothing readable, so it follows no fold.
- */
-function keyedListingStatement(
-  plan: RosterMemberCanonicalPlan,
-  resolved: Record<string, ResolvedField>,
-): KeyedListingStatement | undefined {
-  if (!textValue(plan.facts.rosterProvenance?.membershipKey)) return undefined;
-  const evidenceField = resolved[ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD];
-  if (evidenceField?.hasConflict) return undefined;
-  const evidence = parseRosterMemberIdentityEvidence(evidenceField?.value);
-  return {
-    emails: evidence?.emails ?? [],
-    netids: evidence?.netids ?? [],
-    orcids: evidence?.orcid ? [evidence.orcid] : [],
-  };
-}
 
 async function endMisattributedProfileUrlHolderEdges(
   researchEntityId: string,
@@ -3912,14 +3896,11 @@ function listingWouldMintAnIdentityConflict(
 async function listingWouldMintANamesake(
   plan: RosterMemberCanonicalPlan,
   identity: RosterMemberIdentity,
-  resolved: Record<string, ResolvedField>,
 ): Promise<boolean> {
   if (identity.researcher || plan.personReferenceId) return false;
   const sourceName = textValue(plan.facts.rosterProvenance?.sourceName);
   if (!SOURCES_THAT_REFUSE_A_NAMESAKE_MINT.has(sourceName)) return false;
-  if (!(await identifiedResearcherHoldsDisplayName(plan.facts.displayName))) return false;
-  const statement = keyedListingStatement(plan, resolved);
-  return !(statement && (await keyedListingReachesFoldSurvivor(plan.facts.displayName, statement)));
+  return identifiedResearcherHoldsDisplayName(plan.facts.displayName);
 }
 
 /**
@@ -4335,7 +4316,7 @@ async function materializeRosterMember(
       skipped: 'unresolved-identity-conflict',
     };
   }
-  if (await listingWouldMintANamesake(plan, identity, resolved)) {
+  if (await listingWouldMintANamesake(plan, identity)) {
     return {
       entityType: 'researchGroupMember',
       entityId: materializerDocumentId(entity._id),
@@ -4427,7 +4408,6 @@ async function materializeRosterMember(
       'basis' in identity && identity.basis === 'identity-evidence'
         ? toMaterializerObjectId(plan.personReferenceId)
         : undefined,
-    keyedListingStatement: 'basis' in identity ? undefined : keyedListingStatement(plan, resolved),
   });
   await adoptListedPersonUnprovenancedEdges(researchEntityId, plan, personId);
   if (personId) {
