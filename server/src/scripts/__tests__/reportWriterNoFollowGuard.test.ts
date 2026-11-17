@@ -6,12 +6,18 @@ import allowlist from './reportWriterNoFollowAllowlist.json';
 const SERVER_SRC = path.resolve(__dirname, '../..');
 
 const RESOLVES_A_REPORT_PATH = /\bresolveSafeJsonReport(?:Output)?Path\b/;
-const RAW_FILE_WRITE =
-  /\b(?:writeFileSync|writeFile|createWriteStream|appendFileSync|appendFile)\s*\(/;
+const RAW_WRITE_NAMES =
+  'writeFileSync|writeFile|createWriteStream|appendFileSync|appendFile|openSync|writeSync';
+const RAW_FILE_WRITE = new RegExp(`\\b(?:${RAW_WRITE_NAMES})\\s*\\(`);
+const RENAMED_RAW_WRITE_IMPORT = new RegExp(`\\b(?:${RAW_WRITE_NAMES})\\s+as\\s+[A-Za-z_$]`);
 
-// The shared writers themselves: one writes through an O_NOFOLLOW handle, and the resolver's
+// The shared writers themselves: two write through an O_NOFOLLOW descriptor, and the resolver's
 // writability probe opens with 'wx', which never follows a link.
-const SHARED_WRITERS = new Set(['scrapers/scraperCliOutput.ts', 'utils/reportOutputPath.ts']);
+const SHARED_WRITERS = new Set([
+  'scrapers/scraperCliOutput.ts',
+  'utils/reportFileWriter.ts',
+  'utils/reportOutputPath.ts',
+]);
 
 export interface ScannedSource {
   file: string;
@@ -22,6 +28,12 @@ export interface ScannedSource {
  * Files that resolve a report path and then write a file with their own call, which follows a
  * link planted between the resolve and the write. They must write through the shared
  * O_NOFOLLOW writers instead (`writeJsonOutputFile`, `writeReportFileSync`) (#6375).
+ *
+ * The scan is file-level text. It catches a renamed import (`writeFileSync as w`) but not a
+ * variable alias (`const w = fs.writeFileSync`),
+ * a write through a temp file and a copy or rename, or a resolve in one module with the write
+ * in another; those are accepted residuals of #6375. A file that resolves a path only to read
+ * it and writes something unrelated is a false positive, kept on the allowlist with a reason.
  */
 export function rawReportWriters(sources: readonly ScannedSource[]): string[] {
   return sources
@@ -29,7 +41,7 @@ export function rawReportWriters(sources: readonly ScannedSource[]): string[] {
       ({ file, source }) =>
         !SHARED_WRITERS.has(file) &&
         RESOLVES_A_REPORT_PATH.test(source) &&
-        RAW_FILE_WRITE.test(source),
+        (RAW_FILE_WRITE.test(source) || RENAMED_RAW_WRITE_IMPORT.test(source)),
     )
     .map(({ file }) => file)
     .sort();
@@ -77,6 +89,14 @@ describe('report writers go through the shared O_NOFOLLOW writer (#6375)', () =>
       file: 'scripts/shared.ts',
       source: 'const p = resolveSafeJsonReportOutputPath(a);\nwriteReportFileSync(p, text);',
     };
-    expect(rawReportWriters([raw, shared])).toEqual(['scripts/raw.ts']);
+    const renamed = {
+      file: 'scripts/renamed.ts',
+      source:
+        "import { writeFileSync as save } from 'fs';\nconst p = resolveSafeJsonReportPath(a);\nsave(p, '{}');",
+    };
+    expect(rawReportWriters([raw, shared, renamed])).toEqual([
+      'scripts/raw.ts',
+      'scripts/renamed.ts',
+    ]);
   });
 });

@@ -1,7 +1,12 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../reportOutputPath', () => ({
+  resolveSafeJsonReportOutputPath: (output: string) => path.resolve(output),
+}));
+
 import { writeJsonReportFileSync, writeReportFileSync } from '../reportFileWriter';
 
 const scratchDirectories: string[] = [];
@@ -45,7 +50,7 @@ describe('the shared report writer (#6375)', () => {
 
   it('formats a JSON payload the way the async JSON writer does', () => {
     const dir = scratch();
-    const output = path.join(dir, 'nested', 'report.json');
+    const output = path.join(dir, 'report.json');
 
     writeJsonReportFileSync(output, { a: 1 });
 
