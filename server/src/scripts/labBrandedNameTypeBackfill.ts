@@ -30,6 +30,7 @@ import {
   type LabBrandedNameTypeCandidate,
   type LabBrandedNameTypePlanRow,
 } from './labBrandedNameTypeBackfillCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -399,7 +400,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         safeOutput,
         `${JSON.stringify(
           { generatedAt: new Date().toISOString(), environment: guard.environment, ...result },

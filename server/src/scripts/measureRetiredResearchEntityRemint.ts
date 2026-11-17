@@ -7,6 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { hasRequiredFieldsForCreate, materializeEntity } from '../scrapers/entityMaterializer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -165,7 +166,7 @@ async function main(): Promise<void> {
   );
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify({ summary, verdicts }, null, 2)}\n`);
+    writeReportFileSync(options.output, `${JSON.stringify({ summary, verdicts }, null, 2)}\n`);
   }
   await mongoose.disconnect();
 }

@@ -42,6 +42,7 @@ import {
   type ScopedPageTextRow,
 } from './importResearchTopicsDerivationsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeJsonReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -112,10 +113,9 @@ async function scopedRows(slugs: string[], withLabels: boolean): Promise<ScopedP
   }));
 }
 
-export function writePrivateJson(file: string, value: unknown): void {
+export function writePrivateJson(file: string, value: unknown, flag = '--output'): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  fs.chmodSync(file, 0o600);
+  writeJsonReportFileSync(file, value, { flag });
 }
 
 const readJson = (file: string): unknown => JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
@@ -247,7 +247,11 @@ async function main() {
   console.log(JSON.stringify(summary, null, 2));
   if (output) writePrivateJson(output, { ...summary, rows: report.rows });
   if (sampleOutput && args.sampleForGrading) {
-    writePrivateJson(sampleOutput, gradingSampleOf(readings, rows, args.sampleForGrading));
+    writePrivateJson(
+      sampleOutput,
+      gradingSampleOf(readings, rows, args.sampleForGrading),
+      '--sample-output',
+    );
   }
 }
 

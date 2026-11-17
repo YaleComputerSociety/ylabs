@@ -16,7 +16,6 @@
  *     --confirm-materialize-profile-page-joined-users
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -36,6 +35,7 @@ import {
   summarizeProfilePageJoinRows,
   type ProfilePageJoinRow,
 } from './materializeProfilePageJoinedUsersCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -134,7 +134,7 @@ async function main(): Promise<void> {
 
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
-    fs.writeFileSync(outputPath, JSON.stringify({ ...report, planned, applied }, null, 2));
+    writeReportFileSync(outputPath, JSON.stringify({ ...report, planned, applied }, null, 2));
   }
 
   console.log(JSON.stringify(report, null, 2));
