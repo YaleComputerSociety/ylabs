@@ -635,6 +635,31 @@ async function survivorOfFoldedNameOnlyShell(
  * The person key name-only resolution serializes on. Department-roster shells share it so two
  * spellings of one person never materialize at once either (#5555); changing it changes both.
  */
+/**
+ * Whether a keyed listing the namesake-mint guard would refuse in fact resolves to the live
+ * survivor its exact name was folded into, so it mints nothing and the guard must let it through
+ * (#6019). It follows the same fold lineage, and the same contradiction rule, as the resolution
+ * itself: the name's live holder, if any, must be a name-only shell.
+ */
+export async function keyedListingReachesFoldSurvivor(
+  displayName: unknown,
+  statement: KeyedListingStatement,
+): Promise<boolean> {
+  const name = nameOnlyResolutionName(trimmed(displayName));
+  if (!name) return false;
+  const liveHolders = (await Researcher.find({ displayName: name, archived: { $ne: true } })
+    .select('displayName identifiers profileLinks')
+    .lean()) as Array<ResearcherIdentityShape & { _id?: unknown }>;
+  const shell = liveHolders.find(isNameOnlyShell);
+  const survivorId = await liveSurvivorOfFoldedNamesake(shell ? trimmed(shell.displayName) : name);
+  if (!survivorId || (shell && survivorId.equals(toObjectId(shell._id)))) return false;
+  const survivor = (await Researcher.findById(survivorId)
+    .select('identifiers')
+    .lean()) as ResearcherIdentityShape | null;
+  if (!survivor) return false;
+  return !survivorContradictsListing(survivor, {}, statement);
+}
+
 export function nameOnlyResolutionName(displayName: string): string {
   return canonicalPersonName(sanitizePersonName(displayName) ?? displayName);
 }

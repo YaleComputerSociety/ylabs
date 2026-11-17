@@ -369,5 +369,41 @@ describe(
 
       await expectListingStaysOn(shell, survivor);
     });
+
+    it('lets a keyed listing past the namesake guard when the identified namesake is the fold survivor of its name', async () => {
+      const survivor = await survivorRecord({ netid: 'fq17' }, LISTED_NAME);
+      await archivedNamesake(survivor);
+
+      await runLane();
+
+      expect(await liveEdgesOf(survivor)).toHaveLength(1);
+      expect(
+        await Researcher.countDocuments({ displayName: LISTED_NAME, archived: { $ne: true } }),
+      ).toBe(1);
+    });
+
+    it('keeps the namesake guard for an identified namesake its name was never folded into', async () => {
+      const namesake = await survivorRecord({ netid: 'fq17' }, LISTED_NAME);
+
+      await runLane();
+
+      expect(await liveEdgesOf(namesake)).toHaveLength(0);
+      expect(
+        await Researcher.countDocuments({ displayName: LISTED_NAME, archived: { $ne: true } }),
+      ).toBe(1);
+    });
+
+    it('keeps the namesake guard when the fold survivor holds a different value the listing states', async () => {
+      const pages = { [LISTING_PROFILE_URL]: profilePage({ netid: 'av42' }) };
+      const survivor = await survivorRecord({ netid: 'fq17' }, LISTED_NAME);
+      await archivedNamesake(survivor);
+
+      await runLane(pages);
+
+      expect(await liveEdgesOf(survivor)).toHaveLength(0);
+      expect(
+        await Researcher.countDocuments({ displayName: LISTED_NAME, archived: { $ne: true } }),
+      ).toBe(1);
+    });
   },
 );

@@ -589,6 +589,7 @@ import {
   archiveSupersededCanonicalRoleAssignments,
   canonicalMemberIsRemovedByRequest,
   identifiedResearcherHoldsDisplayName,
+  keyedListingReachesFoldSurvivor,
   materializeCanonicalMembership,
   nameOnlyResolutionName,
   writeCanonicalMembership,
@@ -3911,11 +3912,14 @@ function listingWouldMintAnIdentityConflict(
 async function listingWouldMintANamesake(
   plan: RosterMemberCanonicalPlan,
   identity: RosterMemberIdentity,
+  resolved: Record<string, ResolvedField>,
 ): Promise<boolean> {
   if (identity.researcher || plan.personReferenceId) return false;
   const sourceName = textValue(plan.facts.rosterProvenance?.sourceName);
   if (!SOURCES_THAT_REFUSE_A_NAMESAKE_MINT.has(sourceName)) return false;
-  return identifiedResearcherHoldsDisplayName(plan.facts.displayName);
+  if (!(await identifiedResearcherHoldsDisplayName(plan.facts.displayName))) return false;
+  const statement = keyedListingStatement(plan, resolved);
+  return !(statement && (await keyedListingReachesFoldSurvivor(plan.facts.displayName, statement)));
 }
 
 /**
@@ -4331,7 +4335,7 @@ async function materializeRosterMember(
       skipped: 'unresolved-identity-conflict',
     };
   }
-  if (await listingWouldMintANamesake(plan, identity)) {
+  if (await listingWouldMintANamesake(plan, identity, resolved)) {
     return {
       entityType: 'researchGroupMember',
       entityId: materializerDocumentId(entity._id),
