@@ -219,11 +219,11 @@ export const statedYearsInQuery = (contentWords: readonly string[]): QueryYears 
   const otherWords: string[] = [];
   let risingListOpen = false;
   for (let index = 0; index < contentWords.length;) {
-    const continuesRisingList =
+    const continuesRisingList: boolean =
       risingListOpen &&
       RISING_LIST_YEAR_WORDS.has(contentWords[index]) &&
       !SENIOR_WORK_NOUNS.has(contentWords[index + 1] ?? '');
-    const term = continuesRisingList
+    const term: StatedYearTerm | undefined = continuesRisingList
       ? risingTermFor(contentWords[index])
       : longestTermAt(contentWords, index);
     const consumed = continuesRisingList ? 1 : (term?.words.length ?? 1);
