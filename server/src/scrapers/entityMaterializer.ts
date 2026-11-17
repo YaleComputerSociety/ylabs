@@ -1459,6 +1459,25 @@ function plannedWriteSkipReason(
     : 'unchanged';
 }
 
+const linkIdentity = (link: unknown): string => {
+  const { label, url } = (link ?? {}) as { label?: unknown; url?: unknown };
+  return JSON.stringify([String(label ?? '').trim(), String(url ?? '').trim()]);
+};
+
+/**
+ * Whether two `links` values hold the same links (#6472). A stored link is a mongoose
+ * subdocument that carries its own `_id`, which the lane's observed link never has, so a
+ * whole-value comparison read every unchanged set as changed and re-saved it on every resolve.
+ * Links are compared by label and URL in any order; a changed, added or removed link differs.
+ */
+export function sameLinkSet(stored: unknown, projected: unknown): boolean {
+  if (!Array.isArray(stored) || !Array.isArray(projected)) return false;
+  if (stored.length !== projected.length) return false;
+  const storedIdentities = stored.map(linkIdentity).sort();
+  const projectedIdentities = projected.map(linkIdentity).sort();
+  return storedIdentities.every((identity, index) => identity === projectedIdentities[index]);
+}
+
 // A re-projection over an unchanged observation log recomputes the same field
 // values every run; the only guaranteed-different field is the managed
 // `lastObservedAt` timestamp. Treat the projection as a no-op when every scoped
@@ -1495,9 +1514,9 @@ export function materializerProjectionChangedPaths(
   for (const [path, value] of Object.entries(set)) {
     if (MATERIALIZER_MANAGED_FIELDS.has(path)) continue;
     if (!materializerProjectionPathIsStorable(declared, path)) continue;
-    if (!materializerValuesDeepEqual(materializerValueAtPath(entityDoc, path), value)) {
-      changed.add(path);
-    }
+    const current = materializerValueAtPath(entityDoc, path);
+    if (path === 'links' && sameLinkSet(current, value)) continue;
+    if (!materializerValuesDeepEqual(current, value)) changed.add(path);
   }
   for (const path of Object.keys(unset)) {
     const current = materializerValueAtPath(entityDoc, path);
