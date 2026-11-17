@@ -111,4 +111,68 @@ describe('the administering office a program page states (#4589)', () => {
       undefined,
     );
   });
+
+  it('reads the office whose named application system applications go through', () => {
+    expect(
+      officeIn(
+        'Applications for this fellowship will be accepted via the Office of Fellowships Summer Research Common Application.',
+      ),
+    ).toBe('Office of Fellowships');
+    expect(
+      officeIn(
+        'Application for this fellowship is via the Fixture Center Summer Travel Fellowships Common Application.',
+      ),
+    ).toBe('Fixture Center');
+    expect(
+      officeIn('Note: application to this competition is via the Department of Fixtures website.'),
+    ).toBe('Department of Fixtures');
+  });
+
+  it('reads awarded through, accepts applications, pleased to award and submit to an office', () => {
+    expect(
+      officeIn('The Fixture Travel Grant is awarded through Fixture Center and supports study.'),
+    ).toBe('Fixture Center');
+    expect(officeIn('The Fixture Center accepts applications from Yale students.')).toBe(
+      'Fixture Center',
+    );
+    expect(
+      officeIn('The Fixture Program in Science is pleased to award the Fixture Fellowship.'),
+    ).toBe('Fixture Program in Science');
+    expect(
+      officeIn(
+        'Please attach a one-page proposal and submit to the Head of College Office by May 1.',
+      ),
+    ).toBe('Head of College Office');
+  });
+
+  it('states no office for a bare system, a negated route, or a report owed to an office', () => {
+    expect(
+      officeIn('Applications should be submitted through the Yale Student Grants Database.'),
+    ).toBeUndefined();
+    expect(
+      officeIn('Applications for this fellowship cannot be submitted via this database.'),
+    ).toBeUndefined();
+    expect(
+      officeIn(
+        'Applications are not accepted via the Office of Fixture Fellowships Common Application.',
+      ),
+    ).toBeUndefined();
+    expect(
+      officeIn(
+        "Recipients must submit a summary report on their fellowship to the Fixture Head of College's Office.",
+      ),
+    ).toBeUndefined();
+    expect(
+      officeIn('Some fellowships may be found via the Student Grants Database.'),
+    ).toBeUndefined();
+  });
+
+  it('still states none when the route and another sentence name two different offices', () => {
+    expect(
+      officeIn(
+        'Applications will be accepted via the Office of Fixture Fellowships Common Application.',
+        'The Fixture Council on Regional Studies invites applications for this prize.',
+      ),
+    ).toBeUndefined();
+  });
 });
