@@ -17,6 +17,7 @@ import {
   auditTitleResearchOwnership,
   type TitleOwnershipRow,
 } from './auditTitleResearchOwnershipCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -184,7 +185,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(report, null, 2));
   if (outputPath) {
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, JSON.stringify(report, null, 2), { mode: 0o600 });
+    writeReportFileSync(outputPath, JSON.stringify(report, null, 2));
     console.log(`Saved report to ${outputPath}`);
   }
 

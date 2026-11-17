@@ -48,6 +48,7 @@ import {
   type LabSiteNamedLeadRefusal,
   type OfficialProfileOwner,
 } from './attachLabSiteNamedLeadsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -321,7 +322,7 @@ async function main() {
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`Report written to ${outputPath}`);
   }
   await mongoose.disconnect();

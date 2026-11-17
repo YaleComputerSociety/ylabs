@@ -34,6 +34,7 @@ import {
   summarizeSourceFreshness,
 } from '../services/sourceFreshnessService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 export interface SourceFreshnessAuditOptions {
   output?: string;
@@ -163,7 +164,7 @@ async function main() {
   if (options.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(options.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
   }
   if (countBlockingSourceDispatchDefects(report) > 0) {
     throw new Error(

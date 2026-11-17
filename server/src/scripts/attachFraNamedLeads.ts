@@ -20,6 +20,7 @@ import {
   planFraLeadAttachment,
   type FraLeadResearcher,
 } from './attachFraNamedLeadsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -182,7 +183,7 @@ async function main() {
   if (args.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
   console.log(JSON.stringify(report, null, 2));
   await mongoose.disconnect();

@@ -34,6 +34,7 @@ import {
   type RosterUrlProbe,
 } from './auditDepartmentCatalogDriftCore';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 export interface DepartmentCatalogDriftOptions {
   output?: string;
@@ -102,7 +103,7 @@ async function main() {
   console.log(JSON.stringify(output, null, 2));
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(output, null, 2)}\n`);
+    writeReportFileSync(options.output, `${JSON.stringify(output, null, 2)}\n`);
   }
 
   if (report.status === 'drift') {

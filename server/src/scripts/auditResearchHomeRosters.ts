@@ -51,6 +51,7 @@ import {
   type OfficialRosterLaneEvidence,
 } from './auditResearchHomeRostersCore';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -269,10 +270,9 @@ async function main(): Promise<void> {
     );
     if (options.output) {
       fs.mkdirSync(path.dirname(options.output), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         options.output,
         `${JSON.stringify({ mode: 'audit', strict: options.strict, ...report }, null, 2)}\n`,
-        { mode: 0o600 },
       );
       console.log(`\nReport written to ${options.output}`);
     } else if (sample && sample.length > 0) {

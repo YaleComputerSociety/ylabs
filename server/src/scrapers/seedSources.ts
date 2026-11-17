@@ -22,6 +22,7 @@ import { getSourceCoverage } from './sourceCoverageRegistry';
 import { RETIRED_SOURCE_NAMES, isRetiredSourceName } from './sourceDispatch';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 import { connectScriptMongo } from '../db/connections';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ path: path.join(resolveServerPackageRoot(import.meta.url), '.env'), quiet: true });
 
@@ -142,7 +143,7 @@ export function writeSeedSourcesOutput(report: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 const SOURCES: SourceSeed[] = [
