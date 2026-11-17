@@ -74,7 +74,11 @@ import {
   type FundApplicationRoute,
   type FundProseSection,
 } from '../utils/fundApplicationRoute';
-import { collapseDefaultFillGlobalRegions } from '../../services/globalRegions';
+import {
+  collapseDefaultFillGlobalRegions,
+  distinctGlobalRegions,
+  isFullRegionEnumeration,
+} from '../../services/globalRegions';
 import { statedAdministeringOffice } from '../utils/administeringOffice';
 import { statesOpenEndedApplications } from '../utils/programPageEvidence';
 import { fundAwardAmount } from '../utils/fundAwardAmount';
@@ -124,6 +128,7 @@ export interface StudentGrantsFund {
   termOfAward: string[];
   purpose: string[];
   globalRegions: string[];
+  globalRegionsStateEveryRegion?: boolean;
   citizenshipStatus: string[];
   isAcceptingApplications: boolean;
 }
@@ -274,7 +279,6 @@ function parseFacets($: cheerio.CheerioAPI): Record<FundFacetField, string[]> {
       .filter((value) => value.length >= 2 && value.length <= 80);
     facets[facet.field] = Array.from(new Set([...facets[facet.field], ...values]));
   });
-  facets.globalRegions = collapseDefaultFillGlobalRegions(facets.globalRegions);
   return facets;
 }
 
@@ -395,7 +399,11 @@ export function parseFundDetailPage(
   const { opensAt, deadline } = nextStatedApplicationWindow($, referenceDate);
   const closed = Boolean(sectionText($, 'lblFundClosedOn') || sectionText($, 'lblReasonClosed'));
   const now = referenceDate.getTime();
-  const { yearOfStudy: yearOfStudyFilter, ...otherFacets } = parseFacets($);
+  const {
+    yearOfStudy: yearOfStudyFilter,
+    globalRegions: statedRegions,
+    ...otherFacets
+  } = parseFacets($);
   const url = normalizeFundDetailUrl(fund.url);
   const yearOfStudy = resolveFundYearOfStudy(
     ELIGIBILITY_PROSE_SECTION_IDS.map((id) => eligibilityProse($, id)),
@@ -427,6 +435,8 @@ export function parseFundDetailPage(
     yearOfStudy: yearOfStudy.kind === 'unreconcilable' ? [] : yearOfStudy.values,
     yearOfStudyResolution: yearOfStudy.kind,
     ...otherFacets,
+    globalRegions: collapseDefaultFillGlobalRegions(statedRegions),
+    globalRegionsStateEveryRegion: isFullRegionEnumeration(distinctGlobalRegions(statedRegions)),
     isAcceptingApplications:
       !closed &&
       (!opensAt || opensAt.getTime() <= now) &&
@@ -496,6 +506,7 @@ function fundFieldsStatedAbsent(fund: StudentGrantsFund): string[] {
     ...(fund.applicationRoute.kind === 'elsewhere-unlinked' ? ['applicationLink'] : []),
     ...(fund.yearOfStudyResolution === 'unreconcilable' ? ['yearOfStudy'] : []),
     ...(fund.eligibilityStatesOnlyContactDirections && !fund.eligibility ? ['eligibility'] : []),
+    ...(fund.globalRegionsStateEveryRegion ? ['globalRegions'] : []),
   ];
 }
 
@@ -546,6 +557,7 @@ export function fundToObservations(fund: StudentGrantsFund): ObservationInput[] 
         ...(applicationLink ? ['applicationLink'] : []),
         ...(fund.yearOfStudy.length > 0 ? ['yearOfStudy'] : []),
         ...(fund.eligibility ? ['eligibility'] : []),
+        ...(fund.globalRegions.length > 0 ? ['globalRegions'] : []),
       ]),
     },
     observation('sourceName', STUDENT_GRANTS_DATABASE_SOURCE),

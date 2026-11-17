@@ -125,6 +125,52 @@ describe('a fellowship lane withdrawing a value it no longer asserts (#4230)', (
     expect(result.plannedUnset).toMatchObject({ applicationLink: '', yearOfStudy: '' });
   });
 
+  it('does not re-fill an every-region list the grants lane now says states no region (#6507)', async () => {
+    const everyRegion = [
+      'Africa',
+      'Asia',
+      'Europe',
+      'Latin America and Caribbean',
+      'Middle East & Persian Gulf',
+      'North America',
+      'Oceania',
+    ];
+    const stored = {
+      _id: 'fixture-id',
+      sourceKey: `${DATABASE}:fixture-fund`,
+      sourceName: DATABASE,
+      title: 'Fixture Fund',
+      sourceUrl: FUND_PAGE,
+      globalRegions: [],
+    };
+    const earlierRead: Observed = {
+      field: 'globalRegions',
+      value: everyRegion,
+      sourceName: DATABASE,
+      observedAt: EARLIER,
+    };
+    const title: Observed = {
+      field: 'title',
+      value: stored.title,
+      sourceName: DATABASE,
+      observedAt: READ_AT,
+    };
+
+    const withClaim = await projectFellowship(stored, [
+      identity(DATABASE, stored.sourceKey, ['globalRegions']),
+      title,
+      earlierRead,
+    ]);
+    expect(withClaim.plannedSet).not.toHaveProperty('globalRegions');
+
+    const withoutClaim = await projectFellowship(stored, [
+      identity(DATABASE, stored.sourceKey),
+      title,
+      earlierRead,
+    ]);
+    expect(withoutClaim.plannedSet).toHaveProperty('globalRegions');
+  });
+
   it('keeps a value the same lane re-asserted in a later read', async () => {
     const stored = {
       _id: 'fixture-id',
