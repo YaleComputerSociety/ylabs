@@ -2436,9 +2436,7 @@ describe('DepartmentRosterScraper.run', () => {
     expect(
       logs.some((l) => /WARNING:.*yielded no faculty/.test(l) && l.includes('physics(empty)')),
     ).toBe(true);
-    expect(result.partialFailures).toEqual([
-      expect.stringContaining('roster source physics fetched its page but read no faculty (empty)'),
-    ]);
+    expect(result.partialFailures).toBeUndefined();
     expect(result.metrics?.unitYields).toEqual({ physics: 0 });
   });
 

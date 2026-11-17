@@ -6018,18 +6018,11 @@ export class DepartmentRosterScraper implements IScraper {
       );
     }
 
-    const partialFailures = [
-      ...brokenSources.map(
-        (d) =>
-          `roster source ${d.deptKey} ${d.count > 0 ? `read ${d.count} faculty but one of its roster pages read none` : 'fetched its page but read no faculty'} (${d.status}); re-verify its URL and extractor before trusting this department's roster`,
-      ),
-      ...(rekeyed.partialFailure ? [rekeyed.partialFailure] : []),
-    ];
     return {
       observationCount: totalObs,
       entitiesObserved: totalFaculty + totalLabs,
       notes: rekeyed.note ? `Departments: ${summary}; ${rekeyed.note}` : `Departments: ${summary}`,
-      ...(partialFailures.length > 0 ? { partialFailures } : {}),
+      ...(rekeyed.partialFailure ? { partialFailures: [rekeyed.partialFailure] } : {}),
       metrics: { unitYields: rosterUnitYields(perDept) },
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };

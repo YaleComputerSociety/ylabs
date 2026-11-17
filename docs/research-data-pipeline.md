@@ -1905,15 +1905,15 @@ Absence from a snapshot is only evidence when the snapshot's lane read the whole
 | Lane status | What happened |
 | --- | --- |
 | `ok` | The pager reached the roster's own end (`not-paginated`, `empty-page`, `repeated-page`) and `--limit` did not cut the lane. |
-| `empty` | A page was read and listed nobody. Warned as a likely site migration and returned as a `partialFailures` entry. |
+| `empty` | A page was read and listed nobody. Warned as a likely site migration, and reported as a zero unit yield. |
 | `partial-read` | The walk stopped before the end (`fetch-failed`, `extractor-error` or `no-identifiable-rows` on a later page of a paginated lane, or `page-cap`), or `--limit` cut the lane mid-roster. |
 | `skipped-by-limit` | `--limit` ran out before the lane started. |
 | `fetch-failed`, `rendered-unavailable` | No page was obtained, so the lane asserts nothing about who is listed. Warned as unreadable, never as a migration. |
 | `extractor-error`, `rendered-extractor-error` | The first page was fetched but could not be parsed. |
 | `js-rendered-skip` | No renderer was available for a JS-rendered lane. |
 
-Each department whose collapsed status is `empty`, `extractor-error` or `rendered-extractor-error` is returned as a `partialFailures` entry naming it, so the run is stored as `partial` rather than `success` with only a warning (#6423).
-The lane also reports `metrics.unitYields` keyed by `deptKey`: the faculty count for a department it read, a zero for one of those three statuses, and nothing for a department it did not read, so the per-unit barren-streak guard fails the run once one department stays barren (#3876).
+A single empty read stays a warning and does not make the run `partial`: `dept-faculty-roster` is a first-hand title lane whose reads count as fresh only from a `success` full-coverage run, so one empty department among about a hundred would otherwise strip title freshness from every roster person (#6423).
+The lane also reports `metrics.unitYields` keyed by `deptKey`: the faculty count for a department it read, a zero for an `empty`, `extractor-error` or `rendered-extractor-error` read, and nothing for a department it did not read, so the per-unit barren-streak guard fails the run once one department stays barren (#3876).
 
 Before this a walk that stopped on a later page's fetch failure or at the 20-page cap reported `ok` whenever it had read anybody, so the people on its unread pages were recorded absent and became suppression candidates on the next run, and the truncated discovery also became the next read's retention baseline.
 `--limit` did the same to the development-sample sweep, and a department whose sibling config the limit never reached published the first config's people as the whole department.
