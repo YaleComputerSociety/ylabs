@@ -26,6 +26,7 @@ import {
 import { inspectTempArtifactParent } from '../utils/tempArtifactRoots';
 import { parsePhase0SummaryOnlyEnvironment } from './phase0SummaryOnlyAudit';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const FULL_COMMIT_PATTERN = /^[a-f0-9]{40}$/;
@@ -438,12 +439,7 @@ export async function loadBoundedIdentityAuditUsers(
 export function writePhase0IdentityCollisionAuditOutput(report: object, output: string): void {
   const safeOutput = assertPhase0IdentityCollisionOutputAvailable(output);
   try {
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`, {
-      encoding: 'utf8',
-      flag: 'wx',
-      mode: 0o600,
-    });
-    fs.chmodSync(safeOutput, 0o600);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`, { exclusive: true });
   } catch {
     throw new Error('Unable to create the protected identity-collision artifact.');
   }

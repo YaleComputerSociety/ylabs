@@ -48,6 +48,37 @@ describe('the shared report writer (#6375)', () => {
     expect(fs.statSync(output).mode & 0o777).toBe(0o600);
   });
 
+  it('refuses to overwrite an existing file when exclusive, leaving it untouched', () => {
+    const dir = scratch();
+    const output = path.join(dir, 'report.json');
+    fs.writeFileSync(output, 'kept');
+
+    expect(() => writeReportFileSync(output, 'replaced', { exclusive: true })).toThrow(
+      expect.objectContaining({ code: 'EEXIST' }),
+    );
+    expect(fs.readFileSync(output, 'utf8')).toBe('kept');
+  });
+
+  it('creates a new file with mode 0600 when exclusive', () => {
+    const dir = scratch();
+    const output = path.join(dir, 'report.json');
+
+    writeReportFileSync(output, 'fresh\n', { exclusive: true });
+
+    expect(fs.readFileSync(output, 'utf8')).toBe('fresh\n');
+    expect(fs.statSync(output).mode & 0o777).toBe(0o600);
+  });
+
+  it('refuses an exclusive write through a planted link, so its target is never created', () => {
+    const dir = scratch();
+    const target = path.join(dir, 'elsewhere.json');
+    const output = path.join(dir, 'report.json');
+    fs.symlinkSync(target, output);
+
+    expect(() => writeReportFileSync(output, '{}\n', { exclusive: true })).toThrow();
+    expect(fs.existsSync(target)).toBe(false);
+  });
+
   it('formats a JSON payload the way the async JSON writer does', () => {
     const dir = scratch();
     const output = path.join(dir, 'report.json');
