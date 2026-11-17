@@ -50,6 +50,7 @@ import {
   csRenderedExtractor,
   csFacultyDataExtractor,
   chemEnvFacultyExtractor,
+  rosterUnitYields,
   collapseLaneOutcomesByDepartment,
   type DeptConfig,
   type FacultyEntry,
@@ -2182,6 +2183,40 @@ describe('chemEnvFacultyExtractor', () => {
       },
     ]);
   });
+  it('reads the applied and computational mathematics cards, including off-site profiles (#6423)', () => {
+    const cards = `
+      <div id="8616" class="window-shade-container py-8 lg:py-16">
+        <div class="stories justify-center grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <a class="block stories-item py-2 !no-underline" target="_self" href="/research-and-faculty/faculty-directory/alpha-example">
+            <picture><img class="img-fluid" width="704" height="704" src="/application/files/thumbnails/alpha-example.webp" /></picture>
+            <h3 class="!pb-0 block text-brand-blue">Alpha Example <em class="fa fa-arrow-right text-light-blue"></em></h3>
+            <span class="text-black block font-bold">Professor of Applied Mathematics</span>
+          </a>
+          <a class="block stories-item py-2 !no-underline" target="_blank" href="https://math.yale.edu/profile/beta-sample">
+            <h3 class="!pb-0 block text-brand-blue">Beta Sample <em class="fa fa-arrow-right text-light-blue"></em></h3>
+            <span class="text-black block font-bold">Professor of Mathematics</span>
+          </a>
+        </div>
+      </div>
+    `;
+    const out = chemEnvFacultyExtractor(cards, {
+      pageUrl:
+        'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
+    });
+    expect(out.map(({ name, profileUrl, title }) => ({ name, profileUrl, title }))).toEqual([
+      {
+        name: 'Alpha Example',
+        profileUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/alpha-example',
+        title: 'Professor of Applied Mathematics',
+      },
+      {
+        name: 'Beta Sample',
+        profileUrl: 'https://math.yale.edu/profile/beta-sample',
+        title: 'Professor of Mathematics',
+      },
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2344,8 +2379,8 @@ describe('DepartmentRosterScraper.run', () => {
     });
     expect(configsByKey.get('applied-mathematics')).toMatchObject({
       deptName: 'Applied Mathematics',
-      url: 'https://applied.math.yale.edu/people/faculty',
-      extractor: viewsTableRowExtractor,
+      url: 'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
+      extractor: chemEnvFacultyExtractor,
     });
     expect(configsByKey.get('history-science-medicine-public-health')).toMatchObject({
       deptName: 'History of Science, Medicine & Public Health',
@@ -2400,6 +2435,33 @@ describe('DepartmentRosterScraper.run', () => {
     expect(
       logs.some((l) => /WARNING:.*yielded no faculty/.test(l) && l.includes('physics(empty)')),
     ).toBe(true);
+    expect(result.partialFailures).toEqual([
+      expect.stringContaining('roster source physics fetched its page but read no faculty (empty)'),
+    ]);
+    expect(result.metrics?.unitYields).toEqual({ physics: 0 });
+  });
+
+  it('reports each read department as a unit yield and leaves an unread one out (#6423)', () => {
+    expect(
+      rosterUnitYields([
+        { deptKey: 'read', status: 'ok', count: 12 },
+        { deptKey: 'truncated', status: 'partial-read', count: 4 },
+        { deptKey: 'truncated-empty', status: 'partial-read', count: 0 },
+        { deptKey: 'migrated', status: 'empty', count: 0 },
+        { deptKey: 'broken-parser', status: 'extractor-error', count: 0 },
+        { deptKey: 'unreachable', status: 'fetch-failed', count: 0 },
+        { deptKey: 'limited', status: 'skipped-by-limit', count: 0 },
+      ]),
+    ).toEqual({ read: 12, truncated: 4, migrated: 0, 'broken-parser': 0 });
+  });
+
+  it('reads the applied mathematics roster from its page on the engineering site (#6423)', () => {
+    const config = DEFAULT_DEPT_CONFIGS.find((dept) => dept.deptKey === 'applied-mathematics');
+    expect(config).toMatchObject({
+      url: 'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
+      extractor: chemEnvFacultyExtractor,
+      withholdsHomeDepartment: true,
+    });
   });
 
   // The whole lane read, not just the mint: a support-staff roster entry carrying the

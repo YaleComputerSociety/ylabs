@@ -272,6 +272,25 @@ const ROSTER_LANES_NEVER_ATTEMPTED_STATUSES: ReadonlySet<string> = new Set([
  * because a tab sharing its `deptKey` with an earlier tab emits nobody new when it
  * re-lists the same people, and an `empty` status withholds the whole department.
  */
+const ROSTER_BARREN_STATUSES = new Set(['empty', 'extractor-error', 'rendered-extractor-error']);
+
+/**
+ * What each department roster yielded in this run, for the cross-run barren-unit check
+ * (#3876, #6423). A department this run did not read (a failed fetch, a `--limit` skip)
+ * is left out, because an omitted unit is inconclusive and a zero is barren.
+ */
+export function rosterUnitYields(
+  perDept: ReadonlyArray<Pick<LaneRead, 'deptKey' | 'status' | 'count'>>,
+): Record<string, number> {
+  const yields: Record<string, number> = {};
+  for (const dept of perDept) {
+    if (dept.status === 'ok') yields[dept.deptKey] = dept.count;
+    else if (dept.status === 'partial-read' && dept.count > 0) yields[dept.deptKey] = dept.count;
+    else if (ROSTER_BARREN_STATUSES.has(dept.status)) yields[dept.deptKey] = 0;
+  }
+  return yields;
+}
+
 export function htmlLaneStatus(
   walk: Pick<
     RosterLaneWalk,
@@ -2965,9 +2984,9 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'applied-mathematics',
     deptName: 'Applied Mathematics',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    url: 'https://applied.math.yale.edu/people/faculty',
+    url: 'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
     paginated: false,
-    extractor: viewsTableRowExtractor,
+    extractor: chemEnvFacultyExtractor,
     withholdsHomeDepartment: true,
     namesCatalogDepartment: true,
   },
@@ -5960,11 +5979,19 @@ export class DepartmentRosterScraper implements IScraper {
       );
     }
 
+    const partialFailures = [
+      ...brokenSources.map(
+        (d) =>
+          `roster source ${d.deptKey} fetched its page but read no faculty (${d.status}); re-verify its URL and extractor before trusting this department's roster`,
+      ),
+      ...(rekeyed.partialFailure ? [rekeyed.partialFailure] : []),
+    ];
     return {
       observationCount: totalObs,
       entitiesObserved: totalFaculty + totalLabs,
       notes: rekeyed.note ? `Departments: ${summary}; ${rekeyed.note}` : `Departments: ${summary}`,
-      ...(rekeyed.partialFailure ? { partialFailures: [rekeyed.partialFailure] } : {}),
+      ...(partialFailures.length > 0 ? { partialFailures } : {}),
+      metrics: { unitYields: rosterUnitYields(perDept) },
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }
