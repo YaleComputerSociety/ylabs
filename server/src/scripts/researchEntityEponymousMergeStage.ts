@@ -36,6 +36,7 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { connectScriptMongo } from '../db/connections';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -500,7 +501,7 @@ async function main(): Promise<void> {
     if (args.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(args.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+      writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
     }
   } finally {
     await mongoose.disconnect();

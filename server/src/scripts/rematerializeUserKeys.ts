@@ -63,6 +63,7 @@ import {
   type UserKeyPassRow,
 } from './rematerializeUserKeysCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -158,7 +159,7 @@ async function main(): Promise<void> {
           }
         : {}),
     };
-    fs.writeFileSync(outputPath, JSON.stringify({ ...report, rows: passes }, null, 2));
+    writeReportFileSync(outputPath, JSON.stringify({ ...report, rows: passes }, null, 2));
     console.log(JSON.stringify(report, null, 2));
   } finally {
     await mongoose.disconnect();

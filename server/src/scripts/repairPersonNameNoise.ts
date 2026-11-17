@@ -16,6 +16,7 @@ import {
   summarizePersonNameShapes,
   type PersonNameRow,
 } from './repairPersonNameNoiseCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -170,7 +171,7 @@ async function main(): Promise<void> {
 
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, JSON.stringify(report, null, 2));
+    writeReportFileSync(options.output, JSON.stringify(report, null, 2));
     console.log(`Saved report to ${options.output}`);
   }
 

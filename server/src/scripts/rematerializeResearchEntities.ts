@@ -71,6 +71,7 @@ import {
 } from './rematerializeResearchEntitiesCore';
 import { RESEARCH_ENTITY_CONTACT_FIELDS } from '../scrapers/rowKeyedContactEvidence';
 import { loadResearchAreaEvidenceBackedRowIds } from '../scrapers/researchAreaEvidence';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -384,7 +385,7 @@ function writeReport(report: Record<string, unknown>, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export interface RematerializeRegateSummary {

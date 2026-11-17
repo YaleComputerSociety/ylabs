@@ -30,6 +30,7 @@ import {
   type KindTypingLabAssertionInput,
   type KindTypingLeadEdgeInput,
 } from './researchEntityKindTypingAuditCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -130,7 +131,7 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
   }
 
   await mongoose.disconnect();
