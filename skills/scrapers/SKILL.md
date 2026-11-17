@@ -343,7 +343,8 @@ Subjects are counted within one source, because each lane can key one person dif
 A `dept-faculty-roster` key without a personal email is per roster (`dept:<roster>:<name>`), so those keys are counted by name, and one cross-listed person read off three rosters is one subject.
 A picture stored on 3 or more live researchers with different identities is a default too, whichever lane wrote it, including a legacy value no live observation asserts (`overSharedStoredPersonImageKeys`).
 Identity is the netid, or the researcher id when there is none, so twin records sharing a netid count once.
-Holders are then counted as people (`distinctPeopleAmongHolders`, #6284), merging only on proof, because undercounting would serve a site default: a shared netid, or the same full name where one of the two has no netid. Two holders with different netids are always two people.
+Holders are then counted as people (`distinctPeopleAmongHolders`, #6284), merging only on proof, because undercounting would serve a site default: a shared netid, or the same full name where one of the two has no netid.
+Two holders with different netids are always two people.
 A `netid:` key whose payload is an email alias proves no netid (the #2831 misnomer), so it counts as the netid the directory alias map resolves it to, and as its own holder otherwise; only aliases on a picture that could reach the bar are resolved (`emailAliasPayloadsOnCandidatePictures`).
 `profileImagePictureKey` also folds a Drupal WebP derivative (`<file>.jpg.webp`) onto its source file, so the two renditions of one picture count as one.
 A live observation counts the researcher its key names (a `netid:` key, or a per-roster key whose name slug matches exactly one researcher's display name), so clearing the stored copies does not drop a picture below the bar while that evidence would write it back.
