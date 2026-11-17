@@ -4688,6 +4688,7 @@ export async function loadUserKeysWithALiveFacultyTitle(
         (title) =>
           title.entityKey &&
           typeof title.value === 'string' &&
+          !isTruncatedPersonTitle(title.value) &&
           statesAnyFacultyAppointment(title.value),
       )
       .map((title) => title.entityKey as string),

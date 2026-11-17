@@ -313,6 +313,22 @@ describe('dept-faculty-roster holds titles to the end of the run (#5801), live',
     expect(await liveTitles()).toEqual(['Laboratory Manager']);
   });
 
+  it('does not let a truncated faculty title block a staff listing (#6345)', async () => {
+    await mongoose.connection.db!.collection('observations').insertOne({
+      sourceName: SOURCE_NAME,
+      entityType: 'user',
+      entityKey: PERSON_KEY,
+      field: 'title',
+      value: 'Professor of',
+      superseded: false,
+      observedAt: new Date('2026-11-01T00:00:00Z'),
+    });
+
+    secondListing.title = 'Laboratory Manager';
+    await scrape([physics]);
+    expect(await liveTitles()).toContain('Laboratory Manager');
+  });
+
   it('leaves the stored title standing when a later run reads only disagreeing listings', async () => {
     firstListing.title = 'Professor of Chemistry';
     await scrape([chemistry]);
