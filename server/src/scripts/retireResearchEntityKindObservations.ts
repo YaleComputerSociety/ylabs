@@ -16,6 +16,7 @@ import {
   type RetireKindCounts,
   type RetiredKindAssertion,
 } from './retireResearchEntityKindObservationsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -138,7 +139,7 @@ async function main(): Promise<void> {
     const plan = await planResearchEntityKindRetirement();
     if (output) {
       fs.mkdirSync(path.dirname(output), { recursive: true });
-      fs.writeFileSync(output, `${JSON.stringify(plan.record, null, 2)}\n`);
+      writeReportFileSync(output, `${JSON.stringify(plan.record, null, 2)}\n`);
       console.log(`Recorded ${plan.record.length} assertion(s) to ${output} before any write`);
     }
     const counts = apply ? await supersedeResearchEntityKindObservations(plan) : plan.counts;

@@ -24,6 +24,7 @@ import {
   UNFOLD_SHELL_AUDIT_ACTION,
   UNFOLD_SHELL_AUDIT_TARGET_TYPE,
 } from './unfoldResearcherShellCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -235,8 +236,8 @@ export async function restoreDetachedRoleAssignmentEdge(
     throw new Error(`${SCRIPT_NAME} apply needs a snapshot, an actor and both expected ids`);
   }
   fs.mkdirSync(path.dirname(args.snapshot), { recursive: true });
-  fs.writeFileSync(args.snapshot, `${JSON.stringify({ takenAt: now(), edge }, null, 2)}\n`, {
-    mode: 0o600,
+  writeReportFileSync(args.snapshot, `${JSON.stringify({ takenAt: now(), edge }, null, 2)}\n`, {
+    flag: '--snapshot',
   });
   if (isOperatorEnded(edge)) {
     const undone = await RoleAssignment.updateOne(

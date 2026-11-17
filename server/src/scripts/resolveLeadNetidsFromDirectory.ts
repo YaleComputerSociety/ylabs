@@ -25,6 +25,7 @@ import {
   type LeadEmailEvidence,
   type NetidlessLead,
 } from './resolveLeadNetidsFromDirectoryCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -116,7 +117,7 @@ async function loadFacultyDirectory(cachePath?: string): Promise<YaliesPerson[]>
 
   if (cachePath) {
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.writeFileSync(cachePath, JSON.stringify(people));
+    writeReportFileSync(cachePath, JSON.stringify(people), { flag: '--directory-cache' });
     console.log(`directory cached: ${people.length} rows`);
   }
   return people.filter((person) => isFacultyPerson(person));
@@ -282,7 +283,7 @@ async function main(): Promise<void> {
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
+    writeReportFileSync(outputPath, JSON.stringify(report, null, 2));
     console.log(`Saved report to ${outputPath}`);
   }
 

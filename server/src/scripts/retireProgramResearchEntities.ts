@@ -29,6 +29,7 @@ import {
   type ProgramResearchEntityCandidate,
   type RetireProgramResearchEntitiesPlan,
 } from './retireProgramResearchEntitiesCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -315,7 +316,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+      writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
       console.log(`Saved report to ${safeOutput}`);
     }
     if (result.search.requested > 0 && !result.search.deleted) {

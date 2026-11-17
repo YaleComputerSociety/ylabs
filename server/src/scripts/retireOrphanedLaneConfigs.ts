@@ -61,6 +61,7 @@ import {
 } from './retireOrphanedLaneConfigsCore';
 import { REMATERIALIZE_TRACKED_FIELDS } from './rematerializeResearchEntitiesCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -1013,7 +1014,7 @@ async function main(): Promise<void> {
     });
     if (outputPath) {
       fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         outputPath,
         `${JSON.stringify(
           {
@@ -1028,11 +1029,7 @@ async function main(): Promise<void> {
           null,
           2,
         )}\n`,
-        {
-          mode: 0o600,
-        },
       );
-      fs.chmodSync(outputPath, 0o600);
     }
     console.log(JSON.stringify({ script: SCRIPT_NAME, ...report }, null, 2));
   } finally {

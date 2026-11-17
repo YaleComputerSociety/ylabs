@@ -35,6 +35,7 @@ import {
   type OfficialProfileOwner,
   type PersonTitleObservation,
 } from './retireNonOwnerPiEdgesCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -311,7 +312,7 @@ async function main(): Promise<void> {
 
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(
+    writeReportFileSync(
       options.output,
       JSON.stringify(
         {

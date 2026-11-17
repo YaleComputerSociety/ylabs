@@ -27,6 +27,7 @@ import {
   type GluedTitleRetirement,
   type StoredProfileObservation,
 } from './retireGluedProfileTextCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -262,10 +263,9 @@ async function main(): Promise<void> {
   });
   if (options.detailOutput) {
     fs.mkdirSync(path.dirname(options.detailOutput), { recursive: true });
-    fs.writeFileSync(options.detailOutput, `${JSON.stringify(titleRetirements, null, 2)}\n`, {
-      mode: 0o600,
+    writeReportFileSync(options.detailOutput, `${JSON.stringify(titleRetirements, null, 2)}\n`, {
+      flag: '--detail-output',
     });
-    fs.chmodSync(options.detailOutput, 0o600);
   }
   console.log(JSON.stringify({ script: SCRIPT_NAME, ...result }, null, 2));
   await mongoose.disconnect();
