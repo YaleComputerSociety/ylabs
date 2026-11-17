@@ -14,6 +14,7 @@ import {
 } from '../scrapers/coverageSynthesis';
 import { COVERAGE_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 import { RESEARCH_PAGE_TEXT_SOURCE } from '../scrapers/utils/researchPageText';
+import type { ServingRowContext } from '../scrapers/utils/fullDescriptionServingBar';
 import {
   WRITER_TEXT_NORMALIZER_VERSION,
   normalizeWriterText,
@@ -25,7 +26,7 @@ import {
  * Part of the writer's input hash, so a change to the code-side refusal arms re-judges
  * every row once.
  */
-export const WRITER_CONTRACT_VERSION = 'written-description-5537-v1';
+export const WRITER_CONTRACT_VERSION = 'written-description-5961-v2';
 
 export const WRITER_MATERIAL_CHANGE_MIN_JACCARD = 0.9;
 
@@ -278,6 +279,8 @@ export interface WrittenDescriptionSubject {
   entityName: string;
   entityType?: ResearchEntityType;
   researchAreas?: unknown;
+  /** The row the serving bar judges a draft in; `null` declares that no row is available. */
+  servingRow: ServingRowContext | null;
 }
 
 export function judgeWriterDraft(
@@ -312,6 +315,7 @@ export async function resolveWrittenDescription(
     entityName: input.entityName,
     entityType: input.entityType,
     researchAreas: input.researchAreas,
+    servingRow: input.servingRow,
   };
   if (input.snippets.length === 0) {
     return { step: 'no-evidence', decision: null, modelCalled: false, refusalReasons: [] };

@@ -8,16 +8,32 @@ import { recordDevApplyIntent } from '../db/devWriteLease';
 import { countConnectionDrops } from '../utils/mongooseConnectionWasOpened';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import { appendObservations, getSourceByName } from '../scrapers/observationStore';
+import {
+  appendObservations,
+  getSourceByName,
+  retireObservations,
+} from '../scrapers/observationStore';
 import { contentHashObservation } from '../scrapers/contentHashGate';
 import { resetDescriptionOwnershipCitersCache } from '../scrapers/descriptionOwnershipResolverScreen';
+import {
+  createDescriptionCardJudge,
+  withServedCardForBody,
+} from '../scrapers/descriptionCardRefreshGuard';
 import {
   defaultMaterializerCardSynthesizer,
   materializationReadScopeFilter,
   materializeEntity,
 } from '../scrapers/entityMaterializer';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
+import type { ServingRowContext } from '../scrapers/utils/fullDescriptionServingBar';
 import { appendSynthesizedDescription } from './synthesizedDescriptionObservation';
+import {
+  REFUSED_REDRAFT_RETIRE_REASON_PREFIX,
+  decideRefusedRedraftRetire,
+  fallbackServesAfterRetire,
+  refusedRedraftRetireReason,
+  type RefusedRedraftRetireOutcome,
+} from './refusedRedraftBodyRetire';
 import {
   COVERAGE_CONFIDENCE,
   COVERAGE_SYNTHESIS_MODEL,
@@ -27,6 +43,7 @@ import {
   coverageSynthesisDecision,
   countCoverageSynthesisRefusals,
   type CoverageSynthesisDecision,
+  type CoverageSnippet,
   type CoverageSynthesisRefusal,
   type CoverageSynthesisRefusalDetails,
   type CoverageSynthesisResult,
@@ -61,10 +78,14 @@ import {
 import {
   loadIngestVerifiedRunIds,
   loadWriterEntitiesBySlug,
-  WRITER_ENTITY_PROJECTION,
+  WRITER_ENTITY_READ_PROJECTION,
+  writerEntityRowOf,
+  loadLeadFullNameShared,
+  loadLeadNetids,
   loadWriterObservations,
   loadWriterRowEvidence,
   writerLeadNames,
+  writerServingRow,
   parseWriterEvidenceFile,
   readJsonInputFile,
   readSlugsFile,
@@ -85,6 +106,7 @@ import {
   runCardPass,
 } from './cardSynthesisCore';
 import {
+  cachedCardFor,
   mongoCardSynthesisDerivationStore,
   type CardDraftFn,
 } from '../scrapers/cardSynthesisDerivation';
@@ -95,6 +117,7 @@ import {
   resolveWrittenDescription,
   writerInputHash,
   writerModelThroughCache,
+  WRITER_CONTRACT_VERSION,
   type WrittenDescriptionStep,
 } from './writtenDescriptionDerivationCore';
 import { regateRematerializedEntities } from './rematerializeResearchEntities';
@@ -152,10 +175,12 @@ export interface CoverageEntityReport {
   written: boolean;
   adopted?: boolean;
   observationDropped?: boolean;
+  observationDroppedBy?: string[];
   description?: string;
   sourceUrls?: string[];
   synthesisRefusal?: CoverageSynthesisRefusal;
   refusalDetails?: CoverageSynthesisRefusalDetails;
+  refusedRedraftRetire?: RefusedRedraftRetireOutcome;
 }
 
 export async function synthesizeIntoCoverageReport(
@@ -186,19 +211,23 @@ export const summarizeCoverageSynthesisRefusals = (reports: CoverageEntityReport
 type EntityRow = Record<string, any>;
 
 async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesisArgs>) {
-  const projection = WRITER_ENTITY_PROJECTION;
+  const projection = WRITER_ENTITY_READ_PROJECTION;
   if (args.rederiveCards) {
-    return (await ResearchEntity.find({
-      ...writtenBodyCardRepairFilter(SOURCE_NAME, { allWrittenRows: args.all }),
-      ...(args.slugs.length > 0 ? { slug: { $in: args.slugs } } : {}),
-    })
-      .select(projection)
-      .lean()) as EntityRow[];
+    return (
+      (await ResearchEntity.find({
+        ...writtenBodyCardRepairFilter(SOURCE_NAME, { allWrittenRows: args.all }),
+        ...(args.slugs.length > 0 ? { slug: { $in: args.slugs } } : {}),
+      })
+        .select(projection)
+        .lean()) as EntityRow[]
+    ).map(writerEntityRowOf);
   }
   if (args.slugs.length > 0) {
-    return (await ResearchEntity.find({ slug: { $in: args.slugs }, archived: { $ne: true } })
-      .select(projection)
-      .lean()) as EntityRow[];
+    return (
+      (await ResearchEntity.find({ slug: { $in: args.slugs }, archived: { $ne: true } })
+        .select(projection)
+        .lean()) as EntityRow[]
+    ).map(writerEntityRowOf);
   }
   const rows: EntityRow[] = [];
   let lastId: unknown;
@@ -215,7 +244,7 @@ async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesis
       .select(projection)
       .lean()) as EntityRow[];
     if (chunk.length === 0) break;
-    rows.push(...chunk);
+    rows.push(...chunk.map(writerEntityRowOf));
     lastId = chunk[chunk.length - 1]._id;
     if (chunk.length < remaining) break;
   }
@@ -239,6 +268,69 @@ async function materializeWrittenRow(entity: EntityRow): Promise<string | undefi
     writtenRowMaterializeOptions(typeof entity.name === 'string' ? entity.name : ''),
   );
   return typeof materialized.entityId === 'string' ? materialized.entityId : undefined;
+}
+
+async function settleRefusedRedraftBody(input: {
+  entity: EntityRow;
+  anchors: Record<string, unknown>[];
+  liveBody: string;
+  snippets: CoverageSnippet[];
+  refusal: CoverageSynthesisRefusal;
+  leadPersonName: string;
+  apply: boolean;
+  report: CoverageEntityReport;
+  onMaterialized: (entityId: string) => Promise<void>;
+}): Promise<void> {
+  const { entity, liveBody, report } = input;
+  const adoptedBodyStillSupported = adoptedWrittenBodyStillSupported({
+    body: liveBody,
+    snippets: input.snippets,
+    researchAreas: entity.researchAreas,
+    entityType: entity.entityType,
+  });
+  const adopted = adoptedBodyStillSupported
+    ? null
+    : ((await Observation.findOne({
+        entityType: 'researchEntity',
+        ...materializationReadScopeFilter(),
+        sourceName: SOURCE_NAME,
+        field: 'fullDescription',
+        value: liveBody,
+        $or: input.anchors,
+      })
+        .select('_id')
+        .lean()) as { _id: unknown } | null);
+  let fallbackServes = false;
+  if (adopted) {
+    const planned = await materializeEntity(
+      'researchEntity',
+      { entityKey: entity.slug },
+      {
+        dryRun: true,
+        writeOnlyFields: [...WRITTEN_ROW_FIELDS],
+        treatObservationIdsAsRetired: new Set([String(adopted._id)]),
+      },
+    );
+    fallbackServes = fallbackServesAfterRetire({
+      entityDoc: entity,
+      plannedSet: planned.plannedSet,
+      plannedUnset: planned.plannedUnset,
+      retiredBody: liveBody,
+      leadPersonName: input.leadPersonName,
+    });
+  }
+  const outcome = decideRefusedRedraftRetire({
+    adoptedBodyStillSupported: adoptedBodyStillSupported || !adopted,
+    fallbackServes,
+  });
+  report.refusedRedraftRetire = outcome;
+  if (outcome !== 'retire-with-fallback' || !input.apply || !adopted) return;
+  await retireObservations(
+    { _id: adopted._id },
+    refusedRedraftRetireReason(WRITER_CONTRACT_VERSION, input.refusal),
+  );
+  const materializedId = await materializeWrittenRow(entity);
+  if (materializedId) await input.onMaterialized(materializedId);
 }
 
 async function servesWrittenBody(entityId: string): Promise<boolean> {
@@ -379,6 +471,25 @@ function writeJsonReport(output: string, flag: string, value: unknown): void {
   fs.writeFileSync(resolveSafeJsonReportOutputPath(output, flag), JSON.stringify(value, null, 2));
 }
 
+async function withServingRows(requests: readonly CardRequest[]): Promise<CardRequest[]> {
+  const unjudgeable = requests.filter((request) => !request.servingRow);
+  if (unjudgeable.length === 0) return [...requests];
+  const entities = await loadWriterEntitiesBySlug([
+    ...new Set(unjudgeable.map((request) => request.slug)),
+  ]);
+  const servingRowBySlug = new Map<string, ServingRowContext>();
+  for (const entity of entities) {
+    servingRowBySlug.set(
+      entity.slug,
+      writerServingRow({ entity, leadNames: await writerLeadNames(entity._id) }),
+    );
+  }
+  return requests.map((request) => {
+    const servingRow = request.servingRow ?? servingRowBySlug.get(request.slug);
+    return servingRow ? { ...request, servingRow } : request;
+  });
+}
+
 async function runCardPassMode(
   args: ReturnType<typeof parseCoverageSynthesisArgs>,
   dbLabel: string,
@@ -404,7 +515,7 @@ async function runCardPassMode(
         'research-entity:coverage-synthesis --synthesize-cards --import-derivations requires --output',
       );
     const report = await runCardImport({
-      requests,
+      requests: await withServingRows(requests),
       drafts: parseImportedCardDrafts(
         readJsonInputFile(args.importDerivations as string, '--import-derivations'),
       ),
@@ -648,6 +759,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     const mergedInAnchors = (mergedInBySurvivor.get(String(entity._id)) ?? []).flatMap((row) =>
       writerObservationAnchors({ entityKey: row.slug, entityId: row._id }),
     );
+    const leadNames = await writerLeadNames(entity._id);
     const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(
       observations,
       () => loadWriterObservations(mergedInAnchors, verifiedRunIds),
@@ -658,7 +770,9 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
         entityType: entity.entityType,
         kind: entity.kind,
         identity: entity,
-        leadNames: await writerLeadNames(entity._id),
+        leadNames,
+        leadFullNameShared: await loadLeadFullNameShared(leadNames[0]),
+        leadNetids: await loadLeadNetids(entity._id),
       },
     );
     report.snippets = snippets.length;
@@ -667,7 +781,14 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
         entityType: 'researchEntity',
         sourceName: SOURCE_NAME,
         field: 'fullDescription',
-        'rollback.reason': RETIRE_REASON,
+        $and: [
+          {
+            $or: [
+              { 'rollback.reason': RETIRE_REASON },
+              { 'rollback.reason': { $regex: `^${REFUSED_REDRAFT_RETIRE_REASON_PREFIX}:` } },
+            ],
+          },
+        ],
         $or: anchors,
       })
         .sort({ observedAt: -1 })
@@ -730,6 +851,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
           entityName: typeof entity.name === 'string' ? entity.name : '',
           entityType: entity.entityType,
           researchAreas: entity.researchAreas,
+          servingRow: writerServingRow({ entity, leadNames }),
           previousInputHash: storedHash,
           store,
           drafting,
@@ -764,6 +886,27 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     );
     if (materializeIsDeferred) deferMaterialize(report);
     const liveBody = liveWrittenBody(observations, SOURCE_NAME);
+    if (args.retireUnsupportedRefusedBodies && decision?.refusal && liveBody) {
+      try {
+        await settleRefusedRedraftBody({
+          entity,
+          anchors,
+          liveBody,
+          snippets,
+          refusal: decision.refusal,
+          leadPersonName: leadNames[0] ?? '',
+          apply: Boolean(args.apply && context),
+          report,
+          onMaterialized: async (entityId) => {
+            await regater.add([entityId]);
+          },
+        });
+      } catch (error) {
+        entityErrors += 1;
+        console.error(`[coverage-synthesis] ${entity.slug}: ${sanitizeLogValue(error)}`);
+        return;
+      }
+    }
     let writes = carriedOverWrites(writerWritesFor(planned, decision), {
       carriedOver,
       liveBody,
@@ -778,12 +921,15 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
         researchAreas: Array.isArray(entity.researchAreas)
           ? entity.researchAreas.filter((area): area is string => typeof area === 'string')
           : [],
+        servingRow: writerServingRow({ entity, leadNames }),
       });
     }
     if (!args.apply || !context) return;
     try {
       let changed = false;
       if (writes.writeBody && decision?.result) {
+        const entityName = typeof entity.name === 'string' ? entity.name : '';
+        const evidenceTexts = snippets.map((snippet) => snippet.text);
         const stored = await appendSynthesizedDescription(
           report,
           {
@@ -795,6 +941,10 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
             confidenceOverride: COVERAGE_CONFIDENCE,
           },
           context,
+          appendObservations,
+          withServedCardForBody(createDescriptionCardJudge(), (fullDescription) =>
+            cachedCardFor({ fullDescription, evidenceTexts, entityName }),
+          ),
         );
         if (stored) {
           written += 1;
@@ -847,12 +997,24 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     evidenceUnchanged: countBy('evidence-unchanged'),
     reinstated: countBy('reinstated'),
     reinstateRefused: countBy('reinstate-refused'),
+    refusedRedraftRetire: {
+      keptSupported: reports.filter((r) => r.refusedRedraftRetire === 'kept-supported').length,
+      retiredWithFallback: reports.filter((r) => r.refusedRedraftRetire === 'retire-with-fallback')
+        .length,
+      residualNoFallback: reports.filter((r) => r.refusedRedraftRetire === 'residual-no-fallback')
+        .length,
+    },
     noEvidence: countBy('no-evidence'),
     fullDescriptionLocked: countBy('fullDescription-locked'),
     synthesized: reports.filter((r) => r.synthesized).length,
     synthesisRefusals: summarizeCoverageSynthesisRefusals(reports),
     written,
     observationDropped,
+    observationDroppedBy: reports.reduce<Record<string, number>>((counts, entry) => {
+      for (const guard of entry.observationDroppedBy ?? [])
+        counts[guard] = (counts[guard] ?? 0) + 1;
+      return counts;
+    }, {}),
     adopted,
     entityErrors,
     connectionDrops: { ...connectionDrops },

@@ -101,65 +101,30 @@ describe('researchPassageOf (#5648)', () => {
   });
 });
 
-describe('the writer reads lab-site descriptions narrowed, and page text as is (#5648)', () => {
-  it('narrows or drops a lab-site description value and leaves research page text alone', async () => {
+describe('the writer reads page text, never a lab-site description (#5648, #5961)', () => {
+  it('reads research page text as is and no lab-site description value', async () => {
     const { gatherCoverageSnippets } = await import('../../scrapers/coverageSynthesis');
     const recipe =
       'Mix the flour and baking soda. Pour the batter into a hot pan and flip each pancake once.';
-    const snippets = gatherCoverageSnippets(
-      [
-        {
-          field: 'fullDescription',
-          value: `She was president-elect of the Example Society in 2018. ${RESEARCH}`,
-          sourceName: 'lab-microsite-description-llm',
-          sourceUrl: 'https://kelp.example.org/',
-          ingestVerifiedAgainstPage: true,
-        },
-        {
-          field: 'fullDescription',
-          value: recipe,
-          sourceName: 'lab-microsite-description-llm',
-          sourceUrl: 'https://kelp.example.org/recipes',
-          ingestVerifiedAgainstPage: true,
-        },
-        {
-          field: 'researchPageText',
-          sourceName: 'research-page-text',
-          value: [{ url: 'https://kelp.example.org/about', text: `${recipe}\n${RESEARCH}` }],
-        },
-      ],
-      undefined,
-      { narrowLabSiteDescriptions: true },
-    );
-    expect(snippets.map((snippet) => snippet.text)).toEqual([RESEARCH, `${recipe}\n${RESEARCH}`]);
+    const snippets = gatherCoverageSnippets([
+      {
+        field: 'fullDescription',
+        value: `She was president-elect of the Example Society in 2018. ${RESEARCH}`,
+        sourceName: 'lab-microsite-description-llm',
+        sourceUrl: 'https://kelp.example.org/',
+        ingestVerifiedAgainstPage: true,
+      },
+      {
+        field: 'researchPageText',
+        sourceName: 'research-page-text',
+        value: [{ url: 'https://kelp.example.org/about', text: `${recipe}\n${RESEARCH}` }],
+      },
+    ]);
+    expect(snippets.map((snippet) => snippet.text)).toEqual([`${recipe}\n${RESEARCH}`]);
   });
 });
 
 describe('the narrowing reads person rows only (#5648)', () => {
-  it('leaves a lab or fellowship body as it is in the writer evidence', async () => {
-    const { buildWriterEvidenceSnippets } = await import('../../scripts/coverageSynthesisCore');
-    const body =
-      'The fellowship funds a ten-week summer placement in a coastal ecology lab, with housing and a stipend.';
-    const evidence = [
-      {
-        field: 'fullDescription',
-        value: body,
-        sourceName: 'lab-microsite-description-llm',
-        sourceUrl: 'https://kelp.example.org/fellowship',
-        ingestVerifiedAgainstPage: true,
-      },
-    ];
-    expect(buildWriterEvidenceSnippets(evidence, undefined, { entityType: 'PROGRAM' })).toEqual([
-      expect.objectContaining({ text: body }),
-    ]);
-    expect(buildWriterEvidenceSnippets(evidence, undefined, { entityType: 'LAB' })).toEqual([
-      expect.objectContaining({ text: body }),
-    ]);
-    expect(
-      buildWriterEvidenceSnippets(evidence, undefined, { entityType: 'FACULTY_RESEARCH_AREA' }),
-    ).toEqual([]);
-  });
-
   it('names the person rows', () => {
     expect(isPersonResearchRow({ entityType: 'FACULTY_RESEARCH_AREA' })).toBe(true);
     expect(isPersonResearchRow({ kind: 'individual' })).toBe(true);
@@ -228,24 +193,5 @@ describe('the resolver sets clinical service aside in a lab-site description (#5
     };
     const other = { field: 'fullDescription', sourceName: 'ysm-faculty-directory', value: CARE };
     expect(withLabSiteDescriptionsNarrowedToResearch([observation, other])).toEqual([other]);
-  });
-
-  it('leaves the writer evidence reading of the same value as it was', async () => {
-    const { gatherCoverageSnippets } = await import('../../scrapers/coverageSynthesis');
-    const value = `${SPECIALTY} ${CARDIAC_RESEARCH} ${RECOGNITION}`;
-    const snippets = gatherCoverageSnippets(
-      [
-        {
-          field: 'fullDescription',
-          value,
-          sourceName: 'lab-microsite-description-llm',
-          sourceUrl: 'https://heart.example.org/',
-          ingestVerifiedAgainstPage: true,
-        },
-      ],
-      undefined,
-      { narrowLabSiteDescriptions: true },
-    );
-    expect(snippets.map((snippet) => snippet.text)).toEqual([value]);
   });
 });

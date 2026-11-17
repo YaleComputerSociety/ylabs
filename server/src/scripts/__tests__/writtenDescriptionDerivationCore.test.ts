@@ -37,7 +37,7 @@ const PROFILE: CoverageSnippet = {
 const SNIPPETS = [pageSnippet(PAGE_LINES), PROFILE];
 const GOOD =
   'Studies how coral reefs recover after marine heatwaves and bleaching events. Field surveys follow coral colonies and reef fish across the Caribbean, and test how algae compete with coral for space on damaged reefs.';
-const subject = { snippets: SNIPPETS, entityName: 'Reef Lab' };
+const subject = { snippets: SNIPPETS, entityName: 'Reef Lab', servingRow: null };
 
 function memoryStore(entries: StoredWrittenDescriptionDerivation[] = []) {
   const byHash = new Map(entries.map((entry) => [entry.inputHash, entry]));

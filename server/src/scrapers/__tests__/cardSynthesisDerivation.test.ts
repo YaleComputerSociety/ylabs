@@ -86,8 +86,18 @@ describe('the card cache (#5537)', () => {
 });
 
 describe('imported cards (#5537)', () => {
+  const servingRow = (slug: string, name: string) => ({
+    entity: { slug, name, entityType: 'LAB' },
+    leadPersonName: '',
+  });
   const requests: CardRequest[] = [
-    { slug: 'tidepool-lab', entityName: 'Tidepool Lab', fullDescription: BODY, evidenceTexts: [] },
+    {
+      slug: 'tidepool-lab',
+      entityName: 'Tidepool Lab',
+      fullDescription: BODY,
+      evidenceTexts: [],
+      servingRow: servingRow('tidepool-lab', 'Tidepool Lab'),
+    },
   ];
 
   it('accepts a passing external card with its provenance', async () => {
@@ -142,9 +152,15 @@ describe('imported cards (#5537)', () => {
         fullDescription: chipBody,
         researchAreas: ['Marine Ecology', 'Kelp Forests'],
       },
-      { slug: 'kelp-lab', entityName: 'Kelp Lab', fullDescription: BODY },
+      {
+        slug: 'kelp-lab',
+        entityName: 'Kelp Lab',
+        fullDescription: BODY,
+        servingRow: servingRow('kelp-lab', 'Kelp Lab'),
+      },
     ]);
     expect(barRequests[1].researchAreas).toEqual(['Marine Ecology', 'Kelp Forests']);
+    expect(barRequests[2].servingRow).toEqual(servingRow('kelp-lab', 'Kelp Lab'));
     const store = memoryStore();
     const report = await runCardImport({
       requests: barRequests,

@@ -4,6 +4,7 @@ import { cardDescriptionEvidence } from '../entityMaterializer';
 import { describeDescriptionExtraction } from '../sources/labMicrositeDescriptionLLMExtractor';
 import { isProfileTemplateChrome } from '../../utils/profileTemplateChrome';
 
+const PROFILE_SOURCE = 'ysm-faculty-directory';
 const PAGE = 'https://medicine.example.edu/profile/fixture-person/';
 const WIDGET_LABELS =
   "Medical Research Interests Pediatrics Research at a Glance Yale Co-Authors Frequent collaborators of Fixture Person's published research. Publications Timeline A big-picture view of Fixture Person's research output by year.";
@@ -15,7 +16,7 @@ const PANEL_ONLY =
 const MESH_RUN = 'Medical Research Interests Asthma; Pediatrics; Respiration Disorders';
 
 describe('profile template widget labels are never writer evidence (#4914 follow-up)', () => {
-  it('refuses a value that is only widgets, even when the lane verified it against the page', () => {
+  it('refuses a value that is only widgets, even when its page carries it', () => {
     for (const value of [
       TIMELINE_ONLY,
       PANEL_ONLY,
@@ -27,8 +28,7 @@ describe('profile template widget labels are never writer evidence (#4914 follow
           field: 'fullDescription',
           value,
           sourceUrl: PAGE,
-          sourceName: 'lab-microsite-description-llm',
-          ingestVerifiedAgainstPage: true,
+          sourceName: PROFILE_SOURCE,
         }),
       ).toBe(false);
       expect(
@@ -37,7 +37,7 @@ describe('profile template widget labels are never writer evidence (#4914 follow
             field: 'fullDescription',
             value,
             sourceUrl: PAGE,
-            sourceName: 'lab-microsite-description-llm',
+            sourceName: PROFILE_SOURCE,
           },
           () => `Fixture Person, MD ${value} Contact`,
         ),
@@ -50,8 +50,7 @@ describe('profile template widget labels are never writer evidence (#4914 follow
       field: 'fullDescription',
       value,
       sourceUrl: PAGE,
-      sourceName: 'lab-microsite-description-llm',
-      ingestVerifiedAgainstPage: true,
+      sourceName: PROFILE_SOURCE,
     });
     expect(gatherCoverageSnippets([observation(WIDGET_LABELS)]).map((s) => s.text)).toEqual([
       'Medical Research Interests Pediatrics',
@@ -74,8 +73,7 @@ describe('profile template widget labels are never writer evidence (#4914 follow
         field: 'fullDescription',
         value,
         sourceUrl: PAGE,
-        sourceName: 'lab-microsite-description-llm',
-        ingestVerifiedAgainstPage: true,
+        sourceName: PROFILE_SOURCE,
       };
       expect(gatherCoverageSnippets([observation]).map((s) => s.text)).toEqual([value]);
       expect(cardDescriptionEvidence([{ ...observation, confidence: 0.55 } as never])).toEqual([
@@ -91,8 +89,7 @@ describe('profile template widget labels are never writer evidence (#4914 follow
           field: 'fullDescription',
           value: `${PANEL_ONLY} ${TIMELINE_ONLY}`,
           sourceUrl: PAGE,
-          sourceName: 'lab-microsite-description-llm',
-          ingestVerifiedAgainstPage: true,
+          sourceName: PROFILE_SOURCE,
         },
       ]),
     ).toEqual([]);
@@ -106,8 +103,7 @@ describe('profile template widget labels are never writer evidence (#4914 follow
         field: 'fullDescription',
         value: body,
         sourceUrl: PAGE,
-        sourceName: 'lab-microsite-description-llm',
-        ingestVerifiedAgainstPage: true,
+        sourceName: PROFILE_SOURCE,
       }),
     ).toBe(true);
   });

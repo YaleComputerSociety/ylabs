@@ -164,7 +164,7 @@ export function personNameFromLine(line: string): { name: string; rest: string }
  * center's executive director a correct lead; `associate`, `assistant`, `deputy` and
  * `medical` directors are not, and neither is `director of <another unit>`.
  */
-const LEAD_TITLE_CORE =
+export const LEAD_TITLE_CORE =
   '(?:(?:acting|interim)\\s+)?(?:(?:lab(?:oratory)?|faculty|founding|center|centre|program)\\s+)?(?:executive\\s+)?(?:co-?)?director(?:\\s+and\\s+principal\\s+investigator)?|principal\\s+investigator|pi|lab\\s+head|head\\s+of\\s+(?:the\\s+)?lab(?:oratory)?';
 
 const LEAD_TITLE_SEGMENT = new RegExp(

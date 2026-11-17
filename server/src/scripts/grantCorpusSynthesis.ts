@@ -44,6 +44,7 @@ export interface GrantCorpusEntityReport {
   synthesized: boolean;
   written: boolean;
   observationDropped?: boolean;
+  observationDroppedBy?: string[];
   gainedSchool: boolean;
   wouldPromoteToStudentReady: boolean;
   school?: string;

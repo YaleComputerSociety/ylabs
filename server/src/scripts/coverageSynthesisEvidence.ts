@@ -4,10 +4,17 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
 import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
+import { Researcher } from '../models/researcher';
 import type { CoverageObservationLike, CoverageSnippet } from '../scrapers/coverageSynthesis';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import { containsAsciiControl } from '../utils/asciiControl';
-import { loadResearchEntityLeadPersonName } from '../utils/researchHomeNameIdentityRoster';
+import {
+  loadResearchEntityLeadPersonDisplayNames,
+  loadResearchEntityLeadPersonIds,
+  loadResearchEntityLeadPersonName,
+} from '../utils/researchHomeNameIdentityRoster';
+import { withPublicDescriptionGateFields } from '../services/researchEntityPublicDescription';
+import type { ServingRowContext } from '../scrapers/utils/fullDescriptionServingBar';
 import {
   INGEST_VERIFIED_EXTRACTION_SOURCE,
   PAGE_GROUNDING_VERIFIED_SINCE,
@@ -20,6 +27,24 @@ import {
 
 export const WRITER_ENTITY_PROJECTION =
   'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl sourceUrls fieldValueRefusals';
+/**
+ * The writer's row read: its evidence fields, plus the serving bar's gate fields kept
+ * apart under `servingEntity`, so the serving bar judges a draft in the row the
+ * materializer judges it in while the evidence the writer reads stays exactly
+ * `WRITER_ENTITY_PROJECTION`.
+ */
+export const WRITER_ENTITY_READ_PROJECTION =
+  withPublicDescriptionGateFields(WRITER_ENTITY_PROJECTION);
+const WRITER_ENTITY_FIELDS = ['_id', ...WRITER_ENTITY_PROJECTION.split(/\s+/)];
+
+export function writerEntityRowOf(doc: Record<string, unknown>): WriterEntityRow {
+  const row: WriterEntityRow = {};
+  for (const field of WRITER_ENTITY_FIELDS) {
+    if (Object.hasOwn(doc, field)) row[field] = doc[field];
+  }
+  row.servingEntity = doc;
+  return row;
+}
 export const WRITER_OBSERVATION_PROJECTION =
   'field value sourceUrl sourceName confidence observedAt scrapeRunId superseded';
 
@@ -32,6 +57,8 @@ export interface WriterRowEvidence {
   observations: WriterObservation[];
   mergedInObservations: WriterObservation[];
   leadNames?: string[];
+  leadFullNameShared?: boolean;
+  leadNetids?: string[];
 }
 
 export const WRITER_EVIDENCE_FILE_VERSION = 1;
@@ -74,17 +101,95 @@ export async function loadWriterObservations(
   );
 }
 
+const comparableFullName = (value: unknown): string =>
+  String(value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]+/g, ' ')
+    .trim();
+
+/**
+ * Whether another live person in the corpus carries the lead's full display name, so a page
+ * address naming that name cannot tell which of them it is about (#6316). Archived records
+ * are merge residue of the same person, not a second person.
+ */
+export async function loadLeadFullNameShared(leadName: unknown): Promise<boolean> {
+  const wanted = comparableFullName(leadName);
+  if (!wanted || !wanted.includes(' ')) return false;
+  const surname = wanted.split(' ').pop() as string;
+  const candidates = (await Researcher.find({
+    archived: { $ne: true },
+    displayName: { $regex: surname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+  })
+    .select('displayName')
+    .lean()) as Array<{ displayName?: unknown }>;
+  return (
+    candidates.filter((person) => comparableFullName(person.displayName) === wanted).length > 1
+  );
+}
+
 export async function loadWriterEntitiesBySlug(
   slugs: readonly string[],
 ): Promise<WriterEntityRow[]> {
-  return (await ResearchEntity.find({ slug: { $in: [...slugs] }, archived: { $ne: true } })
-    .select(WRITER_ENTITY_PROJECTION)
-    .lean()) as WriterEntityRow[];
+  const docs = (await ResearchEntity.find({ slug: { $in: [...slugs] }, archived: { $ne: true } })
+    .select(WRITER_ENTITY_READ_PROJECTION)
+    .lean()) as Record<string, unknown>[];
+  return docs.map(writerEntityRowOf);
+}
+
+export function writerServingRow(row: {
+  entity: WriterEntityRow;
+  leadNames?: readonly string[];
+}): ServingRowContext {
+  const servingEntity = row.entity.servingEntity;
+  return {
+    entity:
+      servingEntity && typeof servingEntity === 'object'
+        ? (servingEntity as Record<string, unknown>)
+        : row.entity,
+    leadPersonName: row.leadNames?.[0] ?? '',
+  };
+}
+
+/**
+ * Every live lead of the row, the materializer's lead first: the page filter admits a page
+ * that names any lead, as topic derivation does (#6127), and the serving bar reads the first.
+ */
+export async function writerLeadIdentity(
+  entityId: unknown,
+): Promise<{ leadNames: string[]; leadFullNameShared: boolean; leadNetids: string[] }> {
+  const leadNames = await writerLeadNames(entityId);
+  return {
+    leadNames,
+    leadFullNameShared: await loadLeadFullNameShared(leadNames[0]),
+    leadNetids: await loadLeadNetids(entityId),
+  };
+}
+
+export async function loadLeadNetids(entityId: unknown): Promise<string[]> {
+  const id = entityId === undefined || entityId === null ? '' : String(entityId);
+  if (!id) return [];
+  const personIds = (await loadResearchEntityLeadPersonIds([id])).get(id) ?? [];
+  if (personIds.length === 0) return [];
+  const people = (await Researcher.find({ _id: { $in: personIds } })
+    .select('identifiers.netid')
+    .lean()) as Array<{ identifiers?: { netid?: unknown } }>;
+  return people
+    .map((person) =>
+      String(person.identifiers?.netid ?? '')
+        .trim()
+        .toLowerCase(),
+    )
+    .filter(Boolean);
 }
 
 export async function writerLeadNames(entityId: unknown): Promise<string[]> {
   const leadName = await loadResearchEntityLeadPersonName(entityId);
-  return leadName ? [leadName] : [];
+  const id = entityId === undefined || entityId === null ? '' : String(entityId);
+  const allLeads = id ? ((await loadResearchEntityLeadPersonDisplayNames([id])).get(id) ?? []) : [];
+  const others = allLeads.filter((name) => name !== leadName);
+  return leadName ? [leadName, ...others] : others;
 }
 
 export async function loadWriterRowEvidence(
@@ -105,7 +210,7 @@ export async function loadWriterRowEvidence(
       entity: { ...entity, _id: entity._id === undefined ? undefined : String(entity._id) },
       observations: await loadWriterObservations(anchors, verifiedRunIds),
       mergedInObservations: await loadWriterObservations(mergedInAnchors, verifiedRunIds),
-      leadNames: await writerLeadNames(entity._id),
+      ...(await writerLeadIdentity(entity._id)),
     });
   }
   return rows;
@@ -119,6 +224,8 @@ export function snippetsFromRowEvidence(row: WriterRowEvidence, now: Date): Cove
     kind: row.entity.kind,
     identity: row.entity,
     leadNames: row.leadNames,
+    leadFullNameShared: row.leadFullNameShared === true,
+    leadNetids: row.leadNetids ?? [],
     now,
   };
   const own = buildWriterEvidenceSnippets(row.observations, row.entity.recentGrants, options);
@@ -164,6 +271,14 @@ export function parseWriterEvidenceFile(value: unknown): WriterEvidenceFile {
       mergedInObservations: (row.mergedInObservations ?? []).map(revivedObservation),
       ...(Array.isArray(row.leadNames)
         ? { leadNames: row.leadNames.filter((name): name is string => typeof name === 'string') }
+        : {}),
+      ...(row.leadFullNameShared === true ? { leadFullNameShared: true } : {}),
+      ...(Array.isArray(row.leadNetids)
+        ? {
+            leadNetids: row.leadNetids.filter(
+              (netid): netid is string => typeof netid === 'string',
+            ),
+          }
         : {}),
     })),
   };

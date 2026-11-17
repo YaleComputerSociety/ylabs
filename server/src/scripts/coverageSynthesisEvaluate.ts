@@ -9,7 +9,11 @@ import type {
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { storedWriterEvidenceHash } from './coverageSynthesisCore';
-import { snippetsFromRowEvidence, type WriterRowEvidence } from './coverageSynthesisEvidence';
+import {
+  snippetsFromRowEvidence,
+  writerServingRow,
+  type WriterRowEvidence,
+} from './coverageSynthesisEvidence';
 import {
   judgeImportedWriterDraft,
   resolveWrittenDescription,
@@ -31,6 +35,7 @@ const subjectOf = (
   entityName: typeof row.entity.name === 'string' ? row.entity.name : '',
   entityType: row.entity.entityType,
   researchAreas: row.entity.researchAreas,
+  servingRow: writerServingRow(row),
 });
 
 const isDescriptionLocked = (row: WriterRowEvidence): boolean =>

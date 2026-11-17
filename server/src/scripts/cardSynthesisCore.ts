@@ -1,8 +1,12 @@
 import {
+  isAcceptableWrittenBodyCard,
   isRefusedWrittenBodyCard,
   materializeEntity,
+  servingBarAcceptsWrittenBodyCard,
   type CardSynthesizer,
 } from '../scrapers/entityMaterializer';
+import type { ServingRowContext } from '../scrapers/utils/fullDescriptionServingBar';
+import { writerLeadNames, writerServingRow } from './coverageSynthesisEvidence';
 import {
   cardInputHash,
   judgeImportedCard,
@@ -12,6 +16,7 @@ import {
   type CardSynthesisDerivationStore,
 } from '../scrapers/cardSynthesisDerivation';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
+import { isUngroundedSynthesizedCard } from '../utils/groundedCardSynthesis';
 
 export interface CardRequest {
   slug: string;
@@ -19,6 +24,7 @@ export interface CardRequest {
   fullDescription: string;
   evidenceTexts: string[];
   researchAreas?: string[];
+  servingRow?: ServingRowContext;
 }
 
 function stringList(value: unknown): string[] {
@@ -41,6 +47,7 @@ export async function collectCardRequests(
     const seen = new Set<string>();
     const entityName = typeof entity.name === 'string' ? entity.name : '';
     const researchAreas = stringList(entity.researchAreas);
+    const servingRow = writerServingRow({ entity, leadNames: await writerLeadNames(entity._id) });
     const recorder: CardSynthesizer = async (fullDescription, evidenceTexts) => {
       const key = cardInputHash(fullDescription);
       if (!seen.has(key)) {
@@ -51,6 +58,7 @@ export async function collectCardRequests(
           fullDescription,
           evidenceTexts: [...(evidenceTexts ?? [])],
           researchAreas,
+          servingRow,
         });
       }
       return '';
@@ -64,6 +72,15 @@ export async function collectCardRequests(
   return requests;
 }
 
+function parsedServingRow(value: unknown): ServingRowContext | undefined {
+  const row = value as { entity?: unknown; leadPersonName?: unknown } | null | undefined;
+  if (!row?.entity || typeof row.entity !== 'object') return undefined;
+  return {
+    entity: row.entity as Record<string, unknown>,
+    leadPersonName: typeof row.leadPersonName === 'string' ? row.leadPersonName : '',
+  };
+}
+
 export function parseCardRequests(value: unknown): CardRequest[] {
   const rows = Array.isArray(value) ? value : (value as { requests?: unknown })?.requests;
   if (!Array.isArray(rows)) throw new Error('--bodies-file expects a JSON array of card requests');
@@ -73,12 +90,14 @@ export function parseCardRequests(value: unknown): CardRequest[] {
     if (!slug || !fullDescription) {
       throw new Error(`--bodies-file entry ${position} needs a slug and a fullDescription`);
     }
+    const servingRow = parsedServingRow(row.servingRow);
     return {
       slug,
       entityName: typeof row.entityName === 'string' ? row.entityName : '',
       fullDescription,
       evidenceTexts: stringList(row.evidenceTexts),
       researchAreas: stringList(row.researchAreas),
+      ...(servingRow ? { servingRow } : {}),
     };
   });
 }
@@ -140,7 +159,47 @@ export function parseImportedCardDrafts(value: unknown): ImportedCardDraft[] {
   });
 }
 
-export type CardImportRefusalReason = 'card-synthesis-checks' | 'written-body-card-bar';
+export type CardImportRefusalReason =
+  | 'card-synthesis-checks'
+  | 'written-body-card-bar'
+  | 'no-serving-row'
+  | 'written-body-card-acceptance'
+  | 'serve-time-ungrounded';
+
+/**
+ * The materializer's own judgement on a synthesized card beside a written body, so a card
+ * it would refuse is refused here rather than imported and never served. A request with
+ * no row cannot be judged by the serving bar, so it fails closed.
+ */
+export function writtenBodyCardImportRefusal(
+  request: CardRequest,
+  card: string,
+): CardImportRefusalReason | null {
+  if (isRefusedWrittenBodyCard(card, request.fullDescription, request.researchAreas)) {
+    return 'written-body-card-bar';
+  }
+  const { servingRow } = request;
+  if (!servingRow) return 'no-serving-row';
+  const accepted = isAcceptableWrittenBodyCard({
+    card,
+    body: request.fullDescription,
+    researchAreas: request.researchAreas,
+    servingBarAccepts: (candidate) =>
+      servingBarAcceptsWrittenBodyCard(
+        servingRow.entity,
+        {},
+        request.fullDescription,
+        candidate,
+        servingRow.leadPersonName,
+      ),
+    requireGrounding: false,
+    evidenceTexts: request.evidenceTexts,
+  });
+  if (!accepted) return 'written-body-card-acceptance';
+  return isUngroundedSynthesizedCard({ card, body: request.fullDescription })
+    ? 'serve-time-ungrounded'
+    : null;
+}
 
 export interface CardImportRow {
   slug: string;
@@ -185,14 +244,13 @@ export async function runCardImport(input: {
       draft,
     );
     row.inputHash = verdict.inputHash;
-    if (verdict.outcome === 'refused') {
+    const refusalReason =
+      verdict.outcome === 'refused'
+        ? 'card-synthesis-checks'
+        : writtenBodyCardImportRefusal(request, verdict.card);
+    if (refusalReason) {
       row.outcome = 'refused';
-      row.refusalReason = 'card-synthesis-checks';
-    } else if (
-      isRefusedWrittenBodyCard(verdict.card, request.fullDescription, request.researchAreas)
-    ) {
-      row.outcome = 'refused';
-      row.refusalReason = 'written-body-card-bar';
+      row.refusalReason = refusalReason;
     } else {
       row.outcome = 'accepted';
       row.card = verdict.card;

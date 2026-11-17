@@ -22,7 +22,11 @@ import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import { isBiographyRatherThanResearch } from './biographyRatherThanResearch';
 import { CARD_SYNTHESIS_PROMPT, CARD_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 import { withoutUnsupportedMethodClauses } from './methodClauseSupport';
-import { browseCardIsCutMidSentence, browseCardSummary } from './browseCardSummary';
+import {
+  browseCardIsCutMidSentence,
+  browseCardSummary,
+  endsOnNonTerminalAbbreviation,
+} from './browseCardSummary';
 import { postChatCompletion } from './modelClient';
 
 export const CARD_SYNTHESIS_MODEL = 'gpt-5-mini';
@@ -649,7 +653,8 @@ export interface CardSynthesisLLMInput {
  * Development cards on 2026-10-04 (#4809).
  */
 export function cardLineFitsBrowseCard(card: unknown): boolean {
-  return !browseCardIsCutMidSentence(browseCardSummary(textValue(card)));
+  const summary = browseCardSummary(textValue(card));
+  return !browseCardIsCutMidSentence(summary) && !endsOnNonTerminalAbbreviation(summary);
 }
 
 const comparableCardWords = (value: unknown): string[] =>
