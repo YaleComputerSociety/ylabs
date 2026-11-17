@@ -49,6 +49,7 @@ import {
   type LanePageProbe,
 } from '../lanePageHealth';
 import { statedAdministeringOffice } from '../utils/administeringOffice';
+import { statesRollingReview } from '../utils/programPageEvidence';
 import { pageTitleNamesSeniorEssayGuidance } from '../../services/departmentResearchGuidance';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
@@ -830,6 +831,11 @@ function programRecordToFellowshipObservations(
   const fullSourceDescription = sanitizedObservedSourceText(record.sourceText);
   if (fullSourceDescription) {
     observations.push({ ...base, field: 'fullSourceDescription', value: fullSourceDescription });
+  }
+  // A department page's dates are as often a senior-essay or guidance timeline as an
+  // application window, so only a stated rolling review sets the flag here (#6458).
+  if (statesRollingReview(record.sourceText ?? '')) {
+    observations.push({ ...base, field: 'isAcceptingApplications', value: true });
   }
   return observations;
 }

@@ -536,6 +536,34 @@ describe('departmentUndergradResearchScraper', () => {
     expect(record.joinPageUrl).toBe('https://fixture.yale.edu/scholars/applications');
   });
 
+  it('observes accepting only when the page states rolling review (#6458)', () => {
+    const config = {
+      key: 'fixture-scholars',
+      url: 'https://fixture.yale.edu/opportunities/fixture-scholars',
+      department: 'Fixture Institute',
+      school: 'Yale University',
+      parser: 'structured-opportunity' as const,
+      title: 'Fixture Scholars',
+    };
+    const accepting = (statement: string) =>
+      departmentUndergradResearchRecordsToObservations(
+        parseStructuredOpportunityPage(
+          `<main><h1>Fixture Scholars</h1><p>The program places Yale College undergraduates as research assistants with faculty.</p><p>${statement}</p></main>`,
+          config,
+        ),
+      ).find((obs) => obs.field === 'isAcceptingApplications')?.value;
+
+    expect(
+      accepting(
+        'A committee of faculty and staff review applications regularly and match applicants.',
+      ),
+    ).toBe(true);
+    expect(accepting('Applications are reviewed on a rolling basis.')).toBe(true);
+    expect(accepting('Applications were reviewed on a rolling basis last year.')).toBeUndefined();
+    expect(accepting('The senior essay prospectus is due September 15.')).toBeUndefined();
+    expect(accepting('Students may ask faculty about research.')).toBeUndefined();
+  });
+
   it('observes the administering office a program page states, and only that (#4589)', () => {
     const config = {
       key: 'fixture-scholars',
