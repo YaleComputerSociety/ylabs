@@ -200,6 +200,8 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
    * are throttled again (#6166, #6195).
    */
   throttledRowsByHost?: Record<string, string[]>;
+  /** research-page-text: rows whose stored text holds a sentence addressed to an AI (#6396). */
+  aiDirectedInstructionRows?: number;
   /** research-page-text: rows left for a later run because their host was paused, by host. */
   deferredRowsByHost?: Record<string, { rows: number; resumesAt: string }>;
   /**

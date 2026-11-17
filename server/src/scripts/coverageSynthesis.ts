@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { MODEL_INPUT_DATA_PREAMBLE } from '../utils/modelInputGuard';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -683,7 +684,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
   const args = parseCoverageSynthesisArgs(argv);
   const mode = coverageSynthesisModeOf(args);
   if (mode === 'print-writer-prompt') {
-    process.stdout.write(`${COVERAGE_SYNTHESIS_PROMPT}\n`);
+    process.stdout.write(`${MODEL_INPUT_DATA_PREAMBLE}\n\n${COVERAGE_SYNTHESIS_PROMPT}\n`);
     return;
   }
   const guard = assertScriptApplyAllowed({

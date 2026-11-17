@@ -5,6 +5,22 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-17: Captured Page Text Reaches A Model Only As Data (#6396)
+
+Decision (the manager, 2026-11-16, option A): every scraper model call carries one shared data preamble, applied by the model client (`utils/modelInputGuard.ts`, called from `postChatCompletion`), and every user message has sentences addressed to an AI agent removed before it leaves the process.
+The preamble and the filter sit deliberately OUTSIDE every prompt file and every cache key.
+Each prompt's sha256 keys a cache or a content gate (`*_PROMPT_HASH` in `scrapers/prompts/index.ts`), so a line added to each prompt would invalidate every cached reading at once and re-run the paid extraction lanes on their next pass, the #5076 trap.
+The preamble carries no extraction semantics, so a reading cached before it existed stays valid, and changing it never invalidates a cache.
+The frozen benchmark key (`snapshotBenchmarkMode.modelRequestKey`) is computed on the body as the caller built it, before the guard, which the model client hands the benchmark interceptor for the same reason, so frozen lane benchmarks keep replaying even for a row whose page text the guard changes.
+The filter is narrow on purpose: it removes a sentence only when it is addressed to a model (a conditional addressed to an AI, an instruction to disregard earlier instructions, or a note addressed to AI models), and never a quoted example or a sentence that is research about AI, which is common in this corpus.
+Local-Claude drafting packets get the same treatment where the repository builds them: the topic readings export filters each user message and carries the preamble, and `--print-writer-prompt` prints it first.
+The writer evidence file from `--capture-evidence` carries the preamble but keeps the captured text raw, because the writer's input hash is computed from it; a drafting harness that reads it directly must pass each snippet through `stripAiDirectedInstructions`.
+The card pass's `--capture-evidence` export (`CardRequest.evidenceTexts`) is not yet covered: it is a bare request array with no room for a preamble, and changing its shape would break card drafting already in flight, so until #6491 adds it a local card drafter must prepend `MODEL_INPUT_DATA_PREAMBLE` and strip each evidence text itself.
+Matching runs on NFKC-normalised text with invisible format characters removed and Greek and Cyrillic look-alike letters folded to Latin, and an address that wraps a line break takes its command with it.
+Accepted residuals, missed by design to keep precision: an instruction to disregard earlier instructions in the middle of a sentence, an address by a product name rather than as an AI, and a role prefix such as "Assistant:".
+The guard does not change any input hash, so it moves no cache key.
+A new model call cannot skip it, because `modelClientIsTheOnlyOpenAiCaller` already refuses any OpenAI call outside the shared client, and its per-path test now also requires the preamble and an absent planted instruction on every chat path.
+
 ## 2026-11-16: A Matching Name Alone Never Folds Two Researcher Records (#6378)
 
 Decision (the manager, 2026-11-16): `researchers:dedupe-accountless-shells` never applies a fold whose only evidence is a matching name, with or without a department or a shared row, on the two paths below.

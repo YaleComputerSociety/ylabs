@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { isAiDirectedInstruction } from '../../utils/modelInputGuard';
 import mongoose from 'mongoose';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -494,6 +495,7 @@ interface LaneCounts {
   capChangedRows: number;
   capLinesGained: number;
   capLinesLost: number;
+  aiDirectedInstructionRows: number;
 }
 
 /**
@@ -703,6 +705,8 @@ export class ResearchPageTextScraper implements IScraper {
     if (value.length === 0) counts.rowsWithoutText += 1;
     else counts.rowsWithText += 1;
     counts.charsStored += value.reduce((sum, entry) => sum + entry.text.length, 0);
+    if (value.some((entry) => isAiDirectedInstruction(entry.text)))
+      counts.aiDirectedInstructionRows += 1;
     return {
       observations: [
         {
@@ -743,6 +747,7 @@ export class ResearchPageTextScraper implements IScraper {
       capChangedRows: 0,
       capLinesGained: 0,
       capLinesLost: 0,
+      aiDirectedInstructionRows: 0,
     };
     let observationCount = 0;
     const concurrency = resolveSourceConcurrency(
@@ -856,6 +861,9 @@ export class ResearchPageTextScraper implements IScraper {
         `${counts.keptAfterTransientFailure} kept after a transient fetch failure, ` +
         `${deferred.length} deferred to a later run, ` +
         `${counts.contentUnchanged} content unchanged, ${counts.charsStored} characters stored.` +
+        (counts.aiDirectedInstructionRows > 0
+          ? ` ${counts.aiDirectedInstructionRows} rows hold a sentence addressed to an AI, stored as captured and kept out of every model input.`
+          : '') +
         (throttledNote ? ` Throttled rows, by host: ${throttledNote}.` : '') +
         (deferredNote ? ` Deferred, by host: ${deferredNote}.` : '') +
         (pausesMet ? ` Paused hosts: ${pausesMet}.` : '') +
@@ -867,6 +875,7 @@ export class ResearchPageTextScraper implements IScraper {
         throttledRowsByHost,
         deferredRowsByHost,
         hostReadOutcomes,
+        aiDirectedInstructionRows: counts.aiDirectedInstructionRows,
         ...(Object.keys(sustainedRefusalHosts).length > 0 ? { sustainedRefusalHosts } : {}),
       },
     };

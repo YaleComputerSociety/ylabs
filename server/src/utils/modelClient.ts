@@ -2,10 +2,17 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import axios, { type AxiosResponse } from 'axios';
 import mongoose from 'mongoose';
 import { ModelCallUsage } from '../models/modelCallUsage';
+import { guardChatCompletionBody } from './modelInputGuard';
 
 const MODEL_ENDPOINT_PREFIX = 'https://api.openai.com/v1/';
 
 export const FROZEN_MODEL_RESPONSE_HEADER = 'x-ylabs-frozen-model-response';
+
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    benchmarkKeyBody?: unknown;
+  }
+}
 
 export const MODEL_CALLERS = [
   'card-synthesis',
@@ -194,12 +201,13 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 async function postModelRequest(
   endpoint: ModelEndpoint,
   request: ModelRequest,
+  sentBody: Record<string, unknown> = request.body,
 ): Promise<AxiosResponse> {
   refuseInModelFreeScope(request);
   let waitedMs = 0;
   for (let attempt = 1; ; attempt += 1) {
     try {
-      return await postModelRequestOnce(endpoint, request);
+      return await postModelRequestOnce(endpoint, request, sentBody);
     } catch (error) {
       const response = throttledResponse(error);
       if (
@@ -220,13 +228,15 @@ async function postModelRequest(
 async function postModelRequestOnce(
   endpoint: ModelEndpoint,
   request: ModelRequest,
+  sentBody: Record<string, unknown>,
 ): Promise<AxiosResponse> {
   const startedAt = Date.now();
   let response: AxiosResponse;
   try {
-    response = await axios.post(`https://api.openai.com/v1/${endpoint}`, request.body, {
+    response = await axios.post(`https://api.openai.com/v1/${endpoint}`, sentBody, {
       headers: { Authorization: `Bearer ${request.apiKey}`, 'Content-Type': 'application/json' },
       timeout: request.timeoutMs,
+      ...(sentBody === request.body ? {} : { benchmarkKeyBody: request.body }),
     });
   } catch (error) {
     if (!neverLeftTheProcess(error)) {
@@ -241,7 +251,7 @@ async function postModelRequestOnce(
 }
 
 export function postChatCompletion(request: ModelRequest): Promise<AxiosResponse> {
-  return postModelRequest('chat/completions', request);
+  return postModelRequest('chat/completions', request, guardChatCompletionBody(request.body).body);
 }
 
 export function postEmbedding(request: ModelRequest): Promise<AxiosResponse> {

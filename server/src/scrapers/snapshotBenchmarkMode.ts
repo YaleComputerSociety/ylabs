@@ -87,6 +87,9 @@ export function modelRequestKey(url: string, body: unknown): string {
   return `model-request:v1:${digest}`;
 }
 
+const configModelRequestKey = (config: InternalAxiosRequestConfig): string =>
+  modelRequestKey(config.url as string, config.benchmarkKeyBody ?? config.data);
+
 const modelRequestKeyByConfig = new WeakMap<object, string>();
 
 export function beginBenchmarkCapture(): void {
@@ -100,7 +103,7 @@ export function beginBenchmarkCapture(): void {
   };
   capture.requestInterceptorId = axios.interceptors.request.use((config) => {
     if (isModelRequest(config)) {
-      const requestKey = modelRequestKey(config.url as string, config.data);
+      const requestKey = configModelRequestKey(config);
       modelRequestKeyByConfig.set(config, requestKey);
       capture.requested.add(benchmarkPageKey(MODEL_RESPONSE_NAMESPACE, requestKey));
     }
@@ -183,10 +186,7 @@ export function beginBenchmarkReplay(
   replay.interceptorId = axios.interceptors.request.use((config) => {
     if (isModelRequest(config)) {
       if (replay.liveModel) return config;
-      const key = benchmarkPageKey(
-        MODEL_RESPONSE_NAMESPACE,
-        modelRequestKey(config.url as string, config.data),
-      );
+      const key = benchmarkPageKey(MODEL_RESPONSE_NAMESPACE, configModelRequestKey(config));
       if (replay.pages.has(key)) {
         replay.served.add(key);
         return serveFrozenModelResponse(config, replay.pages.get(key));

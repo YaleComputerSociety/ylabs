@@ -184,17 +184,11 @@ function installStubTransport(): void {
     });
     if (url.includes('api.openai.com')) {
       const body = JSON.parse(String(config.data ?? '{}'));
+      const messages: Array<{ role?: string; content?: unknown }> = body.messages ?? [];
+      const contentOf = (role: string): string =>
+        String([...messages].reverse().find((message) => message.role === role)?.content ?? '');
       return response({
-        choices: [
-          {
-            message: {
-              content: stubCompletion(
-                String(body.messages?.[0]?.content ?? ''),
-                String(body.messages?.[1]?.content ?? ''),
-              ),
-            },
-          },
-        ],
+        choices: [{ message: { content: stubCompletion(contentOf('system'), contentOf('user')) } }],
       });
     }
     const fixture = fixtureByUrl.get(url);
