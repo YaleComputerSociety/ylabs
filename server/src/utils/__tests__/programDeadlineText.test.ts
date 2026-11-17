@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { programTextDeadlineConflict } from '../programDeadlineText';
+import { proseStatesPastCycleDates, programTextDeadlineConflict } from '../programDeadlineText';
 
 const deadline = '2027-02-12T04:00:00.000Z';
 
@@ -174,5 +174,41 @@ describe('programTextDeadlineConflict does not flag text that gives the served d
         'The deadline is January 5, 2027. Office hours run 2/1 to 2/11 and on February 13.',
       ]),
     ).toBe('2027-01-05');
+  });
+});
+
+describe('proseStatesPastCycleDates (#6412)', () => {
+  const now = new Date('2026-11-17T12:00:00.000Z');
+  const futureDeadline = '2027-03-04T04:59:00.000Z';
+  const flags = (prose: string[], deadline: unknown = futureDeadline, extra = {}) =>
+    proseStatesPastCycleDates(prose, { deadline, now, ...extra });
+
+  it('flags a full date from last cycle while the served deadline is ahead', () => {
+    expect(flags(['Applications are due Wednesday, March 4, 2026 by 11pm.'])).toBe(true);
+  });
+
+  it('flags a weekday the stated date does not fall on', () => {
+    expect(flags(['Submit by 11:00pm on Thursday, February 12, 2027.'])).toBe(true);
+  });
+
+  it('says nothing when every full date is today or later and every weekday is right', () => {
+    expect(flags(['Submit by 11:00pm on Thursday, February 11, 2027.'])).toBe(false);
+  });
+
+  it('never reads a bare year as a past date', () => {
+    expect(flags(['Established in 1998, the fund has supported travel since 2010.'])).toBe(false);
+  });
+
+  it('says nothing once the served deadline has passed, because page and deadline agree', () => {
+    expect(
+      flags(['Applications were due March 4, 2026.'], '2026-03-05T04:59:00.000Z'),
+    ).toBe(false);
+  });
+
+  it('says nothing for a missing, projected or stale deadline', () => {
+    const past = ['Applications are due March 4, 2026.'];
+    expect(flags(past, null)).toBe(false);
+    expect(flags(past, futureDeadline, { projected: true })).toBe(false);
+    expect(flags(past, futureDeadline, { stale: true })).toBe(false);
   });
 });

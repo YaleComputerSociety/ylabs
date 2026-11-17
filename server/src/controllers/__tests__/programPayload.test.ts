@@ -731,3 +731,42 @@ describe('the fund Description kept for the classifier (#4232)', () => {
     expect(payload).not.toHaveProperty('fullSourceDescription');
   });
 });
+
+describe('publicProgramForReader past-cycle prose (#6412)', () => {
+  const nextCycle = new Date(Date.now() + 120 * 86_400_000);
+  const served = (applicationInformation: string, deadline: Date = nextCycle) =>
+    publicProgramForReader({
+      _id: 'p-past-cycle',
+      title: 'Synthetic Past Cycle Program',
+      deadline,
+      isAcceptingApplications: true,
+      applicationInformation,
+    });
+
+  it('flags last cycle dates and drops the conflict the past-cycle note already explains', () => {
+    const payload = served('Applications are due Wednesday, March 4, 2020 by 11pm.');
+    expect(payload.proseStatesPastCycleDates).toBe(true);
+    expect(payload.deadlineTextConflict).toBeNull();
+  });
+
+  it('keeps a conflict whose date is still ahead', () => {
+    const ahead = new Date(nextCycle.getTime() + 30 * 86_400_000);
+    const stated = ahead.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'America/New_York',
+    });
+    const payload = served(`The deadline is ${stated}.`);
+    expect(payload.proseStatesPastCycleDates).toBe(false);
+    expect(payload.deadlineTextConflict).not.toBeNull();
+  });
+
+  it('raises no flag once the served deadline itself has passed', () => {
+    const payload = served(
+      'Applications are due March 4, 2020.',
+      new Date(Date.now() - 86_400_000),
+    );
+    expect(payload.proseStatesPastCycleDates).toBe(false);
+  });
+});
