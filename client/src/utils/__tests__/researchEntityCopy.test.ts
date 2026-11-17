@@ -314,6 +314,17 @@ describe('researchEntityCopy', () => {
       );
     });
 
+    it('swaps a subject possessive after a sentence ending in "research at <Name>."', () => {
+      expect(
+        sanitizeFacultyResearchCopy(
+          "Fixture Exemplar conducts research at Coastal. Exemplar's lab studies tidal sediment transport.",
+          facultyResearch,
+        ),
+      ).toBe(
+        "Fixture Exemplar conducts research at Coastal. Exemplar's research studies tidal sediment transport.",
+      );
+    });
+
     it('swaps a later subject possessive after an earlier "research at" sentence', () => {
       expect(
         sanitizeFacultyResearchCopy(

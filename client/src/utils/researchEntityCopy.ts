@@ -350,7 +350,7 @@ export const sanitizeResearchEntityCopy = (
   );
 
 const RESEARCH_AT_POSSESSIVE_OBJECT_PATTERN =
-  /\b[Rr]esearch\s+at\s+(?:his|her|their|(?:\p{Lu}[\p{L}'’.-]*\s+){0,4}\p{Lu}[\p{L}.-]*['’]s?)$/u;
+  /\b[Rr]esearch\s+at\s+(?:his|her|their|(?:(?:\p{Lu}[\p{L}'’-]*|\p{Lu}\.|(?:Dr|Prof|Mr|Mrs|Ms|Mx)\.)\s+){0,4}\p{Lu}[\p{L}.-]*['’]s?)$/u;
 
 const isObjectOfResearchAt = (possessive: string, offset: number, whole: string): boolean =>
   RESEARCH_AT_POSSESSIVE_OBJECT_PATTERN.test(`${whole.slice(0, offset)}${possessive}`);

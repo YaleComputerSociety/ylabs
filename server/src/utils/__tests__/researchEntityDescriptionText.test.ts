@@ -447,6 +447,28 @@ describe('sanitizeFacultyResearchEntityText', () => {
     it('still swaps a possessive lab that is the sentence subject', () => {
       expect(
         sanitizeFacultyResearchEntityText(
+          "Fixture Exemplar's lab studies tidal sediment transport. Her lab uses sediment cores.",
+          facultyResearch,
+        ),
+      ).toBe(
+        "Fixture Exemplar's research studies tidal sediment transport. Her research uses sediment cores.",
+      );
+    });
+
+    it('swaps a subject possessive after a sentence ending in "research at <Name>."', () => {
+      expect(
+        sanitizeFacultyResearchEntityText(
+          "Fixture Exemplar conducts research at Coastal. Exemplar's lab studies tidal sediment transport.",
+          facultyResearch,
+        ),
+      ).toBe(
+        "Fixture Exemplar conducts research at Coastal. Exemplar's research studies tidal sediment transport.",
+      );
+    });
+
+    it('swaps a later subject possessive after an earlier "research at" sentence', () => {
+      expect(
+        sanitizeFacultyResearchEntityText(
           "Fixture Exemplar's research at her field station is ongoing. Her lab studies tidal sediment transport.",
           facultyResearch,
         ),
