@@ -8,7 +8,6 @@ describe('programStatesRollingReview (#6407)', () => {
     'Funding is limited and will be given on a rolling basis.',
     'Eligible students may apply year-round, as applications are reviewed and funds awarded on a rolling basis.',
     'Please note: Applications for this funding are rolling.',
-    'Please note: this application has a "rolling deadline."',
   ])('reads rolling review in %j', (text) => {
     expect(programStatesRollingReview({ description: text })).toBe(true);
   });
@@ -28,6 +27,18 @@ describe('programStatesRollingReview (#6407)', () => {
     'Awards will never be made on a rolling basis.',
   ])('keeps a fixed deadline the text states in %j', (text) => {
     expect(programStatesRollingReview({ description: text })).toBe(false);
+  });
+
+  it('keeps a recurring monthly cutoff described as a rolling deadline', () => {
+    expect(
+      programStatesRollingReview({
+        description:
+          'Please note: this application has a "rolling deadline." Applications are due on the last Friday of each month.',
+      }),
+    ).toBe(false);
+    expect(
+      programStatesRollingReview({ description: 'Applications are reviewed monthly on a rolling basis.' }),
+    ).toBe(false);
   });
 
   it('keeps a per-college copy whose college sets its own schedule', () => {
