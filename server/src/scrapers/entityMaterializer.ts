@@ -598,7 +598,10 @@ import {
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
-import { latestFullCoverageRunIdByLane } from './latestFullCoverageRun';
+import {
+  latestFullCoverageRunIdByLane,
+  newestCoveringKeyedRunIdByLaneAndKey,
+} from './latestFullCoverageRun';
 import {
   officialProfileIdentityUrlKey,
   officialProfileUrlSpellings,
@@ -9041,22 +9044,34 @@ const CURATED_USER_TITLE_SOURCES: ReadonlySet<string> = new Set([
 
 /**
  * Where a first-hand read may grant authority: the researcher's own official pages, read by
- * each lane's latest full-coverage run. A read from an earlier run is a page the lane has
- * not re-read since, so it can be stale (#5578).
+ * each lane's latest full-coverage run, or, for one person's key, by a newer keyed run that
+ * recorded that key as covered (#6197). A read from an earlier run is a page the lane has
+ * not re-read since, so it can be stale (#5578). Freshness only chooses among emitted reads,
+ * so a fresh read that states no title retires nothing.
  */
 export interface FirstHandTitleScope {
   officialPageKeys: ReadonlySet<string>;
   latestFullRunIdByLane: ReadonlyMap<string, string>;
+  coveringKeyedRunIdsByLaneAndKey?: ReadonlyMap<string, ReadonlyMap<string, string>>;
+}
+
+function isFreshTitleRun(observation: any, scope: FirstHandTitleScope): boolean {
+  const lane = textValue(observation.sourceName);
+  const runId = String(observation.scrapeRunId);
+  if (runId === scope.latestFullRunIdByLane.get(lane)) return true;
+  const coveringRunId = scope.coveringKeyedRunIdsByLaneAndKey
+    ?.get(lane)
+    ?.get(textValue(observation.entityKey));
+  return Boolean(coveringRunId) && runId === coveringRunId;
 }
 
 function isFirstHandUserTitle(observation: any, scope: FirstHandTitleScope): boolean {
-  const lane = textValue(observation.sourceName);
   return (
     observation.field === 'title' &&
     isFirstHandUserTitleRead(observation) &&
     scope.officialPageKeys.has(officialProfileIdentityUrlKey(observation.sourceUrl)) &&
     Boolean(observation.scrapeRunId) &&
-    String(observation.scrapeRunId) === scope.latestFullRunIdByLane.get(lane)
+    isFreshTitleRun(observation, scope)
   );
 }
 
@@ -9145,6 +9160,20 @@ async function latestFullRunIdByFirstHandLane(
   if (cached) return cached;
   const byLane = await latestFullCoverageRunIdByLane([...FIRST_HAND_USER_TITLE_SOURCES.keys()]);
   cache?.rememberLatestFullRunIdByLane(byLane);
+  return byLane;
+}
+
+async function coveringKeyedRunIdsByFirstHandLane(
+  latestFullRunIdByLane: ReadonlyMap<string, string>,
+  cache?: UserIdentityJoinCache,
+): Promise<ReadonlyMap<string, ReadonlyMap<string, string>>> {
+  const cached = cache?.coveringKeyedRunIdsByLaneAndKey();
+  if (cached) return cached;
+  const byLane = await newestCoveringKeyedRunIdByLaneAndKey(
+    [...FIRST_HAND_USER_TITLE_SOURCES.keys()],
+    latestFullRunIdByLane,
+  );
+  cache?.rememberCoveringKeyedRunIdsByLaneAndKey(byLane);
   return byLane;
 }
 
@@ -10074,9 +10103,14 @@ async function researcherTitleOverEveryJoiningKey(input: {
     refusals,
   );
   if (ownKeyIsFindable) pooled.push(...ownTitleObservations);
+  const latestFullRunIdByLane = await latestFullRunIdByFirstHandLane(cache);
   const scope: FirstHandTitleScope = {
     officialPageKeys: await soleClaimedOfficialPageKeys(input.researcher, cache),
-    latestFullRunIdByLane: await latestFullRunIdByFirstHandLane(cache),
+    latestFullRunIdByLane,
+    coveringKeyedRunIdsByLaneAndKey: await coveringKeyedRunIdsByFirstHandLane(
+      latestFullRunIdByLane,
+      cache,
+    ),
   };
   const pooledTitle = personTitleFrom(userTitleEvidence(pooled, scope), input.now);
   if (pooledTitle) {
