@@ -873,6 +873,7 @@ The text index weighted a title word like a description word, and the page then 
   A year word (`first-year`, `freshman`, `sophomores`, `juniors`, `seniors`) is a structured constraint on the stated `yearOfStudy`, never a text match (#6397): it is removed from the content words, a program whose stated years exclude it is never returned for that query (it stays listed and visible everywhere else), a program stating it ranks above one that states no year, and a query of only year words returns the programs stating them, then those stating no year, the same set the year filter serves (#5235).
   `senior` before `essay`, `thesis` or `project` names a piece of work and stays a content word.
   A rising year is read the way `fundYearOfStudy.ts` files it, under the year before it (`rising juniors` names `Sophomore`), and `rising freshmen` or `rising first-year` names no stated year and stays content words.
+  `rising` carries across a list of years the way `distributeRising` reads one, so `rising juniors and seniors` names `Sophomore` and `Junior`.
 - A topic word is not widened to its sibling fields: `economics` no longer serves `psychology`.
   A query that is a subject's own name (`artificial intelligence`) or abbreviation also serves programs naming any of that subject's aliases, after the programs that carry the typed words.
   A query that is one of a subject's aliases (`machine learning`) widens to the subject only when no program carries the typed words, because no program says `machine learning` and the AI programs are the honest answer.
