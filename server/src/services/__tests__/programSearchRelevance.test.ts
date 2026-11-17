@@ -155,13 +155,14 @@ describe('rankProgramSearch ranked programs', () => {
     ]);
   });
 
-  it('reaches a program the source files under the first year when the student says freshman', () => {
+  it('reaches a program that states the first year when the student says freshman', () => {
     const catalog = [
-      program('Starter Grant', 'Open to first-year students.'),
-      program('Senior Grant', 'Open to seniors.'),
+      program('Starter Grant', 'Supports new research.', { yearOfStudy: ['First-Year Student'] }),
+      program('Senior Grant', 'Open to seniors.', { yearOfStudy: ['Senior'] }),
     ];
 
     expect(titles(rankedPrograms('freshman', catalog))).toEqual(['Starter Grant']);
+    expect(titles(rankedPrograms('first-year', catalog))).toEqual(['Starter Grant']);
   });
 
   it('serves nothing for a query of only stop words', () => {
@@ -256,5 +257,63 @@ describe('programQueryContentWords', () => {
       'student',
       'plan',
     ]);
+  });
+});
+
+describe('rankProgramSearch year words (#6397)', () => {
+  const catalog = [
+    program('Starter Research Grant', 'Funds summer research.', {
+      yearOfStudy: ['First-Year Student', 'Sophomore'],
+    }),
+    program('Upper Year Research Grant', 'Funds research by first-year students who wait.', {
+      yearOfStudy: ['Junior', 'Senior'],
+    }),
+    program('Graduate Field Grant', 'Supports first-year doctoral research.', {
+      yearOfStudy: ['PhD Pre-Candidacy', 'Master’s Student'],
+    }),
+    program('Open Research Grant', 'Funds research for any student.'),
+    program('Painting Stipend', 'A studio stipend.', { yearOfStudy: ['First-Year Student'] }),
+  ];
+
+  it('returns every program that states the year, whatever its text says', () => {
+    expect(titles(rankedPrograms('first-year', catalog))).toEqual([
+      'Starter Research Grant',
+      'Painting Stipend',
+    ]);
+    expect(titles(rankedPrograms('sophomores', catalog))).toEqual(['Starter Research Grant']);
+  });
+
+  it('never returns a program whose stated years exclude the year, even when its text names it', () => {
+    for (const query of ['first-year', 'freshman research', 'first year research grant']) {
+      const returned = titles(rankedPrograms(query, catalog));
+      expect(returned).not.toContain('Upper Year Research Grant');
+      expect(returned).not.toContain('Graduate Field Grant');
+    }
+  });
+
+  it('matches the other words, ranking a program that states the year above one that states none', () => {
+    expect(titles(rankedPrograms('freshman research', catalog))).toEqual([
+      'Starter Research Grant',
+      'Open Research Grant',
+    ]);
+  });
+
+  it('leaves a query with no year word unchanged', () => {
+    expect(titles(rankedPrograms('research grant', catalog)).sort()).toEqual([
+      'Graduate Field Grant',
+      'Open Research Grant',
+      'Starter Research Grant',
+      'Upper Year Research Grant',
+    ]);
+  });
+
+  it('reads a senior essay, thesis or project as a piece of work rather than a year', () => {
+    const thesisGrant = program('Thesis Support Grant', 'Funds senior thesis research.', {
+      yearOfStudy: ['Junior'],
+    });
+    expect(titles(rankedPrograms('senior thesis', [...catalog, thesisGrant]))).toEqual([
+      'Thesis Support Grant',
+    ]);
+    expect(titles(rankedPrograms('seniors', catalog))).toEqual(['Upper Year Research Grant']);
   });
 });

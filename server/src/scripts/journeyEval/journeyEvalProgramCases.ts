@@ -21,6 +21,7 @@ import {
   checkServedRowsAreInServedTier,
   checkServedRowsPassTheGate,
   checkWalkCoversReportedTotal,
+  checkYearQueriesServeTheStatedYear,
   tallyProgramFieldAttribution,
   tallyServedRowGate,
   withSurfaceId,
@@ -695,6 +696,50 @@ const STUDENT_YEAR_QUERY_PAIRS = [
   { baselineQuery: 'first-year', variantQuery: 'freshman' },
 ];
 
+const YEAR_WORD_QUERIES = [
+  { query: 'first-year', year: 'First-Year Student' },
+  { query: 'freshman', year: 'First-Year Student' },
+  { query: 'sophomores', year: 'Sophomore' },
+  { query: 'juniors', year: 'Junior' },
+  { query: 'seniors', year: 'Senior' },
+] as const;
+
+const statedYearsOfRow = (row: Record<string, unknown>): string[] =>
+  Array.isArray(row.yearOfStudy)
+    ? row.yearOfStudy.filter((year): year is string => typeof year === 'string')
+    : [];
+
+const yearWordsServeTheStatedYear: ProgramJourneyCase = {
+  id: 'programs-year-words-serve-the-stated-year',
+  title: 'A year-of-study query serves the programs that state that year and none that exclude it',
+  surface: PROGRAMS_SURFACE.id,
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const catalog = (await walkProgramBrowseLikeTheClient(context, {})).rows
+      .map((row) => ({ key: rowKey(row), years: statedYearsOfRow(row) }))
+      .filter((row) => row.key);
+    const walks = [];
+    for (const { query, year } of YEAR_WORD_QUERIES) {
+      const { rows } = await walkProgramBrowseLikeTheClient(context, { query });
+      walks.push({ query, year, servedKeys: rows.map(rowKey).filter(Boolean) });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkYearQueriesServeTheStatedYear(
+          'programs-year-query-serves-stated-year-only',
+          'Each year query serves every row stating that year and no row whose stated years exclude it',
+          walks,
+          catalog,
+          corpusBefore,
+          corpusAfter,
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
 const studentYearWordsReachSourcedYear: ProgramJourneyCase = {
   id: 'programs-student-year-words-reach-sourced-year',
   title: "A student's word for their year reaches the programs the source files under it",
@@ -771,5 +816,6 @@ const anAddedWordNarrowsTheResults: ProgramJourneyCase = {
 export const programJourneyCases: readonly ProgramJourneyCase[] = [
   ...programSurfaceCases(PROGRAMS_SURFACE),
   studentYearWordsReachSourcedYear,
+  yearWordsServeTheStatedYear,
   anAddedWordNarrowsTheResults,
 ];

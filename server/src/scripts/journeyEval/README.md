@@ -252,6 +252,7 @@ Each surface runs the same seven cases, with ids prefixed by the surface:
   The guard counts and the share of stored values withheld are reported, never gated.
 
 `programs` also runs `programs-student-year-words-reach-sourced-year`, which is not a surface case: it asserts that a query for `freshmen` or `freshman` serves every row a query for `first-year` serves.
+It also runs `programs-year-words-serve-the-stated-year`, which walks the whole programs surface for each row's stated `yearOfStudy`, then asserts that each year query (`first-year`, `freshman`, `sophomores`, `juniors`, `seniors`) serves every row stating that year and no row whose stated years exclude it (#6397); a row stating no year is neither required nor refused.
 It also runs `programs-an-added-word-narrows-the-results`, which asserts that every program a two-word search serves (`economics summer`) is served by its first word alone (`economics`), because program search requires every typed word (#5118).
 The pair holds only because the two-word query is neither a subject's name, abbreviation, or alias nor three words long, since those queries can also serve programs missing a typed word (`skills/search-data/SKILL.md`, #5118).
 
