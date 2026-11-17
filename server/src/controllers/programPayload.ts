@@ -277,6 +277,7 @@ export const publicProgramForReader = (program: any) => {
     deadline: program.deadline,
     deadlineProjectedNextCycle: program.deadlineProjectedNextCycle === true,
     deadlineStale: program.deadlineStale === true,
+    deadlineRollingReview: program.deadlineRollingReview === true,
     ...servedProgramDeadlineTextNotes({
       deadline: program.deadline,
       prose: [summary, description, applicationInformation, eligibility, additionalInformation],
