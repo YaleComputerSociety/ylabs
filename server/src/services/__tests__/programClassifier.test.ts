@@ -394,6 +394,35 @@ describe('mentor matching needs the program to state it (#6455)', () => {
     });
   });
 
+  it.each([
+    'Each participant works closely with a Yale faculty member on an independent project.',
+    'Students conduct research in the lab of a Yale faculty member for ten weeks.',
+    'Interns carry out a project under the direction of a principal investigator.',
+    'Each student will join a host laboratory for the summer.',
+    'Participants are assigned to research groups in the department.',
+    'Students are paired with a faculty mentor.',
+    'Each scholar is placed in a faculty lab.',
+  ])('reads mentor placement in %j', (sentence) => {
+    expect(
+      classifyProgram({
+        title: 'Synthetic Summer Research Program',
+        competitionType: 'Summer Undergraduate Research Program',
+        description: sentence,
+      }),
+    ).toMatchObject({ programKind: 'MENTOR_MATCHING', mentorMatching: true });
+  });
+
+  it('does not read a peer cohort or the research itself as mentor placement', () => {
+    expect(
+      classifyProgram({
+        title: 'Synthetic Summer Research Program',
+        competitionType: 'Summer Undergraduate Research Program',
+        description:
+          'Students work closely with each other in a cohort and present their research at a closing symposium.',
+      }),
+    ).toMatchObject({ programKind: 'STRUCTURED_PROGRAM', mentorMatching: false });
+  });
+
   it('names a research mentor rather than a faculty one when it matches', () => {
     const classification = classifyProgram({
       title: 'Synthetic Summer Research Program',

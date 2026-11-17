@@ -395,8 +395,18 @@ function publishedOnDepartmentPage(input: ProgramClassificationInput): boolean {
  * adviser or a lab (#6455). Mentor matching is a claim about the program, so it needs the
  * page to state it; a page that only describes the research is a program a student applies to.
  */
-const MENTOR_PLACEMENT =
-  /\b(?:matched|paired|assigned|placed)\b[^.]{0,80}?\b(?:mentors?|advis[eo]rs?|lab(?:orator(?:y|ies))?|faculty)\b|\bunder the (?:advisement|supervision|mentorship|guidance) of\b|\bmentored research\b|\b(?:summer|research|faculty) mentors?\b/;
+const MENTOR_PLACEMENT = new RegExp(
+  [
+    String.raw`\b(?:matched|paired|assigned|placed)\b[^.]{0,80}?\b(?:mentors?|advis[eo]rs?|lab(?:orator(?:y|ies))?s?|faculty|research\s+groups?|groups?|investigators?)\b`,
+    String.raw`\bunder the (?:advisement|supervision|mentorship|guidance|direction) of\b`,
+    String.raw`\bwork(?:s|ing)?\s+(?:closely\s+)?(?:with|alongside)\s+(?:a|an|their|the)?\s*(?:yale\s+)?(?:faculty(?:\s+members?)?|mentors?|principal\s+investigators?|pis?)\b`,
+    String.raw`\b(?:research|work)\s+in\s+the\s+lab(?:oratory)?\s+of\b`,
+    String.raw`\bjoin(?:s|ing)?\s+(?:a|an|their|the)?\s*(?:host\s+)?lab(?:oratory)?\b`,
+    String.raw`\bhost\s+lab(?:oratory|oratories|s)?\b`,
+    String.raw`\bmentored research\b`,
+    String.raw`\b(?:summer|research|faculty) mentors?\b`,
+  ].join('|'),
+);
 
 function statesMentorPlacement(lowerText: string): boolean {
   return MENTOR_PLACEMENT.test(lowerText);
