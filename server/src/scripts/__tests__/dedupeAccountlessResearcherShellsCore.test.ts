@@ -1729,8 +1729,7 @@ describe('the evidence recorded on a planned merge', () => {
         { id: id('9'), displayName: 'Other Person', liveRoleEdges: 0, orcid: SYNTHETIC_ORCID_7 },
       ],
       [],
-      [[id('1'), id('2')]],
-      new Map([[distinctPeoplePairKey(id('1'), id('2')), citedPage]]),
+      [[id('1'), id('2'), citedPage]],
     );
     expect(plan.foldTargetById.get(id('1'))).toBe(id('2'));
     expect(plan.evidenceById.get(id('1'))).toBe(`listing cites official page ${citedPage}`);

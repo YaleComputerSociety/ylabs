@@ -178,6 +178,9 @@ describe('the shared official profile join among records of equal identity (#599
     );
     expect(plan.foldTargetById).toEqual(new Map([['1'.padStart(24, '0'), '2'.padStart(24, '0')]]));
     expect(plan.sharedOfficialProfileFoldIds).toEqual(new Set(['1'.padStart(24, '0')]));
+    expect(plan.evidenceById.get('1'.padStart(24, '0'))).toMatch(
+      /^shared official profile \S*medicine\.example\.edu\/profile\/avery-synth/,
+    );
   });
 
   it('is a no-op on the second run, once the folded record is gone', () => {

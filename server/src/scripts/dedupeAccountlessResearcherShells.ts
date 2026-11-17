@@ -1619,8 +1619,12 @@ export async function dedupeAccountlessResearcherShells(options: {
       liveRowIds: liveRowIdsByMember.get(entry.id) ?? [],
     })),
     researcherIdentities.filter((entry) => !clusterCandidateIds.has(entry.id)),
-    citedOfficialPageRouting.equalTierJoins,
-    citedOfficialPageLoad.citedPageByPairKey,
+    citedOfficialPageRouting.equalTierJoins.flatMap(([leftId, rightId]) => {
+      const citedPage = citedOfficialPageLoad.citedPageByPairKey.get(
+        distinctPeoplePairKey(leftId, rightId),
+      );
+      return citedPage ? [[leftId, rightId, citedPage] as const] : [];
+    }),
   );
   const accountlessClusterFoldIds = new Set<string>();
   for (const [shellId, survivorId] of clusterPlan.foldTargetById) {
@@ -1633,10 +1637,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     } else {
       matchedIdentityByShellId.delete(shellId);
     }
-    matchedEvidenceByShellId.set(
-      shellId,
-      clusterPlan.evidenceById.get(shellId) ?? 'account-less cluster evidence join',
-    );
+    matchedEvidenceByShellId.set(shellId, clusterPlan.evidenceById.get(shellId)!);
   }
   const finalRefusal = withoutDistinctPeopleFolds(mergeTargetByShellId, distinctPeoplePairs);
   for (const shellId of [...mergeTargetByShellId.keys()]) {

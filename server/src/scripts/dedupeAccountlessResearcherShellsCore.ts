@@ -1832,7 +1832,7 @@ function clusterRefusal(
 function sharedOfficialProfileJoins(
   members: ReadonlyArray<AccountlessClusterMember>,
   nonMembers: ReadonlyArray<Pick<AccountlessClusterMember, 'profileLinks'>>,
-): Array<[string, string]> {
+): Array<[string, string, string]> {
   const pagesHeldOutside = new Set(
     nonMembers.flatMap((record) => yaleOfficialProfileKeys(record.profileLinks)),
   );
@@ -1843,13 +1843,13 @@ function sharedOfficialProfileJoins(
       holdersByKey.set(key, [...(holdersByKey.get(key) ?? []), member]);
     }
   }
-  const joins: Array<[string, string]> = [];
-  for (const holders of holdersByKey.values()) {
+  const joins: Array<[string, string, string]> = [];
+  for (const [key, holders] of holdersByKey) {
     holders.forEach((left, index) => {
       for (const right of holders.slice(index + 1)) {
         if (!sharedOfficialProfileNamesAgree(left.displayName, right.displayName)) continue;
         if (conflictingIdentifier(left, right)) continue;
-        joins.push([left.id, right.id]);
+        joins.push([left.id, right.id, key]);
       }
     });
   }
@@ -1889,13 +1889,15 @@ function clusterEvidenceLabel(
   survivorId: string,
   groupIds: ReadonlySet<string>,
   joins: ReadonlyArray<ClusterEvidenceJoin>,
-): string | undefined {
+): string {
   const otherEnd = (join: ClusterEvidenceJoin): string | undefined =>
     join.left === memberId ? join.right : join.right === memberId ? join.left : undefined;
   const memberJoins = joins.filter((join) => otherEnd(join) !== undefined);
   const inGroup = memberJoins.filter((join) => groupIds.has(otherEnd(join) as string));
-  return (inGroup.find((join) => otherEnd(join) === survivorId) ?? inGroup[0] ?? memberJoins[0])
-    ?.label;
+  const join =
+    inGroup.find((candidate) => otherEnd(candidate) === survivorId) ?? inGroup[0] ?? memberJoins[0];
+  if (!join) throw new Error(`account-less cluster fold of ${memberId} has no evidence join`);
+  return join.label;
 }
 
 /**
@@ -1917,8 +1919,7 @@ function clusterEvidenceLabel(
 export function planAccountlessClusterFolds(
   members: ReadonlyArray<AccountlessClusterMember>,
   nonMembers: ReadonlyArray<Pick<AccountlessClusterMember, 'displayName' | 'profileLinks'>>,
-  citedOfficialPageJoins: ReadonlyArray<readonly [string, string]> = [],
-  citedPageByPairKey: ReadonlyMap<string, string> = new Map(),
+  citedOfficialPageJoins: ReadonlyArray<readonly [string, string, string]> = [],
 ): AccountlessClusterPlan {
   const healthyKeys = new Set(
     [...members, ...nonMembers].flatMap((record) =>
@@ -1976,8 +1977,8 @@ export function planAccountlessClusterFolds(
     join(noisyId, cleanId);
   }
   const profileJoinedIds = new Set<string>();
-  for (const [leftId, rightId] of sharedOfficialProfileJoins(members, nonMembers)) {
-    joinOnEvidence(leftId, rightId, 'shared official profile');
+  for (const [leftId, rightId, profileKey] of sharedOfficialProfileJoins(members, nonMembers)) {
+    joinOnEvidence(leftId, rightId, `shared official profile ${profileKey}`);
     if (find(leftId) !== find(rightId)) {
       profileJoinedIds.add(leftId).add(rightId);
       join(leftId, rightId);
@@ -1985,14 +1986,9 @@ export function planAccountlessClusterFolds(
   }
   const memberIds = new Set(members.map((member) => member.id));
   const citedPageJoinedIds = new Set<string>();
-  for (const [leftId, rightId] of citedOfficialPageJoins) {
+  for (const [leftId, rightId, citedPage] of citedOfficialPageJoins) {
     if (!memberIds.has(leftId) || !memberIds.has(rightId)) continue;
-    const citedPage = citedPageByPairKey.get(distinctPeoplePairKey(leftId, rightId));
-    joinOnEvidence(
-      leftId,
-      rightId,
-      citedPage ? `listing cites official page ${citedPage}` : 'cited official page',
-    );
+    joinOnEvidence(leftId, rightId, `listing cites official page ${citedPage}`);
     if (find(leftId) !== find(rightId)) {
       citedPageJoinedIds.add(leftId).add(rightId);
       join(leftId, rightId);
@@ -2050,8 +2046,10 @@ export function planAccountlessClusterFolds(
       for (const member of part) {
         if (member.id === survivor.id) continue;
         plan.foldTargetById.set(member.id, survivor.id);
-        const label = clusterEvidenceLabel(member.id, survivor.id, partIds, evidenceJoins);
-        if (label) plan.evidenceById.set(member.id, label);
+        plan.evidenceById.set(
+          member.id,
+          clusterEvidenceLabel(member.id, survivor.id, partIds, evidenceJoins),
+        );
         if (joinedBySharedProfile) plan.sharedOfficialProfileFoldIds.add(member.id);
         else if (joinedByCitedPage) plan.citedOfficialPageFoldIds.add(member.id);
       }
