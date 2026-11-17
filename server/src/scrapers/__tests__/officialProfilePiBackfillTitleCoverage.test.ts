@@ -15,7 +15,7 @@ const PROFILE_HTML = `
         <h1>Tamsin Coverfixture</h1>
         <div class="field field--name-field-profile-image"><img src="https://ysm-res.cloudinary.com/image/upload/example/tamsin-coverfixture" alt="" /></div>
         <div class="title">Professor of Fixture Surgery</div>
-        <a href="mailto:tamsin.coverfixture@yale.edu">tamsin.coverfixture@yale.edu</a>
+        <a href="mailto:kestrel6197@yale.edu">kestrel6197@yale.edu</a>
       </main>
     </body>
   </html>
@@ -24,7 +24,7 @@ const PROFILE_HTML = `
 const PROFILE_TARGET = {
   _id: 'user-coverage',
   netid: 'tc6197',
-  email: 'tamsin.coverfixture@yale.edu',
+  email: 'kestrel6197@yale.edu',
   fname: 'Tamsin',
   lname: 'Coverfixture',
   name: 'Tamsin Coverfixture',
