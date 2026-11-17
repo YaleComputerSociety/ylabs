@@ -166,12 +166,12 @@ describe('the API server entry point', () => {
     expect(connectStates).toEqual([true]);
   });
 
-  it('is the only production module that declares a process request-serving', () => {
+  it('and the served-check student entry are the only production modules that declare a process request-serving', () => {
     const declaring = productionSources(SERVER_SRC)
       .filter((file) => file !== path.join(SERVER_SRC, 'db', 'devWriteGuard.ts'))
       .filter((file) => calledNames(file).includes(DECLARATION))
       .map((file) => path.relative(SERVER_SRC, file));
-    expect(declaring).toEqual(['index.ts']);
+    expect(declaring).toEqual(['index.ts', 'scripts/servedCheckStudent.ts']);
   }, 120_000);
 
   it('is the one module every request-serving command runs', () => {

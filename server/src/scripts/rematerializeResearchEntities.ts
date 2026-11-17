@@ -49,13 +49,13 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   assertRematerializeApplyAllowed,
   collectRematerializeEntityReports,
+  createChunkedRegater,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
   isLeadEdgesScope,
   summarizeLeadEdgeChanges,
   rematerializeComparedFields,
   rematerializeEntityReportFromChanges,
-  rematerializeFailureMessage,
   rematerializeReportedChanges,
   rematerializeSkipReasonForEntity,
   rematerializeStateAfterPlan,
@@ -198,6 +198,7 @@ export async function rematerializeSlug(
     changes,
     foreignContact,
     unbackedResearchAreas: result.unbackedResearchAreas,
+    lastCitationRemovalsWithheld: result.lastCitationRemovalsWithheld,
     cardSynthesisPending: cardSynthesis.requested,
     skipped: result.skipped ?? (cardSynthesis.requested ? undefined : result.plannedWriteSkip),
   });
@@ -396,6 +397,29 @@ export interface RematerializeRegateSummary {
   counts: Record<string, number>;
 }
 
+export function mergeRematerializeRegateSummaries(
+  summaries: RematerializeRegateSummary[],
+): RematerializeRegateSummary | undefined {
+  if (summaries.length === 0) return undefined;
+  const counts: Record<string, number> = {};
+  for (const summary of summaries) {
+    for (const [key, value] of Object.entries(summary.counts)) {
+      counts[key] = (counts[key] ?? 0) + value;
+    }
+  }
+  const sum = (pick: (summary: RematerializeRegateSummary) => number) =>
+    summaries.reduce((total, summary) => total + pick(summary), 0);
+  return {
+    scopedEntities: sum((summary) => summary.scopedEntities),
+    indexResynced: sum((summary) => summary.indexResynced),
+    indexSyncFailures: sum((summary) => summary.indexSyncFailures),
+    indexSyncDeferred: sum((summary) => summary.indexSyncDeferred),
+    tierChanged: sum((summary) => summary.tierChanged),
+    tierTransitions: summaries.flatMap((summary) => summary.tierTransitions),
+    counts,
+  };
+}
+
 export async function regateRematerializedEntities(
   entityIds: string[],
 ): Promise<RematerializeRegateSummary> {
@@ -478,36 +502,35 @@ async function main() {
     slugs = discoveredAccessSignalSlugs;
   }
 
-  const entities = await collectRematerializeEntityReports(slugs, (slug) =>
-    args.accessSignals
-      ? processAccessSignalsSlug(slug, args.apply, args.includeArchived)
-      : isLeadEdgesScope(args.onlyFields)
-        ? processLeadEdgesSlug(slug, args.apply, args.includeArchived)
-        : rematerializeSlug(
-            slug,
-            args.apply,
-            args.onlyFields,
-            args.includeArchived,
-            args.unbackedProvenance,
-            args.foreignContact,
-            args.resynthesizeCutCards,
-            args.cardModel,
-            args.resynthesizeWeakCards,
-          ),
+  const regater = args.apply ? createChunkedRegater(regateRematerializedEntities) : undefined;
+  const entities = await collectRematerializeEntityReports(
+    slugs,
+    (slug) =>
+      args.accessSignals
+        ? processAccessSignalsSlug(slug, args.apply, args.includeArchived)
+        : isLeadEdgesScope(args.onlyFields)
+          ? processLeadEdgesSlug(slug, args.apply, args.includeArchived)
+          : rematerializeSlug(
+              slug,
+              args.apply,
+              args.onlyFields,
+              args.includeArchived,
+              args.unbackedProvenance,
+              args.foreignContact,
+              args.resynthesizeCutCards,
+              args.cardModel,
+              args.resynthesizeWeakCards,
+            ),
+    regater ? (report) => regater.add(selectRematerializeRegateEntityIds([report])) : undefined,
   );
   const failed = entities.filter((entity) => entity.error);
 
   let regate: RematerializeRegateSummary | undefined;
   let regateError: string | undefined;
-  if (args.apply) {
-    const regateEntityIds = selectRematerializeRegateEntityIds(entities);
-    if (regateEntityIds.length > 0) {
-      try {
-        regate = await regateRematerializedEntities(regateEntityIds);
-      } catch (error) {
-        regateError = rematerializeFailureMessage(error);
-      }
-    }
+  if (regater) {
+    const regated = await regater.finish();
+    regate = mergeRematerializeRegateSummaries(regated.summaries);
+    regateError = regated.error;
   }
 
   const provenanceReconciliation = args.unbackedProvenance
@@ -548,6 +571,7 @@ async function main() {
     unbackedResearchAreas: summary.unbackedResearchAreas,
     researchAreaChips: summary.researchAreaChips,
     entitiesAwaitingCardSynthesis: summary.entitiesAwaitingCardSynthesis,
+    entitiesWithLastCitationKept: summary.entitiesWithLastCitationKept,
     entitiesSkipped: entities.filter((entity) => entity.skipped).length,
     entitiesFailed: failed.map((entity) => ({ slug: entity.slug, error: entity.error })),
     regate,

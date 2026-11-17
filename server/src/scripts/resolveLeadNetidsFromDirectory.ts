@@ -11,7 +11,11 @@ import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { FIRST_YALIES_PAGE, listYalies, type YaliesPerson } from '../services/yaliesService';
 import { isFacultyPerson } from '../scrapers/sources/yaleDirectoryScraper';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
   indexNetidByEmail,
@@ -192,7 +196,7 @@ async function main(): Promise<void> {
 
   const directory = await loadFacultyDirectory(
     args.directoryCache
-      ? resolveSafeJsonReportOutputPath(args.directoryCache, '--directory-cache')
+      ? resolveSafeJsonReportPath(args.directoryCache, '--directory-cache')
       : undefined,
   );
   const netidByEmail = indexNetidByEmail(directory);

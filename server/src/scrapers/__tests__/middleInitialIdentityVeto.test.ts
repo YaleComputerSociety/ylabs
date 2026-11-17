@@ -131,6 +131,7 @@ describe('the shared-row fold refuses when the two records pages name different 
     tier: 'NETID' as const,
     netid: 'qf5979',
     statedNames,
+    sharedRowId: 'row-5979',
   });
   const decide = (shell: Record<string, unknown>, statedNames: string[]) =>
     decideShellMerge({ id: 'shell', ...shell }, new Map(), new Map(), [], new Map(), [
@@ -163,6 +164,7 @@ describe('the shared-row fold refuses when the two records pages name different 
       canonicalId: 'holder',
       reason: 'MERGEABLE',
       matchedOn: 'shared-row',
+      matchedEvidence: 'shared row row-5979',
     });
   });
 
@@ -172,6 +174,7 @@ describe('the shared-row fold refuses when the two records pages name different 
       canonicalId: 'holder',
       reason: 'MERGEABLE',
       matchedOn: 'shared-row',
+      matchedEvidence: 'shared row row-5979',
     });
   });
 
@@ -181,6 +184,7 @@ describe('the shared-row fold refuses when the two records pages name different 
       canonicalId: 'holder',
       reason: 'MERGEABLE',
       matchedOn: 'shared-row',
+      matchedEvidence: 'shared row row-5979',
     });
   });
 });

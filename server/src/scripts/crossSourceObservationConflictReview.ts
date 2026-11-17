@@ -11,7 +11,11 @@ import {
   isResearchEntityContactField,
 } from '../scrapers/rowKeyedContactEvidence';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config({ quiet: true });
@@ -398,7 +402,7 @@ export function parseCrossSourceObservationConflictReviewArgs(
       continue;
     }
     if (arg.startsWith('--accepted-decisions=')) {
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
+      args.acceptedDecisions = resolveSafeJsonReportPath(
         arg.slice('--accepted-decisions='.length),
         '--accepted-decisions',
       );
@@ -406,7 +410,7 @@ export function parseCrossSourceObservationConflictReviewArgs(
     }
     if (arg === '--accepted-decisions') {
       const next = consumeValue(argv, index, '--accepted-decisions', 'a path');
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(next, '--accepted-decisions');
+      args.acceptedDecisions = resolveSafeJsonReportPath(next, '--accepted-decisions');
       index += 1;
       continue;
     }
@@ -579,7 +583,7 @@ export function readCrossSourceObservationReviewDecisions(
   inputPath: string,
   options: { allowEmpty?: boolean } = {},
 ): CrossSourceObservationReviewDecision[] {
-  const safeInputPath = resolveSafeJsonReportOutputPath(inputPath, '--accepted-decisions');
+  const safeInputPath = resolveSafeJsonReportPath(inputPath, '--accepted-decisions');
   if (options.allowEmpty && !fs.existsSync(safeInputPath)) {
     return [];
   }

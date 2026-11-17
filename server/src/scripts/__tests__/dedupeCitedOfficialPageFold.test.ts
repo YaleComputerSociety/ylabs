@@ -198,10 +198,14 @@ describe('cited official page joins in the cluster planner', () => {
       member('1', { displayName: 'Avery Q. Synth' }),
       member('2', { liveRoleEdges: 1 }),
     ];
-    const joins = [['1'.padStart(24, '0'), '2'.padStart(24, '0')] as const];
+    const citedPage = 'https://medicine.example.edu/profile/avery-synth/';
+    const joins = [['1'.padStart(24, '0'), '2'.padStart(24, '0'), citedPage] as const];
     const first = planAccountlessClusterFolds(members, [], joins);
     expect(first.foldTargetById).toEqual(new Map([['1'.padStart(24, '0'), '2'.padStart(24, '0')]]));
     expect(first.citedOfficialPageFoldIds).toEqual(new Set(['1'.padStart(24, '0')]));
+    expect(first.evidenceById.get('1'.padStart(24, '0'))).toBe(
+      `listing cites official page ${citedPage}`,
+    );
     const second = planAccountlessClusterFolds(
       members.filter((entry) => !first.foldTargetById.has(entry.id)),
       [],
@@ -214,7 +218,7 @@ describe('cited official page joins in the cluster planner', () => {
     const plan = planAccountlessClusterFolds(
       [member('1', { displayName: 'Avery Q. Synth' })],
       [],
-      [['1'.padStart(24, '0'), '9'.padStart(24, '0')]],
+      [['1'.padStart(24, '0'), '9'.padStart(24, '0'), 'https://medicine.example.edu/profile/x/']],
     );
     expect(plan.foldTargetById.size).toBe(0);
   });

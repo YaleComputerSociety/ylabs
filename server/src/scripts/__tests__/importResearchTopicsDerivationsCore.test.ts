@@ -17,7 +17,7 @@ import {
   type ResearchTopicsDerivationRecord,
 } from '../deriveResearchTopicsCore';
 import { currentPageTextRowsBySlug } from '../deriveResearchTopics';
-import { resolveImportArtifactPath, writePrivateJson } from '../importResearchTopicsDerivations';
+import { writePrivateJson } from '../importResearchTopicsDerivations';
 import { parsePageQuotedTopicExtraction } from '../../scrapers/utils/pageQuotedResearchTopics';
 import {
   assertImportResearchTopicsApplyAllowed,
@@ -599,24 +599,6 @@ describe('currentPageTextRowsBySlug', () => {
 });
 
 describe('export artifact paths', () => {
-  const experimentsRoot = path.join(os.homedir(), 'ylabs-experiments-root-fixture-never-created');
-
-  it('accepts a json path under the experiments root or a temp root, and nothing else', () => {
-    const inside = path.join(experimentsRoot, 'descriptions', 'batch-run', 'topics-export.json');
-    expect(resolveImportArtifactPath(inside, '--output', experimentsRoot)).toBe(inside);
-    expect(() =>
-      resolveImportArtifactPath(path.join(experimentsRoot, 'x.txt'), '--output', experimentsRoot),
-    ).toThrow(/--output/);
-    expect(() =>
-      resolveImportArtifactPath(
-        path.join(os.homedir(), 'topics-export-outside-roots.json'),
-        '--output',
-        experimentsRoot,
-      ),
-    ).toThrow(/--output must write under/);
-    expect(fs.existsSync(experimentsRoot)).toBe(false);
-  });
-
   it('writes the file with owner-only permissions', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'topics-export-'));
     const target = path.join(dir, 'batch-run', 'topics-export.json');

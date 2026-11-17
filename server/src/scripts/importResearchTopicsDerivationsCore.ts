@@ -40,7 +40,7 @@ export const IMPORT_RESEARCH_TOPICS_USAGE = [
   '  Validate readings:      --validate-only --input=<a.json[,b.json]> [--output=<path.json>] [--sample-for-grading=<n> --sample-output=<path.json>]',
   '  Import, dry run:        --input=<a.json[,b.json]> [--output=<path.json>]',
   `  Import, apply:          --input=<a.json[,b.json]> --apply ${IMPORT_RESEARCH_TOPICS_CONFIRM_FLAG} (Development only, DEV_WRITE_OWNER set, takes the Development write lease)`,
-  '  Files are written mode 600 under a temp root or ~/Personal/ylabs-experiments (batch runs: descriptions/batch-run/).',
+  '  Files are written mode 600 under a temp root or YLABS_REPORT_ROOT (batch runs: descriptions/batch-run/).',
   '  A readings file is {"writer": "claude-agent:topics-<first 8 of promptHash>", "promptHash", "rows": [{"slug", "inputHash", "rawOutput"}]}; an openai or any other writer, a promptHash mismatch, a stale inputHash and a rawOutput not in outputSchema (malformed-output) are refused; a well-formed reading is stored raw and judged by the filters at resolve. `writer` is the provenance of an imported reading; `model` keeps the lane model name because it is part of the cache key contract.',
   `  ${IMPORT_RESEARCH_TOPICS_GRADING_GATE}`,
 ].join('\n');

@@ -38,8 +38,7 @@ import { TRANSPARENCY_ONLY_VISIBILITY_REASONS } from './studentVisibilityTier';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import { recordAdminAuditEvent, type RecordAdminAuditEventInput } from './adminAuditService';
 import {
-  STUDENT_VISIBILITY_OVERRIDE_AUDIT_ACTIONS,
-  STUDENT_VISIBILITY_OVERRIDE_AUDIT_TARGET_TYPE,
+  STUDENT_VISIBILITY_OVERRIDE_AUDIT,
   withOverrideReasonEntry,
 } from '../scripts/studentVisibilityOverrideCore';
 import {
@@ -50,6 +49,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isUncitableHostUrl } from '../utils/urlSafety';
 import { withResearchEntityWriteTransaction } from './researchEntityWriteTransaction';
+import { updateOneKeepingLastCitation } from './lastCitationGuard';
 import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
 import type { RecoverabilityBucket } from '../scripts/visibilityRecoverabilityAuditCore';
 
@@ -274,10 +274,13 @@ export function repairQueueSuppressionReason(blockerReasons: readonly string[]):
 
 const REPAIR_QUEUE_HOLD_AUDIT = {
   research: {
-    action: STUDENT_VISIBILITY_OVERRIDE_AUDIT_ACTIONS.set,
-    targetType: STUDENT_VISIBILITY_OVERRIDE_AUDIT_TARGET_TYPE,
+    action: STUDENT_VISIBILITY_OVERRIDE_AUDIT.research.actions.set,
+    targetType: STUDENT_VISIBILITY_OVERRIDE_AUDIT.research.targetType,
   },
-  programs: { action: 'fellowship.visibility_override.set', targetType: 'fellowship' },
+  programs: {
+    action: STUDENT_VISIBILITY_OVERRIDE_AUDIT.programs.actions.set,
+    targetType: STUDENT_VISIBILITY_OVERRIDE_AUDIT.programs.targetType,
+  },
 } as const;
 
 function suppressionBlockedAttempt(plan: VisibilityRepairPlan): VisibilityRepairAttempt {
@@ -1743,7 +1746,12 @@ export const defaultRepairDeps: RepairDeps = {
     const safeId = normalizeVisibilityRepairObjectId(id);
     if (!safeId) return;
     await withResearchEntityWriteTransaction((session) =>
-      ResearchEntity.updateOne({ _id: safeId }, { $set: patch }, { session }).then(() => undefined),
+      updateOneKeepingLastCitation(
+        ResearchEntity,
+        { _id: safeId },
+        { $set: patch },
+        { session },
+      ).then(() => undefined),
     );
   },
   async findProgram(id) {

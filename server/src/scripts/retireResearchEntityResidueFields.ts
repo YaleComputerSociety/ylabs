@@ -5,7 +5,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import {
   RETIRED_RESEARCH_ENTITY_RESIDUE_FIELDS,
   assertResidueFieldsFullyUnset,
@@ -57,14 +61,11 @@ export function parseRetireResearchEntityResidueFieldsArgs(
       throw new Error(`${CONFIRM_FLAG} does not accept a value`);
     }
     if (arg.startsWith('--snapshot=')) {
-      args.snapshot = resolveSafeJsonReportOutputPath(
-        arg.slice('--snapshot='.length),
-        '--snapshot',
-      );
+      args.snapshot = resolveSafeJsonReportPath(arg.slice('--snapshot='.length), '--snapshot');
       continue;
     }
     if (arg === '--snapshot') {
-      args.snapshot = resolveSafeJsonReportOutputPath(argv[index + 1], '--snapshot');
+      args.snapshot = resolveSafeJsonReportPath(argv[index + 1], '--snapshot');
       index += 1;
       continue;
     }

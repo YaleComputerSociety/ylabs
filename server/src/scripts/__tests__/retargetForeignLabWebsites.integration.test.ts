@@ -223,6 +223,10 @@ describe('retireSiteGraftFromHolder', () => {
   it('does nothing for a row whose website is not a URL', async () => {
     await seedObservation('fullDescription', 'anything', APOLLO_SITE);
     const result = await retireSiteGraftFromHolder({ ...khannaRow, websiteUrl: 'lab website' });
-    expect(result).toEqual({ observationsRetired: 0, documentFieldsCorrected: 0 });
+    expect(result).toEqual({
+      observationsRetired: 0,
+      documentFieldsCorrected: 0,
+      lastCitationStampsKept: 0,
+    });
   });
 });

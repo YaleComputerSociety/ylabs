@@ -800,25 +800,38 @@ const LIFTED_OVERRIDE_REASON =
  * the old tier, and the next materialization projects it back, which is how per-row repairs
  * of research-entity overrides came undone before #1898.
  */
-async function liftFellowshipVisibilityOverride(fellowship: { _id: unknown; sourceKey?: unknown }) {
+type FellowshipIdentity = { _id: unknown; sourceKey?: unknown };
+
+function liveVisibilityOverrideObservationFilter(fellowship: FellowshipIdentity) {
   const identity: Record<string, unknown>[] = [{ entityId: fellowship._id }];
   if (typeof fellowship.sourceKey === 'string' && fellowship.sourceKey) {
     identity.push({ entityKey: fellowship.sourceKey });
   }
-  await Observation.updateMany(
-    {
-      entityType: 'fellowship',
-      $or: identity,
-      field: { $in: [...VISIBILITY_OVERRIDE_FIELDS] },
-      superseded: { $ne: true },
-    },
-    {
-      $set: {
-        superseded: true,
-        rollback: { rolledBackAt: new Date(), reason: LIFTED_OVERRIDE_REASON },
-      },
-    },
-  );
+  return {
+    entityType: 'fellowship' as const,
+    $or: identity,
+    field: { $in: [...VISIBILITY_OVERRIDE_FIELDS] },
+    superseded: { $ne: true },
+  };
+}
+
+export const countLiveFellowshipVisibilityOverrideObservations = (
+  fellowship: FellowshipIdentity,
+): Promise<number> =>
+  Observation.countDocuments(liveVisibilityOverrideObservationFilter(fellowship));
+
+export async function retireFellowshipVisibilityOverrideObservations(
+  fellowship: FellowshipIdentity,
+  reason: string,
+): Promise<number> {
+  const result = await Observation.updateMany(liveVisibilityOverrideObservationFilter(fellowship), {
+    $set: { superseded: true, rollback: { rolledBackAt: new Date(), reason } },
+  });
+  return result.modifiedCount;
+}
+
+async function liftFellowshipVisibilityOverride(fellowship: FellowshipIdentity) {
+  await retireFellowshipVisibilityOverrideObservations(fellowship, LIFTED_OVERRIDE_REASON);
   await Fellowship.updateOne(
     { _id: fellowship._id },
     {

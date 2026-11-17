@@ -13,6 +13,7 @@
  * director only in prose the patterns cannot settle emits nothing: no observation field
  * holds unsettled page text for materialize-time interpretation yet.
  */
+import { LEAD_LANE_ENTITY_TYPE_SCOPES } from '../leadLaneEntityScopes';
 import mongoose from 'mongoose';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -40,8 +41,6 @@ import {
 
 export { CENTER_DIRECTOR_SOURCE_NAME };
 
-const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
-const LEADERLESS_ENTITY_TYPES = ['LAB'];
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 const DIRECTOR_ROLE_CONFIDENCE = 0.85;
 const MAX_CITED_PAGES = 3;
@@ -104,7 +103,7 @@ export async function findCenterDirectorTargets(only: string[]): Promise<CenterD
   const docs = (await ResearchEntity.find(
     {
       $and: [
-        { entityType: { $in: [...ORG_ENTITY_TYPES, ...LEADERLESS_ENTITY_TYPES] } },
+        { entityType: { $in: [...LEAD_LANE_ENTITY_TYPE_SCOPES[CENTER_DIRECTOR_SOURCE_NAME]] } },
         { archived: { $ne: true } },
         { websiteUrl: /^https?:\/\//i },
         identity,

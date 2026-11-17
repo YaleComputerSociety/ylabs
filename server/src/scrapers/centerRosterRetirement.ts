@@ -1582,12 +1582,62 @@ export async function applyCenterRosterRetirementPlan(
 export type CenterRosterRetirementOutcome =
   'invalid-run-id' | 'no-center-roster-read' | 'planned' | 'reconciled';
 
+/**
+ * What an operator approves when they approve a center's retirement plan: the verdict and the
+ * exact edges it ends or keeps. An apply carries out a plan only when its own digest, planned
+ * against the edges the projection just wrote, equals the approved one (#6348).
+ */
+export interface CenterRosterRetirementDigest {
+  entityKey: string;
+  verdict: CenterRosterRetirementPlan['verdict'];
+  freezeReason: CenterRosterFreezeReason | null;
+  retiredEdgeIds: string[];
+  protectedLeadEdgeIds: string[];
+}
+
+export function centerRosterRetirementDigest(
+  plan: Pick<
+    CenterRosterRetirementPlan,
+    'entityKey' | 'verdict' | 'freezeReason' | 'retiredEdges' | 'protectedLeadEdges'
+  >,
+): CenterRosterRetirementDigest {
+  return {
+    entityKey: plan.entityKey,
+    verdict: plan.verdict,
+    freezeReason: plan.freezeReason ?? null,
+    retiredEdgeIds: [...new Set(plan.retiredEdges.map((edge) => edge.edgeId))].sort(),
+    protectedLeadEdgeIds: [...new Set(plan.protectedLeadEdges.map((edge) => edge.edgeId))].sort(),
+  };
+}
+
+const canonicalDigest = (digest: CenterRosterRetirementDigest): string =>
+  JSON.stringify([
+    digest.entityKey,
+    digest.verdict,
+    digest.freezeReason ?? null,
+    [...digest.retiredEdgeIds].sort(),
+    [...digest.protectedLeadEdgeIds].sort(),
+  ]);
+
+export function centerRosterRetirementDigestsEqual(
+  left: CenterRosterRetirementDigest,
+  right: CenterRosterRetirementDigest,
+): boolean {
+  return canonicalDigest(left) === canonicalDigest(right);
+}
+
 export interface CenterRosterRetirementCenterResult {
   entityKey: string;
   admissibility: CenterRosterReadAdmissibility;
   verdict?: CenterRosterRetirementPlan['verdict'] | 'entity-missing';
   freezeReason?: CenterRosterFreezeReason;
   counts?: CenterRosterRetirementCounts;
+  digest?: CenterRosterRetirementDigest;
+  /**
+   * The apply was held to an approved plan and this center's post-projection plan did not
+   * match it, so nothing was retired for it.
+   */
+  planDiverged?: true;
   applied?: AppliedCenterRosterRetirement;
 }
 
@@ -1602,11 +1652,18 @@ export interface CenterRosterRetirementResult {
  * the projection just wrote. A dry run plans and reports without writing, for the same
  * reason field retraction does: the freeze verdict has to be readable before a pass that
  * retires evidence is authorized.
+ *
+ * With `approvedDigests` an apply retires a center only when its plan's digest equals the
+ * approved one; any other center is reported as plan-diverged and left untouched (#6348).
  */
 export async function reconcileCenterRosterRetirementsFromRun(
   scrapeRunId: string,
   deps: CenterRosterRetirementDeps,
-  options: { dryRun?: boolean; lane?: CenterRosterLane } = {},
+  options: {
+    dryRun?: boolean;
+    lane?: CenterRosterLane;
+    approvedDigests?: ReadonlyMap<string, CenterRosterRetirementDigest>;
+  } = {},
 ): Promise<CenterRosterRetirementResult> {
   const dryRun = options.dryRun === true;
   const lane = options.lane ?? CENTERS_INSTITUTES_ROSTER_LANE;
@@ -1649,19 +1706,32 @@ export async function reconcileCenterRosterRetirementsFromRun(
         `[center-roster-retirement] ${lane.sourceName} ${sanitizeLogValue(entityKey)} sections: latest read lists ${counts.latestReadListings.current} current, ${counts.latestReadListings.unclassified} unlabelled, ${counts.latestReadListings.past} past, ${counts.latestReadListings.emeritus} emeritus; ${counts.departedEdges} departed edge(s), ${counts.departedEdgesAwaitingSecondRead} awaiting a second read, ${counts.witnessedOmittedEdges} witnessed-omitted, ${counts.omittedUnwitnessedEdges} omitted-unwitnessed edge(s), ${counts.omittedUnwitnessedMemberKeys} omitted-unwitnessed member key(s), ${counts.protectedLeadEdges} last lead edge(s) kept for operator review`,
       );
     }
+    const digest = centerRosterRetirementDigest(plan);
+    const approved = options.approvedDigests?.get(entityKey);
+    const planDiverged =
+      !dryRun &&
+      options.approvedDigests !== undefined &&
+      (!approved || !centerRosterRetirementDigestsEqual(digest, approved));
     const result: CenterRosterRetirementCenterResult = {
       entityKey,
       admissibility,
       verdict: plan.verdict,
       counts: plan.counts,
+      digest,
       ...(plan.freezeReason ? { freezeReason: plan.freezeReason } : {}),
+      ...(planDiverged ? { planDiverged: true as const } : {}),
     };
     if (plan.verdict === 'frozen') {
       console.warn(
         `[center-roster-retirement] ${lane.sourceName} frozen ${sanitizeLogValue(entityKey)} (${plan.freezeReason}): ${plan.counts.governedMemberKeys} member keys, ${plan.counts.governedEdges} edges governed`,
       );
     }
-    if (!dryRun && plan.verdict === 'retire') {
+    if (planDiverged) {
+      console.warn(
+        `[center-roster-retirement] ${lane.sourceName} plan-diverged ${sanitizeLogValue(entityKey)}: the post-projection plan (${plan.verdict}, ${digest.retiredEdgeIds.length} edge(s) to end) is not the approved one${approved ? ` (${approved.verdict}, ${approved.retiredEdgeIds.length} edge(s) to end)` : ', and none was approved'}, so nothing was retired for it`,
+      );
+    }
+    if (!dryRun && !planDiverged && plan.verdict === 'retire') {
       result.applied = await applyCenterRosterRetirementPlan(plan, inputs, deps, new Date(), lane);
     }
     centers.push(result);

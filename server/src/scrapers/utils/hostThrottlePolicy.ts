@@ -91,3 +91,43 @@ export class HostSlotWaitTimeoutError extends Error {
     this.name = 'HostSlotWaitTimeoutError';
   }
 }
+
+const crawlDelayMsByHost = new Map<string, number>();
+
+const crawlDelayKey = (host: string | undefined): string =>
+  (host ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, '')
+    .replace(/^www\./, '');
+
+/**
+ * The `Crawl-delay` a host's robots.txt asked for, already clamped by the robots reader (#6213).
+ * It can only lengthen a host's spacing, never shorten an override or a Yale floor, and it lives
+ * here because both throttle resolvers read this module and it imports nothing.
+ */
+export function recordHostCrawlDelay(host: string | undefined, delayMs: number | undefined): void {
+  const key = crawlDelayKey(host);
+  if (!key) return;
+  if (typeof delayMs === 'number' && Number.isFinite(delayMs) && delayMs > 0) {
+    crawlDelayMsByHost.set(key, delayMs);
+  } else {
+    crawlDelayMsByHost.delete(key);
+  }
+}
+
+export function hostCrawlDelayMs(host: string | undefined): number {
+  return crawlDelayMsByHost.get(crawlDelayKey(host)) ?? 0;
+}
+
+export function withHostCrawlDelay<T extends HostThrottle>(
+  host: string | undefined,
+  throttle: T,
+): T {
+  const delayMs = hostCrawlDelayMs(host);
+  return delayMs > throttle.minIntervalMs ? { ...throttle, minIntervalMs: delayMs } : throttle;
+}
+
+export function resetHostCrawlDelaysForTests(): void {
+  crawlDelayMsByHost.clear();
+}

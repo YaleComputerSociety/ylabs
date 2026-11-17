@@ -75,6 +75,30 @@ export async function rematerializeMergeSurvivors(input: {
   return rematerializations;
 }
 
+export interface SurvivorRegater {
+  add(entityIds: readonly string[]): Promise<void>;
+}
+
+/**
+ * Re-materializes one merged survivor and re-gates it before the caller moves to the next
+ * merge, because the materializer never recomputes a tier and serve paths read the stored
+ * one (#6374).
+ */
+export async function settleMergedSurvivor(input: {
+  survivor: Record<string, unknown>;
+  onlyFields: readonly string[];
+  materialize: SurvivorMaterialize;
+  regater: SurvivorRegater;
+}): Promise<number> {
+  const rematerializations = await rematerializeMergeSurvivors({
+    survivorSlugs: [String(input.survivor.slug)],
+    onlyFields: input.onlyFields,
+    materialize: input.materialize,
+  });
+  await input.regater.add([String(input.survivor._id)]);
+  return rematerializations;
+}
+
 export interface ScopedSurvivorPlan {
   slug: string;
   plannedSetPaths: string[];

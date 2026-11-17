@@ -162,6 +162,7 @@ A one-off job runs on the operator service's latest build with that service's cu
 The entrypoint sets `SWEEP_TARGET_SHA` to the `beta` HEAD it resolved and `SEARCH_INDEX_WRITES=deferred`, and unsets every `MEILISEARCH_*` variable, so none of those belong in the dashboard.
 The job refuses when `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `PROD_MONGODBURL`, or any other copy-pair URL is present, because it holds Development credentials only.
 Scope its database user to the `Development` database, because Render's outbound ranges are shared by every service in the region.
+Before re-enabling the cron, know that the seven center roster sources need a manual dry-run-then-expect apply after each sweep, one per run the sweep lists as `centerPlanOwed` (`docs/data-refresh-runbook.md`, "Center Roster Sources Owe A Center Plan").
 
 ## Operator Laptop Variables
 
@@ -171,6 +172,7 @@ These live in the operator's own `server/.env` or shell, never in Render and nev
 | -------- | ------- | ------ |
 | `MONGODBURL` | Development work and `yarn promote:beta` | Yes |
 | `DEVELOPMENT_MONGODBURL`, `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `ATLAS_DEVELOPMENT_MONGODBURL` | The copy pairs: `database:verify-names --pair <pair>`, the two mirrors, and `production:promote-beta-copy` | Yes |
+| `PRODUCTION_READONLY_MONGODBURL` | `research-search:rerank-seeding-round collect`, which refuses it unless it names the `Prod` database and lists only read-role actions (`docs/search-rerank-cache.md`, "Seeding rounds") | Yes |
 | `RENDER_API_KEY` | `yarn promote:beta` and `yarn promote:production`, which read the operator services and start their jobs, and `yarn ops:sweep`, which falls back to the render CLI's `~/.render/cli.yaml` login when it is unset | Yes |
 | `RENDER_BETA_OPERATOR_SERVICE_ID`, `RENDER_PRODUCTION_OPERATOR_SERVICE_ID` | The same | No |
 | `OPENAI_API_KEY`, `YALIES_API_KEY` | Laptop sweeps and `yarn development:search:sync` or `:rebuild` | Yes |
@@ -178,6 +180,7 @@ These live in the operator's own `server/.env` or shell, never in Render and nev
 | `TAVILY_API_KEY`, `EXA_API_KEY`, `BRAVE_SEARCH_API_KEY`, `PARALLEL_API_KEY` | `server/src/scripts/findLabWebsites.ts`, the lab-site discovery script | Yes |
 | `YALIES_OLD_API_KEY`, `YALIES_NEW_API_KEY` | `yarn security:verify-yalies-rotation`, set only for that one command | Yes |
 | `SMOKE_COOKIE` | `yarn security:smoke:production` with a signed-in check; it is a live session cookie | Yes |
+| `YLABS_REPORT_ROOT` | Every script's `--output` report path, as one more approved root beside the temp directories, so a report outlives a temp sweep; an absolute directory outside the repository checkout (`skills/architecture/SKILL.md`, "Script report output") | No |
 
 ## Guard and Confirmation Variables
 

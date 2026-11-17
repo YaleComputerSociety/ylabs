@@ -6,6 +6,13 @@ const mocks = vi.hoisted(() => ({
   setCached: vi.fn(),
 }));
 
+// No robots.txt is read in this suite: every host allows everything, so these tests keep
+// exercising what they were written for. robotsFetchHookRendered.test.ts covers the robots path.
+vi.mock('../utils/robotsPolicyCache', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/robotsPolicyCache')>()),
+  robotsPolicyFor: async () => ({ rules: [] }),
+}));
+
 vi.mock('node:child_process', () => ({
   execFile: mocks.execFile,
 }));
@@ -27,9 +34,11 @@ import {
   beginBenchmarkReplay,
   finishBenchmarkReplay,
 } from '../snapshotBenchmarkMode';
+import { resetHostPauseStateForTests } from '../utils/hostPauseState';
 import { withThrottleRetryScope } from '../utils/throttleRetryStats';
 
 beforeEach(() => {
+  resetHostPauseStateForTests();
   mocks.execFile.mockReset();
   mocks.getCached.mockReset();
   mocks.setCached.mockReset();

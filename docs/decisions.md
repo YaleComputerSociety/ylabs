@@ -5,6 +5,112 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-16: A Matching Name Alone Never Folds Two Researcher Records (#6378)
+
+Decision (the manager, 2026-11-16): `researchers:dedupe-accountless-shells` never applies a fold whose only evidence is a matching name, with or without a department or a shared row, on the two paths below.
+The `name` arm, the last fallback in `decideShellMerge`, folds only when the shell's netid or ORCID agrees with the target's.
+The account-less cluster arm still groups records on a name plus a department, a name plus a live role on the same row, or a noisy spelling, but a name never joins two members for a fold: each part of a group that a shared verified page, a shared official profile, a cited official page or an agreeing netid or ORCID connects folds into its own survivor, and a member only a name ties to the rest stays unfolded.
+An identifier, rank or surname conflict anywhere in the group still refuses the whole group.
+The `shared-row` arm is unchanged: it folds a shell only into a stronger record that holds a role on the same live row, because a row lists its own lead twice only when two lanes minted that lead under two spellings, so the row is the join and the name only vetoes (#4911).
+A refused name-only candidate is listed in the dry-run report (`nameOnlyFoldCandidates`, `accountlessClusters.nameOnlyGroups`) for operator review, and the tool never applies it.
+
+Two different people can share a name and a department, and a fold is permanent once applied, so a name is a reason to look and never a reason to merge.
+On Development on 2026-11-16 the name arm's 2 candidates were already dropped downstream, one by the only-live-lead refusal and one by an operator's different-people verdict, and the cluster arm planned no fold, so the rule changes no current plan.
+The same change records the planning arm on every merge in the report, after a blind check of 10 planned merges could not tell from the report what joined them: they were 6 cited-official-page, 3 orcid-only-holder and 1 shared-row folds, none of them name-only.
+
+## 2026-11-16: Topics Read From A Page The Lead Filter Refuses Retire, While A Vanished Page Keeps Them (#6386)
+
+Decision (manager, 2026-11-16, option A): this narrows the #6127 rule that a person row the lead filter leaves with no page keeps its stored page-derived topics.
+On a person research row, #6127 (#6110, #6120) reads only the stored pages that name one of the row's leads.
+When that filter leaves no page, a stored `research-page-topics-derived` list whose own `sourceUrl` is one of the stored pages the filter excluded is stale, and it retires through `storedResearchAreasEvidenceRetired`; the row falls back to its other topic lanes.
+A list whose cited page is no longer stored at all keeps its topics, because silence is not absence.
+The distinction is between silence and refusal: a vanished or unread page says nothing, while a page still stored and refused by the lane as this person's evidence cannot be the evidence a list stands on.
+
+Measured on Development on 2026-11-16: 30 person rows had this shape, 16 of them served, and all 30 stored lists cite an excluded page, typically a school or department research landing page that never names the lead.
+A scoped dry run planned 27 changes (21 fall back to other lanes' topics, 6 empty), and a before-and-after visibility simulation found 0 tier changes.
+Before the apply, the manager required a blind check of 10 of the 27 asking whether the old topics were the person's own research; if most were, the filter rather than the topics is too strict, and the apply stops.
+
+## 2026-11-16: An Empty Topic Reading Keeps Only Lane Topics The Served Description States (#6360)
+
+Decision (the backlog agent's GO on the manager's behalf, 2026-11-16, option (ii)+): when the stored page-topic reading for a row's CURRENT input hash is empty, a `researchAreas` observation counts as evidence only if it comes from the description lane (`lab-microsite-description-llm`) and the row's stored served description states it.
+"States" means every content word of the topic appears, by stem and in any order, inside one prose sentence of the stored short or full description, so an inverted heading such as "Carcinoma, Hepatocellular" matches prose that says "hepatocellular carcinoma".
+A list line is never read, so a topic named only in a list is dropped: a line with two or more semicolons, or a line that does not end like a sentence and either opens with a short label and a colon ("Keywords:") or carries three or more commas.
+Other lanes' topic observations are not evidence on such a row, and the prose-derived fallback does not run, so a row with no grounded topic serves none.
+A row whose text has no reading yet keeps today's fallback unchanged.
+
+The narrowing runs on every resolve and writes no field, so it is derivation under the 2026-09-24 contract rather than repair.
+It reads the stored description, never the one this pass derives, so topics and description cannot chase each other across resolves.
+It sits in the materializer beside `withLabSiteDescriptionsNarrowedToResearch` rather than in `partitionResearchAreas`, because only the materializer sees the reading, the observation sources and the description.
+
+A re-read is not the fix: re-reading 19 empty rows returned 18 empty again, and three blind graders judged 17 of those 18 correctly empty.
+
+Three versions were blind-graded on 20 rows and 120 topics by three graders reading stored evidence only, then re-graded in full after the first round's single-line packet was found to truncate long evidence (5 of 120 topic verdicts moved, the ruling did not).
+
+| Version | What it serves on an empty reading | Precision | Recall | Passing rows left with no real topic |
+| --- | --- | --- | --- | --- |
+| (i) | every description-lane topic | 0.50 | 1.00 | 0 of 10 |
+| (ii) | topics derived from the description prose | 0.29 | 0.03 | 9 of 10 |
+| (ii)+ | description-lane topics the description states | 0.65 | 0.86 | 1 of 10 |
+
+Literal (ii) was rejected because the canonical phrase index matches almost nothing a real description says, so it strips nearly every real topic while keeping mostly generic ones.
+(i) keeps every real topic but serves as many wrong ones, the noise the empty reading was flagging.
+(ii)+ keeps most of (i)'s recall and cuts its noise by a third.
+Of the 263 served rows in scope, 96 serve no topic under (ii)+.
+Simulated read-only on Development by computing each row's visibility twice, once with its stored topics and once with its (ii)+ topics, 4 of the 263 move from `student_ready` to `operator_review`, all faculty research profiles whose card or body the gate judges against their topic list (`missing_card_description` and `public_description_invariant_failed`); the other 94 rows that gain a reason gain only the soft `missing_facet_signal`.
+The apply runs after a scoped gate dry run confirms that count.
+
+## 2026-11-16: An Official Center's Emeritus Section Marks A Lead Emeritus (#6162)
+
+This extends the 2026-11-11 #5835 entry to the Emeritus section of an official Yale center roster, and answers Q4 that the 2026-11-13 #6084 entry left open.
+Decision (5-agent consensus via the manager, 4 of 5, 2026-11-13, recorded on #6162; the owner may veto): a lead whom an official Yale center's roster lists under its Emeritus section is emeritus for the 2026-10-02 rule, exactly as if their department's official emeritus page listed them.
+The source is the section `centers-institutes-index` already records on each member observation (`currentStatus: emeritus` with its `sectionLabel`), read from a yale.edu page, and the lane reads it from stored observations without a fetch.
+Every #5835 constraint carries over unchanged.
+A fresh read of the person's own page wins: a listing whose own page states a current appointment is already recorded as current by the roster lane, and a lead whose stored title a live lane other than the Yale directory still asserts is left to that title.
+The listing is evidence about a lead only, recorded as `emeritusListedLeadIds` on rows the person already leads, and it never mints a row, an edge or a roster member.
+The member is bound to a person only by the identity evidence its own profile page states, or by a profile link exactly one live researcher holds under the listed name.
+The new evidence is the section alone: a center member-page title that holds only emeritus appointments still ends no center edge (#6084 Q6) and marks a lead only through the existing #6081 own-profile rule.
+The mark is a serve-time label, so it changes no row's tier; it ends no edge, which stays the #6084 two-read rule, and it is independent of the #6025 lead-change rules, which govern edges and are not built.
+
+## 2026-11-16: A Site's Stated Change Of Lead Is A Rule On Hold Until A Real Case Exists (#6025)
+
+Decision (manager, 2026-11-16).
+Two rules govern a row's own site stating that its lead changed.
+A past-tense, past-dated statement that a lead served "through <date>", on the row's own site and seen in two reads from distinct runs, ends that lead edge, dated, and is never a hide on its own.
+A row's last lead edge ends that way only when a successor is named in the same resolve; otherwise it is kept and reported for operator review (#6308).
+A stated current director becomes the lead only when the site names them as the unit's current director in a unit-scoped role line, never a career title (#2535), and the previous lead ended; otherwise they are a co-director and the existing lead stays.
+Both are derivations recomputed on every resolve, with no direct edge write and no lock.
+
+The rules are not built yet.
+Measured on Development from stored own-site page text, 15 served rows state a past-dated end in two runs, but a blind three-grader ballot found that 0 of the 10 gradable ones end the unit's own lead: every one is a career line about another unit.
+A rule whose every current match is a false positive adds risk without benefit, so the issue is parked and reopens when a real own-unit case appears; its comment lists the six test shapes a builder starts from.
+Until then, a lead a roster re-asserts after an operator ended it is corrected per row with an audited refusal of that lead claim, which persists across resolves, never with a direct edge detach.
+
+## 2026-11-16: The Dedupe Name Carry Is The One Sanctioned Direct Name Write (#6325)
+Decision (manager, 2026-11-16).
+`research-entity:dedupe-by-pi` keeps writing the plan's `canonicalName` onto the survivor's `name` and `displayName`, and this is the one direct `name`/`displayName` write a merge is allowed.
+It stays scoped as it is: only onto the planned canonical, never a never-demote swap's survivor, and only when the canonical's own name is a PI-derived `<PI> Lab` placeholder for the same lead (`comparablePiLabName`).
+The website carry was removed instead (#6323), because website evidence decides that field reliably.
+The same merge step also fills the survivor's description from its twins when the survivor holds no prose of its own, and consolidates `recentGrants`, `recentGrantCount` and `fundingAgencies`; those are separate merge consolidation, and this entry neither sanctions nor retires them.
+
+The derivation that would replace it was built and measured, and it does not pay.
+A merged-in twin's name could displace the survivor's own placeholder only when every survivor observation was a placeholder for its live lead and the twin's name passed every name guard, with the placeholder kept as a fallback-ranked candidate.
+A scoped `name`/`displayName` dry run over all 1,856 merged survivors on Development, diffed against the same run on unchanged code, planned 26 changes, and read by hand about 4 were better names.
+Three served rows would have taken a twin's link label ("Lab Website") as their name, about 20 were the lead's own name with initials, credentials or a spelling variant added, and earlier variants also renamed labs after a different person.
+Twin name evidence for this field is mostly noise, and each guard added to separate a real lab name from it uncovered another class, so no derivation is reliable enough to own the field.
+The handful of rows whose twin does state a better name are operator-judgement candidates, recorded by predicate on #6325, not lane work.
+
+## 2026-11-16: A Marked Official-Profile Backfill Title Read Counts As First-Hand (#6197)
+
+Decision (manager, 2026-11-16).
+This extends the #5578 rule that the newest fresh first-hand read of a researcher's own official page decides their title.
+An `official-profile-pi-backfill` title read counts as first-hand when the lane emits it for an identity-confirmed user and it carries `extraction.source: 'profileTitleBlock'`.
+The lane sets that marker only when the emitted title is the appointment in the contact-information field, the template verified in #6177.
+An unmarked read, from any other element, a JSON-LD `jobTitle` or a meta description, stays non-first-hand, because the lane cannot say which element it read.
+A keyed `visible-profile-bio-backfill` run now emits the page's title, while an unkeyed run emits exactly what it did before: no title and no new absence claim.
+Until the joint freshness rule (#6197, #5594) merges, the lane sets the marker only on a keyed `visible-profile-bio-backfill` run.
+A title from any other call site, the queued branch of an unkeyed full run included, stays unmarked, so no full-run read becomes first-hand under this entry.
+Once that rule merges, full-run marked reads may count with no further ruling.
+
 ## 2026-11-13: A Lead's Person Row Folds Into Their Lab Only When It Is The Same Research (#6206)
 
 Decision (owner, 2026-11-13).

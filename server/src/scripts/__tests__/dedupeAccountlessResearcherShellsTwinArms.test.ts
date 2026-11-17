@@ -63,16 +63,41 @@ describe('researcherNameMatchKey (#5606)', () => {
 
   it('plans the exact-name fold for a spacing variant and not for a different given name', () => {
     const index = buildCanonicalNameIndex([
-      { id: 'holder', displayName: 'Ji Yeon Fixture', email: 'jiyeon.fixture@yale.edu' },
+      {
+        id: 'holder',
+        displayName: 'Ji Yeon Fixture',
+        email: 'jiyeon.fixture@yale.edu',
+        orcid: SYNTHETIC_ORCID_3,
+      },
     ]);
-    expect(decideShellMerge({ id: 'shell', displayName: 'Jiyeon Fixture' }, index)).toMatchObject({
+    expect(
+      decideShellMerge(
+        { id: 'shell', displayName: 'Jiyeon Fixture', orcid: SYNTHETIC_ORCID_3 },
+        index,
+      ),
+    ).toMatchObject({
       merge: true,
       canonicalId: 'holder',
       matchedOn: 'name',
     });
-    expect(decideShellMerge({ id: 'other', displayName: 'Jiwon Fixture' }, index).merge).toBe(
-      false,
-    );
+    expect(
+      decideShellMerge(
+        { id: 'other', displayName: 'Jiwon Fixture', orcid: SYNTHETIC_ORCID_3 },
+        index,
+      ),
+    ).toMatchObject({ merge: false, reason: 'NO_CANONICAL' });
+  });
+
+  it('refuses the spacing-variant fold when the name is its only evidence', () => {
+    const index = buildCanonicalNameIndex([
+      { id: 'holder', displayName: 'Ji Yeon Fixture', email: 'jiyeon.fixture@yale.edu' },
+    ]);
+    expect(decideShellMerge({ id: 'shell', displayName: 'Jiyeon Fixture' }, index)).toEqual({
+      merge: false,
+      canonicalId: 'holder',
+      reason: 'NAME_ONLY_EVIDENCE',
+      matchedOn: 'name',
+    });
   });
 });
 
@@ -153,6 +178,7 @@ describe('decideOfficialPageWitnessFold (#5606)', () => {
       canonicalId: 'holder',
       reason: 'MERGEABLE',
       matchedOn: 'official-page',
+      matchedEvidence: 'official page email fx901@yale.edu',
     });
   });
 
@@ -294,11 +320,25 @@ describe('accountless cluster on an inverted display name (#5606)', () => {
 
   it('groups "Surname, Given" with "Given Surname" in one department', () => {
     const plan = planAccountlessClusterFolds(
-      [member('a', 'Avery Synth', { orcid: SYNTHETIC_ORCID_1 }), member('b', 'Synth, Avery')],
+      [
+        member('a', 'Avery Synth', { orcid: SYNTHETIC_ORCID_1 }),
+        member('b', 'Synth, Avery', { orcid: SYNTHETIC_ORCID_1 }),
+      ],
       [],
     );
     expect(plan.foldedGroups).toBe(1);
     expect(plan.foldTargetById.size).toBe(1);
+  });
+
+  it('groups the inverted name but refuses the fold when one department is the only other signal', () => {
+    const plan = planAccountlessClusterFolds(
+      [member('a', 'Avery Synth', { orcid: SYNTHETIC_ORCID_1 }), member('b', 'Synth, Avery')],
+      [],
+    );
+    expect(plan.groups).toBe(1);
+    expect(plan.foldedGroups).toBe(0);
+    expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+    expect(plan.nameOnlyGroups).toEqual([['a', 'b']]);
   });
 
   it('keeps a similarly named different person apart', () => {

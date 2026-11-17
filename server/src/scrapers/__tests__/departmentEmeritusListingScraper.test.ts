@@ -71,6 +71,7 @@ describe('department emeritus listings (#5835)', () => {
           ? { researcherId: 'r-avery', slugs: ['avery-center', 'avery-row'] }
           : null,
       storedListingFinder: async () => new Map(),
+      centerSectionLeadFinder: async () => [],
       ownProfileLeadFinder: async () => [],
     });
     await scraper.run(context(emitted));
@@ -102,6 +103,7 @@ describe('department emeritus listings (#5835)', () => {
             ? { researcherId: 'r-avery', slugs: ['shared-row'] }
             : null,
         storedListingFinder: stored,
+        centerSectionLeadFinder: async () => [],
         ownProfileLeadFinder: async () => [],
       });
     const listsAvery = async () => page(['Avery Synthetic']);
@@ -135,6 +137,7 @@ describe('department emeritus listings (#5835)', () => {
       fetchText: async () => page([]),
       resolveLead: async () => null,
       storedListingFinder: stored,
+      centerSectionLeadFinder: async () => [],
       ownProfileLeadFinder: async () => [],
     }).run(context(complete));
     expect(complete).toEqual([
@@ -151,6 +154,7 @@ describe('department emeritus listings (#5835)', () => {
       fetchText: async () => null,
       resolveLead: async () => null,
       storedListingFinder: stored,
+      centerSectionLeadFinder: async () => [],
       ownProfileLeadFinder: async () => [],
     }).run(context(partial));
     expect(partial).toEqual([]);
@@ -163,6 +167,7 @@ describe('department emeritus listings (#5835)', () => {
       fetchText: async () => page(['Avery Synthetic']),
       resolveLead: async () => ({ researcherId: 'r-avery', slugs: ['shared-row'] }),
       storedListingFinder: async () => new Map(),
+      centerSectionLeadFinder: async () => [],
       ownProfileLeadFinder: async () => [
         { researcherId: 'r-casey', slugs: ['casey-row', 'shared-row'] },
       ],

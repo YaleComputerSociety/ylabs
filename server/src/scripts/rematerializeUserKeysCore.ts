@@ -10,6 +10,7 @@ export interface RematerializeUserKeysArgs {
   passes: number;
   output: string;
   onlyFields: string[];
+  mintListedKeys: boolean;
 }
 
 export const REMATERIALIZE_USER_KEYS_CONFIRM_FLAG = '--confirm-rematerialize-user-keys';
@@ -22,11 +23,13 @@ export function parseRematerializeUserKeysArgs(argv: string[]): RematerializeUse
     passes: 1,
     output: '',
     onlyFields: [],
+    mintListedKeys: false,
   };
   for (const arg of argv) {
     if (arg === '--apply') args.apply = true;
     else if (arg === '--dry-run') args.apply = false;
     else if (arg === REMATERIALIZE_USER_KEYS_CONFIRM_FLAG) args.confirm = true;
+    else if (arg === '--mint-listed-keys') args.mintListedKeys = true;
     else if (arg.startsWith('--keys-file='))
       args.keysFile = arg.slice('--keys-file='.length).trim();
     else if (arg.startsWith('--output=')) args.output = arg.slice('--output='.length).trim();
@@ -43,6 +46,11 @@ export function parseRematerializeUserKeysArgs(argv: string[]): RematerializeUse
     } else throw new Error(`Unknown argument: ${arg}`);
   }
   if (!args.keysFile) throw new Error('--keys-file=<json array of user entityKeys> is required.');
+  if (args.mintListedKeys && args.onlyFields.length === 0) {
+    throw new Error(
+      '--mint-listed-keys requires --only-fields, because an unscoped run already mints.',
+    );
+  }
   if (!args.output) throw new Error('--output=<tmp report path> is required.');
   if (args.apply && !args.confirm) {
     throw new Error(`--apply requires ${REMATERIALIZE_USER_KEYS_CONFIRM_FLAG}.`);
@@ -64,9 +72,11 @@ export function userKeysFromJson(text: string): string[] {
 
 export interface UserKeyPassRow {
   entityKey: string;
+  researcherId?: string;
   fieldsWritten: number;
   plannedPaths: string[];
   outOfScopePaths?: string[];
+  created?: true;
   skipped?: string;
   error?: string;
 }
@@ -75,12 +85,18 @@ export interface UserKeyPassSummary {
   pass: number;
   keys: number;
   keysWriting: number;
+  keysMinting?: number;
   fieldsWritten: number;
   skipped: Record<string, number>;
   errors: number;
   plannedPathSet: string[];
   outOfScopePathSet: string[];
 }
+
+const DRY_RUN_WOULD_MINT_RESEARCHER = 'dry-run-would-mint-researcher';
+
+const isMintingRow = (row: UserKeyPassRow): boolean =>
+  row.created === true || row.skipped === DRY_RUN_WOULD_MINT_RESEARCHER;
 
 const pathSet = (lists: ReadonlyArray<readonly string[] | undefined>): string[] =>
   [...new Set(lists.flatMap((list) => list ?? []))].sort();
@@ -91,14 +107,55 @@ export function summarizeUserKeyPass(
 ): UserKeyPassSummary {
   const skipped: Record<string, number> = {};
   for (const row of rows) if (row.skipped) skipped[row.skipped] = (skipped[row.skipped] ?? 0) + 1;
+  const keysMinting = rows.filter(isMintingRow).length;
   return {
     pass,
     keys: rows.length,
     keysWriting: rows.filter((row) => row.fieldsWritten > 0).length,
+    ...(keysMinting > 0 ? { keysMinting } : {}),
     fieldsWritten: rows.reduce((total, row) => total + row.fieldsWritten, 0),
     skipped,
     errors: rows.filter((row) => row.error).length,
     plannedPathSet: pathSet(rows.map((row) => row.plannedPaths)),
     outOfScopePathSet: pathSet(rows.map((row) => row.outOfScopePaths)),
   };
+}
+
+export function researcherIdsWrittenBy(rows: readonly UserKeyPassRow[]): string[] {
+  return [
+    ...new Set(
+      rows
+        .filter((row) => row.fieldsWritten > 0 && !row.error && row.researcherId)
+        .map((row) => row.researcherId as string),
+    ),
+  ];
+}
+
+export interface LedRowRegater {
+  add(entityIds: readonly string[]): Promise<void>;
+}
+
+/**
+ * Visits each key in order and, when a visit wrote the researcher, re-gates the research rows
+ * linked to that person before the next key, because a user-row write changes inputs those
+ * rows' tiers read and the materializer never recomputes a tier (#6374).
+ */
+export async function visitUserKeysRegatingLinkedRows(input: {
+  keys: readonly string[];
+  visit: (key: string) => Promise<UserKeyPassRow>;
+  linkedResearchEntityIds: (researcherIds: string[]) => Promise<string[]>;
+  regater?: LedRowRegater;
+  onRow?: (row: UserKeyPassRow) => void;
+}): Promise<UserKeyPassRow[]> {
+  const rows: UserKeyPassRow[] = [];
+  for (const key of input.keys) {
+    const row = await input.visit(key);
+    rows.push(row);
+    input.onRow?.(row);
+    const researcherIds = researcherIdsWrittenBy([row]);
+    if (input.regater && researcherIds.length > 0) {
+      await input.regater.add(await input.linkedResearchEntityIds(researcherIds));
+    }
+  }
+  return rows;
 }

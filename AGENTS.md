@@ -148,6 +148,7 @@ Close a stored-data issue when Development is fixed and verified.
 An exit code is not verification, and neither is a script's own counter: #2440 records that the repair queue's patch count overstates promotions, so the counter is now named `patched` and the promotion count is `resolvedByGate`.
 A dry run applies no patch, so it reports `resolvedByGate: null` with a note rather than a `0` that reads as "the gate promotes nothing"; take a promotion count from an apply run only.
 - The scoreboard is the instrument for both reads, per-fix verification and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`, documented in `docs/served-corpus-scoreboard.md`.
+A single route is re-read with `yarn served-check <path>`, or `yarn served-check --as student <path>` when the route is behind sign-in, documented in `skills/auth-security/SKILL.md`.
 - Is the corpus getting better over time? Read the Corpus Quality panel on `/analytics`, or take a measurement with `yarn --cwd server corpus:snapshot`, documented in `docs/corpus-quality-panel.md`.
 - Is a served description accurate and useful to a student? A count cannot say, so grade a fresh sample against the cited pages, documented in `docs/description-graded-sample.md`.
 Do not answer a coverage or quality question with a throwaway script when a stored measurement already exists.
@@ -229,6 +230,7 @@ The helper creates the worktree, runs `scripts/install-all.sh` so dependencies a
 It copies `server/.env` and `client/.env` from the primary checkout with mode 0600, writes the reserved ports into them (`PORT`, `SERVER_BASE_URL`, `VITE_APP_SERVER`), and prints both start commands and a dev-login URL that returns to the worktree's client port.
 It never prints the env values, and says so when the primary checkout has no `server/.env` to copy.
 It always writes `ALLOW_NON_PROD_SCRAPER_WRITES=` (off) into the copied `server/.env`, whatever the primary checkout holds, so a scraper command run in a worktree is a dry run unless that run sets the flag itself.
+Set `YLABS_REPORT_ROOT` in the worktree's `server/.env` to an absolute directory outside the repository, such as an experiments folder, so an apply's `--output` report survives a temp-directory sweep.
 - Do not symlink `node_modules` between worktrees when running dev servers concurrently.
 They share Vite's `node_modules/.vite` cache and clobber each other.
 Per-worktree `node_modules` directories are the isolation boundary: caches such as `.vite` are per worktree, while package files are shared hardlinks that must never be written in place.

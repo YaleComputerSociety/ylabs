@@ -18,6 +18,7 @@ import {
   resolveHostRetryBudget,
   type HostSlotLimiter,
 } from './hostConcurrencyLimiter';
+import { RobotsDisallowedError } from './robotsDisallowedError';
 import { HostBudgetUnavailableError } from './machineHostBudget';
 import { machineHostSlotsForDirectRequest } from './scraperHostSlotLimiter';
 import {
@@ -397,8 +398,11 @@ async function fetchPageLive(
   const host = hostOf(safeUrl);
   const limiter = options.limiter ?? sharedHostLimiter;
   const send = options.request ?? defaultAxiosRequest;
-  const request: HttpRequestFn = (target, requestConfig) =>
-    withScrapeRunProgress(() => send(target, requestConfig));
+  const request: HttpRequestFn = (target, requestConfig) => {
+    const pausedWhileWaiting = activeHostPause(hostOf(target));
+    if (pausedWhileWaiting) return Promise.reject(new HostPausedError(pausedWhileWaiting));
+    return withScrapeRunProgress(() => send(target, requestConfig));
+  };
   const policy = resolveRetryPolicy(options, host);
 
   const headers = withScraperUserAgent(options.headers);
@@ -491,7 +495,8 @@ export function isRefusedBeforeSending(error: unknown): boolean {
       current instanceof SsrfBlockedError ||
       current instanceof HostPausedError ||
       current instanceof HostBudgetUnavailableError ||
-      current instanceof HostSlotWaitTimeoutError
+      current instanceof HostSlotWaitTimeoutError ||
+      current instanceof RobotsDisallowedError
     ) {
       return true;
     }

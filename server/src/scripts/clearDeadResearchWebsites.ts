@@ -16,7 +16,8 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import {
   countWebsiteUrlOwnerRows,
   planDeadResearchWebsiteClears,
-  planDeadWebsiteClearWrite,
+  planDeadWebsiteClearUpdate,
+  planDeadWebsiteClearUpdateKeepingLastCitation,
   planDeadWebsiteRefusalWithdrawals,
   planDeadWebsiteRefusalWithdrawalWrite,
   reportDeadWebsiteRefusals,
@@ -113,7 +114,7 @@ async function main(): Promise<void> {
 
   const all = (await ResearchEntity.find({ archived: { $ne: true } })
     .select(
-      'slug name displayName entityType websiteUrl website sourceLinkHealth sourceUrls studentVisibilityTier manuallyLockedFields fieldValueRefusals',
+      'slug name displayName entityType websiteUrl website sourceLinkHealth sourceUrls studentVisibilityTier manuallyLockedFields fieldValueRefusals fieldProvenance',
     )
     .lean()) as unknown as Array<Record<string, any>>;
 
@@ -146,6 +147,7 @@ async function main(): Promise<void> {
   const slugs = [...new Set(outcome.plans.map((plan) => plan.slug))];
   const before = await readServed(slugs);
   let cleared = 0;
+  let lastCitationStampsKept = 0;
   let refusalsWithdrawn = 0;
   let gateChangedSlugs: string[] = [];
   let after: Served[] = [];
@@ -159,9 +161,20 @@ async function main(): Promise<void> {
       stoppedAfter,
       servedRowsScanned: served.length,
       plannedClears: outcome.plans.length,
+      plannedStampUnsets: slugs.reduce((total, slug) => {
+        const row = served.find((candidate) => text(candidate.slug) === slug);
+        const own = outcome.plans.filter((plan) => plan.slug === slug);
+        return row
+          ? total +
+              Object.keys(
+                planDeadWebsiteClearUpdate(row as DeadWebsiteRow, own, new Date()).$unset ?? {},
+              ).length
+          : total;
+      }, 0),
       plannedRefusalWithdrawals: withdrawals.length,
       ...reportDeadWebsiteRefusals(outcome.refused),
       cleared,
+      lastCitationStampsKept,
       refusalsWithdrawn,
       gateChangedRows: gateChangedSlugs.length,
       demotedRepairedRows: after.filter(
@@ -215,11 +228,14 @@ async function main(): Promise<void> {
               )?.fieldValueRefusals,
             }
           : row;
-        const result = await ResearchEntity.updateOne(
-          { slug },
-          { $set: planDeadWebsiteClearWrite(current, own, new Date()) },
+        const { update, withheld } = planDeadWebsiteClearUpdateKeepingLastCitation(
+          current,
+          own,
+          new Date(),
         );
+        const result = await ResearchEntity.updateOne({ slug }, update);
         if (result.modifiedCount) cleared += own.length;
+        if (withheld.length > 0) lastCitationStampsKept += 1;
         stoppedAfter = 'clearing';
       }
 

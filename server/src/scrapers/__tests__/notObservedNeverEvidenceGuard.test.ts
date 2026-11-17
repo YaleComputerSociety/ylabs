@@ -36,6 +36,8 @@ const REVIEWED_WITH_OWN_CONFIRMATION: Record<string, string> = {
     'supersedes only after a confirming probe agrees the page is gone',
   'scripts/repairLegacyPersonPageUrls.ts':
     'replaces an original only when a 404 or 410 probe agrees with a stored gone verdict (#6258, #6264)',
+  'scripts/repairVanityHostCitations.ts':
+    'replaces a citation only when its redirect destination probes decisively HEALTHY, and unsets a stamp only for a field that replacement rewrites (#6318)',
   'scripts/retireListingItemResearchAreas.ts': 'an unfetchable page retires nothing',
   'scripts/retireOrganizationIdentityWebsiteGrafts.ts':
     'an unresolved URL falls back to its stored spelling and never matches by failure',

@@ -21,6 +21,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { checkSourceLinkHealth, probeSourceLink } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { fetchPublicHttpUrl, type PublicHttpResponse } from '../scrapers/utils/httpFetch';
@@ -31,6 +32,7 @@ import {
   planVanityRepairRow,
 } from './repairVanityHostCitationsCore';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { staleProvenanceUnset } from './refusedFieldProvenance';
 
 export interface VanityRepairOptions {
   apply: boolean;
@@ -86,6 +88,32 @@ export async function followHttpRedirects(
   return { hops: MAX_VANITY_REDIRECT_HOPS + 1 };
 }
 
+/**
+ * The write a vanity repoint makes: the rewritten citation fields and refusal, and the `$unset`
+ * of a rewritten field's provenance stamp unless the observation it cites asserts the new URL
+ * (#6318).
+ */
+export async function planVanityRepairWrite(
+  row: Record<string, unknown>,
+  change: NonNullable<ReturnType<typeof planVanityRepairRow>>,
+): Promise<{
+  write: { $set: Record<string, unknown>; $unset?: Record<string, ''> };
+  withheld: string[];
+}> {
+  const { changedFields: _changedFields, fieldValueRefusalUpdate, ...fields } = change;
+  const rewritten = Object.fromEntries(
+    (['websiteUrl', 'website'] as const)
+      .filter((field) => fields[field] !== undefined)
+      .map((field) => [field, fields[field]]),
+  );
+  const $set = { ...fields, ...(fieldValueRefusalUpdate ?? {}) };
+  const { unset, withheld } = await staleProvenanceUnset(row, rewritten, $set);
+  return {
+    write: { $set, ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}) },
+    withheld,
+  };
+}
+
 async function main() {
   installScraperFetchHooks({ validatorCache: false });
   const options = parseVanityRepairArgs(process.argv.slice(2));
@@ -104,7 +132,7 @@ async function main() {
     },
   })
     .select(
-      'slug sourceUrls websiteUrl website manuallyLockedFields fieldValueRefusals sourceLinkHealth archived studentVisibilityTier',
+      'slug sourceUrls websiteUrl website manuallyLockedFields fieldValueRefusals fieldProvenance sourceLinkHealth archived studentVisibilityTier',
     )
     .lean()) as unknown as Array<Record<string, any>>;
 
@@ -120,6 +148,8 @@ async function main() {
     citationsProbed: 0,
     repointed: [] as Array<Record<string, unknown>>,
     refused: [] as Array<Record<string, unknown>>,
+    stampsToUnset: 0,
+    lastCitationStampsKept: 0,
     errors: 0,
   };
 
@@ -168,21 +198,21 @@ async function main() {
         const change = planVanityRepairRow(row, vanityUrl, decision.destinationUrl);
         if (!change) continue;
 
+        const { write, withheld } = await planVanityRepairWrite(row, change);
         report.repointed.push({
           slug: row.slug,
           from: vanityUrl,
           to: decision.destinationUrl,
           changedFields: change.changedFields,
+          stampsToUnset: Object.keys(write.$unset ?? {}),
           served: !row.archived && row.studentVisibilityTier === 'student_ready',
         });
+        report.stampsToUnset += Object.keys(write.$unset ?? {}).length;
 
-        if (options.apply) {
-          const { changedFields: _changedFields, fieldValueRefusalUpdate, ...fields } = change;
-          await ResearchEntity.updateOne(
-            { _id: row._id },
-            { $set: { ...fields, ...(fieldValueRefusalUpdate ?? {}) } },
-          );
-        }
+        const appliedWithheld = options.apply
+          ? (await updateOneKeepingLastCitation(ResearchEntity, { _id: row._id }, write)).withheld
+          : [];
+        if (withheld.length > 0 || appliedWithheld.length > 0) report.lastCitationStampsKept += 1;
       } catch (error) {
         report.errors += 1;
         console.error(

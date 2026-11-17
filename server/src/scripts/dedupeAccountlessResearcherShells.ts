@@ -28,8 +28,12 @@ import {
   citedOfficialPageKey,
   routeCitedOfficialPagePairs,
   sharedOfficialProfileNamesAgree,
+  type ResearcherAttributeUnionContext,
+  yaleOfficialProfileKeys,
   yaleOfficialPageWitnessKeys,
   decideShellMerge,
+  plannedMergeArm,
+  type PlannedMergeArm,
   type DirectoryEmailCandidate,
   emaillessLocalPartTwinAliases,
   type FoldPlanEdge,
@@ -191,12 +195,15 @@ export interface DedupeAccountlessResearcherShellsResult {
   aliasTwinFolds: { folded: number; refusals: Record<AliasTwinFoldRefusal, number> };
   /** Which identity decided each fold, so a netid fold cannot hide inside a name count. */
   foldsByMatchedIdentity: Record<ShellFoldIdentity, number>;
+  /** Folds whose only evidence is a matching name: listed for operator review, never applied. */
+  nameOnlyFoldCandidates: Array<{ shellId: string; canonicalId: string }>;
   /** Groups with no directory-backed member, folded into a survivor chosen among themselves. */
   accountlessClusters: {
     groups: number;
     foldedGroups: number;
     folds: number;
     refusedGroups: Record<AccountlessClusterRefusal, number>;
+    nameOnlyGroups: string[][];
   };
   citedOfficialPage: {
     witnessedPairs: number;
@@ -212,9 +219,12 @@ export interface DedupeAccountlessResearcherShellsResult {
   rosterChangedEntities: number;
   regatedEntities: number;
   attributeUnion: AttributeUnionTotals;
+  foldedOfficialPagesCarried: number;
   merges: Array<{
     shellId: string;
     canonicalId: string;
+    arm: PlannedMergeArm;
+    matchedEvidence: string;
     repointed: string[];
     archivedRedundant: string[];
     profileLinksAppended: number;
@@ -313,6 +323,7 @@ async function loadRosterIdentityCandidates(
         orcid: typeof identity.orcid === 'string' ? identity.orcid.trim() || undefined : undefined,
         netid: bareNetid(netid),
         tier: researcherIdentityTier({ email: identity.email, netid }),
+        rosterListingKey: key,
       });
       candidatesByShellId.set(shellId, list);
     }
@@ -407,6 +418,7 @@ async function loadSharedRowCandidates(
         orcid: typeof identity.orcid === 'string' ? identity.orcid.trim() || undefined : undefined,
         netid: bareNetid(netid),
         tier: researcherIdentityTier({ email: identity.email, netid }),
+        sharedRowId: target,
       });
     }
     candidatesByShellId.set(shellId, list);
@@ -617,6 +629,7 @@ async function loadNameVariantCandidates(
       );
       const existing = list.find((entry) => entry.id === personId);
       if (existing) {
+        if (witnessed && !existing.witnessed) existing.sharedRowId = target;
         existing.witnessed = existing.witnessed || witnessed;
         continue;
       }
@@ -628,6 +641,7 @@ async function loadNameVariantCandidates(
         netid: bareNetid(identity.netid),
         tier: researcherIdentityTier({ email: identity.email, netid: identity.netid }),
         witnessed,
+        sharedRowId: target,
       });
     }
     candidatesByShellId.set(shellId, list);
@@ -655,6 +669,7 @@ const PAIR_BLOCKING_REFUSALS: ReadonlySet<CitedOfficialPageRefusal> = new Set([
 
 interface CitedOfficialPageLoad {
   pairs: Array<[string, string]>;
+  citedPageByPairKey: Map<string, string>;
   refusals: Record<CitedOfficialPageRefusal, number>;
 }
 
@@ -713,7 +728,8 @@ async function loadCitedOfficialPagePairs(
       candidates.push({ edge, citerId, holderId, page });
     }
   }
-  if (candidates.length === 0) return { pairs: [], refusals };
+  const citedPageByPairKey = new Map<string, string>();
+  if (candidates.length === 0) return { pairs: [], citedPageByPairKey, refusals };
 
   const targetIds = [...new Set(candidates.map(({ edge }) => idKey(edge.target?.id)))];
   const liveTargets = new Set(
@@ -818,9 +834,12 @@ async function loadCitedOfficialPagePairs(
       continue;
     }
     accepted.set(pairKey, [citerId, holderId]);
+    if (!citedPageByPairKey.has(pairKey))
+      citedPageByPairKey.set(pairKey, String(provenance.profileUrl));
   }
   return {
     pairs: [...accepted].filter(([key]) => !blocked.has(key)).map(([, pair]) => pair),
+    citedPageByPairKey,
     refusals,
   };
 }
@@ -1276,6 +1295,83 @@ export async function planHealsForFoldedShells(input: {
   return heals.filter((heal) => scopedShellIds.has(heal.shellId));
 }
 
+/**
+ * Carries a joint appointee's second official page onto the survivor of a merge that already
+ * ran before the union could carry it (#6376), through the same link append as a merge. It runs
+ * only for the folded records an operator names with `--only-shell`, and reuses the merge-time
+ * rule, so it carries nothing the union would refuse. A page that another named folded record
+ * with a different survivor also holds counts as held elsewhere, so two survivors never both
+ * gain one page in the same run.
+ */
+async function planFoldedShellOfficialPageCarries(input: {
+  Researcher: mongoose.mongo.Collection;
+  foldedShellDocs: any[];
+  attributeProjection: Record<string, 1>;
+  snapshotOf: (doc: any) => ResearcherAttributeSnapshot;
+  unionContext: (canonicalId: string, shellId: string) => ResearcherAttributeUnionContext;
+  canonicalMergeState: Map<string, ResearcherAttributeSnapshot>;
+  canonicalAppendedLinks: Map<string, ResearcherAttributeSnapshot['profileLinks']>;
+}): Promise<{ carried: number; carriedShellIds: string[] }> {
+  if (input.foldedShellDocs.length === 0) return { carried: 0, carriedShellIds: [] };
+  const survivorIds = [
+    ...new Set(input.foldedShellDocs.map((doc) => idKey(doc.dedupedIntoResearcherId))),
+  ];
+  const survivors = (await input.Researcher.find(
+    {
+      _id: { $in: survivorIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      archived: { $ne: true },
+    },
+    { projection: input.attributeProjection },
+  ).toArray()) as any[];
+  const survivorById = new Map(survivors.map((doc) => [idKey(doc._id), doc]));
+  const survivorsByFoldedPage = new Map<string, Set<string>>();
+  for (const shell of input.foldedShellDocs) {
+    for (const page of yaleOfficialProfileKeys(shell.profileLinks)) {
+      survivorsByFoldedPage.set(
+        page,
+        (survivorsByFoldedPage.get(page) ?? new Set()).add(idKey(shell.dedupedIntoResearcherId)),
+      );
+    }
+  }
+  const pagesFoldedIntoAnotherSurvivor = (survivorId: string): Set<string> =>
+    new Set(
+      [...survivorsByFoldedPage]
+        .filter(([, survivorIds]) => [...survivorIds].some((id) => id !== survivorId))
+        .map(([page]) => page),
+    );
+  let carried = 0;
+  const carriedShellIds: string[] = [];
+  for (const shell of input.foldedShellDocs) {
+    const survivorId = idKey(shell.dedupedIntoResearcherId);
+    const survivor = survivorById.get(survivorId);
+    if (!survivor) continue;
+    const state = input.canonicalMergeState.get(survivorId) ?? input.snapshotOf(survivor);
+    const context = input.unionContext(survivorId, idKey(shell._id));
+    const plan = planResearcherAttributeUnion(state, input.snapshotOf(shell), {
+      ...context,
+      officialPagesHeldElsewhere: new Set([
+        ...(context.officialPagesHeldElsewhere ?? []),
+        ...pagesFoldedIntoAnotherSurvivor(survivorId),
+      ]),
+    });
+    // Only official pages are applied here: identifier and profile fills of a folded record were
+    // already decided when it was merged, and a heal never revisits them.
+    const pages = plan.profileLinksToAppend.filter((link) => link.kind === 'YALE_OFFICIAL');
+    if (pages.length === 0) continue;
+    input.canonicalMergeState.set(survivorId, {
+      ...state,
+      profileLinks: [...(state.profileLinks ?? []), ...pages],
+    });
+    input.canonicalAppendedLinks.set(survivorId, [
+      ...(input.canonicalAppendedLinks.get(survivorId) ?? []),
+      ...pages,
+    ]);
+    carried += pages.length;
+    carriedShellIds.push(idKey(shell._id));
+  }
+  return { carried, carriedShellIds };
+}
+
 export async function dedupeAccountlessResearcherShells(options: {
   apply: boolean;
   onlyShellIds?: ReadonlyArray<string>;
@@ -1357,7 +1453,10 @@ export async function dedupeAccountlessResearcherShells(options: {
     NO_IDENTITY_WITNESS: 0,
     VARIANT_SHAPE_NOT_ALLOWED: 0,
     STATED_MIDDLE_INITIAL_CONFLICT: 0,
+    NAME_ONLY_EVIDENCE: 0,
   };
+  const nameOnlyFoldCandidates: DedupeAccountlessResearcherShellsResult['nameOnlyFoldCandidates'] =
+    [];
 
   const rosterIdentityCandidatesByShellId = await loadRosterIdentityCandidates(
     RoleAssignment,
@@ -1401,6 +1500,7 @@ export async function dedupeAccountlessResearcherShells(options: {
 
   const decidedTargetByShellId = new Map<string, string>();
   const matchedIdentityByShellId = new Map<string, ShellFoldIdentity>();
+  const matchedEvidenceByShellId = new Map<string, string>();
   for (const shell of foldableShells) {
     const decision = decideShellMerge(
       { ...shell, statedNames: sharedRowLoad.statedNamesByShellId.get(shell.id) },
@@ -1419,9 +1519,14 @@ export async function dedupeAccountlessResearcherShells(options: {
       sharedOfficialProfileIndex,
     );
     byReason[decision.reason] += 1;
+    if (decision.reason === 'NAME_ONLY_EVIDENCE' && decision.canonicalId) {
+      nameOnlyFoldCandidates.push({ shellId: shell.id, canonicalId: decision.canonicalId });
+    }
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
       decidedTargetByShellId.set(shell.id, decision.canonicalId);
       if (decision.matchedOn) matchedIdentityByShellId.set(shell.id, decision.matchedOn);
+      if (decision.matchedEvidence)
+        matchedEvidenceByShellId.set(shell.id, decision.matchedEvidence);
     }
   }
   const citedOfficialPageLoad = await loadCitedOfficialPagePairs(
@@ -1438,11 +1543,22 @@ export async function dedupeAccountlessResearcherShells(options: {
     if (decidedTargetByShellId.has(shellId)) continue;
     decidedTargetByShellId.set(shellId, targetId);
     matchedIdentityByShellId.set(shellId, 'cited-official-page');
+    matchedEvidenceByShellId.set(
+      shellId,
+      `listing cites official page ${citedOfficialPageLoad.citedPageByPairKey.get(distinctPeoplePairKey(shellId, targetId)) ?? 'unrecorded'}`,
+    );
   }
   const aliasTwinPlan = await planAliasTwinFoldsFor(researcherIdentities, loginNetids);
+  const aliasTwinIds = new Set<string>();
   for (const [twinId, realId] of aliasTwinPlan.targetByTwinResearcherId) {
+    aliasTwinIds.add(twinId);
     decidedTargetByShellId.set(twinId, realId);
     matchedIdentityByShellId.delete(twinId);
+    const aliasNetids = aliasTwinPlan.aliasNetidsByTwinResearcherId.get(twinId)!;
+    matchedEvidenceByShellId.set(
+      twinId,
+      `netid alias ${aliasNetids.twinNetid} of ${aliasNetids.realNetid}`,
+    );
   }
   const directRefusal = withoutDistinctPeopleFolds(decidedTargetByShellId, distinctPeoplePairs);
   const mergeTargetByShellId = resolveFinalMergeTargets(directRefusal.kept);
@@ -1503,9 +1619,16 @@ export async function dedupeAccountlessResearcherShells(options: {
       liveRowIds: liveRowIdsByMember.get(entry.id) ?? [],
     })),
     researcherIdentities.filter((entry) => !clusterCandidateIds.has(entry.id)),
-    citedOfficialPageRouting.equalTierJoins,
+    citedOfficialPageRouting.equalTierJoins.flatMap(([leftId, rightId]) => {
+      const citedPage = citedOfficialPageLoad.citedPageByPairKey.get(
+        distinctPeoplePairKey(leftId, rightId),
+      );
+      return citedPage ? [[leftId, rightId, citedPage] as const] : [];
+    }),
   );
+  const accountlessClusterFoldIds = new Set<string>();
   for (const [shellId, survivorId] of clusterPlan.foldTargetById) {
+    accountlessClusterFoldIds.add(shellId);
     mergeTargetByShellId.set(shellId, survivorId);
     if (clusterPlan.sharedOfficialProfileFoldIds.has(shellId)) {
       matchedIdentityByShellId.set(shellId, 'shared-official-profile');
@@ -1514,6 +1637,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     } else {
       matchedIdentityByShellId.delete(shellId);
     }
+    matchedEvidenceByShellId.set(shellId, clusterPlan.evidenceById.get(shellId)!);
   }
   const finalRefusal = withoutDistinctPeopleFolds(mergeTargetByShellId, distinctPeoplePairs);
   for (const shellId of [...mergeTargetByShellId.keys()]) {
@@ -1532,6 +1656,7 @@ export async function dedupeAccountlessResearcherShells(options: {
   );
 
   const attributeProjection = {
+    displayName: 1,
     profileLinks: 1,
     identifiers: 1,
     profile: 1,
@@ -1544,6 +1669,16 @@ export async function dedupeAccountlessResearcherShells(options: {
     fieldValueRefusals: doc?.fieldValueRefusals,
   });
 
+  const foldedShellDocs = options.onlyShellIds?.length
+    ? ((await Researcher.find(
+        {
+          _id: { $in: options.onlyShellIds.map((id) => new mongoose.Types.ObjectId(id)) },
+          archived: true,
+          dedupedIntoResearcherId: { $ne: null },
+        },
+        { projection: { ...attributeProjection, dedupedIntoResearcherId: 1 } },
+      ).toArray()) as any[])
+    : [];
   const shellDocs = shellObjectIds.length
     ? await Researcher.find(
         { _id: { $in: shellObjectIds } },
@@ -1557,8 +1692,36 @@ export async function dedupeAccountlessResearcherShells(options: {
       ).toArray()
     : [];
 
+  const identityById = new Map(researcherIdentities.map((entry) => [entry.id, entry]));
+  const unionOfficialPageHolders = new Map<string, Set<string>>();
+  for (const entry of researcherIdentities) {
+    for (const page of yaleOfficialProfileKeys(entry.profileLinks)) {
+      unionOfficialPageHolders.set(
+        page,
+        (unionOfficialPageHolders.get(page) ?? new Set()).add(entry.id),
+      );
+    }
+  }
+  const officialPageUnionContext = (
+    canonicalId: string,
+    shellId: string,
+  ): ResearcherAttributeUnionContext => ({
+    namesAgree: sharedOfficialProfileNamesAgree(
+      identityById.get(canonicalId)?.displayName,
+      identityById.get(shellId)?.displayName ?? shellDisplayNameById.get(shellId),
+    ),
+    officialPagesHeldElsewhere: new Set(
+      [...unionOfficialPageHolders]
+        .filter(([, holders]) => [...holders].some((id) => id !== canonicalId && id !== shellId))
+        .map(([page]) => page),
+    ),
+  });
+
   const shellSnapshotById = new Map<string, ResearcherAttributeSnapshot>();
   for (const doc of shellDocs as any[]) shellSnapshotById.set(idKey(doc._id), snapshotOf(doc));
+  const shellDisplayNameById = new Map<string, unknown>(
+    [...(shellDocs as any[]), ...foldedShellDocs].map((doc) => [idKey(doc._id), doc.displayName]),
+  );
   const canonicalSnapshotById = new Map<string, ResearcherAttributeSnapshot>();
   for (const doc of canonicalDocs as any[]) {
     canonicalSnapshotById.set(idKey(doc._id), snapshotOf(doc));
@@ -1701,7 +1864,11 @@ export async function dedupeAccountlessResearcherShells(options: {
     const shellSnapshot = aliasTwinPlan.targetByTwinResearcherId.has(shellId)
       ? withoutNetidIdentifier(storedShellSnapshot)
       : storedShellSnapshot;
-    const plan = planResearcherAttributeUnion(canonicalState, shellSnapshot);
+    const plan = planResearcherAttributeUnion(
+      canonicalState,
+      shellSnapshot,
+      officialPageUnionContext(canonicalId, shellId),
+    );
 
     if (!researcherAttributeUnionIsEmpty(plan)) {
       canonicalMergeState.set(canonicalId, applyUnionPlanToSnapshot(canonicalState, plan));
@@ -1737,6 +1904,13 @@ export async function dedupeAccountlessResearcherShells(options: {
     merges.push({
       shellId,
       canonicalId,
+      arm: plannedMergeArm(
+        shellId,
+        matchedIdentityByShellId,
+        aliasTwinIds,
+        accountlessClusterFoldIds,
+      ),
+      matchedEvidence: matchedEvidenceByShellId.get(shellId) ?? 'unrecorded',
       repointed: edges.repointed,
       archivedRedundant: edges.archivedRedundant,
       profileLinksAppended: plan.profileLinksToAppend.length,
@@ -1825,6 +1999,22 @@ export async function dedupeAccountlessResearcherShells(options: {
     onlyShellsNotPlanned.splice(0, onlyShellsNotPlanned.length, ...stillNotPlanned);
   }
 
+  const foldedOfficialPageCarries = await planFoldedShellOfficialPageCarries({
+    Researcher,
+    foldedShellDocs,
+    attributeProjection,
+    snapshotOf,
+    unionContext: officialPageUnionContext,
+    canonicalMergeState,
+    canonicalAppendedLinks,
+  });
+  const foldedOfficialPagesCarried = foldedOfficialPageCarries.carried;
+  if (onlyShellsNotPlanned) {
+    const carriedIds = new Set(foldedOfficialPageCarries.carriedShellIds);
+    const stillNotPlanned = onlyShellsNotPlanned.filter((id) => !carriedIds.has(id));
+    onlyShellsNotPlanned.splice(0, onlyShellsNotPlanned.length, ...stillNotPlanned);
+  }
+
   const canonicalIds = new Set<string>([
     ...canonicalAppendedLinks.keys(),
     ...canonicalSetFills.keys(),
@@ -1909,11 +2099,17 @@ export async function dedupeAccountlessResearcherShells(options: {
       refusals: aliasTwinPlan.refusals,
     },
     foldsByMatchedIdentity,
+    nameOnlyFoldCandidates: nameOnlyFoldCandidates.filter(
+      (candidate) =>
+        !mergeTargetByShellId.has(candidate.shellId) &&
+        !distinctPeoplePairs.has(distinctPeoplePairKey(candidate.shellId, candidate.canonicalId)),
+    ),
     accountlessClusters: {
       groups: clusterPlan.groups,
       foldedGroups: clusterPlan.foldedGroups,
       folds: clusterPlan.foldTargetById.size,
       refusedGroups: clusterPlan.refusedGroups,
+      nameOnlyGroups: clusterPlan.nameOnlyGroups,
     },
     citedOfficialPage: {
       witnessedPairs: citedOfficialPageLoad.pairs.length,
@@ -1927,6 +2123,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     rosterChangedEntities: rosterChangedEntityIds.size,
     regatedEntities,
     attributeUnion,
+    foldedOfficialPagesCarried,
     merges,
   };
 }

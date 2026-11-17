@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import { installMongoWriteRefusal } from '../scrapers/utils/mongoWriteRefusal';
 import { connectScriptMongo } from '../db/connections';
 import { setModelUsageSink } from '../utils/modelClient';
+import { resolveSafeJsonReportOutputPath } from '../utils/reportOutputPath';
 
 export interface ScrapeCanaryCliOptions {
   sourceName: string;
@@ -31,7 +32,7 @@ export function parseScrapeCanaryArgs(argv: string[]): ScrapeCanaryCliOptions {
       }
       index += 1;
     } else if (arg === '--output') {
-      output = value;
+      output = resolveSafeJsonReportOutputPath(value);
       index += 1;
     } else if (arg === '--force-llm') {
       forceLlm = true;

@@ -24,7 +24,11 @@ import {
   researchPlansThatWouldMove,
   type ResearchPlanCarryReport,
 } from '../services/researchPlanMergeCarry';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import {
   assertPhase0SummaryOnlyConfiguredTarget,
   assertPhase0SummaryOnlyConnectedTarget,
@@ -421,12 +425,12 @@ export function parseDuplicateEntityNameReviewArgs(argv: string[]): DuplicateEnt
     }
     if (arg === '--accepted-decisions') {
       const { value, nextIndex } = consumeValue(argv, index, '--accepted-decisions', 'path');
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(value, '--accepted-decisions');
+      args.acceptedDecisions = resolveSafeJsonReportPath(value, '--accepted-decisions');
       index = nextIndex;
       continue;
     }
     if (arg.startsWith('--accepted-decisions=')) {
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
+      args.acceptedDecisions = resolveSafeJsonReportPath(
         consumeInlineValue(arg, '--accepted-decisions', 'path'),
         '--accepted-decisions',
       );
@@ -636,7 +640,7 @@ export function readDuplicateEntityNameReviewDecisions(
   inputPath: string,
   options: { allowEmpty?: boolean } = {},
 ): DuplicateEntityNameReviewDecision[] {
-  const safeInputPath = resolveSafeJsonReportOutputPath(inputPath, '--accepted-decisions');
+  const safeInputPath = resolveSafeJsonReportPath(inputPath, '--accepted-decisions');
   if (!fs.existsSync(safeInputPath) && options.allowEmpty) {
     return [];
   }

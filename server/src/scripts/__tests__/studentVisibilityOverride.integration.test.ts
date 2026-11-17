@@ -167,7 +167,11 @@ describe('student-visibility:override hides one row and its affiliated link (#56
       devEnv(mongoUrl, { ALLOW_NON_PROD_SCRAPER_WRITES: 'true' }),
     );
     expect(report.audited).toBe(true);
+    expect(report.target).toEqual({ slug: UMBRELLA, id: String(umbrellaId) });
     const audit = await AdminAuditEvent.findOne().lean<any>();
+    expect(Object.keys(audit.metadata).sort()).toEqual(
+      ['after', 'before', 'environment', 'script', 'slug'].sort(),
+    );
     expect(audit).toMatchObject({
       actorNetid: 'fixtureop',
       action: 'research_entity.visibility_override.set',

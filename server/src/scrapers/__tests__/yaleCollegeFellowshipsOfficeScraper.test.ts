@@ -1310,6 +1310,109 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(candidates[0]?.isAcceptingApplications).toBe(true);
   });
 
+  const rowAccepting = (rowText: string, referenceDate = new Date('2026-08-22T00:00:00Z')) =>
+    parseFellowshipCatalogPage(
+      `
+        <main>
+          <p>
+            <a href="https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program">Research Internship Program</a>
+            ${rowText}
+          </p>
+        </main>
+      `,
+      fundingPageUrl,
+      referenceDate,
+    )[0]?.isAcceptingApplications;
+
+  it('does not read a stated closure as accepting, even beside rolling language', () => {
+    expect(
+      rowAccepting(
+        'Applications were accepted on a rolling basis until February 20. Applications for Summer 2026 are now closed.',
+      ),
+    ).toBe(false);
+    expect(
+      rowAccepting('Application Status: CLOSED. Applications are reviewed on a rolling basis.'),
+    ).toBe(false);
+  });
+
+  it('does not read a closure inside a subordinate clause as a stated closure', () => {
+    expect(
+      rowAccepting('Applications are reviewed on a rolling basis until the program is closed.'),
+    ).toBe(true);
+    expect(
+      rowAccepting(
+        'Applications are open. Applications submitted after the portal is closed will not be considered.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a program accepting when the closure belongs to another cycle, clause or noun', () => {
+    for (const rowText of [
+      'Applications for Summer 2025 are closed. Applications for Summer 2026 are now open.',
+      'Applications are open; the portal is closed for maintenance on Sundays.',
+      'Applications are open for juniors; the program is closed to seniors.',
+      'Applications are open. Incomplete applications are closed without review.',
+      'Applications are open. Application Status: Closed for the fall round, open for spring.',
+    ]) {
+      expect(rowAccepting(rowText)).toBe(true);
+    }
+  });
+
+  it('does not let a future reopening outweigh a stated closure', () => {
+    expect(
+      rowAccepting(
+        'Applications for Summer 2026 are now closed. Applications open again in January.',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not read a dated future opening as an open window', () => {
+    expect(
+      rowAccepting('Application Status: CLOSED. Application open February 18 for the next cycle.'),
+    ).toBe(false);
+    expect(rowAccepting('Applications open in early September.')).toBe(false);
+  });
+
+  it('reads a closure with a cycle, quantifier or abbreviation in its subject', () => {
+    for (const rowText of [
+      'Summer 2026 applications are closed. Applications are reviewed on a rolling basis.',
+      'All applications are now closed. We review on a rolling basis.',
+      'Applications for the U.S. Student Program are closed. Rolling review applies.',
+      'Applications are closed. Applications open for juniors next fall.',
+      'Applications for the Open Study Award are now closed. Rolling review applies.',
+      'We are not currently accepting applications. Applications are closed. We review on a rolling basis.',
+    ]) {
+      expect(rowAccepting(rowText)).toBe(false);
+    }
+  });
+
+  it('keeps an open window open when a later word is a review plan or a closing date', () => {
+    expect(rowAccepting('Applications are now open and will be reviewed on a rolling basis.')).toBe(
+      true,
+    );
+    expect(rowAccepting('Applications for the summer are open through May 1.')).toBe(true);
+  });
+
+  it('keeps an open window open when a later clause opens another round in the future', () => {
+    expect(
+      rowAccepting(
+        'Applications for the summer grant are now open, and applications for the fall grant will open in October.',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not read past-tense rolling review as accepting', () => {
+    expect(rowAccepting('Applications were accepted on a rolling basis last spring.')).toBe(false);
+  });
+
+  it('keeps a new cycle accepting when a closure names the old cycle and a future deadline is stated', () => {
+    expect(
+      rowAccepting(
+        'Applications for 2025 are closed. Application Deadline 09/11/26 for the 2026 cycle.',
+      ),
+    ).toBe(true);
+  });
+
   it('emits one source-backed observation group per candidate', () => {
     const observations = candidateToObservations({
       sourceKey: 'yale-college-fellowships-office:fixture-family-research-fellowship',

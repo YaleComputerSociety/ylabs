@@ -200,6 +200,31 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
     expect(gateMocks.applyStudentVisibilityGatePlans).toHaveBeenCalled();
   });
 
+  it('clears the dead url but keeps its stamp when it is the served row only citation (#6320)', async () => {
+    await researchEntities().updateOne(
+      { slug: 'ysm-faculty-shrikant-mane' },
+      {
+        $set: {
+          sourceUrls: [],
+          fieldProvenance: {
+            websiteUrl: { sourceUrl: MANE_DEAD, observedAt: new Date('2026-01-01T00:00:00.000Z') },
+          },
+        },
+      },
+    );
+
+    const result = await runRepairPromotionRegressedWebsiteUrls({
+      apply: true,
+      confirm: true,
+      probe: defaultProbe,
+    });
+
+    expect(result.lastCitationStampsKept).toBe(1);
+    const mane = await stored('ysm-faculty-shrikant-mane');
+    expect(mane).not.toHaveProperty('websiteUrl');
+    expect(mane?.fieldProvenance?.websiteUrl?.sourceUrl).toBe(MANE_DEAD);
+  });
+
   it('re-indexes the restored rows so the replaced dead url stops matching keyword search', async () => {
     await runRepairPromotionRegressedWebsiteUrls({
       apply: true,

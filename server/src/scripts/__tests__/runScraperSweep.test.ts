@@ -23,6 +23,7 @@ import {
   buildFellowshipPostRunStages,
   buildPruneDeadObservationsChildArgs,
   buildScraperSweepChildArgs,
+  sweepCenterPlanOwed,
   declareMaterializationReadScopeForChildren,
   fellowshipPostRunArtifactError,
   isDeadObservationPruneSweepMode,
@@ -536,6 +537,44 @@ describe('runScraperSweep', () => {
     expect(incrementalArgs).toContain('--auto-materialize');
     expect(incrementalArgs).not.toContain('--ignore-work-planner');
     expect(incrementalArgs).not.toContain('--limit');
+  });
+
+  it('runs a center roster source observations-only and lists it as center plan owed (#6348)', () => {
+    for (const mode of ['development-full', 'development-incremental'] as const) {
+      const centerArgs = buildScraperSweepChildArgs(
+        mode,
+        'centers-institutes-index',
+        '/tmp/centers.json',
+      );
+      expect(centerArgs, mode).not.toContain('--auto-materialize');
+      expect(centerArgs, mode).toContain('--apply');
+      expect(centerArgs, mode).toContain('--exhaustive');
+      expect(
+        buildScraperSweepChildArgs(mode, 'dept-faculty-roster', '/tmp/dept.json'),
+        mode,
+      ).toContain('--auto-materialize');
+    }
+
+    const row = (sourceName: string, runId: string) => ({
+      sourceName,
+      phase: 'discovery' as const,
+      status: 'succeeded' as const,
+      artifactPath: `/tmp/${sourceName}.json`,
+      runId,
+    });
+    expect(
+      sweepCenterPlanOwed('development-full', [
+        row('centers-institutes-index', 'run-center'),
+        row('dept-faculty-roster', 'run-dept'),
+        row('center-director', 'run-director'),
+      ]),
+    ).toEqual([
+      { sourceName: 'centers-institutes-index', runId: 'run-center' },
+      { sourceName: 'center-director', runId: 'run-director' },
+    ]);
+    expect(
+      sweepCenterPlanOwed('development-plan', [row('centers-institutes-index', 'run-center')]),
+    ).toEqual([]);
   });
 
   it('passes --apply to every writing sweep child and never to a plan child (#5842)', () => {

@@ -23,7 +23,10 @@ import {
   RESEARCH_PAGE_TEXT_SOURCE,
 } from '../scrapers/utils/researchPageText';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { loadResearchEntityLeadPersonDisplayNames } from '../utils/researchHomeNameIdentityRoster';
+import {
+  loadResearchEntityLeadPersonDisplayNames,
+  loadResearchEntityLeadPersonNetids,
+} from '../utils/researchHomeNameIdentityRoster';
 import { isPersonResearchRow } from '../utils/researchStatementPassage';
 import type { TopicEvidenceRow } from '../scrapers/researchPageTopicsDerivation';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -153,6 +156,7 @@ async function loadTopicEvidenceRows(
         return id ? [id] : [];
       });
     const leadNames = await loadResearchEntityLeadPersonDisplayNames(personIds);
+    const leadNetids = await loadResearchEntityLeadPersonNetids(personIds);
     for (const entity of entities) {
       const id = serializedDocumentId(entity._id);
       const topicRow: TopicEvidenceRow = {
@@ -161,6 +165,7 @@ async function loadTopicEvidenceRows(
         name: entity.name,
         websiteUrl: entity.websiteUrl,
         ...(id && leadNames.has(id) ? { leadNames: leadNames.get(id) } : {}),
+        ...(id && leadNetids.get(id)?.length ? { leadNetids: leadNetids.get(id) } : {}),
       };
       if (id) byId.set(id, topicRow);
       if (typeof entity.slug === 'string' && entity.slug) bySlug.set(entity.slug, topicRow);

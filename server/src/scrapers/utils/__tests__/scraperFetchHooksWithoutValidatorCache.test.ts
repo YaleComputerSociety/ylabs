@@ -41,7 +41,11 @@ afterAll(async () => {
 
 describe('installScraperFetchHooks with validatorCache: false', () => {
   it('asks the host every time, even after a later default install, so a dead page never reads alive', async () => {
-    installScraperFetchHooks({ validatorCache: false, hostSlotLimiter: openLimiter });
+    installScraperFetchHooks({
+      validatorCache: false,
+      hostSlotLimiter: openLimiter,
+      robotsTxtFetcher: async () => ({ status: 404, body: '' }),
+    });
     installScraperFetchHooks();
     const url = 'https://liveness-fixture.invalid/page';
 

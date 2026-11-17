@@ -116,6 +116,38 @@ describe('a page-borrowing lane value is withdrawn by another lane gone verdict 
     expect(await storedDescription()).toBeFalsy();
   });
 
+  it('keeps a synthesis written after the gone verdict withdrawn, since a borrower never reads the page (#6238)', async () => {
+    await append(
+      'ysm-faculty-directory',
+      [pageVerdict('UNAVAILABLE', 404)],
+      new Date('2026-09-10T00:00:00Z'),
+    );
+    await append(
+      'coverage-synthesis-llm',
+      [
+        {
+          entityType: 'researchEntity',
+          entityId: rowId,
+          entityKey: SLUG,
+          sourceUrl: PAGE,
+          field: 'fullDescription',
+          value: SYNTHESIS,
+        },
+      ],
+      new Date('2026-09-20T00:00:00Z'),
+    );
+    await resolve();
+    expect(await storedDescription()).toBeFalsy();
+
+    await append(
+      'lab-site-lead-verification',
+      [pageVerdict('HEALTHY', 200)],
+      new Date('2026-09-25T00:00:00Z'),
+    );
+    await resolve();
+    expect(await storedDescription()).toBe(SYNTHESIS);
+  });
+
   it('withdraws nothing on an inconclusive verdict', async () => {
     await append(
       'ysm-faculty-directory',

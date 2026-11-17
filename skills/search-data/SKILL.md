@@ -316,6 +316,12 @@ A canonical name that contains a filler word (`ecology and evolutionary biology`
 | `yarn --cwd server researchers:repair-person-name-noise` | Strip scraped furniture from `researchers.displayName` (image-caption wrapper, trailing post-nominal credential run, former-name annotation, shouty casing) and re-gate the entities the repaired people lead (Development-gated, dry-run default); apply requires `--apply --confirm-repair-person-name-noise`, and `--limit=N` caps how many rewrites one run may write. Person names ARE indexed, as `leadProfessorNames` and `professorNames`, so a repaired name reaches search only after `meili:rebuild-research-entities`. |
 | `yarn --cwd server research-entity:archived-visibility-verdicts` | Read the student-visibility tier histogram both with and without the `archived` filter, and the zero-hard-blocker held population both ways, so a count by tier is a command rather than an ad-hoc pipeline. Dry-run default; `--apply --confirm-archived-visibility-verdict-repair` withdraws the verdict from archived rows; `--assert-clean` exits non-zero while the two readings disagree. |
 
+### Decide an empty topic reading the way the materializer does (#6360)
+
+Decide whether a row's page-topic reading is empty by calling `researchPageTopicsStateFor` with the row's evidence row, as the materializer does, and never by hashing the raw page text.
+A person-scoped row's reading is keyed on its page text after the lead-name page filter (#6120), so a raw-text hash finds a different reading or none.
+Measured on the #6360 part-2 set, 3 of 7 disagreeing rows were person rows read under the wrong hash and 3 more had a non-empty reading for their current text, so a list built from raw hashes overstated the empty-reading set.
+
 ## Default `/research` ordering
 
 With no query, `/research` sorts by `browseRankScore:desc` then `browseTiebreakKey:asc`.
@@ -370,6 +376,7 @@ The map is topic-first because department matching misses most relevant rows: on
 A value is admitted only when it describes the field rather than a method medicine also uses: `Artificial Intelligence`, `Machine Learning`, `Algorithms`, `Data Science`, `Chemistry`, `Bioethics`, `Ethics`, `Public Policy`, `Global Health`, `Brain`, and the bare `Neuroscience` and `Philosophy` tags were removed from the sampled science and humanities majors after a precision sample found them carrying clinical rows into those majors.
 They stay where they name the major's own field, such as `Data Science` under Statistics and Data Science and `Philosophy` under Humanities.
 Every mapped topic and department must hold at least 5 served rows in `servedFacetValues.snapshot.json`, so ordinary corpus churn does not empty it; the snapshot keeps topics with 3 or more rows and every served department.
+Map topics are written in MeSH natural order (#6358), and both the snapshot builder and the row-floor test read a served value through `naturalOrderMeshHeading`, so an inverted heading still stored on unresolved rows counts toward its natural form.
 Refresh the snapshot with `yarn --cwd server personalization:refresh-served-facet-snapshot`, a read of the index that writes only that file, then rerun `services/personalization/__tests__/majorTopicMap.test.ts`, which fails on any mapped topic or department that fell below 5 rows.
 
 Review rule: a list change re-samples 15 served rows matching the changed major, labels each on-topic or off-topic from the row's own topics, department and description, and records the labels by row id in `__tests__/fixtures/majorTopicPrecisionLabels.json`.

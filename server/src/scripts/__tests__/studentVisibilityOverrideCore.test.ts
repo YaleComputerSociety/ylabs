@@ -48,6 +48,39 @@ describe('parseStudentVisibilityOverrideArgs', () => {
   });
 });
 
+describe('the --collection form (#6220)', () => {
+  const programId = '0123456789abcdef01234567';
+  const programBase = [`--id=${programId}`, `--reason=${REASON}`, '--actor=fixtureop'];
+
+  it('defaults to research rows and accepts program rows by id', () => {
+    expect(parseStudentVisibilityOverrideArgs([...base, '--clear']).collection).toBe('research');
+    expect(
+      parseStudentVisibilityOverrideArgs([...programBase, '--collection=programs', '--clear']),
+    ).toMatchObject({
+      collection: 'programs',
+      target: { id: programId },
+      action: { kind: 'clear' },
+    });
+  });
+
+  it('refuses an unknown collection, a program slug, and a program override without a reason', () => {
+    expect(() =>
+      parseStudentVisibilityOverrideArgs([...programBase, '--collection=fellowships', '--clear']),
+    ).toThrow('--collection');
+    expect(() =>
+      parseStudentVisibilityOverrideArgs([...base, '--collection=programs', '--clear']),
+    ).toThrow('has no slug');
+    expect(() =>
+      parseStudentVisibilityOverrideArgs([
+        `--id=${programId}`,
+        '--actor=fixtureop',
+        '--collection=programs',
+        '--clear',
+      ]),
+    ).toThrow('--reason is required');
+  });
+});
+
 describe('the --actor form', () => {
   it('accepts a netid or an agent identifier and refuses anything else', () => {
     const parse = (actor: string) =>

@@ -160,6 +160,7 @@ describe('researchPageTopicsStateFor', () => {
     const empty = cacheOf([{ inputHash, extractedTopics: [], extractedField: null }]);
     expect(await researchPageTopicsStateFor([pageTextObservation(pages)], empty)).toEqual({
       currentTextHash: researchPageTextHash(pages),
+      readingIsEmpty: true,
     });
     expect(await researchPageTopicsStateFor([pageTextObservation(pages)], cacheOf([]))).toEqual({
       currentTextHash: researchPageTextHash(pages),

@@ -7,6 +7,8 @@ import type { HostSlotLimiter } from '../hostConcurrencyLimiter';
 import { MODEL_API_HOSTS_EXEMPT_FROM_HOST_BUDGET } from '../hostBudgetExempt';
 import { hostBackoffState, resetHostPauseStateForTests } from '../hostPauseState';
 import { installScraperFetchHooks } from '../scraperFetchHooks';
+
+const noRobotsTxt = async () => ({ status: 404, body: '' });
 import { SCRAPER_USER_AGENT } from '../scraperUserAgent';
 import { isSweepPageReuseHit } from '../sweepPageReuseHit';
 
@@ -58,7 +60,7 @@ beforeAll(async () => {
   process.env.SCRAPER_HTTP_CACHE_DIR = path.join(workDir, 'cache');
   process.env.SCRAPER_REQUEST_LOG = requestLogPath;
   axios.defaults.adapter = stubNetwork;
-  installScraperFetchHooks({ hostSlotLimiter: recordingLimiter });
+  installScraperFetchHooks({ hostSlotLimiter: recordingLimiter, robotsTxtFetcher: noRobotsTxt });
 });
 
 afterEach(() => {
@@ -78,7 +80,7 @@ describe('installScraperFetchHooks', () => {
     installScraperFetchHooks();
     installScraperFetchHooks({ hostSlotLimiter: recordingLimiter });
 
-    expect(interceptors).toBe(3);
+    expect(interceptors).toBe(4);
     expect(requestInterceptorCount()).toBe(interceptors);
     expect(axios.defaults.adapter).toBe(adapter);
   });

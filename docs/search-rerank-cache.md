@@ -80,6 +80,46 @@ The report's `textHashes` says what happened: `read-from-index`, `index-unreacha
 A seed without hashes is still served and still judged by the candidate-set rule, so seeding Beta or Production from a laptop degrades staleness detection rather than failing.
 A promotion seeds Beta and Production that way, from the laptop that holds the seed file, because a Render shell cannot read it; the exact runbook, its expected counts, turning the serve flag on, verification and rollback are in `docs/release-process.md` ("Seed the search rerank cache after the copy and the reindex").
 
+## Seeding rounds (#6222)
+
+A fixed seed covers only the queries it was scored on, so a recurring offline round adds the new ones, with no model spend.
+`yarn --cwd server research-search:rerank-seeding-round <command>` runs the file-handling steps; scoring and judging are local Claude sessions in between.
+Run each command through the machine's heavy-command slot.
+
+1. `collect --since=<date of the last round> [--out=<round.json>]` reads the distinct `searchQuery` values of `search` events since that date, grouped by text alone, so no user, session or event field is read.
+   The source is `PRODUCTION_READONLY_MONGODBURL`, which must name the `Prod` database, and the command refuses a credential holding any action outside the built-in read role's (`find`, `listCollections`, `collStats` and the like), so `anyAction` and unknown grants are refused too, as is one whose privileges it cannot list.
+   `--aggregates=<file>` reads `[{ "query", "searchCount" }]` from a file instead, which is how the command is tried without touching Production; every count must be a positive integer.
+   Spellings that share a cache key are counted together.
+   A query is kept only when it is short enough for the cache, names a topic rather than only access-filter or year-of-study words (such as "has hosted undergrad" or "first year"), is not name-shaped, keys no seeded entry on Development, and passes the same Development gate the live-miss job uses, which refuses name queries; the served top 30 of each kept query is read there too.
+   Name-shaped means one to four words of letters only once access-filter words and digits are set aside, none of them a topic term, because Development's gate recognises only the people its corpus carries and a classmate's name would pass it; so a name typed with a year, a number or punctuation (a comma, parentheses, quotes) beside or inside it is dropped too.
+   A word mixing letters and digits has the shape of a netid as well as of a gene or virus symbol, so a query carrying one is kept only when served research text states that exact word in at least two rows (`tp53`, `cd19`), counted after email addresses and links are removed; any other such word drops the query as `unknown-symbol`.
+   On Development (2026-11-16) that collects 88 symbols, and every netid-shaped one among them is a scientific symbol; a three-row threshold kept only 43 and lost common gene symbols.
+   A query made only of numbers or course codes (a subject of two to five letters and a three- to four-character number, such as `cpsc 474`) names no topic and counts as a filter phrase.
+   A topic term is an English dictionary word or a word in at least three served rows' searchable text, and never a word of any person's name in the corpus, so a query is dropped when in doubt.
+   The command loads Development's search vocabulary first, so the served lists it reads are spelling-corrected as the route's are.
+   Without `--out` it prints counts only (exclusions by reason, and kept queries by word count) and writes nothing.
+   With `--out` it writes the round and a scoring batch beside it (`<round>.scoring-batch.json`), each outside the repository with mode 0600, so a dropped name query is never written to disk.
+2. Score the batch with local Claude under the rerank-session guide, one scoring session at a time, writing `[{ "row", "scores": { "<index>": <0-3> } }]`.
+3. `judge-packet --round=<round.json> --scores=<scores.json> --out=<packet.json>` writes, in a shuffled order, the union of each query's served top 10 and its reranked top 10, reordered the way serving does.
+   A query missing a score for any candidate is refused.
+4. A separate blind judge grades the packet under the judge guide, writing `[{ "qid", "slug", "grade" }]`.
+5. `gate --round=<round.json> --scores=<scores.json> --grades=<grades.json> [--seed-out=<seed.json>]` computes nDCG@10 per query and applies the import rule.
+   A round is imported only when it scores at least 10 queries, the mean change has a 95% bootstrap interval above 0, the queries it makes worse lose no more on average than the queries it makes better gain, and every pair is graded.
+   It prints the means, the interval, and the better and worse counts, exits 2 on a refusal, and writes the seeder input only when the round passes.
+6. Import with the seeder above into Development as a new `full-v<n>-<date>` version, then dry-run again and re-read the served result.
+   The cache is never copied, so Beta and Production receive it only when the promotion runbook seeds them from each file Development was seeded from, in the same order (`docs/release-process.md`, "Seed the search rerank cache after the copy and the reindex"); record the new file there.
+
+Issue and pull request text reports a round by these counts only, never a query or a row.
+
+### Cadence and the first round
+
+A round runs by hand when at least 20 new eligible queries have accumulated since the last one, or monthly, whichever comes first; nothing schedules it, and every round passes the import gate before anything is seeded.
+The first round (2026-11-16) read every Production search since 2025-01-01: 573 distinct cache keys, of which 67 were kept and 506 excluded (250 name-shaped, 225 already seeded, 17 not rerank-eligible, 7 filter phrases, 7 name queries).
+Its blind-judged nDCG@10 rose from 0.688 to 0.932 (95% interval +0.196 to +0.297), with 59 queries better and none worse, and one-word queries gained as much as longer ones, so a round is not limited to multi-word queries.
+Seeded on Development as `full-v5-2026-11-16`, the served route rose from 0.707 to 0.933 and served the offline reorder on 64 of the 67 queries.
+The same round re-scored the 56 rows whose text had changed in 53 stale `full-v4` entries and re-seeded them as `full-v5b-2026-11-16`, leaving no stale seeded entry.
+Both the scorer and the judge are Claude sessions, so a round's gain is measured by the same model family that produced it; the scored and graded pairs are kept outside the repository, mode 0600, for an independent non-Claude check if one is wanted.
+
 ## Environments and privacy
 
 The cache is environment-local: it is in `NEVER_COPY_COLLECTIONS` and in the collections a Development refresh preserves (`server/src/scripts/mirrorCollectionPolicy.ts`).

@@ -10,7 +10,8 @@
  * is left to that title. `decideEmeritusWayIn` then treats a recorded lead as emeritus.
  *
  * It also records a lead whose own profile page, as the profile lanes already stored it, holds only
- * emeritus appointments (#6081), from stored observations and with no fetch.
+ * emeritus appointments (#6081), and a lead an official Yale center's roster lists in its Emeritus
+ * section (#6162), both from stored observations and with no fetch.
  *
  * Deterministic and manual-only. A page that cannot be read leaves the rows it gave before alone.
  */
@@ -189,6 +190,14 @@ async function storedTitleIsBacked(researcher: any): Promise<boolean> {
   );
 }
 
+/** A lead's own-page read still wins: a current title a live lane asserts outranks any listing. */
+async function listingMayStandFor(researcher: any): Promise<boolean> {
+  return (
+    titleHoldsOnlyEmeritusAppointments(researcher.profile?.title) ||
+    !(await storedTitleIsBacked(researcher))
+  );
+}
+
 /**
  * The rows a listed person leads, when the listing may stand for them. A profile link binds when
  * exactly one live researcher holds it and carries the listed name; otherwise the name binds only
@@ -217,13 +226,7 @@ export const defaultEmeritusLeadResolver: EmeritusLeadResolver = async (person, 
       .select('_id profile identifiers profileLinks')
       .lean();
   }
-  if (!researcher) return null;
-  if (
-    !titleHoldsOnlyEmeritusAppointments(researcher.profile?.title) &&
-    (await storedTitleIsBacked(researcher))
-  ) {
-    return null;
-  }
+  if (!researcher || !(await listingMayStandFor(researcher))) return null;
   const slugs = (await existingLeadRowsForOwner(owner)).map((row) => row.slug).sort();
   return slugs.length ? { researcherId: String(owner._id), slugs } : null;
 };
@@ -446,6 +449,99 @@ export const defaultOwnProfileEmeritusLeadFinder: OwnProfileEmeritusLeadFinder =
   return leads;
 };
 
+export const CENTER_ROSTER_SECTION_SOURCE = 'centers-institutes-index';
+
+const isOfficialYalePage = (url: unknown): boolean => {
+  try {
+    const { protocol, hostname } = new URL(String(url));
+    const host = hostname.toLowerCase();
+    return (
+      (protocol === 'https:' || protocol === 'http:') &&
+      (host === 'yale.edu' || host.endsWith('.yale.edu'))
+    );
+  } catch {
+    return false;
+  }
+};
+
+export type CenterEmeritusSectionLeadFinder = () => Promise<EmeritusListedLead[]>;
+
+/**
+ * Leads an official Yale center's roster lists in its Emeritus section (#6162, extending #5835).
+ * The center roster lane records the section on each member observation (#6084), already
+ * resolved against the member's own page, so a listing whose own page states a current
+ * appointment carries `current` and is not read here. The member is bound to a researcher only by
+ * the identity evidence its own profile page states, or by a profile link exactly one live
+ * researcher holds under the listed name, and the listing is recorded only on rows that
+ * researcher already leads. Reads stored observations only and never fetches.
+ */
+export const defaultCenterEmeritusSectionLeadFinder: CenterEmeritusSectionLeadFinder = async () => {
+  const statuses: any[] = await Observation.find({
+    entityType: 'researchGroupMember',
+    sourceName: CENTER_ROSTER_SECTION_SOURCE,
+    field: { $in: ['currentStatus', 'sectionLabel'] },
+    superseded: { $ne: true },
+  })
+    .select('entityKey field value sourceUrl')
+    .lean();
+  const byMember = new Map<string, { statusRows: any[]; label?: unknown }>();
+  for (const row of statuses) {
+    const member = byMember.get(String(row.entityKey)) ?? { statusRows: [] };
+    if (row.field === 'currentStatus') member.statusRows.push(row);
+    else member.label = row.value;
+    byMember.set(String(row.entityKey), member);
+  }
+  const listedMembers = [...byMember.entries()]
+    .filter(
+      ([, member]) =>
+        member.statusRows.length > 0 &&
+        member.statusRows.every(
+          (row) => row.value === 'emeritus' && isOfficialYalePage(row.sourceUrl),
+        ) &&
+        typeof member.label === 'string' &&
+        member.label.trim() !== '',
+    )
+    .map(([entityKey]) => entityKey)
+    .sort();
+  const slugsByResearcher = new Map<string, string[]>();
+  for (const entityKey of listedMembers) {
+    const researcher =
+      (await researcherForRosterMember(CENTER_ROSTER_SECTION_SOURCE, entityKey)) ??
+      (await researcherForMemberProfileLink(entityKey));
+    if (!researcher) continue;
+    const id = String(researcher._id);
+    if (slugsByResearcher.has(id) || !(await listingMayStandFor(researcher))) continue;
+    const owner = researcherToUserMatch(researcher, researcherNetid(researcher));
+    slugsByResearcher.set(
+      id,
+      (await existingLeadRowsForOwner(owner)).map((row) => row.slug).sort(),
+    );
+  }
+  return [...slugsByResearcher.entries()]
+    .filter(([, slugs]) => slugs.length > 0)
+    .map(([researcherId, slugs]) => ({ researcherId, slugs }));
+};
+
+/** A center member bound by the profile link its card names, held by exactly one researcher. */
+async function researcherForMemberProfileLink(entityKey: string): Promise<any | null> {
+  const rows: any[] = await Observation.find({
+    entityType: 'researchGroupMember',
+    sourceName: CENTER_ROSTER_SECTION_SOURCE,
+    entityKey,
+    field: { $in: ['profileUrl', 'inferredUserName'] },
+    superseded: { $ne: true },
+  })
+    .select('field value')
+    .lean();
+  const profileUrl = rows.find((row) => row.field === 'profileUrl')?.value;
+  const listedName = listedNameOf(rows.find((row) => row.field === 'inferredUserName')?.value);
+  if (typeof profileUrl !== 'string' || !profileUrl.trim() || !listedName) return null;
+  const researcher = await soleHolderOfProfileUrl(profileUrl.trim());
+  return researcher && observedPersonNameAgreesWith(researcher.displayName, listedName)
+    ? researcher
+    : null;
+}
+
 export type EmeritusListingFetchText = (url: string) => Promise<string | null>;
 
 export type StoredEmeritusListingFinder = () => Promise<Map<string, string[]>>;
@@ -464,6 +560,7 @@ export interface DepartmentEmeritusListingDeps {
   resolveLead?: EmeritusLeadResolver;
   storedListingFinder?: StoredEmeritusListingFinder;
   ownProfileLeadFinder?: OwnProfileEmeritusLeadFinder;
+  centerSectionLeadFinder?: CenterEmeritusSectionLeadFinder;
 }
 
 export class DepartmentEmeritusListingScraper implements IScraper {
@@ -474,6 +571,7 @@ export class DepartmentEmeritusListingScraper implements IScraper {
   private readonly resolveLead: EmeritusLeadResolver;
   private readonly storedListingFinder: StoredEmeritusListingFinder;
   private readonly ownProfileLeadFinder: OwnProfileEmeritusLeadFinder;
+  private readonly centerSectionLeadFinder: CenterEmeritusSectionLeadFinder;
 
   constructor(deps: DepartmentEmeritusListingDeps = {}) {
     this.pages = deps.pages ?? DEPARTMENT_EMERITUS_LISTING_PAGES;
@@ -481,14 +579,30 @@ export class DepartmentEmeritusListingScraper implements IScraper {
     this.resolveLead = deps.resolveLead ?? defaultEmeritusLeadResolver;
     this.storedListingFinder = deps.storedListingFinder ?? defaultStoredEmeritusListingFinder;
     this.ownProfileLeadFinder = deps.ownProfileLeadFinder ?? defaultOwnProfileEmeritusLeadFinder;
+    this.centerSectionLeadFinder =
+      deps.centerSectionLeadFinder ?? defaultCenterEmeritusSectionLeadFinder;
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const only = new Set(ctx.options.only ?? []);
     const pages = this.pages.filter((page) => only.size === 0 || only.has(page.url));
     const leadsBySlug = new Map<string, Set<string>>();
+    const recordLead = (lead: EmeritusListedLead) => {
+      for (const slug of lead.slugs) {
+        const leads = leadsBySlug.get(slug) ?? new Set<string>();
+        leads.add(lead.researcherId);
+        leadsBySlug.set(slug, leads);
+      }
+    };
     const unreadPages: string[] = [];
-    const stats = { pages: pages.length, listed: 0, recorded: 0, skipped: 0, ownProfile: 0 };
+    const stats = {
+      pages: pages.length,
+      listed: 0,
+      recorded: 0,
+      skipped: 0,
+      ownProfile: 0,
+      centerSection: 0,
+    };
     for (const page of pages) {
       const html = await this.fetchText(page.url);
       if (html === null) {
@@ -503,21 +617,18 @@ export class DepartmentEmeritusListingScraper implements IScraper {
           continue;
         }
         stats.recorded += 1;
-        for (const slug of lead.slugs) {
-          const leads = leadsBySlug.get(slug) ?? new Set<string>();
-          leads.add(lead.researcherId);
-          leadsBySlug.set(slug, leads);
-        }
+        recordLead(lead);
       }
     }
 
     for (const lead of await this.ownProfileLeadFinder()) {
       stats.ownProfile += 1;
-      for (const slug of lead.slugs) {
-        const leads = leadsBySlug.get(slug) ?? new Set<string>();
-        leads.add(lead.researcherId);
-        leadsBySlug.set(slug, leads);
-      }
+      recordLead(lead);
+    }
+
+    for (const lead of await this.centerSectionLeadFinder()) {
+      stats.centerSection += 1;
+      recordLead(lead);
     }
 
     const complete = unreadPages.length === 0 && only.size === 0;
@@ -549,7 +660,7 @@ export class DepartmentEmeritusListingScraper implements IScraper {
     return {
       observationCount: observations.length,
       entitiesObserved: observations.length,
-      notes: `${stats.recorded} of ${stats.listed} listed people recorded on a row they lead; ${stats.ownProfile} leads emeritus by their own profile page`,
+      notes: `${stats.recorded} of ${stats.listed} listed people recorded on a row they lead; ${stats.ownProfile} leads emeritus by their own profile page; ${stats.centerSection} leads an official center lists as emeritus`,
       ...(unreadPages.length ? { partialFailures: unreadPages } : {}),
     };
   }

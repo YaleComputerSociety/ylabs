@@ -132,6 +132,12 @@ Measured on Development on 2026-11-11 through full gate dry runs with #5858 appl
 - Removed by request: `researcher_removed`. Every lead of the row is recorded in `directory_removals`. Removed at `suppressed`, outranking an operator override; `docs/directory-removal.md` owns the rule.
 - Citations: `all_citations_dead`, `citations_identify_no_person`. Maps to `citationIdentifiesSubject`: a row whose every citation is dead, or whose every citation is shared across person rows, has no live evidence about its own subject (#2464/#2635).
 Both block, because both are the same question; leaving the second unclassified made it read as non-blocking while the field it maps to still held the row.
+A row with no citation at all is silence rather than death, so `hasLiveSourceCitation` reads it as live and `all_citations_dead` cannot fire on it.
+That makes the last citation load-bearing: a writer that unset the only `fieldProvenance.<field>` stamp of a row whose only citation was dead would turn a held row into a served one at the next gate run.
+So every writer that unsets a provenance stamp or empties `sourceUrls` on a research entity goes through `withholdLastCitationRemovals` in `server/src/services/lastCitationGuard.ts`, which keeps the stamp and still clears the field value when the write would leave the row citing nothing (#6320).
+The rule does not read the stored tier, because that tier is only the last verdict: a row held today on `all_citations_dead` is the one a write would release.
+A kept dead stamp keeps the row held, and a kept live stamp keeps the row citing what it cited before.
+Each writer reports what it kept, as `lastCitationStampsKept`, `lastCitationRemovalsWithheld`, or `lastCitationsKept`, and `lastCitationGuardSourceScan.test.ts` fails when a new site that unsets a stamp or removes a `sourceUrls` entry skips the rule.
 
 ### Who counts as an attached lead
 
@@ -181,6 +187,12 @@ Two person-scoped rows sharing the page, a person-named row that only carries an
 When organizations share the page beside a person-scoped row, they group among themselves and the person-scoped row stays out of their group.
 Measured on Development on 2026-10-17 through a full gate dry run before and after the change: 4 groups on a person page paired an organizational row with a person-scoped row, and exactly 3 rows changed tier, all held before and none served: one organization and one faculty research row moved to `student_ready`, and one lab moved to `operator_review`, where `missing_lead` still holds it.
 The fourth group's person-scoped row stays held, because it collides with the organization on the organization's own site as well.
+On a page no member publishes as its own home, such as a center, clinic, core or program page, rows led by different people and named differently are different research citing one page rather than one row stored twice (#6206).
+So after the director rule, two members whose current `PI` or `DIRECTOR` lead sets are both non-empty and disjoint, and whose names differ once kind nouns are dropped (`entityNameWordsWithoutKindNouns`), do not contest the page.
+A leadless member, a shared lead, agreeing names, or a member publishing the page as its own home keeps the contest, so a duplicate hidden by a missing lead edge still groups.
+Names are compared as word sets after folding a trailing plural, `&` to `and` and `centre` to `center` and dropping kind nouns and stop words, so "Center for X" and "X Centre" still contest, and a person's own profile page is outside the rule and keeps the usual contest.
+Only the gate passes lead rows into `exactDuplicateUrlGroups`; a caller that passes none, such as the same-lead merge, groups exactly as before.
+Measured on Development through full gate dry runs before and after the change, run back to back over 4,149 rows: 1 row lost `duplicate_risk` and moved from `suppressed` to `student_ready`, none gained a duplicate reason, and no row left `student_ready`.
 A row that holds a live `wrong_owner` refusal of a URL on its `websiteUrl` or `website` is no claimant of that URL, even though the materializer still carries it on `sourceUrls`, because the refusal says the address is not the row's own (#5858).
 A withdrawn refusal, or a refusal under any other rule, leaves the row a claimant.
 `entityClaimedDuplicateUrls` in `server/src/services/studentVisibilityGateService.ts` owns the filter, and `lead_is_staff_of_served_lab` above holds the staff rows it releases that would otherwise give a served lab a second card.
@@ -280,8 +292,11 @@ Write it with `yarn --cwd server student-visibility:override` rather than a dire
 - The reason is appended as one entry of the comma-joined list and replaces an earlier entry with the same code, so a departure marker or a `research_infrastructure_only` entry survives; `--clear` removes only the entry carrying the given code.
 - A reason that contains `permanently_closed` or `research_infrastructure_only` anywhere is refused, because readers match those markers anywhere in the field and would treat the verdict as closure or infrastructure evidence.
 - Every apply writes an `admin_audit_events` row (`research_entity.visibility_override.set` or `.clear`) recording the actor, the time, the before and after state and the reason.
+- A program row takes the same verdict with `--collection=programs --id=<id>`, since programs have no slug, through the same code path and the same reason rule (#6220).
+Its audit row is `fellowship.visibility_override.set` or `.clear` with target type `fellowship`, it has no search index to re-sync, and `servedNow` reads the public program route.
+A program `--clear` is the audited way to retire a program override: it also retires the live observations asserting the override, as the admin editor's lift does (#4289), because the next materialization would otherwise project the cleared value back.
 - A hold (`operator_review` or `suppressed`) is also written to `studentVisibilityTier` and re-synced to the search index in the same call, so the row stops serving at once.
-- A release (`student_ready` or `limited_but_safe`) or a `--clear` writes the verdict only, and the served tier changes when `student-visibility:gate --apply --confirm-student-visibility-apply --record-id=<id>` re-decides the row, because a correctness floor can outrank a release.
+- A release (`student_ready` or `limited_but_safe`) or a `--clear` writes the verdict only, and the served tier changes when `student-visibility:gate --apply --confirm-student-visibility-apply --record-id=<id>` re-decides the row (with `--collection=programs` for a program), because a correctness floor can outrank a release.
 - Every serve path also reads a hold as the tier whatever the stored tier says, through `effectiveStudentVisibilityTier`, `servesStudentVisibilityTier` and `servedStudentVisibilityTierFilter` in `server/src/models/studentVisibility.ts`, so a rematerialize or any other writer that leaves the stored tier above a hold cannot serve the row (#5783).
 Operator views filtered by tier and the operator detail preview read the same effective tier, so a held row lists under its hold rather than under the stale stored tier.
 - A new serve path must read the tier through those helpers rather than comparing `studentVisibilityTier` alone.

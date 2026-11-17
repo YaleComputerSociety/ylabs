@@ -25,8 +25,9 @@ const stripComments = (source: string): string =>
 const FETCH_PATHS_OUTSIDE_THE_HOOKS: Record<string, { reason: string; pacedBy: RegExp }> = {
   'src/scrapers/renderedFetch.ts': {
     reason:
-      'the Scrapling bridge drives a headless browser in a Python child process, which no axios hook reaches; it takes its own host slot before each render',
-    pacedBy: /acquireHostSlotWithin\(\s*scraperHostSlotLimiter\(\)/,
+      'the Scrapling bridge drives a headless browser in a Python child process, which no axios hook reaches; it takes its own host slot before each render, and its SSRF forward proxy charges every request the browser sends (#6255)',
+    pacedBy:
+      /const hostSlots = options\.hostSlots \?\? scraperHostSlotLimiter\(\);[\s\S]*acquireHostSlotWithin\(hostSlots, seedUrl\.hostname\)/,
   },
 };
 

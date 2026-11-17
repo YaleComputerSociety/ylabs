@@ -14,6 +14,7 @@ import {
   HOST_SLOT_WAIT_TIMEOUT_MS,
   HOST_THROTTLE_OVERRIDES,
   HostSlotWaitTimeoutError,
+  withHostCrawlDelay,
   type HostPoliteness,
   type HostRetryBudget,
   type HostSlotLimiter,
@@ -57,11 +58,11 @@ export function resolveHostThrottle(
   defaults: HostThrottle,
 ): HostThrottle {
   const override = hostPoliteness(host);
-  if (!override) return defaults;
-  return {
+  if (!override) return withHostCrawlDelay(host, defaults);
+  return withHostCrawlDelay(host, {
     concurrency: Math.min(defaults.concurrency, override.concurrency),
     minIntervalMs: Math.max(defaults.minIntervalMs, override.minIntervalMs),
-  };
+  });
 }
 
 export class ChainedHostSlotLimiter implements HostSlotLimiter {
@@ -320,11 +321,13 @@ export function installScraperHostConcurrencyInterceptor(
     redirectable.beforeRedirect = refuseRedirectIntoPausedHost(redirectable.beforeRedirect);
     if (host && !isSweepPageReuseHit(config)) {
       try {
-        (config as unknown as Record<string, unknown>)[RELEASE_KEY] = await acquireHostSlotWithin(
-          limiter,
-          host,
-          acquireTimeoutMs,
-        );
+        const releaseSlot = await acquireHostSlotWithin(limiter, host, acquireTimeoutMs);
+        const pausedWhileWaiting = activeHostPause(host);
+        if (pausedWhileWaiting) {
+          releaseSlot();
+          throw new HostPausedError(pausedWhileWaiting);
+        }
+        (config as unknown as Record<string, unknown>)[RELEASE_KEY] = releaseSlot;
       } catch (error) {
         if (!(error instanceof HostSlotWaitTimeoutError)) throw error;
         const timedOut = new AxiosError(error.message, AxiosError.ETIMEDOUT, config);

@@ -4456,6 +4456,102 @@ function holdUserTypingForRunEnd(
   return observations.filter((o) => o !== typing);
 }
 
+export interface HeldRosterTitle {
+  observation: ObservationInput;
+  fromProfilePage: boolean;
+  fromHomeDepartmentRoster: boolean;
+}
+
+export type RosterTitleOutcome =
+  | 'profile'
+  | 'listing'
+  | 'home-department-listing'
+  | 'withheld-beside-stored-profile-read'
+  | 'conflicting-profile-reads'
+  | 'conflicting-listings';
+
+const distinctTitleValues = (held: readonly HeldRosterTitle[]): string[] => [
+  ...new Set(held.map((title) => String(title.observation.value).replace(/\s+/g, ' ').trim())),
+];
+
+const soleTitle = (held: readonly HeldRosterTitle[]): HeldRosterTitle | undefined =>
+  held.length > 0 && distinctTitleValues(held).length === 1 ? held[0] : undefined;
+
+// The materializer keeps this lane's newest title read for a user, so emitting each config's read
+// as it arrived let the last config win (#5801 cause 2) and let a listing replace the lane's own
+// profile read (cause 3).
+// A faculty-appointment listing outranks a staff one, as for typing. Emitting nothing on
+// ambiguity is deliberate: it leaves the stored title standing.
+export function pickRosterTitleForRunEnd(
+  held: readonly HeldRosterTitle[],
+  hasStoredProfileRead: boolean,
+): { observation?: ObservationInput; outcome: RosterTitleOutcome } {
+  const profileReads = held.filter((title) => title.fromProfilePage);
+  if (profileReads.length > 0) {
+    const sole =
+      soleTitle(profileReads) ?? soleTitle(profileReads.filter((t) => t.fromHomeDepartmentRoster));
+    return sole
+      ? { observation: sole.observation, outcome: 'profile' }
+      : { outcome: 'conflicting-profile-reads' };
+  }
+  if (hasStoredProfileRead) return { outcome: 'withheld-beside-stored-profile-read' };
+  const sole = soleTitle(held);
+  if (sole) return { observation: sole.observation, outcome: 'listing' };
+  const facultyListings = held.filter((title) =>
+    statesAnyFacultyAppointment(String(title.observation.value)),
+  );
+  const contenders = facultyListings.length > 0 ? facultyListings : held;
+  const soleContender = soleTitle(contenders);
+  if (soleContender) return { observation: soleContender.observation, outcome: 'listing' };
+  const homeListing = soleTitle(contenders.filter((title) => title.fromHomeDepartmentRoster));
+  return homeListing
+    ? { observation: homeListing.observation, outcome: 'home-department-listing' }
+    : { outcome: 'conflicting-listings' };
+}
+
+function holdUserTitleForRunEnd(
+  observations: ObservationInput[],
+  entityKey: string,
+  dept: DeptConfig,
+  titlesByUserKey: Map<string, HeldRosterTitle[]>,
+): ObservationInput[] {
+  const title = observations.find((o) => o.field === 'title');
+  if (!title) return observations;
+  titlesByUserKey.set(entityKey, [
+    ...(titlesByUserKey.get(entityKey) ?? []),
+    {
+      observation: { ...title, entityKey },
+      fromProfilePage: title.extraction?.source === 'profileTitleBlock',
+      fromHomeDepartmentRoster: assertsHomeDepartment(dept),
+    },
+  ]);
+  return observations.filter((o) => o !== title);
+}
+
+export type ProfileTitledUserKeyLoader = (entityKeys: string[]) => Promise<Set<string>>;
+
+export async function loadUserKeysWithALiveProfileTitle(
+  entityKeys: string[],
+): Promise<Set<string>> {
+  const wanted = [...new Set(entityKeys.filter(Boolean))];
+  if (wanted.length === 0 || !mongooseConnectionWasOpened()) return new Set();
+  const titles = await Observation.find(
+    {
+      sourceName: 'dept-faculty-roster',
+      entityType: 'user',
+      entityKey: { $in: wanted },
+      field: 'title',
+      superseded: false,
+      'extraction.source': 'profileTitleBlock',
+      'rollback.rolledBackAt': { $exists: false },
+    },
+    { entityKey: 1 },
+  ).lean<Array<{ entityKey?: string }>>();
+  return new Set(
+    titles.map((title) => title.entityKey).filter((key): key is string => Boolean(key)),
+  );
+}
+
 export type FacultyTitledUserKeyLoader = (entityKeys: string[]) => Promise<Set<string>>;
 
 export async function loadUserKeysWithALiveFacultyTitle(
@@ -5100,6 +5196,7 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
     private readonly legacyKeyRowLoader: LegacyKeyRowLoader = loadLegacyKeyRows,
     private readonly orgUnitCanonicalizerLoader: () => Promise<OrgUnitCanonicalizer> = getOrgUnitCanonicalizer,
+    private readonly profileTitledUserKeyLoader: ProfileTitledUserKeyLoader = loadUserKeysWithALiveProfileTitle,
   ) {}
 
   private orgUnitCanonicalizer?: Promise<OrgUnitCanonicalizer | undefined>;
@@ -5218,6 +5315,8 @@ export class DepartmentRosterScraper implements IScraper {
     const seenUserKeys = new Set<string>();
     const facultyTitledUserKeys = new Set<string>();
     const typingByUserKey = new Map<string, ObservationInput>();
+    const profileTitledUserKeys = new Set<string>();
+    const titlesByUserKey = new Map<string, HeldRosterTitle[]>();
     const seenLabKeys = new Set<string>();
     const discoveredEntityKeysByDept = new Map<string, Set<string>>();
     const withdrawnEntityKeysByDept = new Map<string, Set<string>>();
@@ -5293,13 +5392,15 @@ export class DepartmentRosterScraper implements IScraper {
         seenUserKeys.add(userDedupeKey);
         enriched.push({ entry, personKey });
       }
-      for (const key of await this.facultyTitledUserKeyLoader(
-        enriched.flatMap(({ entry, personKey }) => [
-          personKey,
-          legacyRosterOwnerKey(personKey, entry, dept),
-        ]),
-      )) {
+      const batchUserKeys = enriched.flatMap(({ entry, personKey }) => [
+        personKey,
+        legacyRosterOwnerKey(personKey, entry, dept),
+      ]);
+      for (const key of await this.facultyTitledUserKeyLoader(batchUserKeys)) {
         facultyTitledUserKeys.add(key);
+      }
+      for (const key of await this.profileTitledUserKeyLoader(batchUserKeys)) {
+        profileTitledUserKeys.add(key);
       }
       const rekeyedSlugs = enriched.flatMap(({ entry }) => {
         const current = rosterResearchEntitySlug(entry, dept);
@@ -5360,11 +5461,11 @@ export class DepartmentRosterScraper implements IScraper {
           : entityKey === currentOwnerKey
             ? currentUserObs
             : currentUserObs.map((observation) => ({ ...observation, entityKey }));
-        const userObs = holdUserTypingForRunEnd(
-          typedUserObs,
+        const userObs = holdUserTitleForRunEnd(
+          holdUserTypingForRunEnd(typedUserObs, entityKey, facultyTitledUserKeys, typingByUserKey),
           entityKey,
-          facultyTitledUserKeys,
-          typingByUserKey,
+          dept,
+          titlesByUserKey,
         );
         await ctx.emit(userObs);
         rekeyReads.recordPerson(typedUserObs);
@@ -5679,6 +5780,23 @@ export class DepartmentRosterScraper implements IScraper {
     if (heldTypings.length > 0) {
       await ctx.emit(heldTypings);
       totalObs += heldTypings.length;
+    }
+    const titleOutcomes = new Map<RosterTitleOutcome, number>();
+    const heldTitles: ObservationInput[] = [];
+    for (const [entityKey, held] of titlesByUserKey) {
+      const { observation, outcome } = pickRosterTitleForRunEnd(
+        held,
+        profileTitledUserKeys.has(entityKey),
+      );
+      titleOutcomes.set(outcome, (titleOutcomes.get(outcome) ?? 0) + 1);
+      if (observation) heldTitles.push(observation);
+    }
+    if (heldTitles.length > 0) {
+      await ctx.emit(heldTitles);
+      totalObs += heldTitles.length;
+    }
+    if (titlesByUserKey.size > 0) {
+      ctx.log('Run-end roster titles', Object.fromEntries(titleOutcomes));
     }
 
     const laneOutcomes = outcomeByIndex.filter(

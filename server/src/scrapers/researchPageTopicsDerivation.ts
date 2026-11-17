@@ -26,6 +26,7 @@ import {
 } from './utils/researchPageText';
 import { descriptionPageNamesRowLead } from './sources/labMicrositeDescriptionLLMExtractor';
 import { isPersonResearchRow } from '../utils/researchStatementPassage';
+import { isYalePeoplePageForNetid } from './utils/yalePeoplePageNetid';
 import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 import { ownOrgUnitLabelsFromObservations } from './utils/ownOrgUnitLabelTopics';
 
@@ -51,12 +52,74 @@ export interface TopicEvidenceRow {
   name?: unknown;
   websiteUrl?: unknown;
   leadNames?: readonly (string | null | undefined)[];
+  leadNetids?: readonly string[];
 }
 
 const leadNamesOf = (row: TopicEvidenceRow): string[] =>
   (row.leadNames ?? []).filter(
     (name): name is string => typeof name === 'string' && name.trim() !== '',
   );
+
+const MIN_COMPOUND_SURNAME_PART_LENGTH = 3;
+const SURNAME_PARTICLES = new Set([
+  'van',
+  'von',
+  'del',
+  'der',
+  'den',
+  'dos',
+  'das',
+  'les',
+  'los',
+  'las',
+]);
+
+interface LeadNameReading {
+  personName: string;
+  otherNameTokens?: string[];
+}
+
+const comparableWords = (value: string): string[] =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/**
+ * A lead's name as a page may print it (#6389): the name before post-nominal credentials, and
+ * the name with a compound surname cut to each of its hyphen parts. A part alone is a weaker
+ * witness than a whole surname, so a part reading also needs one of the lead's other names on
+ * the page. Only the topic filter reads these; the description lane keeps the stored name.
+ */
+function leadNameReadings(personName: string): LeadNameReading[] {
+  const beforeCredentials = personName.split(',')[0]?.trim() ?? '';
+  const readings: LeadNameReading[] = [{ personName }];
+  if (beforeCredentials && beforeCredentials !== personName) {
+    readings.push({ personName: beforeCredentials });
+  }
+  const words = beforeCredentials.split(/\s+/).filter(Boolean);
+  const surname = words[words.length - 1] ?? '';
+  if (words.length < 2 || !surname.includes('-')) return readings;
+  const otherNameTokens = comparableWords(words.slice(0, -1).join(' ')).filter(
+    (token) => token.length >= 2,
+  );
+  if (otherNameTokens.length === 0) return readings;
+  for (const part of surname.split('-')) {
+    const letters = comparableWords(part).join('');
+    if (letters.length < MIN_COMPOUND_SURNAME_PART_LENGTH || SURNAME_PARTICLES.has(letters)) {
+      continue;
+    }
+    readings.push({ personName: [...words.slice(0, -1), part].join(' '), otherNameTokens });
+  }
+  return readings;
+}
+
+const pageCarriesAnyToken = (url: string, text: string, tokens: readonly string[]): boolean => {
+  const words = new Set([...comparableWords(url), ...comparableWords(text)]);
+  return tokens.some((token) => words.has(token));
+};
 
 /**
  * The pages a row's topic reading reads (#6110): `researchPageTextEntriesForTopics`, and on a
@@ -82,17 +145,23 @@ export function researchPageTextEntriesForRowTopics(
       [storedTextByUrl.get(entry.url), entry.text].filter(Boolean).join('\n'),
     );
   }
-  return pages.filter((page) =>
-    leadNames.some((personName) =>
-      descriptionPageNamesRowLead({
-        personName,
-        websiteUrl: row.websiteUrl,
-        rowName: row.name,
-        kind: 'individual',
-        pageUrl: page.url,
-        pageText: storedTextByUrl.get(page.url) ?? page.text,
+  return pages.filter(
+    (page) =>
+      isYalePeoplePageForNetid(page.url, row.leadNetids ?? []) ||
+      leadNames.flatMap(leadNameReadings).some(({ personName, otherNameTokens }) => {
+        const pageText = storedTextByUrl.get(page.url) ?? page.text;
+        if (otherNameTokens && !pageCarriesAnyToken(page.url, pageText, otherNameTokens)) {
+          return false;
+        }
+        return descriptionPageNamesRowLead({
+          personName,
+          websiteUrl: row.websiteUrl,
+          rowName: row.name,
+          kind: 'individual',
+          pageUrl: page.url,
+          pageText,
+        });
       }),
-    ),
   );
 }
 
@@ -200,6 +269,9 @@ export interface ResearchPageTopicsState {
   candidate?: DerivedResearchAreaCandidate;
   /** The candidate is the stored list's own reading, re-judged against the current text. */
   revalidatesStoredList?: true;
+  readingIsEmpty?: true;
+  /** The lead filter left no page, and the stored derived list cites one of the pages it excluded. */
+  storedListCitesExcludedPage?: true;
 }
 
 /**
@@ -211,7 +283,10 @@ export interface ResearchPageTopicsState {
  * a weaker lane before anyone reads the new text (#5882). It takes the page text's own
  * observation time, so the resolver ages it with its evidence. When the row's lead filter
  * leaves no page, the state carries no text hash, so the stored list is kept rather than
- * withdrawn: a filter that removes all evidence is silence, not a reading of no topics.
+ * withdrawn: a filter that removes all evidence is silence, not a reading of no topics. The
+ * exception is a stored derived list that cites one of the pages the filter excluded: that
+ * list was read from a page the lane now refuses as this person's evidence, so it is stale
+ * and retires through the ordinary path (#6386).
  */
 export async function researchPageTopicsStateFor(
   observations: readonly ResearchPageTextObservationLike[],
@@ -224,13 +299,23 @@ export async function researchPageTopicsStateFor(
   const pages = researchPageTextEntriesForRowTopics(current.value, row);
   const leadFilterLeftNoEvidence =
     pages.length === 0 && researchPageTextEntriesForTopics(current.value).length > 0;
-  if (leadFilterLeftNoEvidence) return {};
+  if (leadFilterLeftNoEvidence) {
+    return storedDerivedListCitesOneOf(
+      storedProvenance,
+      researchPageTextEntriesForTopics(current.value),
+    )
+      ? { storedListCitesExcludedPage: true }
+      : {};
+  }
   const currentTextHash = researchPageTextHash(pages);
   if (pages.length === 0) return { currentTextHash };
   const inputHash = researchTopicsDerivationInputHash(pages);
   const ownOrgUnitLabels = ownOrgUnitLabelsFromObservations(observations);
   const derivation = await lookup(inputHash);
   if (derivation && derivation.inputHash === inputHash) {
+    if ((derivation.extractedTopics ?? []).length === 0) {
+      return { currentTextHash, readingIsEmpty: true };
+    }
     const candidate = quotedCandidateFrom(derivation, pages, current, ownOrgUnitLabels, {
       derivationInputHash: inputHash,
       derivationTextHash: currentTextHash,
@@ -252,6 +337,21 @@ export async function researchPageTopicsStateFor(
 interface DerivationHashes {
   derivationInputHash: string;
   derivationTextHash: string;
+}
+
+const comparablePageUrl = (url: string): string =>
+  url.trim().replace(/#.*$/, '').replace(/\?.*$/, '').replace(/\/+$/, '').toLowerCase();
+
+function storedDerivedListCitesOneOf(
+  storedProvenance: unknown,
+  pages: readonly ResearchPageTextEntry[],
+): boolean {
+  if (!storedProvenance || typeof storedProvenance !== 'object') return false;
+  const record = storedProvenance as Record<string, unknown>;
+  if (record.sourceName !== PAGE_QUOTED_RESEARCH_TOPICS_SOURCE) return false;
+  if (typeof record.sourceUrl !== 'string' || !record.sourceUrl.trim()) return false;
+  const cited = comparablePageUrl(record.sourceUrl);
+  return pages.some((page) => comparablePageUrl(page.url) === cited);
 }
 
 function storedDerivedListProvenance(storedProvenance: unknown): DerivationHashes | null {
@@ -315,6 +415,7 @@ export function storedDerivedResearchAreasAreStale(
       ? (storedProvenance as Record<string, unknown>)
       : {};
   if (record.sourceName !== PAGE_QUOTED_RESEARCH_TOPICS_SOURCE) return false;
+  if (state.storedListCitesExcludedPage) return true;
   if (!state.currentTextHash) return false;
   if (state.revalidatesStoredList) return false;
   return record.derivationTextHash !== state.currentTextHash;

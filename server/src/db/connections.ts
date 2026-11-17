@@ -14,6 +14,7 @@ import { assertDevelopmentWritesGuarded, releaseDevWriteLeasesWhenClosed } from 
 import { watchMongoClientProgress } from './devWriteProgress';
 import { enableScriptDiagnosticReportOnSignal } from './scriptDiagnosticReport';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertProcessOutputFlagResolvable } from '../utils/reportOutputPath';
 
 // `bufferTimeoutMS` is a Mongoose connection option the driver's own type does not
 // declare, so the shape is spelled out here rather than inferred.
@@ -115,6 +116,7 @@ export async function connectScriptMongo(
   url: string,
   extra?: ScriptMongoConnectOptions,
 ): Promise<typeof mongoose> {
+  assertProcessOutputFlagResolvable();
   enableScriptDiagnosticReportOnSignal();
   const connected = await mongoose.connect(url, scriptMongoConnectOptions(extra));
   watchMongoClientProgress(connected.connection.getClient());
@@ -126,6 +128,7 @@ export async function createScriptMongoConnection(
   url: string,
   extra?: ScriptMongoConnectOptions,
 ): Promise<mongoose.Connection> {
+  assertProcessOutputFlagResolvable();
   enableScriptDiagnosticReportOnSignal();
   const connection = await mongoose
     .createConnection(url, scriptMongoConnectOptions(extra))
@@ -634,6 +637,7 @@ export async function initializeConnections(
   if (!url) {
     throw new Error('MONGODBURL is required');
   }
+  if (connectOptions !== mongoOptions) assertProcessOutputFlagResolvable();
   activeConnectOptions = connectOptions;
   if (connectOptions !== mongoOptions) {
     enableScriptDiagnosticReportOnSignal();

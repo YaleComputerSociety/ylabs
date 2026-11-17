@@ -18,7 +18,11 @@ import {
   type RecoverabilityBucket,
 } from './visibilityRecoverabilityAuditCore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 
 dotenv.config({ quiet: true });
 
@@ -105,12 +109,12 @@ export function parseBetaRepairQueueArgs(argv: string[]): BetaRepairQueueCliOpti
     } else if (arg === '--apply-from') {
       const next = argv[i + 1];
       if (!next || next.startsWith('--')) throw new Error('--apply-from requires a path');
-      options.applyFrom = resolveSafeJsonReportOutputPath(next, '--apply-from');
+      options.applyFrom = resolveSafeJsonReportPath(next, '--apply-from');
       i += 1;
     } else if (arg.startsWith('--apply-from=')) {
       const applyFrom = arg.slice('--apply-from='.length).trim();
       if (!applyFrom || applyFrom.startsWith('--')) throw new Error('--apply-from requires a path');
-      options.applyFrom = resolveSafeJsonReportOutputPath(applyFrom, '--apply-from');
+      options.applyFrom = resolveSafeJsonReportPath(applyFrom, '--apply-from');
     } else if (arg === '--output') {
       const next = argv[i + 1];
       if (!next || next.startsWith('--')) throw new Error('--output requires a path');
@@ -330,7 +334,7 @@ async function main() {
     if (options.mode !== 'apply') {
       throw new Error('--apply-from can only be used with --mode=apply or --apply');
     }
-    const artifactPath = resolveSafeJsonReportOutputPath(options.applyFrom, '--apply-from');
+    const artifactPath = resolveSafeJsonReportPath(options.applyFrom, '--apply-from');
     const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
     const validation = validateBetaRepairQueueApplyArtifact(
       artifact,

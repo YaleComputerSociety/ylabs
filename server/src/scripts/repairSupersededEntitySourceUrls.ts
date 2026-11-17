@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { Signal } from '../models/signal';
 import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
@@ -124,6 +125,7 @@ export function assertRepairSupersededEntitySourceUrlsApplyAllowed(
 export interface RepairSupersededEntitySourceUrlsResult extends EntitySourceUrlRepairSummary {
   mode: 'dry-run' | 'apply';
   citationsRewritten: number;
+  lastCitationsKept: number;
   signalCitationsRepointed: number;
   rows: EntitySourceUrlRepairRow[];
 }
@@ -253,6 +255,7 @@ export async function runRepairSupersededEntitySourceUrls(options: {
   const selected = options.limit ? targets.slice(0, options.limit) : targets;
   const rows: EntitySourceUrlRepairRow[] = [];
   let citationsRewritten = 0;
+  let lastCitationsKept = 0;
   let signalCitationsRepointed = 0;
 
   for (const target of selected) {
@@ -297,7 +300,8 @@ export async function runRepairSupersededEntitySourceUrls(options: {
       row.before,
       row.after,
     );
-    const entityResult = await ResearchEntity.updateOne(
+    const entityResult = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { _id: target.entityId },
       {
         $set: {
@@ -312,7 +316,8 @@ export async function runRepairSupersededEntitySourceUrls(options: {
       },
     );
     citationsRewritten += entityResult.modifiedCount || 0;
-    if (entity) entity.sourceUrls = rewritten;
+    if (entityResult.withheld.length > 0) lastCitationsKept += 1;
+    if (entity && entityResult.modifiedCount > 0) entity.sourceUrls = rewritten;
 
     const signals = await Signal.find({
       researchEntityId: target.entityId,
@@ -336,6 +341,7 @@ export async function runRepairSupersededEntitySourceUrls(options: {
     ...summarizeEntitySourceUrlRepair(entities.length, rows),
     mode: options.apply ? 'apply' : 'dry-run',
     citationsRewritten,
+    lastCitationsKept,
     signalCitationsRepointed,
     rows,
   };
@@ -360,6 +366,7 @@ export function stdoutReport(
     inconclusive: result.inconclusive,
     mode: result.mode,
     citationsRewritten: result.citationsRewritten,
+    lastCitationsKept: result.lastCitationsKept,
     signalCitationsRepointed: result.signalCitationsRepointed,
     rowsOmittedFromSample: repaired.length - sample.length,
     rows: sample.map((row) => ({
