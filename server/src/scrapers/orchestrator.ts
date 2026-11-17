@@ -11,6 +11,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeErrorForLog, sanitizeLogValue } from '../utils/logSanitizer';
 import { onInterrupt } from '../utils/interruptCleanup';
 import { appendObservations, getSourceByName } from './observationStore';
+import { mergeObservationsHeldByGuard, type ObservationsHeldByGuard } from './observationHolds';
 import { directoryRemovalObservationRun } from './directoryRemovalObservationGuard';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
 import { describeScrapeRunLaunch } from '../db/devWriteLease';
@@ -152,6 +153,8 @@ export class ScraperOrchestrator {
     // What the lane has reported so far, kept outside the try so a throw does not take
     // it with it (#3890).
     const reportedMetrics: ScraperMetrics = {};
+    const heldByGuard: ObservationsHeldByGuard = {};
+    let observationsEmitted = 0;
     const explainLimit = options.explain
       ? (options.explainLimit ?? DEFAULT_EXPLAIN_LIMIT)
       : Infinity;
@@ -175,6 +178,10 @@ export class ScraperOrchestrator {
           dryRun: options.dryRun,
           directoryRemovalGuard: directoryRemoval.guard,
         });
+        observationsEmitted += inputs.length;
+        mergeObservationsHeldByGuard(heldByGuard, res.heldByGuard);
+        reportedMetrics.observationsEmitted = observationsEmitted;
+        reportedMetrics.observationsHeldByGuard = heldByGuard;
         const refused = new Set(res.refusedByRequest ?? []);
         if (refused.size > 0) {
           reportedMetrics.removedByRequest = directoryRemoval.removedByRequest();

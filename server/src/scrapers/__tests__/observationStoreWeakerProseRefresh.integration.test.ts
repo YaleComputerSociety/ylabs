@@ -120,7 +120,7 @@ describe('a useful-but-worse prose refresh cannot displace a clean incumbent end
 
     const secondRun = await scrapeRun(MISSION, '2026-08-01T00:00:00.000Z');
 
-    expect(secondRun).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(secondRun).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
     expect(await activeFullDescriptions()).toEqual([RESEARCH]);
     expect(await servedFullDescription()).toBe(RESEARCH);
   });
@@ -182,7 +182,7 @@ describe('a useful-but-worse prose refresh cannot displace a clean incumbent end
     await scrapeRun(RESEARCH, '2026-05-01T00:00:00.000Z');
     const secondRun = await scrapeRun(RECRUITMENT, '2026-08-01T00:00:00.000Z');
 
-    expect(secondRun).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(secondRun).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
     expect(await activeFullDescriptions()).toEqual([RESEARCH]);
     expect(await servedFullDescription()).toBe(RESEARCH);
   });
