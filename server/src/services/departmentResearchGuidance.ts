@@ -113,3 +113,40 @@ export function departmentGuidanceReason(kind: DepartmentGuidanceKind): string {
     ? DEPARTMENT_SENIOR_ESSAY_GUIDANCE_REASON
     : DEPARTMENT_RESEARCH_GUIDANCE_REASON;
 }
+
+const GUIDANCE_TEMPLATE_CARD =
+  /^Supports undergraduate research in .+ through (?:department guidance on finding faculty research opportunities|the department's guidance on the senior essay)\.$/;
+
+const GUIDANCE_TEMPLATE_LEAD = /^Supports undergraduate research in [^.]+\.\s*/;
+
+/**
+ * The text a program's card is derived from (#6454). The department lane writes a guidance
+ * card for every page it reads, so a research award, a summer fellowship or an internship
+ * found on a department page would be carried as "department guidance". Only a row that is a
+ * department guide keeps that card; any other row's card is read from its own description,
+ * without the lane's guidance lead, and is empty when the row has no description of its own,
+ * which the client reads as no card rather than falling back to the stored summary.
+ */
+export function isGuidanceTemplateOnNonGuide(
+  summary: unknown,
+  guidanceKind: DepartmentGuidanceKind | null,
+): boolean {
+  return (
+    guidanceKind === null &&
+    typeof summary === 'string' &&
+    GUIDANCE_TEMPLATE_CARD.test(summary.trim())
+  );
+}
+
+export function cardSourcesForProgram(
+  summary: unknown,
+  description: unknown,
+  guidanceKind: DepartmentGuidanceKind | null,
+): { shortDescription?: string; fullDescription?: string } {
+  const shortDescription = typeof summary === 'string' ? summary : undefined;
+  const fullDescription = typeof description === 'string' ? description : undefined;
+  if (!isGuidanceTemplateOnNonGuide(summary, guidanceKind)) {
+    return { shortDescription, fullDescription };
+  }
+  return { fullDescription: fullDescription?.replace(GUIDANCE_TEMPLATE_LEAD, '').trim() ?? '' };
+}
