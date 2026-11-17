@@ -29,6 +29,7 @@ import {
   type ResearchSearchRelevanceReport,
 } from './researchSearchRelevanceCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const SCRIPT_NAME = 'research-search:relevance';
 const MAX_TOP_K = 24;
@@ -464,7 +465,7 @@ export async function main(): Promise<void> {
 
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+    writeReportFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`  report ${options.output}\n`);
   }
 

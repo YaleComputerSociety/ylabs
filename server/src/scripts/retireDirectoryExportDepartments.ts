@@ -19,6 +19,7 @@ import {
   planStoredDirectoryExportDepartments,
 } from './retireDirectoryExportDepartmentsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -173,12 +174,14 @@ async function main(): Promise<void> {
     const result = await runRetireDirectoryExportDepartments({ dryRun: options.dryRun });
     if (options.keysOut) {
       fs.mkdirSync(path.dirname(options.keysOut), { recursive: true });
-      fs.writeFileSync(options.keysOut, JSON.stringify(result.keys, null, 2));
+      writeReportFileSync(options.keysOut, JSON.stringify(result.keys, null, 2), {
+        flag: '--keys-out',
+      });
       console.log(`Saved ${result.keys.length} keys to ${options.keysOut}`);
     }
     if (options.output) {
       fs.mkdirSync(path.dirname(options.output), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         options.output,
         JSON.stringify(
           { generatedAt: new Date().toISOString(), environment: guard.environment, result },

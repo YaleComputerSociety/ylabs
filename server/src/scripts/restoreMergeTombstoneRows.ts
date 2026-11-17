@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -19,6 +18,7 @@ import {
   type MergeRedirectRecord,
   type MergeTombstonePlan,
 } from './restoreMergeTombstoneRowsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -274,7 +274,7 @@ export async function runRestoreMergeTombstoneRows(
   };
 
   if (options.output) {
-    fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+    writeReportFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
   }
   console.log(JSON.stringify(report, null, 2));
 

@@ -47,6 +47,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { projectRow, retiredIdentityKey } from './retireOrphanedLaneConfigs';
 import { servedFieldChanges, type ServedFieldChange } from './retireOrphanedLaneConfigsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -420,10 +421,9 @@ export async function runRekeyedPersonKeyRetirement(input: {
   };
 }
 
-function writePrivateJson(file: string, value: unknown): void {
+function writePrivateJson(file: string, value: unknown, flag: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  fs.chmodSync(file, 0o600);
+  writeReportFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { flag });
 }
 
 async function main(): Promise<void> {
@@ -449,7 +449,8 @@ async function main(): Promise<void> {
       lanes: options.lanes,
       log: (message) => console.error(`[${SCRIPT_NAME}] ${message}`),
     });
-    if (options.detailOutput) writePrivateJson(options.detailOutput, { report, ...detail });
+    if (options.detailOutput)
+      writePrivateJson(options.detailOutput, { report, ...detail }, '--detail-output');
     console.log(JSON.stringify({ script: SCRIPT_NAME, ...report }, null, 2));
   } finally {
     await mongoose.disconnect();

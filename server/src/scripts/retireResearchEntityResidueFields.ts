@@ -17,6 +17,7 @@ import {
   snapshotResidueRow,
   type ResidueSnapshotRow,
 } from './retireResearchEntityResidueFieldsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -126,9 +127,9 @@ async function readSnapshot(db: MongoDb): Promise<ResidueSnapshotRow[]> {
   return rows.map((row) => snapshotResidueRow(row as Record<string, unknown>));
 }
 
-function writeJson(target: string, value: unknown): void {
+function writeJson(target: string, value: unknown, flag = '--output'): void {
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
+  writeReportFileSync(target, `${JSON.stringify(value, null, 2)}\n`, { flag });
 }
 
 export interface RetireResearchEntityResidueFieldsResult {
@@ -161,12 +162,16 @@ export async function retireResearchEntityResidueFields(options: {
 
   if (options.apply && rowsCarryingResidue > 0 && options.snapshot) {
     const snapshot = await readSnapshot(db);
-    writeJson(options.snapshot, {
-      collection: COLLECTION,
-      takenAt: new Date().toISOString(),
-      fields: RETIRED_RESEARCH_ENTITY_RESIDUE_FIELDS,
-      rows: snapshot,
-    });
+    writeJson(
+      options.snapshot,
+      {
+        collection: COLLECTION,
+        takenAt: new Date().toISOString(),
+        fields: RETIRED_RESEARCH_ENTITY_RESIDUE_FIELDS,
+        rows: snapshot,
+      },
+      '--snapshot',
+    );
     snapshotRows = snapshot.length;
     const unset = Object.fromEntries(
       RETIRED_RESEARCH_ENTITY_RESIDUE_FIELDS.map((field) => [field, '']),

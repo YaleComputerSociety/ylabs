@@ -126,11 +126,12 @@ describe('the record is written before any write, not after', () => {
     );
     const pathResolvedAt = script.indexOf('resolveSafeJsonReportOutputPath(argv[recordIndex + 1])');
     const connectionAt = script.indexOf('await initializeConnections()');
-    const recordWrittenAt = script.indexOf('fs.writeFileSync(output');
+    const recordWrittenAt = script.indexOf('writeReportFileSync(output');
     const supersedeAt = script.indexOf('await supersedeResearchEntityKindObservations(plan)');
 
     expect(pathResolvedAt).toBeGreaterThan(-1);
     expect(pathResolvedAt).toBeLessThan(connectionAt);
+    expect(recordWrittenAt).toBeGreaterThan(-1);
     expect(recordWrittenAt).toBeLessThan(supersedeAt);
     // The planner must not be able to write, so it never calls updateMany itself.
     expect(
