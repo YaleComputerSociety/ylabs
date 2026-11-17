@@ -8,7 +8,7 @@ Read this before claiming a data fix improved anything.
 ## Baseline files
 
 Baselines live in `~/Personal/ylabs-backups/handoffs/`, mode 0600, outside every checkout, because they carry served copy about real people.
-The two original baselines are lost: `beta-served-hand-read-n100-20260831.json` and `beta-served-n92-20260913.json` are no longer on this machine, and when they went is unknown.
+The two original baselines are lost: `beta-served-hand-read-n100-20260831.json` and `beta-served-n92-20260913.json` lived under `~/ylabs-backups/handoffs/`, which a scoreboard run still read at 2026-11-13 05:50Z and which was gone, with the whole `~/ylabs-backups` root, by 2026-11-16.
 Do not hunt for them.
 The pinned slug set survives, because a scoreboard run on 2026-11-13 recorded all 100 slugs, but the 2026-08-31 per-row hand-read verdicts and the 2026-09-13 copy do not.
 The class-by-class reading of the hand-read survives in the closing comment on #2299.
