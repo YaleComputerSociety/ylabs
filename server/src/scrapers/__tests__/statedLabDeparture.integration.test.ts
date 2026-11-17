@@ -60,6 +60,7 @@ describe('a stated lab move is derived evidence that follows the Yale side (#632
     runs: number;
     title?: string;
     leadArchived?: boolean;
+    liveText?: string;
   }) => {
     const lead = await Researcher.create({
       displayName: 'Ada Quillfeather',
@@ -83,11 +84,13 @@ describe('a stated lab move is derived evidence that follows the Yale side (#632
       confidence: 0.9,
     });
     for (let run = 0; run < input.runs; run += 1) {
+      const isLive = run === input.runs - 1;
+      const text = isLive && input.liveText !== undefined ? input.liveText : input.text;
       await Observation.create({
         entityType: 'researchEntity',
         entityKey: ROW_KEY,
         field: RESEARCH_PAGE_TEXT_FIELD,
-        value: [{ url: 'https://quillfeather-orrery.example.edu/', text: input.text }],
+        value: [{ url: 'https://quillfeather-orrery.example.edu/', text }],
         sourceId: new mongoose.Types.ObjectId(),
         sourceName: RESEARCH_PAGE_TEXT_SOURCE,
         sourceUrl: 'https://quillfeather-orrery.example.edu/',
@@ -132,6 +135,22 @@ describe('a stated lab move is derived evidence that follows the Yale side (#632
       runs: 3,
       leadArchived: true,
     });
+    await materializeEntity('researchEntity', { entityKey: ROW_KEY });
+    expect((await storedRow())?.activeAtYaleCache).not.toBe(false);
+  });
+
+  it('keeps the row current once the live page no longer states the move, whatever older runs said', async () => {
+    await seed({
+      text: MOVED,
+      runs: 3,
+      liveText: 'We study orbital resonance in planetary systems.',
+    });
+    await materializeEntity('researchEntity', { entityKey: ROW_KEY });
+    expect((await storedRow())?.activeAtYaleCache).not.toBe(false);
+  });
+
+  it('keeps the row current when the live page only announces a move that older runs stated as done', async () => {
+    await seed({ text: MOVED, runs: 3, liveText: MOVING });
     await materializeEntity('researchEntity', { entityKey: ROW_KEY });
     expect((await storedRow())?.activeAtYaleCache).not.toBe(false);
   });

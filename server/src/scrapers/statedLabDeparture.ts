@@ -118,9 +118,13 @@ function sentencesOf(text: string): string[] {
 }
 
 const DESTINATION_CLAUSE_END =
-  /\b(?:where|after|since|following|while|but|although|thanks)\b|[;:]/u;
+  /\b(?:where|after|since|following|while|but|although|thanks|formerly|previously|from)\b|[;:]|\((?=\s*(?:formerly|previously|from|prior)\b)/iu;
 
-/** Only the clause naming where the lab went: a later clause can mention Yale collaborators. */
+/**
+ * Only the clause naming where the lab went: a later clause can mention Yale collaborators, and
+ * a "formerly at" or "from" phrase names the institution the lab came from, not where it went.
+ * A plain parenthetical stays in, because it often spells out the destination.
+ */
 function destinationClause(rest: string): string {
   const end = rest.search(DESTINATION_CLAUSE_END);
   return end >= 0 ? rest.slice(0, end) : rest;

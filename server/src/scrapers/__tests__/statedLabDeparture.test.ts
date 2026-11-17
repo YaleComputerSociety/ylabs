@@ -56,6 +56,18 @@ describe('statedLabDeparturesInPageText (#6324)', () => {
     expect(kinds('Quillfeather is now at the Yale Fixture Institute.')).toEqual([]);
   });
 
+  it('keeps a move into a Yale unit that names the institution the lab came from', () => {
+    expect(
+      kinds('We have moved to the Department of Pharmacology (formerly at Fixture University).'),
+    ).toEqual([]);
+    expect(
+      kinds('The lab has moved to the Department of Genetics (previously at Fixture University).'),
+    ).toEqual([]);
+    expect(
+      kinds('The lab has relocated to the Department of Optics from Fixture University.'),
+    ).toEqual([]);
+  });
+
   it('keeps a move between units inside Yale that does not name Yale', () => {
     expect(kinds('The lab has moved to the Wu Tsai Institute.')).toEqual([]);
     expect(kinds('Our lab has relocated to the School of Public Health.')).toEqual([]);
