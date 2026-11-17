@@ -5,6 +5,7 @@
  * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
+import { titleIsTruncated } from '../utils/truncatedTitle';
 import { startLongRunProgress } from '../utils/longRunProgress';
 import { withholdLastCitationRemovals } from '../services/lastCitationGuard';
 import {
@@ -9779,6 +9780,7 @@ function userTitleObservations(observations: readonly any[]): any[] {
   return observations.filter(
     (observation) =>
       observation.field === 'title' &&
+      !titleIsTruncated(observation.value) &&
       !shouldIgnoreObservationForEntityMaterialization('user', observation),
   );
 }
