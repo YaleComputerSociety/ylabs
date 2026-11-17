@@ -1,6 +1,25 @@
-import type { OrgUnitCanonicalizer } from '../scrapers/orgUnitCanonicalization';
+import {
+  createOrgUnitCanonicalizer,
+  getOrgUnitCanonicalizer,
+  type OrgUnitCanonicalizer,
+} from '../scrapers/orgUnitCanonicalization';
+import { sanitizeLogValue } from './logSanitizer';
 
 type DepartmentCanonicalizer = Pick<OrgUnitCanonicalizer, 'canonicalizeDepartments'>;
+
+const PASS_THROUGH_CANONICALIZER: DepartmentCanonicalizer = createOrgUnitCanonicalizer(new Map());
+
+export async function servedDepartmentCanonicalizer(): Promise<DepartmentCanonicalizer> {
+  try {
+    return await getOrgUnitCanonicalizer();
+  } catch (error) {
+    console.error(
+      'Org-unit catalog read failed; member departments serve as stored:',
+      sanitizeLogValue(error),
+    );
+    return PASS_THROUGH_CANONICALIZER;
+  }
+}
 
 export function catalogDepartmentDisplayName(
   canonicalizer: DepartmentCanonicalizer,
