@@ -547,12 +547,71 @@ function linesWithin(lines: readonly string[], budget: number): Map<number, stri
   return kept;
 }
 
+const MIN_STATEMENT_SENTENCE_WORDS = 6;
+const MIN_LISTED_TITLE_WORDS = 4;
+const MIN_LISTED_TITLE_RUN = 3;
+
+function isStatementSentence(line: string): boolean {
+  return (
+    ENDS_AS_A_SENTENCE.test(line) &&
+    wordCount(line) >= MIN_STATEMENT_SENTENCE_WORDS &&
+    !isBibliographicCitationSentence(line)
+  );
+}
+
 /**
- * Caps a row's pages to `maxChars` in total, spending the budget on research lines across every
- * page before any neutral line (#6109). Each page's research lines are shared fairly first; only
- * what is left is shared over the pages' neutral lines, so another page's people list or chrome
- * can no longer outlast a research sentence. Kept lines stay in their page order, and a row under
- * the cap is unchanged.
+ * Lines of a research section that are one entry of a run of grant, publication or project
+ * titles: unpunctuated multi-word lines, at least `MIN_LISTED_TITLE_RUN` in a row. A lone
+ * unpunctuated line (a labelled interest list) is not a listed title.
+ */
+function listedTitleLines(lines: readonly string[]): boolean[] {
+  const looksLikeTitle = lines.map(
+    (line) => !ENDS_AS_A_SENTENCE.test(line) && wordCount(line) >= MIN_LISTED_TITLE_WORDS,
+  );
+  const listed = lines.map(() => false);
+  let runStart = 0;
+  for (let index = 0; index <= lines.length; index += 1) {
+    if (index < lines.length && looksLikeTitle[index]) continue;
+    if (index - runStart >= MIN_LISTED_TITLE_RUN) listed.fill(true, runStart, index);
+    runStart = index + 1;
+  }
+  return listed;
+}
+
+const CapTier = { ResearchStatement: 0, OtherStatement: 1, Rest: 2 } as const;
+type CapTier = (typeof CapTier)[keyof typeof CapTier];
+
+const CAP_TIERS: readonly CapTier[] = [
+  CapTier.ResearchStatement,
+  CapTier.OtherStatement,
+  CapTier.Rest,
+];
+
+/**
+ * Which budget a line draws on. Research-section lines come first, except citations and listed
+ * titles, which carry no statement of the person's own work. Any other statement sentence comes
+ * next, so a biography's "<role> who studies X" outlasts a research section's list of grant
+ * titles (#6109). Everything else shares what is left.
+ */
+function capTiersOf(lines: readonly string[], researchLines?: ReadonlySet<string>): CapTier[] {
+  if (!researchLines) return lines.map(() => CapTier.Rest);
+  const isResearch = lines.map((line) => researchLines?.has(line) ?? false);
+  const listedTitle = listedTitleLines(lines);
+  return lines.map((line, index) => {
+    if (isResearch[index] && !listedTitle[index] && !isBibliographicCitationSentence(line)) {
+      return CapTier.ResearchStatement;
+    }
+    return isStatementSentence(line) ? CapTier.OtherStatement : CapTier.Rest;
+  });
+}
+
+/**
+ * Caps a row's pages to `maxChars` in total (#6109). The budget is spent tier by tier across
+ * every page: research-section lines first, then any other statement sentence, then the rest,
+ * each tier shared fairly over the pages from what the tiers before it left. So another page's
+ * people list or chrome cannot outlast a research sentence, and a research section's list of
+ * titles cannot outlast the person's own statement of their work. Kept lines stay in their page
+ * order, and a row under the cap is unchanged.
  */
 export function capResearchPageText(
   entries: readonly ResearchPageTextCapEntry[],
@@ -566,35 +625,32 @@ export function capResearchPageText(
   }
   const pages = entries.map((entry) => {
     const lines = entry.text.split('\n');
-    const isResearch = lines.map((line) => entry.researchLines?.has(line) ?? false);
+    const tiers = capTiersOf(lines, entry.researchLines);
     return {
       entry,
       lines,
-      isResearch,
-      research: lines.filter((_line, index) => isResearch[index]),
-      neutral: lines.filter((_line, index) => !isResearch[index]),
+      tiers,
+      linesByTier: CAP_TIERS.map((tier) => lines.filter((_line, index) => tiers[index] === tier)),
     };
   });
-  const researchShares = fairShares(
-    pages.map((page) => lengthOfLines(page.research)),
-    maxChars,
-  );
-  const left = maxChars - researchShares.reduce((sum, share) => sum + share, 0);
-  const neutralShares = fairShares(
-    pages.map((page) => lengthOfLines(page.neutral)),
-    Math.max(0, left - pages.length * LINE_BREAK_CHARS),
-  );
+  let left = maxChars;
+  const keptByTier = CAP_TIERS.map((tier) => {
+    const budget =
+      tier === CapTier.ResearchStatement ? left : left - pages.length * LINE_BREAK_CHARS;
+    const shares = fairShares(
+      pages.map((page) => lengthOfLines(page.linesByTier[tier])),
+      Math.max(0, budget),
+    );
+    left = Math.max(0, budget - shares.reduce((sum, share) => sum + share, 0));
+    return pages.map((page, pageIndex) => linesWithin(page.linesByTier[tier], shares[pageIndex]));
+  });
   return pages
     .map((page, pageIndex) => {
-      const research = linesWithin(page.research, researchShares[pageIndex]);
-      const neutral = linesWithin(page.neutral, neutralShares[pageIndex]);
       const kept: string[] = [];
-      let researchIndex = 0;
-      let neutralIndex = 0;
+      const nextInTier = CAP_TIERS.map(() => 0);
       page.lines.forEach((_line, index) => {
-        const line = page.isResearch[index]
-          ? research.get(researchIndex++)
-          : neutral.get(neutralIndex++);
+        const tier = page.tiers[index];
+        const line = keptByTier[tier][pageIndex].get(nextInTier[tier]++);
         if (line) kept.push(line);
       });
       return { url: page.entry.url, text: kept.join('\n').trim() };

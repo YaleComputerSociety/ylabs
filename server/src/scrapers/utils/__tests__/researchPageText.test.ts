@@ -264,7 +264,7 @@ describe('capResearchPageText', () => {
   });
 });
 
-describe('capResearchPageText spends the budget on research lines first (#6283)', () => {
+describe('capResearchPageText spends the budget on research lines first (#6109)', () => {
   const sentence = (subject: string, n: number) =>
     Array.from({ length: n }, (_v, i) => `The group studies ${subject} in setting ${i + 1}.`).join(
       '\n',
@@ -343,7 +343,56 @@ describe('capResearchPageText spends the budget on research lines first (#6283)'
   });
 });
 
-describe('researchPageTextValue caps research sections before neutral ones (#6283)', () => {
+describe('capResearchPageText keeps own statements ahead of listed titles (#6109)', () => {
+  const grantTitles = (n: number) =>
+    Array.from(
+      { length: n },
+      (_v, i) => `Mechanisms of Fixture Signaling in Model Tissue Number ${i + 1}`,
+    ).join('\n');
+  const citations = (n: number) =>
+    Array.from(
+      { length: n },
+      (_v, i) => `Fixture A, Fixture B. A fixture study ${i + 1}. J Fixture. 2019;12(3):45-67.`,
+    ).join('\n');
+  const biography = [
+    'Fixture Person is a physician scientist who studies kidney injury repair.',
+    'She is currently involved in a cohort study and continues writing on tissue fibrosis.',
+  ].join('\n');
+
+  it("keeps a biography's own research statements when a research section holds only titles and citations", () => {
+    const researchText = `${grantTitles(80)}\n${citations(40)}`;
+    const capped = capResearchPageText(
+      [
+        { url: RESEARCH, text: researchText, researchLines: new Set(researchText.split('\n')) },
+        { url: HOME, text: biography, researchLines: new Set<string>() },
+      ],
+      3000,
+    );
+    const home = capped.find((entry) => entry.url === HOME)?.text ?? '';
+    expect(home).toContain('who studies kidney injury repair.');
+    expect(home).toContain('continues writing on tissue fibrosis.');
+    expect(capped.reduce((sum, entry) => sum + entry.text.length, 0)).toBeLessThanOrEqual(3000);
+  });
+
+  it('still gives a lone unpunctuated interest line in a research section the research budget', () => {
+    const interests =
+      'Research interests include kidney fibrosis, tissue repair, organ transplantation, immune tolerance and the long-term outcomes of kidney transplant recipients';
+    const people = Array.from(
+      { length: 400 },
+      (_v, i) => `Member Fixture ${i + 1} Graduate Student`,
+    ).join('\n');
+    const capped = capResearchPageText(
+      [
+        { url: RESEARCH, text: interests, researchLines: new Set([interests]) },
+        { url: HOME, text: people, researchLines: new Set<string>() },
+      ],
+      interests.length + 200,
+    );
+    expect(capped.find((entry) => entry.url === RESEARCH)?.text).toBe(interests);
+  });
+});
+
+describe('researchPageTextValue caps research sections before neutral ones (#6109)', () => {
   const researchHtml = (n: number) =>
     `<h2>Research</h2>${Array.from({ length: n }, (_v, i) => `<p>Our group studies coastal kelp recovery after marine heatwave number ${i + 1}.</p>`).join('')}<p>Our final research aim is coral reef resilience under warming.</p>`;
   const peopleHtml = (n: number) =>
