@@ -60,6 +60,7 @@ import {
   type ServedBiographyCardRow,
 } from './servedBiographyCardReachabilityAuditCore';
 import { connectScriptMongo } from '../db/connections';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -172,7 +173,7 @@ function reportAudit(
   console.log(`serves no page                        | ${servesNoPage}`);
   console.log(`collection set changed                | ${delta.changed ? 'YES' : 'no'}`);
   if (safeOutput) {
-    fs.writeFileSync(
+    writeReportFileSync(
       safeOutput,
       JSON.stringify(
         { population, reachability, laneReach, servesNoPage, collectionSet: delta },
@@ -269,7 +270,7 @@ async function main(): Promise<void> {
 
     // Before the collection-set read, so a completed walk survives a guard refusal.
     if (safeRows) {
-      fs.writeFileSync(
+      writeReportFileSync(
         safeRows,
         JSON.stringify({ walkedAt: new Date().toISOString(), servesNoPage, rows }, null, 1),
       );

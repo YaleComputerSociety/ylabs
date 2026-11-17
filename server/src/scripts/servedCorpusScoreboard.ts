@@ -65,6 +65,7 @@ import {
 } from './servedCorpusScoreboardCore';
 import { connectScriptMongo } from '../db/connections';
 import { loadServedSustainedRefusalReadings } from './servedSustainedRefusalReadings';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -235,7 +236,7 @@ async function main(): Promise<void> {
 
   if (safeOutput) {
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(
+    writeReportFileSync(
       safeOutput,
       `${JSON.stringify(
         {

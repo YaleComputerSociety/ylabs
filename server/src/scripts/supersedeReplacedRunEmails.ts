@@ -24,6 +24,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -149,7 +150,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(report, null, 2));
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(
+    writeReportFileSync(
       options.output,
       `${JSON.stringify(
         {
@@ -164,7 +165,6 @@ async function main(): Promise<void> {
         null,
         2,
       )}\n`,
-      { mode: 0o600 },
     );
   }
   await mongoose.disconnect();

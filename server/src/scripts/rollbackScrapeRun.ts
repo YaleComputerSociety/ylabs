@@ -19,6 +19,7 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { resetInvalidatedScrapeRunCache } from '../scrapers/invalidatedScrapeRuns';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -207,10 +208,12 @@ async function writeSnapshot(
     }
   }
   fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
-  fs.writeFileSync(
+  writeReportFileSync(
     snapshotPath,
     `${JSON.stringify({ takenAt: new Date(), runId: String(run._id), liveRunIds, restorableIds })}\n`,
-    { mode: 0o600 },
+    {
+      flag: '--snapshot',
+    },
   );
 }
 

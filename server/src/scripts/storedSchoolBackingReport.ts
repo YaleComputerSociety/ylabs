@@ -20,6 +20,7 @@ import {
   summarizeStoredSchoolBacking,
   type StoredSchoolBackingReportRow,
 } from './storedSchoolBackingReportCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,7 +81,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(report, null, 2));
   if (args.output) {
     fs.mkdirSync(path.dirname(args.output), { recursive: true });
-    fs.writeFileSync(args.output, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(args.output, `${JSON.stringify(report, null, 2)}\n`);
   }
   if (args.rowsOutput) {
     const listed = reportRows.flatMap((row) => {
@@ -105,7 +106,9 @@ async function main(): Promise<void> {
       return [{ id, slug: row.slug, served: row.served, backing, supersededOnly }];
     });
     fs.mkdirSync(path.dirname(args.rowsOutput), { recursive: true });
-    fs.writeFileSync(args.rowsOutput, `${JSON.stringify(listed, null, 2)}\n`);
+    writeReportFileSync(args.rowsOutput, `${JSON.stringify(listed, null, 2)}\n`, {
+      flag: '--rows-output',
+    });
   }
 }
 

@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { mkdirSync, writeFileSync } from 'fs';
+import { mkdirSync } from 'fs';
 import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
 import {
@@ -13,6 +13,7 @@ import {
 } from '../scrapers/integrityGate';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -124,7 +125,7 @@ export function writeScraperIntegrityDuplicateReviewOutput(value: unknown, outpu
   if (!output) return;
   const resolvedOutput = resolveSafeJsonReportOutputPath(output);
   mkdirSync(path.dirname(resolvedOutput), { recursive: true });
-  writeFileSync(resolvedOutput, `${JSON.stringify(value, null, 2)}\n`);
+  writeReportFileSync(resolvedOutput, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export function buildScraperIntegrityDuplicateReviewReport(
