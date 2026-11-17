@@ -868,7 +868,7 @@ describe('a rolling-review program serves its date as the close of the window (#
     const projected = servedProgramDeadline(
       program({
         title: 'Synthetic Annual Research Fund',
-        sourceUrl: 'https://funding.example.edu/synthetic-fund',
+        applicationLink: 'https://funding.example.edu/synthetic-fund',
         deadline: new Date('2026-10-01T18:00:00.000Z'),
         description: 'Applications are accepted on a rolling basis.',
       }),

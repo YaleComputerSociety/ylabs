@@ -172,5 +172,9 @@ export function getFellowshipDeadlineSubtitle(
   if (!deadline) return 'No deadline';
   if (status.category === 'nextCycle') return 'Past cycle; track for reopening';
   if (deadline.getTime() < now.getTime()) return 'Deadline passed';
+  if (fellowship.deadlineRollingReview) {
+    const closingDay = formatShortProgramDate(fellowship.deadline).replace(' ', '\u00a0');
+    return `Reviewed on a rolling basis until ${closingDay}`;
+  }
   return `Due ${formatShortProgramDate(fellowship.deadline)}`;
 }
