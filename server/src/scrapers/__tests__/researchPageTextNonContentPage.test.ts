@@ -15,7 +15,12 @@ const SIGN_IN_PAGE =
   '<html><body><h1>Central Authentication Service</h1><p>Make sure your session is secure. Before entering your NetID and password, verify the address of this page.</p></body></html>';
 
 const BOT_CHALLENGE_PAGE =
-  '<html><head><script>var x = 1;</script></head><body><h1>Security Check</h1><p>Your browser is being verified. Consulting the crowd... Powered by CrowdSec</p></body></html>';
+  '<html><head><script>var x = 1;</script></head><body><h1>Security Check</h1><p>Your browser is being verified before you can reach this site. Consulting the crowd about this request, which can take a few seconds while the check completes. Powered by CrowdSec. Why am I seeing this page? This site uses a security service to protect itself from automated traffic.</p></body></html>';
+
+const SCHOOL_INDEX = 'https://medicine.yale.edu/research/';
+
+const schoolIndexPage =
+  '<html><body><h1>Research</h1><p>Research across the school spans fundamental studies of cells and molecules to population health, with programs that train students in every field of medicine.</p></body></html>';
 
 const row: CandidateDescriptionLab = {
   _id: 'c'.repeat(24),
@@ -26,7 +31,11 @@ const row: CandidateDescriptionLab = {
   entityType: 'LAB',
 };
 
-function run(partnerPage: { url: string; html: string }, storedReadingHosts: string[]) {
+function run(
+  partnerPage: { url: string; html: string },
+  storedReadingHosts: string[],
+  subject: CandidateDescriptionLab = row,
+) {
   const emitted: ObservationInput[] = [];
   const logs: string[] = [];
   const ctx: ScraperContext = {
@@ -47,7 +56,7 @@ function run(partnerPage: { url: string; html: string }, storedReadingHosts: str
       if (url === PARTNER) return partnerPage;
       return url === HOME ? { url, html: research('how kelp forests recover after marine heatwaves') } : null;
     }),
-    rowFinder: async () => [row],
+    rowFinder: async () => [subject],
     storedHashLoader: async () => (storedReadingHosts.length ? 'stored-hash' : undefined),
     storedReadingLoader: async () => ({ hosts: new Set(storedReadingHosts) }),
     previousThrottledRowsLoader: async () => ({}),
@@ -87,6 +96,13 @@ describe('research-page-text refuses a fetched page that is not the row content 
     expect(pageText(emitted)?.map((entry) => entry.url)).toEqual([HOME]);
   });
 
+  it('refuses a school index a person row cites directly', async () => {
+    const person: CandidateDescriptionLab = { ...row, sourceUrls: [HOME, SCHOOL_INDEX], kind: 'individual' } as CandidateDescriptionLab;
+    const { emitted } = await runWith(person, { url: SCHOOL_INDEX, html: schoolIndexPage });
+
+    expect(pageText(emitted)?.map((entry) => entry.url)).toEqual([HOME]);
+  });
+
   it('stores a real partner page as before', async () => {
     const { emitted } = await run(
       { url: PARTNER, html: research('sea urchin grazing on shallow reefs') },
@@ -96,3 +112,30 @@ describe('research-page-text refuses a fetched page that is not the row content 
     expect(pageText(emitted)?.map((entry) => entry.url)).toEqual([HOME, PARTNER]);
   });
 });
+
+function runWith(subject: CandidateDescriptionLab, schoolPage: { url: string; html: string }) {
+  const emitted: ObservationInput[] = [];
+  const ctx: ScraperContext = {
+    scrapeRunId: 'test-run',
+    sourceId: 'test-source',
+    sourceName: RESEARCH_PAGE_TEXT_SOURCE,
+    sourceWeight: 0.85,
+    options: { dryRun: false, useCache: false, release: false },
+    emit: async (obs) => {
+      emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+    },
+    log: () => undefined,
+  };
+  const lane = new ResearchPageTextScraper({
+    fetchPage: vi.fn(async (url: string) => {
+      if (url === schoolPage.url) return schoolPage;
+      return url === HOME ? { url, html: research('how kelp forests recover after marine heatwaves') } : null;
+    }),
+    rowFinder: async () => [subject],
+    storedHashLoader: async () => undefined,
+    storedReadingLoader: async () => ({ hosts: new Set<string>() }),
+    previousThrottledRowsLoader: async () => ({}),
+    citerCountsLoader: async () => new Map(),
+  });
+  return lane.run(ctx).then((result) => ({ result, emitted }));
+}

@@ -46,6 +46,22 @@ describe('nonContentResearchPageReason (#6460)', () => {
     expect(nonContentResearchPageReason({ url: 'https://lab.yale.edu/research', text })).toBeNull();
   });
 
+  it('keeps a short lab page whose noscript fallback asks for JavaScript and cookies', () => {
+    const text = `Enable JavaScript and cookies to continue. ${RESEARCH}`;
+    expect(nonContentResearchPageReason({ url: 'https://lab.yale.edu/', text })).toBeNull();
+  });
+
+  it('refuses the JavaScript-and-cookies gate when a challenge vendor signs it', () => {
+    const text = 'Just a moment... Enable JavaScript and cookies to continue. Performance and security by Cloudflare. Ray ID: 8f2c';
+    expect(nonContentResearchPageReason({ url: 'https://example.org/people/x', text })).toBe('bot-challenge');
+  });
+
+  it('refuses a school index on a www-prefixed host', () => {
+    expect(nonContentResearchPageReason({ url: 'https://www.medicine.yale.edu/research', text: RESEARCH })).toBe(
+      'school-landing',
+    );
+  });
+
   it('keeps a deeper page on a school host', () => {
     expect(
       nonContentResearchPageReason({ url: 'https://medicine.yale.edu/lab/example/research/', text: RESEARCH }),
