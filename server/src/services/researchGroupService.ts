@@ -46,6 +46,7 @@ import {
   getOrgUnitCanonicalizer,
 } from '../scrapers/orgUnitCanonicalization';
 import { resolveOrCreateResearcherIdUnlessRemoved } from '../scrapers/canonicalMembershipMaterializer';
+import { meshHeadingSpellings } from '../scrapers/meshNaturalOrder';
 import { currentDirectoryRemovalMintGuard, REMOVED_BY_REQUEST } from './directoryRemovalMintGuard';
 import { judgeReDerivedAccessSignals } from '../scrapers/accessMaterializer';
 import { isProgrammePageAdmittedAsJoinRoute } from '../scrapers/undergradJoinPageAdmission';
@@ -1084,6 +1085,15 @@ const boundedResearchFilterValues = (values?: string[]): string[] => {
 const isResearchGroupQualityFilter = (value: unknown): value is ResearchGroupQualityFilter =>
   value === 'description-issue' || value === 'missing-lead' || value === 'profile-fallback';
 
+/**
+ * A topic filter matches a MeSH heading in either order, because stored rows move from the
+ * inverted to the natural-order spelling only as the topic pass re-resolves them (#6379). It runs
+ * after the value cap, so expansion never drops a caller's own value.
+ */
+const withMeshHeadingSpellings = (values: string[]): string[] => [
+  ...new Set(values.flatMap(meshHeadingSpellings)),
+];
+
 const sanitizeResearchGroupSearchFilters = (
   filters: ResearchGroupFilterInput = {},
 ): ResearchGroupFilterInput => ({
@@ -1092,7 +1102,7 @@ const sanitizeResearchGroupSearchFilters = (
   researchType: boundedResearchFilterValues(filters.researchType),
   school: boundedResearchFilterValues(filters.school),
   departments: boundedResearchFilterValues(filters.departments),
-  researchAreas: boundedResearchFilterValues(filters.researchAreas),
+  researchAreas: withMeshHeadingSpellings(boundedResearchFilterValues(filters.researchAreas)),
   hostsUndergrads: filters.hostsUndergrads === true ? true : undefined,
   welcomesUndergrads: filters.welcomesUndergrads === true ? true : undefined,
   mentorsUndergrads: filters.mentorsUndergrads === true ? true : undefined,
