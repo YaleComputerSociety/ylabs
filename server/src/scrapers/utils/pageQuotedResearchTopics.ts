@@ -10,7 +10,7 @@ export const PAGE_QUOTED_RESEARCH_TOPICS_SOURCE = RESEARCH_PAGE_TOPICS_DERIVED_S
  * Recorded on a derived list's provenance and kept out of the cache key. The filters below
  * re-judge the cached reading on every resolve, so a filter change re-derives at no model cost.
  */
-export const PAGE_QUOTED_TOPICS_FILTER_CONTRACT = 'page-quoted-topics-v2';
+export const PAGE_QUOTED_TOPICS_FILTER_CONTRACT = 'page-quoted-topics-v3';
 
 export const MAX_PAGE_QUOTED_TOPICS = 8;
 const MIN_QUOTE_WORDS = 2;
@@ -41,6 +41,7 @@ export type TopicRefusalReason =
   | 'split-fragment'
   | 'acronym-only'
   | 'own-org-unit-label'
+  | 'field-quote-is-an-unrelated-label'
   | 'duplicate'
   | 'generic-word'
   | 'over-limit'
@@ -302,6 +303,74 @@ function isCoveredByAMoreSpecificTopic(topic: string, others: readonly string[])
   });
 }
 
+const MAX_LABEL_QUOTE_WORDS = 6;
+const SHARED_PREFIX_CHARS = 5;
+
+/**
+ * Words a heading, breadcrumb or menu label carries whatever the page is about, so sharing one
+ * with a field says nothing about the field.
+ */
+const LABEL_FILLER_WORDS = new Set([
+  'area',
+  'areas',
+  'center',
+  'centre',
+  'department',
+  'expertise',
+  'faculty',
+  'institute',
+  'lab',
+  'laboratory',
+  'program',
+  'programs',
+  'related',
+  'research',
+  'school',
+  'science',
+  'sciences',
+  'studies',
+  'study',
+  'university',
+  'yale',
+]);
+
+const labelSupportWords = (value: string): string[] =>
+  scanWords(value).filter(
+    (word) => !TOPIC_FUNCTION_WORDS.has(word) && !LABEL_FILLER_WORDS.has(word),
+  );
+
+const sharesALeadingStem = (left: string, right: string): boolean =>
+  left.length >= SHARED_PREFIX_CHARS && right.length >= SHARED_PREFIX_CHARS
+    ? left.slice(0, SHARED_PREFIX_CHARS) === right.slice(0, SHARED_PREFIX_CHARS)
+    : left === right;
+
+/**
+ * Heading shape: a few words, each content word capitalised, the form of a breadcrumb, a menu
+ * item or a section title. Prose framing ("a hydrologist", "how glioma cells invade the brain")
+ * is lower case and keeps its standing as framing.
+ */
+function isLabelShapedQuote(quote: string): boolean {
+  const words = quote.split(/\s+/).filter((word) => /[A-Za-z]/.test(word));
+  if (words.length === 0 || words.length > MAX_LABEL_QUOTE_WORDS) return false;
+  return words.every(
+    (word) => TOPIC_FUNCTION_WORDS.has(word.toLowerCase()) || /^[^a-z]*[A-Z]/.test(word),
+  );
+}
+
+/**
+ * A field rests on its quote alone, so a quote that is only a heading, breadcrumb or menu label
+ * sharing no word with the field ("Faculty & Research" for "environmental studies") is site
+ * chrome rather than evidence of the field (#6385). A heading that names the field, even in
+ * another form ("Immunologic Memory" for "immunology"), still supports it.
+ */
+export function isFieldQuoteAnUnrelatedLabel(field: string, quote: string): boolean {
+  if (!isLabelShapedQuote(quote)) return false;
+  const quoteWords = labelSupportWords(quote);
+  return !labelSupportWords(field).some((fieldWord) =>
+    quoteWords.some((quoteWord) => sharesALeadingStem(fieldWord, quoteWord)),
+  );
+}
+
 interface AdmittedTopic {
   label: string;
   url: string;
@@ -358,7 +427,15 @@ export function derivePageQuotedResearchTopics(
       });
   const admit = admitWith(pageWords);
 
-  const field = extraction.field ? admitWith(null)(extraction.field) : null;
+  const fieldCandidate =
+    extraction.field && isFieldQuoteAnUnrelatedLabel(extraction.field.topic, extraction.field.quote)
+      ? (refusals.push({
+          topic: extraction.field.topic,
+          reason: 'field-quote-is-an-unrelated-label',
+        }),
+        null)
+      : extraction.field;
+  const field = fieldCandidate ? admitWith(null)(fieldCandidate) : null;
   const seen = new Set<string>(field ? [dedupeKey(field.label)] : []);
   const unique: AdmittedTopic[] = [];
   for (const candidate of extraction.topics) {
