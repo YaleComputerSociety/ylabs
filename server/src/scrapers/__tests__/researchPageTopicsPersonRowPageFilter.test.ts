@@ -218,30 +218,56 @@ describe('researchPageTextEntriesForRowTopics on a person row (#6110)', () => {
   });
 });
 
-describe('a person row left with no topic evidence keeps its stored topics (#6110)', () => {
+describe('a person row the lead filter leaves with no topic evidence (#6110, #6386)', () => {
   const landingOnlyReading: StoredResearchTopicsDerivation = {
     inputHash: researchTopicsDerivationInputHash([landingPage]),
     extractedTopics: [{ topic: 'Astrophysics', quote: 'research in astrophysics', url: LANDING }],
     extractedField: null,
   };
-  const storedProvenance = {
-    sourceName: PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
-    sourceUrl: LANDING,
+  const provenanceCiting = (
+    sourceUrl: string,
+    sourceName = PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
+  ) => ({
+    sourceName,
+    sourceUrl,
     confidence: 0.85,
     derivationInputHash: landingOnlyReading.inputHash,
     derivationTextHash: researchPageTextHash([landingPage]),
     derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
-  };
-
-  it('offers no candidate and does not mark the stored list stale', async () => {
-    const state = await researchPageTopicsStateFor(
+  });
+  const stateFor = (storedProvenance: unknown, row: TopicEvidenceRow = personRow) =>
+    researchPageTopicsStateFor(
       [pageTextObservation([landingPage])],
       async (inputHash) => (inputHash === landingOnlyReading.inputHash ? landingOnlyReading : null),
       storedProvenance,
-      personRow,
+      row,
     );
+
+  it('marks a stored derived list stale when it cites a page the filter excluded', async () => {
+    const storedProvenance = provenanceCiting(`${LANDING}/`);
+    const state = await stateFor(storedProvenance);
+    expect(state.candidate).toBeUndefined();
+    expect(storedDerivedResearchAreasAreStale(storedProvenance, state)).toBe(true);
+  });
+
+  it('keeps a stored derived list that cites a page no longer stored', async () => {
+    const storedProvenance = provenanceCiting('https://fixture-dept.yale.edu/labs/coastal-group');
+    const state = await stateFor(storedProvenance);
     expect(state.candidate).toBeUndefined();
     expect(state.currentTextHash).toBeUndefined();
     expect(storedDerivedResearchAreasAreStale(storedProvenance, state)).toBe(false);
+  });
+
+  it('leaves a stored list credited to another lane alone', async () => {
+    const storedProvenance = provenanceCiting(LANDING, 'ysm-mesh-keyword');
+    const state = await stateFor(storedProvenance);
+    expect(storedDerivedResearchAreasAreStale(storedProvenance, state)).toBe(false);
+  });
+
+  it('leaves an organization row reading every page, so nothing goes stale on the filter', async () => {
+    const storedProvenance = provenanceCiting(LANDING);
+    const state = await stateFor(storedProvenance, labRow);
+    expect(state.storedListCitesExcludedPage).toBeUndefined();
+    expect(state.currentTextHash).toBe(researchPageTextHash([landingPage]));
   });
 });

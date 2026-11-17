@@ -5,6 +5,18 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-16: Topics Read From A Page The Lead Filter Refuses Retire, While A Vanished Page Keeps Them (#6386)
+
+Decision (manager, 2026-11-16, option A): this narrows the #6127 rule that a person row the lead filter leaves with no page keeps its stored page-derived topics.
+On a person research row, #6127 (#6110, #6120) reads only the stored pages that name one of the row's leads.
+When that filter leaves no page, a stored `research-page-topics-derived` list whose own `sourceUrl` is one of the stored pages the filter excluded is stale, and it retires through `storedResearchAreasEvidenceRetired`; the row falls back to its other topic lanes.
+A list whose cited page is no longer stored at all keeps its topics, because silence is not absence.
+The distinction is between silence and refusal: a vanished or unread page says nothing, while a page still stored and refused by the lane as this person's evidence cannot be the evidence a list stands on.
+
+Measured on Development on 2026-11-16: 30 person rows had this shape, 16 of them served, and all 30 stored lists cite an excluded page, typically a school or department research landing page that never names the lead.
+A scoped dry run planned 27 changes (21 fall back to other lanes' topics, 6 empty), and a before-and-after visibility simulation found 0 tier changes.
+Before the apply, the manager required a blind check of 10 of the 27 asking whether the old topics were the person's own research; if most were, the filter rather than the topics is too strict, and the apply stops.
+
 ## 2026-11-16: An Empty Topic Reading Keeps Only Lane Topics The Served Description States (#6360)
 
 Decision (the backlog agent's GO on the manager's behalf, 2026-11-16, option (ii)+): when the stored page-topic reading for a row's CURRENT input hash is empty, a `researchAreas` observation counts as evidence only if it comes from the description lane (`lab-microsite-description-llm`) and the row's stored served description states it.
