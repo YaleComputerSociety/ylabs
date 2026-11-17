@@ -182,3 +182,31 @@ describe('the served undergraduateOnly agrees with the audience (#6400)', () => 
     expect(servedUndergraduateOnly({})).toBeNull();
   });
 });
+
+describe('a program whose own page text admits students pursuing a graduate degree (#6504)', () => {
+  it('widens an undergraduate audience from the stored page text when the row has no eligibility', () => {
+    expect(
+      programAudience({
+        undergraduateOnly: true,
+        fullSourceDescription:
+          'Fixture Lab runs a summer internship. We welcome applications from all students that are currently pursuing a bachelor, master or PhD degree in Computer Science or related fields.',
+      }),
+    ).toBe('UNDERGRADUATE_AND_GRADUATE');
+    expect(
+      eligibilityAdmitsGraduates('Open to students enrolled in a doctoral degree program.'),
+    ).toBe(true);
+  });
+
+  it('keeps an undergraduate program undergraduate when the page text names a graduate degree otherwise', () => {
+    for (const fullSourceDescription of [
+      'Undergraduates work alongside students pursuing a PhD degree in the lab.',
+      'Applicants should plan to pursue a master or PhD degree after graduation.',
+      'Students pursuing a PhD degree are not eligible.',
+      'Our mentors are pursuing a doctoral degree.',
+    ]) {
+      expect(programAudience({ undergraduateOnly: true, fullSourceDescription })).toBe(
+        'UNDERGRADUATE',
+      );
+    }
+  });
+});

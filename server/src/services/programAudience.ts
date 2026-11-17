@@ -27,6 +27,7 @@ export interface ProgramAudienceInput {
   undergraduateOnly?: unknown;
   yaleCollegeOnly?: unknown;
   eligibility?: unknown;
+  fullSourceDescription?: unknown;
 }
 
 const GRADUATE_GROUP =
@@ -41,6 +42,9 @@ const ELIGIBILITY_LIST_NAMES_GRADUATES = new RegExp(
   `\\b(?:open\\s+to|available\\s+to|eligible\\s+(?:are|to\\s+apply\\s+are)|applications\\s+from|invites?\\s+applications\\s+from|welcomes?)\\b[^.]{0,160}?\\b${GRADUATE_GROUP}\\b`,
   'i',
 );
+/** The applicant frame admits students working toward a graduate degree: "applications from students pursuing a bachelor, master or PhD degree". */
+const ELIGIBILITY_LIST_NAMES_GRADUATE_DEGREE_IN_PROGRESS =
+  /\b(?:open\s+to|available\s+to|eligible|applications\s+from|invites?\s+applications\s+from|welcomes?)\b[^.]{0,120}?\b(?:pursuing|enrolled\s+in|working\s+toward)\s+(?:an?\s+)?(?:[a-z']+,?\s+){0,4}?(?:master'?s?|ph\.?\s?d\.?|doctoral)\b[^.]{0,40}?\bdegrees?\b/i;
 /** Graduate students named as colleagues, mentors or staff, not as applicants. */
 const COLLEAGUE_ROLE =
   /\b(?:alongside|paired\s+with|mentor(?:s|ed|ing)?|run\s+by|led\s+by|supervised\s+by|taught\s+by|assisted\s+by|(?:reviewed|judged|evaluated|selected|chosen)\s+by|work(?:s|ing)?\s+with)\b/i;
@@ -58,7 +62,9 @@ const eligibilityClauses = (value: unknown): string[] =>
 export function eligibilityAdmitsGraduates(eligibility: unknown): boolean {
   return eligibilityClauses(eligibility).some(
     (clause) =>
-      (GRADUATE_GROUP_IS_ELIGIBLE.test(clause) || ELIGIBILITY_LIST_NAMES_GRADUATES.test(clause)) &&
+      (GRADUATE_GROUP_IS_ELIGIBLE.test(clause) ||
+        ELIGIBILITY_LIST_NAMES_GRADUATES.test(clause) ||
+        ELIGIBILITY_LIST_NAMES_GRADUATE_DEGREE_IN_PROGRESS.test(clause)) &&
       !COLLEAGUE_ROLE.test(clause) &&
       !NEGATION.test(clause),
   );
@@ -92,9 +98,17 @@ function audienceFromStoredEvidence(program: ProgramAudienceInput): ProgramAudie
   return null;
 }
 
+/**
+ * Some lanes store no eligibility field and state who may apply only in the page text they
+ * captured, so that text is read with the same guards (#6504).
+ */
+const programTextAdmitsGraduates = (program: ProgramAudienceInput): boolean =>
+  eligibilityAdmitsGraduates(program.eligibility) ||
+  eligibilityAdmitsGraduates(program.fullSourceDescription);
+
 export function programAudience(program: ProgramAudienceInput): ProgramAudience | null {
   const audience = audienceFromStoredEvidence(program);
-  return audience === 'UNDERGRADUATE' && eligibilityAdmitsGraduates(program.eligibility)
+  return audience === 'UNDERGRADUATE' && programTextAdmitsGraduates(program)
     ? 'UNDERGRADUATE_AND_GRADUATE'
     : audience;
 }
