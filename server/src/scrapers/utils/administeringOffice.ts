@@ -123,18 +123,43 @@ function officeName(raw: string): string | undefined {
  * so "Office of Fellowships Summer Research Common Application" is the Office of Fellowships
  * and "Slifka Center Israel Summer Travel Fellowships Common Application" is the Slifka Center.
  */
+const SYSTEM_PART_OPENER = /^(?:Summer|Fall|Spring|Winter|Autumn|Annual|Common|Applications?)$/;
+
+const PROGRAM_NOUN =
+  /^(?:Fellowships?|Grants?|Awards?|Prizes?|Scholarships?|Internships?|Stipends?|Funds?|Competitions?)$/;
+
+/**
+ * The office a named application system belongs to: the system name's words up to its first
+ * organizational head noun, then that head's "of", "for" or "on" complement, which runs until a
+ * word that opens the system's own part (a season, "Common", "Application", or a program noun
+ * after at least one complement word). "Office of Fellowships Summer Research Common
+ * Application" is the Office of Fellowships, "Program in Agrarian Studies Fellowship
+ * Application" keeps "Agrarian Studies", and "Slifka Center Israel Summer Travel Fellowships
+ * Common Application" is the Slifka Center. A complement with no such boundary is undecidable,
+ * so it states no office rather than a fragment.
+ */
 function officeOwningSystem(systemName: string): string | undefined {
   const words = normalizeWhitespace(systemName).split(' ');
   const headIndex = words.findIndex((word) => ORGANIZATION_HEAD.test(word));
   if (headIndex < 0) return undefined;
   let end = headIndex + 1;
-  while (
-    end + 1 < words.length &&
-    NAME_CONNECTORS.has(words[end]) &&
-    NAME_WORD.test(words[end + 1]) &&
-    !NAMES_AN_APPLICATION_SYSTEM.test(words[end + 1])
-  ) {
-    end += 2;
+  while (NAME_CONNECTORS.has(words[end] ?? '') && NAME_WORD.test(words[end + 1] ?? '')) {
+    let next = end + 1;
+    let complementWords = 0;
+    while (
+      next < words.length &&
+      NAME_WORD.test(words[next]) &&
+      !SYSTEM_PART_OPENER.test(words[next]) &&
+      !(complementWords > 0 && PROGRAM_NOUN.test(words[next]))
+    ) {
+      next += 1;
+      complementWords += 1;
+    }
+    if (complementWords === 0) break;
+    const boundary = words[next];
+    if (boundary === undefined) return undefined;
+    end = next;
+    if (!NAME_CONNECTORS.has(boundary)) break;
   }
   return officeName(words.slice(0, end).join(' '));
 }

@@ -187,4 +187,25 @@ describe('the administering office a program page states (#4589)', () => {
       ),
     ).toBeUndefined();
   });
+
+  it('keeps a multi-word complement whole and states none when its end is undecidable', () => {
+    expect(
+      officeIn(
+        'Applications are submitted through the Yale Program in Fixture Studies Fellowship Application.',
+      ),
+    ).toBe('Yale Program in Fixture Studies');
+    expect(
+      officeIn(
+        'Applications are accepted via the Office of Undergraduate Research Summer Application.',
+      ),
+    ).toBe('Office of Undergraduate Research');
+    expect(
+      officeIn(
+        'Applications are accepted via the Office of Fellowships and Funding Summer Application.',
+      ),
+    ).toBe('Office of Fellowships and Funding');
+    expect(
+      officeIn('Applications are accepted via the Office of Fixture Research'),
+    ).toBeUndefined();
+  });
 });
