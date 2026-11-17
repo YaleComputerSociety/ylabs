@@ -306,6 +306,7 @@ describe('fellowship public serializer', () => {
       closed: false,
       projectedNextCycle: false,
       stale: false,
+      rollingReview: false,
     });
   });
 
@@ -703,6 +704,7 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
       closed: true,
       projectedNextCycle: true,
       stale: false,
+      rollingReview: false,
     });
   });
 
@@ -719,6 +721,7 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
       closed: true,
       projectedNextCycle: false,
       stale: true,
+      rollingReview: false,
     });
   });
 
@@ -753,6 +756,7 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
       closed: false,
       projectedNextCycle: false,
       stale: false,
+      rollingReview: false,
     });
   });
 
