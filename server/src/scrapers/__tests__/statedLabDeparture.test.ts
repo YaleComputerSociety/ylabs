@@ -56,6 +56,14 @@ describe('statedLabDeparturesInPageText (#6324)', () => {
     expect(kinds('Quillfeather is now at the Yale Fixture Institute.')).toEqual([]);
   });
 
+  it('keeps a move between units inside Yale that does not name Yale', () => {
+    expect(kinds('The lab has moved to the Wu Tsai Institute.')).toEqual([]);
+    expect(kinds('Our lab has relocated to the School of Public Health.')).toEqual([]);
+    expect(kinds('The lab has moved to the Department of Fixture Biology.')).toEqual([]);
+    expect(kinds('The lab is now located at the Smilow Cancer Hospital.')).toEqual([]);
+    expect(kinds('The lab has moved to the Institute of Fixture Science.')).toEqual([]);
+  });
+
   it('keeps a figure of speech about the research', () => {
     expect(
       kinds('Our research is moving to new imaging methods developed at the Fixture Institute.'),
@@ -75,6 +83,10 @@ describe('statedLabDeparturesInPageText (#6324)', () => {
   it('keeps an instrument or a website that moved', () => {
     expect(kinds('The confocal microscope has moved to the imaging core facility.')).toEqual([]);
     expect(kinds('This site has moved to a new address at the University of Fixtureland.')).toEqual(
+      [],
+    );
+    expect(kinds('The microscope from our lab has moved to the Fixture Institute.')).toEqual([]);
+    expect(kinds('The website for the lab has moved to the University of Fixtureland.')).toEqual(
       [],
     );
   });

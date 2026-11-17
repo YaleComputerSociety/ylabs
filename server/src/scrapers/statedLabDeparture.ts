@@ -84,7 +84,22 @@ const FIGURE_OF_SPEECH =
 
 const SITE_MOVED = /\b(?:this|our)\s+(?:site|website|web\s*site|page)\s+(?:has\s+)?moved\b/i;
 
-const NAMES_YALE = /\b(?:yale|new\s+haven)\b/iu;
+/**
+ * A Yale page names its own units without saying "Yale", so a move into one is a move within
+ * Yale: a destination that is a bare unit ("the School of Public Health") or a Yale-only unit
+ * name never reads as leaving.
+ */
+const NAMES_YALE_SIDE = /\b(?:yale|new\s+haven|wu\s+tsai|smilow|west\s+campus)\b/iu;
+const BARE_UNIT_DESTINATION =
+  /^\s*(?:the\s+)?(?:school|college|department|division|institute|center|centre|program|hospital)\s+(?:of|for)\b(?!.*\bat\b)/iu;
+
+function namesExternalInstitution(destination: string): boolean {
+  return (
+    INSTITUTION_WORD.test(destination) &&
+    !NAMES_YALE_SIDE.test(destination) &&
+    !BARE_UNIT_DESTINATION.test(destination)
+  );
+}
 
 const MONTH = String.raw`(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)`;
 const STATED_DATE = new RegExp(
@@ -127,7 +142,7 @@ function matchKind(
     if (NON_LEAD_BEFORE_SUBJECT.test(sentence.slice(0, match.index))) continue;
     if (/\b(?:left|departed)\s+yale\b/iu.test(match[0])) return kind;
     const destination = destinationClause(sentence.slice(match.index + match[0].length));
-    if (INSTITUTION_WORD.test(destination) && !NAMES_YALE.test(destination)) return kind;
+    if (namesExternalInstitution(destination)) return kind;
   }
   return undefined;
 }

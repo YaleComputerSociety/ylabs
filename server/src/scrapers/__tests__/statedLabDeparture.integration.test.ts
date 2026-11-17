@@ -55,11 +55,17 @@ describe('a stated lab move is derived evidence that follows the Yale side (#632
     resetInvalidatedScrapeRunCache();
   });
 
-  const seed = async (input: { text: string; runs: number; title?: string }) => {
+  const seed = async (input: {
+    text: string;
+    runs: number;
+    title?: string;
+    leadArchived?: boolean;
+  }) => {
     const lead = await Researcher.create({
       displayName: 'Ada Quillfeather',
       lastName: 'Quillfeather',
       ...(input.title ? { profile: { title: input.title } } : {}),
+      ...(input.leadArchived ? { archived: true } : {}),
     });
     const row = await ResearchEntity.create({
       slug: ROW_KEY,
@@ -116,6 +122,16 @@ describe('a stated lab move is derived evidence that follows the Yale side (#632
 
   it('keeps the row current while the lead holds a Yale appointment, however many runs restate it', async () => {
     await seed({ text: MOVED, runs: 4, title: 'Adjunct Professor of Astronomy' });
+    await materializeEntity('researchEntity', { entityKey: ROW_KEY });
+    expect((await storedRow())?.activeAtYaleCache).not.toBe(false);
+  });
+
+  it('keeps the row current when its only lead is archived, however many runs state the move', async () => {
+    await seed({
+      text: 'The lab has moved to the University of Fixtureland.',
+      runs: 3,
+      leadArchived: true,
+    });
     await materializeEntity('researchEntity', { entityKey: ROW_KEY });
     expect((await storedRow())?.activeAtYaleCache).not.toBe(false);
   });
