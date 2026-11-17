@@ -4,7 +4,8 @@ import { storedSearchRerankTextHash } from './searchRerankCandidateText';
 import { isSearchRerankLiveMissEnabled } from './searchRerankLiveMiss';
 
 export const SEARCH_RERANK_WINDOW = 30;
-export const SEARCH_RERANK_NEUTRAL_SCORE = 1.5;
+// Cache scores are integers 0-3; 0.5 ranks a never-scored row below a judged-marginal row and above a judged-irrelevant one (#6411).
+export const SEARCH_RERANK_NEUTRAL_SCORE = 0.5;
 export const SEARCH_RERANK_MEMO_TTL_MS = 5 * 60 * 1000;
 const SEARCH_RERANK_MEMO_MAX_ENTRIES = 1000;
 const SEARCH_RERANK_LOOKUP_MAX_TIME_MS = 500;

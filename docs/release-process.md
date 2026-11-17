@@ -277,7 +277,7 @@ The Development-to-Beta mirror inserts each live row as read and rewrites only `
 It is still not the path.
 `search_rerank_cache` is in `NEVER_COPY_COLLECTIONS`, every copy refuses one, and no tool exports it.
 Development's collection also holds `shadow` entries and entries keyed before the acronym rewrite (#5643), which a re-seed from the file does not carry.
-What a re-seed loses is a score whose slug no longer resolves: on 2026-11-13 the v4 file left 16 of 10,974 scores unresolved, on 9 slugs (6 rows merged into a survivor and 3 renamed), and each of those rows takes the neutral 1.5.
+What a re-seed loses is a score whose slug no longer resolves: on 2026-11-13 the v4 file left 16 of 10,974 scores unresolved, on 9 slugs (6 rows merged into a survivor and 3 renamed), and each of those rows takes the neutral score.
 Since #6094 a slug whose row was merged away or renamed resolves to the live row that replaced it, through the merge tombstone or a stored redirect (`docs/search-rerank-cache.md`, "Seeding"), so only a slug with neither stays unresolved: on 2026-11-13 the v4 file left none of its 10,974 scores unresolved on Development.
 
 #### Before the first run: the seed file must key cleanly under current code

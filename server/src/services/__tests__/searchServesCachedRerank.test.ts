@@ -45,7 +45,12 @@ vi.mock('../researchSearchQueryEmbedding', () => ({
 
 import { searchRerankCacheQueryKey, searchResearchGroupsViaMeili } from '../researchGroupService';
 import { invalidateResearchEntitySearchEmbedderCache } from '../researchEntitySearchIndexService';
-import { applyCachedRerank, resetSearchRerankCacheMemo } from '../searchRerankCache';
+import {
+  SEARCH_RERANK_NEUTRAL_SCORE,
+  SEARCH_RERANK_WINDOW,
+  applyCachedRerank,
+  resetSearchRerankCacheMemo,
+} from '../searchRerankCache';
 import { resetMeiliAvailability } from '../../utils/meiliAvailability';
 
 const queryResult = <T>(value: T) => {
@@ -219,7 +224,7 @@ describe('a text search with the rerank cache flag on', () => {
     const expected = applyCachedRerank(
       today.map((id) => ({ id })),
       cachedScoresById,
-      { window: 30, neutral: 1.5 },
+      { window: SEARCH_RERANK_WINDOW, neutral: SEARCH_RERANK_NEUTRAL_SCORE },
     ).map(({ id }) => id);
     expect(servedIdsOf(result)).toEqual(expected);
     expect(servedIdsOf(result).slice(0, 2)).toEqual([rowId(12), rowId(25)]);

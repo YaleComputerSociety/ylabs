@@ -8,6 +8,8 @@ vi.mock('../../models/searchRerankCache', () => ({
 
 import {
   SEARCH_RERANK_MEMO_TTL_MS,
+  SEARCH_RERANK_NEUTRAL_SCORE,
+  SEARCH_RERANK_WINDOW,
   applyCachedRerank,
   isSearchRerankCacheEnabled,
   lookupSearchRerankCacheEntry,
@@ -23,7 +25,7 @@ import { searchRerankCacheFilters, searchRerankCacheQueryKey } from '../research
 const candidates = (count: number) =>
   Array.from({ length: count }, (_value, index) => ({ id: `row-${index}` }));
 const ids = (rows: Array<{ id: string }>) => rows.map((row) => row.id);
-const options = { window: 30, neutral: 1.5 };
+const options = { window: SEARCH_RERANK_WINDOW, neutral: SEARCH_RERANK_NEUTRAL_SCORE };
 
 describe('searchRerankCacheQueryKey', () => {
   it('reads the query the way search tokenizes it', () => {
@@ -141,12 +143,14 @@ describe('applyCachedRerank', () => {
     ]);
   });
 
-  it('gives an unscored candidate the neutral score', () => {
+  it('ranks a never-scored candidate below a marginal one and above an irrelevant one', () => {
     const scores = new Map([
-      ['row-0', 1],
-      ['row-2', 2],
+      ['row-0', 0],
+      ['row-2', 1],
+      ['row-3', 2],
     ]);
-    expect(ids(applyCachedRerank(candidates(3), scores, options))).toEqual([
+    expect(ids(applyCachedRerank(candidates(4), scores))).toEqual([
+      'row-3',
       'row-2',
       'row-1',
       'row-0',
