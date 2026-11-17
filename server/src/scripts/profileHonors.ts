@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
 import { fileURLToPath } from 'url';
@@ -21,6 +20,7 @@ import {
   readProfileHonors,
   type ProfileHonorsEntity,
 } from './profileHonorsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -119,7 +119,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(summary, null, 2));
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
-    fs.writeFileSync(outputPath, `${JSON.stringify({ summary, writes }, null, 2)}\n`);
+    writeReportFileSync(outputPath, `${JSON.stringify({ summary, writes }, null, 2)}\n`);
     console.log(`report written: ${sanitizeLogValue(outputPath)}`);
   }
 }

@@ -21,7 +21,6 @@
  *   yarn --cwd server observations:audit-orphan-keys --output "$TMPDIR/orphan-keys.json"
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -42,6 +41,7 @@ import {
   type OrphanObservationKeyClassification,
 } from './orphanObservationKeyAuditCore';
 import { connectScriptMongo } from '../db/connections';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -326,7 +326,7 @@ async function main(): Promise<void> {
     const report = await runOrphanObservationKeyAudit();
     reportOrphanObservationKeyAudit(report, options.limitExamples);
     if (options.output) {
-      fs.writeFileSync(options.output, JSON.stringify(report, null, 2), { mode: 0o600 });
+      writeReportFileSync(options.output, JSON.stringify(report, null, 2));
       console.log(`\nReport written to ${options.output}`);
     }
   } finally {

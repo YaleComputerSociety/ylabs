@@ -39,6 +39,7 @@ import {
   type StagedSwapHeadroomVerdict,
   type SwapStorage,
 } from './stagedSwapHeadroom';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -466,7 +467,7 @@ export function writePromotionOutput(report: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 function promotionCollectionsForOptions(options: PromotionOptions): PromotionCollection[] {

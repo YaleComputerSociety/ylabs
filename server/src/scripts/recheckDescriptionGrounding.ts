@@ -22,7 +22,6 @@
  * per host in `refused403` rather than spoofed past (#6211).
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -59,6 +58,7 @@ import {
   type DescriptionGroundingTarget,
 } from './recheckDescriptionGroundingCore';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -397,7 +397,7 @@ async function main(): Promise<void> {
 
   console.log(JSON.stringify(result, null, 2));
   if (options.output) {
-    fs.writeFileSync(options.output, JSON.stringify(result, null, 2));
+    writeReportFileSync(options.output, JSON.stringify(result, null, 2));
     console.log(`report -> ${sanitizeLogValue(options.output)}`);
   }
   await mongoose.disconnect();

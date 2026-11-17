@@ -24,6 +24,7 @@ import {
   type MentorMatchPlan,
 } from '../scrapers/sources/officialUndergradListScraper';
 import { resolveSafeJsonReportOutputPath } from '../utils/reportOutputPath';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -199,7 +200,7 @@ async function main() {
     refused,
   };
   fs.mkdirSync(path.dirname(options.output), { recursive: true });
-  fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+  writeReportFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
   fs.chmodSync(options.output, 0o600);
   console.log(JSON.stringify({ output: options.output, perSource: plan.perSource }, null, 2));
   await mongoose.disconnect();

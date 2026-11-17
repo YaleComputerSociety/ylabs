@@ -53,6 +53,7 @@ import {
   planWebsiteClear,
   planPoisonedDescriptionClear,
 } from './sameNameCollisionAreaGraftPurgeCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -561,7 +562,7 @@ async function main() {
   if (options.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(options.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
   }
 }
 

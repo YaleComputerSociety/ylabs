@@ -12,7 +12,6 @@
  *     --apply --confirm-rederive-over-shared-person-websites --output tmp/apply.json
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -37,6 +36,7 @@ import {
   type UserMaterializeIdentifier,
 } from './rederiveOverSharedPersonWebsitesCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -92,9 +92,7 @@ async function liveUserIdentifiersOfResearchers(
 }
 
 function writePrivateJson(target: string, value: unknown): void {
-  fs.writeFileSync(resolveSafeJsonReportOutputPath(target), JSON.stringify(value, null, 2), {
-    mode: 0o600,
-  });
+  writeReportFileSync(resolveSafeJsonReportOutputPath(target), JSON.stringify(value, null, 2));
 }
 
 async function visit(
@@ -229,7 +227,7 @@ async function main(): Promise<void> {
       : {}),
   };
   if (outputPath) {
-    fs.writeFileSync(
+    writeReportFileSync(
       outputPath,
       JSON.stringify(
         {
