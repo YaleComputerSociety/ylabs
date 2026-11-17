@@ -1,9 +1,5 @@
 [
   "scripts/auditFrozenDescriptions.ts",
-  "scripts/phase0IdentityCollisionAudit.ts",
-  "scripts/phase0ResearchSearchBaseline.ts",
-  "scripts/phase2IdentityMigrationPlan.ts",
-  "scripts/researchModelInventory.ts",
   "scripts/researchSearchRelevance.ts",
   "scripts/resolveLeadNetidsFromDirectory.ts",
   "scripts/restoreDetachedRoleAssignmentEdge.ts",

@@ -3,10 +3,13 @@ import { resolveSafeJsonReportOutputPath, type ReportOutputPathOptions } from '.
 
 const REPORT_OPEN_FLAGS =
   fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW;
+const EXCLUSIVE_REPORT_OPEN_FLAGS =
+  fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW;
 const REPORT_FILE_MODE = 0o600;
 
 export interface ReportFileWriteOptions extends ReportOutputPathOptions {
   flag?: string;
+  exclusive?: boolean;
 }
 
 /**
@@ -20,9 +23,10 @@ export function writeReportFileSync(
   contents: string,
   options: ReportFileWriteOptions = {},
 ): string {
-  const { flag = '--output', ...resolverOptions } = options;
+  const { flag = '--output', exclusive = false, ...resolverOptions } = options;
   const resolvedPath = resolveSafeJsonReportOutputPath(outputPath, flag, resolverOptions);
-  const descriptor = fs.openSync(resolvedPath, REPORT_OPEN_FLAGS, REPORT_FILE_MODE);
+  const openFlags = exclusive ? EXCLUSIVE_REPORT_OPEN_FLAGS : REPORT_OPEN_FLAGS;
+  const descriptor = fs.openSync(resolvedPath, openFlags, REPORT_FILE_MODE);
   try {
     fs.fchmodSync(descriptor, REPORT_FILE_MODE);
     fs.writeFileSync(descriptor, contents, 'utf8');
