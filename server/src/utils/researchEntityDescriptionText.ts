@@ -13,6 +13,7 @@ import {
 import { withoutUnbackedLabSelfDescription } from './unbackedLabSelfDescription';
 import { collapseDuplicateResearchHomeSuffix } from './researchEntityNameNormalization';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
+import { refocusStudiesVerbGerundLeads } from './studiesVerbGerundLead';
 import {
   cleanServedResearchAreaChipLabels,
   decideServedResearchAreas,
@@ -1088,9 +1089,7 @@ const SUBJECTLESS_RESEARCH_LEAD_REPAIRS: ReadonlyArray<
   [/^\s*Research\s+on\b/i, studiesUnlessAnIngWordFollows],
 ];
 
-export function repairSubjectlessResearchLead(value: unknown): string {
-  const text = typeof value === 'string' ? value : '';
-  if (!text) return text;
+function repairSubjectlessResearchLeadPhrase(text: string): string {
   for (const [pattern, replacement] of SUBJECTLESS_RESEARCH_LEAD_REPAIRS) {
     const lead = text.match(pattern)?.[0];
     if (lead === undefined) continue;
@@ -1100,6 +1099,12 @@ export function repairSubjectlessResearchLead(value: unknown): string {
     return `${replacementLead}${remainder}`;
   }
   return text;
+}
+
+export function repairSubjectlessResearchLead(value: unknown): string {
+  const text = typeof value === 'string' ? value : '';
+  if (!text) return text;
+  return refocusStudiesVerbGerundLeads(repairSubjectlessResearchLeadPhrase(text));
 }
 
 const GREETING_LEAD_PATTERN =
