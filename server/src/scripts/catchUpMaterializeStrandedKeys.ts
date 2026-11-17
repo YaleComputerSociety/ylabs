@@ -23,7 +23,6 @@
  *     --confirm-catch-up-materialize --limit 50 --output "$TMPDIR/catch-up.json"
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -44,6 +43,7 @@ import {
   type CatchUpKeyReport,
 } from './catchUpMaterializeStrandedKeysCore';
 import { connectScriptMongo } from '../db/connections';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -172,7 +172,7 @@ async function main(): Promise<void> {
         summary,
         keys: reports,
       };
-      fs.writeFileSync(args.output, JSON.stringify(report, null, 2), { mode: 0o600 });
+      writeReportFileSync(args.output, JSON.stringify(report, null, 2));
       console.log(`\nReport written to ${args.output}`);
     }
   } finally {

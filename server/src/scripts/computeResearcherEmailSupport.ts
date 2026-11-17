@@ -18,6 +18,7 @@ import { Researcher, type ResearcherEmailSupport } from '../models/researcher';
 import { researcherEmailSupport, sameResearcherEmailSupport } from '../scrapers/entityMaterializer';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -135,7 +136,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(report, null, 2));
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
   }
   await mongoose.disconnect();
 }

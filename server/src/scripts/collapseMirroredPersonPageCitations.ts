@@ -37,6 +37,7 @@ import {
 } from './collapseMirroredPersonPageCitationsCore';
 import { retireCitationValueObservations } from './retireCitationValueObservations';
 import { connectScriptMongo } from '../db/connections';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const MIRRORED_CITATION_ROLLBACK_REASON =
   'mirrored person-page citation collapsed to one address: the duplicate spellings assert the same page (#3362)';
@@ -197,7 +198,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         safeOutput,
         `${JSON.stringify(
           {

@@ -9,7 +9,6 @@
  * database.
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -40,6 +39,7 @@ import {
   type ResearchTopicsDerivationStore,
   type StoredResearchPageTextRow,
 } from './deriveResearchTopicsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -280,7 +280,10 @@ async function main() {
   };
   console.log(JSON.stringify({ ...report, rows: `${result.rows.length} rows` }, null, 2));
   if (args.output) {
-    fs.writeFileSync(resolveSafeJsonReportOutputPath(args.output), JSON.stringify(report, null, 2));
+    writeReportFileSync(
+      resolveSafeJsonReportOutputPath(args.output),
+      JSON.stringify(report, null, 2),
+    );
   }
   if (result.modelFailures > 0) process.exitCode = 1;
 }

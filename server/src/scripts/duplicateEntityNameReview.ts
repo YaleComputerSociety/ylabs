@@ -40,6 +40,7 @@ import {
 } from './phase0SummaryOnlyAudit';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -496,7 +497,7 @@ export function writeDuplicateEntityNameReviewOutput(report: unknown, output?: s
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildDuplicateEntityNameReviewOutput(
@@ -605,7 +606,7 @@ export function writeDuplicateEntityNameReviewDecisionTemplate(
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output, '--decision-template-output');
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
 }
 
 export function buildDuplicateEntityNameReviewDecisionTemplate(

@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -123,6 +122,7 @@ import {
 import { regateRematerializedEntities } from './rematerializeResearchEntities';
 import { createChunkedRegater } from './rematerializeResearchEntitiesCore';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -431,7 +431,10 @@ async function rederiveWrittenBodyCards(
     ),
   );
   if (args.output) {
-    fs.writeFileSync(resolveSafeJsonReportOutputPath(args.output), JSON.stringify(report, null, 2));
+    writeReportFileSync(
+      resolveSafeJsonReportOutputPath(args.output),
+      JSON.stringify(report, null, 2),
+    );
   }
   if (errors > 0) process.exitCode = 1;
 }
@@ -468,7 +471,11 @@ async function rowEvidenceFor(
 }
 
 function writeJsonReport(output: string, flag: string, value: unknown): void {
-  fs.writeFileSync(resolveSafeJsonReportOutputPath(output, flag), JSON.stringify(value, null, 2));
+  writeReportFileSync(
+    resolveSafeJsonReportOutputPath(output, flag),
+    JSON.stringify(value, null, 2),
+    { flag },
+  );
 }
 
 async function withServingRows(requests: readonly CardRequest[]): Promise<CardRequest[]> {
@@ -1035,7 +1042,10 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     ),
   );
   if (args.output) {
-    fs.writeFileSync(resolveSafeJsonReportOutputPath(args.output), JSON.stringify(report, null, 2));
+    writeReportFileSync(
+      resolveSafeJsonReportOutputPath(args.output),
+      JSON.stringify(report, null, 2),
+    );
   }
   if (entityErrors > 0) process.exitCode = 1;
 }

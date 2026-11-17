@@ -100,6 +100,7 @@ import { loadRosterOwnerKeyRows } from '../scrapers/rosterOwnerKeyRows';
 import { rosterResearchEntitySlugPrefixForSlug } from '../scrapers/sources/departmentRosterScraper';
 import { connectScriptMongo } from '../db/connections';
 import { loadGrantCoPiListedLeadsByEntity } from '../services/grantCoPiListedLeads';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -625,7 +626,7 @@ export function writeResearchEntityPiDedupeOutput(
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildResearchEntityPiDedupeOutput<T extends Record<string, unknown>>(
@@ -657,7 +658,7 @@ export function writeResearchEntityPiDedupeDecisionTemplate(
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output, '--decision-template-output');
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
 }
 
 function researchEntityPiDedupePlanId(group: {
