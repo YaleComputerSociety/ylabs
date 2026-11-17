@@ -127,6 +127,23 @@ describe('an eligibility statement that admits graduate students (#6408)', () =>
     }
   });
 
+  it('never reads graduate students named as colleagues, mentors or staff as applicants', () => {
+    for (const eligibility of [
+      'Undergraduates may apply to work alongside graduate students in the lab.',
+      'Graduate students are available to mentor applicants.',
+      'Eligible undergraduates will be paired with graduate students.',
+      'The program welcomes undergraduates and is run by graduate students.',
+    ]) {
+      expect(eligibilityAdmitsGraduates(eligibility)).toBe(false);
+    }
+  });
+
+  it('reads graduate students who may also apply as applicants', () => {
+    expect(eligibilityAdmitsGraduates('Graduate and professional students may also apply.')).toBe(
+      true,
+    );
+  });
+
   it("reads an undergraduate-only phrase that goes on to name master's students as admitting both", () => {
     expect(
       eligibilityAdmitsGraduates(

@@ -953,7 +953,6 @@ export const searchFellowships = async (params: {
   subjects?: string[];
   requiresMentorBeforeApply?: boolean;
   mentorMatching?: boolean;
-  undergraduateOnly?: boolean;
   yaleCollegeOnly?: boolean;
   studentVisibilityTier?: StudentVisibilityTier[];
   includeNonPublic?: boolean;
@@ -979,7 +978,6 @@ export const searchFellowships = async (params: {
     subjects = [],
     requiresMentorBeforeApply,
     mentorMatching,
-    undergraduateOnly,
     yaleCollegeOnly,
     studentVisibilityTier = [],
     includeNonPublic = false,
@@ -1071,9 +1069,6 @@ export const searchFellowships = async (params: {
   }
   if (typeof mentorMatching === 'boolean') {
     filter.mentorMatching = mentorMatching;
-  }
-  if (typeof undergraduateOnly === 'boolean') {
-    filter.undergraduateOnly = undergraduateOnly;
   }
   if (typeof yaleCollegeOnly === 'boolean') {
     filter.yaleCollegeOnly = yaleCollegeOnly;

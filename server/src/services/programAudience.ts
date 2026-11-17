@@ -29,10 +29,21 @@ export interface ProgramAudienceInput {
   eligibility?: unknown;
 }
 
-const GRADUATE_STUDENT_PHRASE =
-  /\bgraduate\s+(?:students?|affiliates?)\b|\bgraduate,?\s+(?:and|or)\s+professional\b|\bmaster'?s(?:-level|\s+degree)?\s+students?\b|\bgraduate\s+school\s+of\s+arts\s+and\s+sciences\b/i;
-const ELIGIBILITY_VERB =
-  /\b(?:eligible|may\s+apply|can\s+apply|encouraged\s+to\s+apply|welcomes?|invites?\s+applications|open\s+to|be\s+considered|available\s+to)\b/i;
+const GRADUATE_GROUP =
+  "(?:graduate\\s+(?:students?|affiliates?)|graduate,?\\s+(?:and|or)\\s+professional(?:\\s+school)?(?:\\s+students?)?|master'?s(?:-level|\\s+degree)?\\s+students?|graduate\\s+school\\s+of\\s+arts\\s+and\\s+sciences)";
+/** The graduate group is the clause's subject and is the one eligible: "graduate affiliates are eligible". */
+const GRADUATE_GROUP_IS_ELIGIBLE = new RegExp(
+  `\\b${GRADUATE_GROUP}\\b[^.]{0,80}?\\b(?:(?:are|is)\\s+(?:also\\s+)?(?:eligible|welcome)|(?:may|can)\\s+(?:also\\s+)?apply|(?:will|may)\\s+(?:also\\s+)?be\\s+considered|are\\s+(?:also\\s+)?encouraged\\s+to\\s+apply)\\b`,
+  'i',
+);
+/** An eligibility frame lists its applicants and the graduate group is among them: "open to ... master's students". */
+const ELIGIBILITY_LIST_NAMES_GRADUATES = new RegExp(
+  `\\b(?:open\\s+to|available\\s+to|eligible\\s+(?:are|to\\s+apply\\s+are)|applications\\s+from|invites?\\s+applications\\s+from|welcomes?)\\b[^.]{0,160}?\\b${GRADUATE_GROUP}\\b`,
+  'i',
+);
+/** Graduate students named as colleagues, mentors or staff, not as applicants. */
+const COLLEAGUE_ROLE =
+  /\b(?:alongside|paired\s+with|mentor(?:s|ed|ing)?|run\s+by|led\s+by|supervised\s+by|taught\s+by|assisted\s+by|work(?:s|ing)?\s+with)\b/i;
 const NEGATION =
   /\b(?:not|ineligible|excluded|excluding|excludes)\b|\bonly\s+(?:open\s+)?to\s+(?:yale\s+)?(?:college\s+)?undergraduates?\b(?!\s*(?:,|and|or))/i;
 
@@ -47,8 +58,8 @@ const eligibilityClauses = (value: unknown): string[] =>
 export function eligibilityAdmitsGraduates(eligibility: unknown): boolean {
   return eligibilityClauses(eligibility).some(
     (clause) =>
-      GRADUATE_STUDENT_PHRASE.test(clause) &&
-      ELIGIBILITY_VERB.test(clause) &&
+      (GRADUATE_GROUP_IS_ELIGIBLE.test(clause) || ELIGIBILITY_LIST_NAMES_GRADUATES.test(clause)) &&
+      !COLLEAGUE_ROLE.test(clause) &&
       !NEGATION.test(clause),
   );
 }
