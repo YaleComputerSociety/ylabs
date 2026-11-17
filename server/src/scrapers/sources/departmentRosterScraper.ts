@@ -3193,10 +3193,24 @@ function stripTopicLabelPrefix(value: string): string {
   return stripResearchSectionLabelPrefix(value);
 }
 
+/**
+ * The medical and public-health schools' "Research at a Glance" tiles print each topic beside a
+ * researcher-count link and a publications link (#6438). The topic is read from the tile's own
+ * keyword element; any topic that still carries that chrome is refused whole, never trimmed,
+ * because a count glued to a topic's own digits ("COVID-1915 YSM Researchers") cannot be
+ * separated in text.
+ */
+const PROFILE_TOPIC_TILE_CHROME =
+  /\b(?:YS(?:M|PH)|YCC)\s+Researchers?\b|View\s*(?:\d+\s*)?Related\s+Publications?/i;
+const PROFILE_TOPIC_TILE = '.profile-details-interest';
+const PROFILE_TOPIC_TILE_KEYWORD = '.profile-details-interest__keyword';
+const PROFILE_TOPIC_TILE_LIST = '.profile-details-interests-glance';
+
 function isTopicLabelChrome(value: string): boolean {
   const cleaned = cleanText(value);
   if (!cleaned) return true;
   if (/:$/.test(cleaned)) return true;
+  if (PROFILE_TOPIC_TILE_CHROME.test(cleaned)) return true;
   return (
     isResearchSectionLabel(cleaned) ||
     isProseNotTopicPhrase(cleaned) ||
@@ -3575,8 +3589,21 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI, meshIndexed: bo
     '[class*="interests"]',
   ];
 
+  $(PROFILE_TOPIC_TILE_KEYWORD).each((_i, el) => {
+    const keyword = cleanText($(el).text());
+    if (keyword && !isTopicLabelChrome(keyword)) values.push(keyword);
+  });
+
   for (const selector of selectors) {
     $(selector).each((_i, el) => {
+      const node = $(el);
+      if (
+        node.is(PROFILE_TOPIC_TILE_LIST) ||
+        node.closest(`${PROFILE_TOPIC_TILE_LIST}, ${PROFILE_TOPIC_TILE}`).length > 0 ||
+        node.find(PROFILE_TOPIC_TILE).length > 0
+      ) {
+        return;
+      }
       const text = elementTextWithChildSeparators($, el);
       values.push(...splitTopicText(text, separators));
     });
