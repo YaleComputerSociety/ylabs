@@ -5,6 +5,17 @@ The scoreboard answers one question: is the copy students actually see getting b
 It renders a fixed set of slugs through the real serve path against a named environment and diffs the result against a stored baseline.
 Read this before claiming a data fix improved anything.
 
+## Baseline files
+
+Baselines live in `~/Personal/ylabs-backups/handoffs/`, mode 0600, outside every checkout, because they carry served copy about real people.
+The two original baselines are lost: `beta-served-hand-read-n100-20260831.json` and `beta-served-n92-20260913.json` lived under `~/ylabs-backups/handoffs/`, which a scoreboard run still read at 2026-11-13 05:50Z and which was gone, with the whole `~/ylabs-backups` root, by 2026-11-16.
+Do not hunt for them.
+The pinned slug set survives, because a scoreboard run on 2026-11-13 recorded all 100 slugs, but the 2026-08-31 per-row hand-read verdicts and the 2026-09-13 copy do not.
+The class-by-class reading of the hand-read survives in the closing comment on #2299.
+
+The current baseline is `~/Personal/ylabs-backups/handoffs/beta-served-n65-20261116.json`: the 65 rows of the pinned 100 that Beta served on 2026-11-16, read-only and uncapped (longest `fullDescription` 1,739 characters, no length shared by more than two rows).
+Re-running against it on Beta reported 0 changed, 0 no longer served and 0 compared on a prefix, the check that a freshly cut baseline is clean.
+
 ## Why it exists
 
 The only served-corpus quality measurement this repository had ever made was #2299, a hand-read of 100 random `student_ready` Beta cards on 2026-08-31: 46% clean, 26% seriously defective, 11% carrying a name that is not theirs.
@@ -20,14 +31,14 @@ Read the closing comment on #2299 for the class-by-class resolution rather than 
 
 ```bash
 yarn --cwd server research-entity:served-scoreboard \
-  --baseline ~/ylabs-backups/handoffs/beta-served-hand-read-n100-20260831.json \
+  --baseline ~/Personal/ylabs-backups/handoffs/beta-served-n65-20261116.json \
   --output ./tmp/served-scoreboard.json
 ```
 
 It reads and never writes to any environment.
 
 - `--baseline <path.json>` is required.
-The 2026-08-31 artifact is the baseline slug set.
+The pinned slug set is the 100 slugs the 2026-08-31 hand-read drew; the current baseline holds the 65 of them Beta still served on 2026-11-16.
 - `--environment development|beta|production` may be repeated.
 With none given it reads all three.
 Environment URLs come from `MONGODBURL`, `BETA_MONGODBURL`, and `PRODUCTION_MONGODBURL` in `server/.env`, and each connection is checked against the database name it claims to be.
@@ -131,7 +142,8 @@ That count can fall to zero without anything being wrong: measured on Developmen
 The self-check therefore does not ask for at least one prefix row.
 It refuses the run when a counted change's served text only continues a capped baseline value, because that is the row the cap-aware comparison exists to exclude and finding one means the comparison did not run.
 
-**Keep the 2026-08-31 artifact.** Its per-row hand-read verdicts are the only classified sample this product has and the cap does not touch them: a human read the served card, not the export. What is limited is only its use as a byte-comparison source, and only past 700 characters. Do not "fix" it by discarding or regenerating the file.
+The 2026-08-31 artifact and its per-row hand-read verdicts are lost (see Baseline files above); this section explains numbers reported against it before then.
+The cap detection stays, because any baseline exported through a length cap needs it.
 
 ## The corpus-wide reachable split
 
@@ -188,7 +200,7 @@ The count lives here and not in `yarn served-check`, because that command reads 
 
 ## Cutting a second baseline
 
-**The 2026-08-31 hand-read is the pinned baseline and does not get updated.** Decided 2026-09-12.
+**A baseline file does not get updated.** Decided 2026-09-12, for the 2026-08-31 hand-read, which is now lost.
 Never overwrite it with a fresh render: the whole value of a fixed slug set is that a change in a number is a change in the corpus, and rolling served rows into it silently ends the pairing to the only human-classified sample this product has.
 
 When you want a fresh sample, cut a **second, separately named** baseline and keep both.
@@ -198,14 +210,15 @@ The baseline is a JSON array of objects carrying `slug`, `name`, `shortDescripti
 jq '[.scoreboards[] | select(.environment == "beta") | .servedRows[]
      | select(.served == true)
      | {slug, name, shortDescription, fullDescription, websiteUrl, researchAreas}]' \
-  ./tmp/served-scoreboard.json > ~/ylabs-backups/handoffs/beta-served-n<count>-<YYYYMMDD>.json
+  ./tmp/served-scoreboard.json > ~/Personal/ylabs-backups/handoffs/beta-served-n<count>-<YYYYMMDD>.json
 ```
 
 Filter on `.served == true`.
 A row the route refused is recorded with empty copy, and baking that in would make the row read as changed the moment it starts serving again, which is a fact about the export rather than about the corpus.
 
-The first full-fidelity baseline is `~/ylabs-backups/handoffs/beta-served-n92-20260913.json`: the 92 rows of the pinned 100 that Beta still served on 2026-09-13, uncapped (longest `fullDescription` 1,994 characters, none at a round length).
-Re-running against it reports 0 changed and 0 compared on a prefix, which is the check that a freshly cut baseline is clean.
+The first full-fidelity baseline was `beta-served-n92-20260913.json`, the 92 rows of the pinned 100 that Beta served on 2026-09-13; it is lost.
+The current one is `beta-served-n65-20261116.json`, cut the same way (see Baseline files above).
+Re-running against a freshly cut baseline must report 0 changed and 0 compared on a prefix, which is the check that it is clean.
 
 Report both baselines when you use the new one, so a reader can see which pairing a number belongs to.
 

@@ -26,7 +26,7 @@
  *
  * Usage:
  *   yarn --cwd server research-entity:served-scoreboard \
- *     --baseline ~/ylabs-backups/handoffs/beta-served-hand-read-n100-20260831.json
+ *     --baseline ~/Personal/ylabs-backups/handoffs/beta-served-n65-20261116.json
  *   yarn --cwd server research-entity:served-scoreboard --baseline <path> \
  *     --environment beta --output ./tmp/served-scoreboard.json
  *
