@@ -251,7 +251,7 @@ ylabs scraper CLI
 
   list                                       List registered scrapers
   run --source <name> [--apply] [flags]      Run a scraper (a dry run without --apply)
-  materialize --run <runId> [--apply --confirm-materialize] [--output <path>] [--only-fields <paths>] [--skip-entity-types <types>] [--skip-center-roster-retirement] [--expect-center-plan <path>]
+  materialize --run <runId> [--apply --confirm-materialize] [--output <path>] [--only-fields <paths> | --only-program-fields <paths>] [--skip-entity-types <types>] [--skip-center-roster-retirement] [--expect-center-plan <path>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
   prune-observations [flags]                 Prune old unreferenced superseded Observation rows
@@ -309,6 +309,12 @@ Materialize flags:
                        outOfScopePaths (not written, not deleted); other entity
                        types, mints, run reconciliations and the visibility gate
                        are skipped. Per-key paths go to --output only.
+  --only-program-fields <paths>
+                       Write only these Fellowship paths on the run's program rows (any
+                       top-level Fellowship schema path, for example contactOffice or
+                       deadline); user and research rows and every run reconciliation are
+                       skipped, and the program visibility gate re-runs after any write.
+                       An unknown path fails and lists the valid ones. Requires --output.
 
 Prune flags:
   --apply              Delete matching rows. Omit for dry-run.
@@ -533,17 +539,24 @@ Concurrency:
         runId,
         confirmMaterialize,
         onlyFields,
+        onlyProgramFields,
         skipEntityTypes,
         skipCenterRosterRetirement,
         expectCenterPlanPath,
         guard,
       } = materializePreflight;
       const fieldScoped = onlyFields.length > 0;
+      const programFieldScoped = onlyProgramFields.length > 0;
       const visibilityGateCollection = visibilityGateCollectionAfterSkipping(skipEntityTypes);
       console.log(`Materializing observations from run ${runId}...`);
       if (fieldScoped) {
         console.log(
           `Field-scoped user materialize: ${onlyFields.join(', ')}. Only user rows are materialized, no researcher is minted, and no run reconciliation or visibility gate runs.`,
+        );
+      }
+      if (programFieldScoped) {
+        console.log(
+          `Field-scoped program materialize: ${onlyProgramFields.join(', ')}. Only program rows are materialized, only these fields are written, no run reconciliation runs, and the program visibility gate runs after any write.`,
         );
       }
       if (skipCenterRosterRetirement) {
@@ -581,6 +594,7 @@ Concurrency:
         const result = await materializeFromRun(runId, {
           dryRun: guard.options.dryRun,
           ...(fieldScoped ? { userWriteOnlyFields: onlyFields } : {}),
+          ...(programFieldScoped ? { programWriteOnlyFields: onlyProgramFields } : {}),
           ...(skipEntityTypes.length > 0 ? { skipEntityTypes } : {}),
           ...(skipCenterRosterRetirement ? { skipCenterRosterRetirement } : {}),
           ...(centerPlanGuard ? { centerPlanGuard } : {}),
@@ -588,18 +602,20 @@ Concurrency:
         console.log(JSON.stringify(withoutUserFieldScopeRows(result), null, 2));
         const report = await getScrapeRunReport(runId);
         let visibilityGate: unknown | undefined;
+        const gateCollection = programFieldScoped ? 'programs' : visibilityGateCollection;
         if (
           !guard.options.dryRun &&
           result.errors === 0 &&
           !fieldScoped &&
-          visibilityGateCollection
+          gateCollection &&
+          (!programFieldScoped || result.updated > 0)
         ) {
           const sourceName = (report as any).run?.sourceName;
           console.log(
             `\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`,
           );
           visibilityGate = await runStudentVisibilityGate({
-            collection: visibilityGateCollection,
+            collection: gateCollection,
             mode: 'apply',
             sourceName,
           });
@@ -624,6 +640,7 @@ Concurrency:
                 ...guard.options,
                 confirmMaterialize,
                 ...(fieldScoped ? { onlyFields } : {}),
+                ...(programFieldScoped ? { onlyProgramFields } : {}),
                 ...(skipEntityTypes.length > 0 ? { skipEntityTypes } : {}),
                 ...(skipCenterRosterRetirement ? { skipCenterRosterRetirement } : {}),
                 ...(expectCenterPlanPath ? { expectCenterPlanPath } : {}),

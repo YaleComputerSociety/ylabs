@@ -773,6 +773,7 @@ interface MaterializeOptions {
   cardModel?: string;
   writeOnlyFields?: string[];
   userWriteOnlyFields?: readonly string[];
+  programWriteOnlyFields?: readonly string[];
   /**
    * Keep the field-less post-projection steps (inferred lead edges, access-signal
    * upserts, the department-roster fold) on a `writeOnlyFields` pass. The merge
@@ -16894,6 +16895,7 @@ interface MaterializeFromRunCounts {
   postMaterializationMetrics: Required<ReportPostMaterializationMetrics>;
   changedPathsByEntityType?: Record<string, string[]>;
   userFieldScope?: UserFieldScopeReport;
+  programFieldScope?: ProgramFieldScopeReport;
   centerPlan?: CenterPlanReport;
 }
 
@@ -17050,6 +17052,66 @@ async function materializeUserRowsInFieldScope(
   };
 }
 
+export interface ProgramFieldScopeReport {
+  onlyFields: string[];
+  rowsOutsideProgramSkipped: Record<string, number>;
+  runReconciliationsSkipped: true;
+}
+
+async function materializeProgramRowsInFieldScope(
+  rows: ReadonlyArray<{ entityType: ObservedEntityType; entityId?: string; entityKey?: string }>,
+  options: MaterializeOptions,
+): Promise<MaterializeFromRunCounts> {
+  const onlyFields = [...(options.programWriteOnlyFields ?? [])];
+  const rowsOutsideProgramSkipped: Record<string, number> = {};
+  const programRows = rows.filter((row) => {
+    if (row.entityType === 'fellowship') return true;
+    rowsOutsideProgramSkipped[row.entityType] =
+      (rowsOutsideProgramSkipped[row.entityType] ?? 0) + 1;
+    return false;
+  });
+  let conflicts = 0;
+  let updated = 0;
+  let skipped = 0;
+  let errors = 0;
+  const changedProgramPaths = new Set<string>();
+  const progress = startLongRunProgress('field-scoped-program-materialize', programRows.length);
+  const { linkedRowIndexSyncFailedEntityIds } = await materializeObservedEntitiesInChunks(
+    programRows,
+    { ...options, programWriteOnlyFields: undefined, writeOnlyFields: onlyFields },
+    (_row, outcome) => {
+      progress.tick('error' in outcome);
+      if (!('result' in outcome)) {
+        errors++;
+        return;
+      }
+      const { result } = outcome;
+      conflicts += result.conflicts;
+      if (materializeRowOutcome(result) === 'skipped') {
+        skipped++;
+        return;
+      }
+      updated++;
+      for (const path of result.changedPaths ?? []) changedProgramPaths.add(path);
+    },
+    MATERIALIZATION_CHUNK_SIZE,
+    1,
+  ).finally(() => progress.stop());
+  return {
+    materialized: programRows.length - errors,
+    created: 0,
+    updated,
+    conflicts,
+    skipped,
+    errors,
+    indexSyncFailures: linkedRowIndexSyncFailedEntityIds.size,
+    postMaterializationMetrics: emptyPostMaterializationMetrics(),
+    changedPathsByEntityType:
+      changedProgramPaths.size > 0 ? { fellowship: [...changedProgramPaths].sort() } : {},
+    programFieldScope: { onlyFields, rowsOutsideProgramSkipped, runReconciliationsSkipped: true },
+  };
+}
+
 export async function materializeFromRun(
   scrapeRunId: string,
   options: MaterializeOptions = {},
@@ -17144,6 +17206,16 @@ async function materializeFromRunUnderRemovalGuard(
     );
   });
 
+  if (options.programWriteOnlyFields && options.programWriteOnlyFields.length > 0) {
+    return materializeProgramRowsInFieldScope(
+      distinct.map((row) => ({
+        entityType: row._id.entityType,
+        entityId: row._id.entityId ? String(row._id.entityId) : undefined,
+        entityKey: row._id.entityKey || undefined,
+      })),
+      options,
+    );
+  }
   if (userWriteScope(options)) {
     return materializeUserRowsInFieldScope(
       distinct.map((row) => ({
