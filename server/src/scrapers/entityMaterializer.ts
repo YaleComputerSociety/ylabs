@@ -371,6 +371,7 @@ import {
   preferFundFacetObservations,
 } from './fellowshipFundFacets';
 import {
+  FELLOWSHIP_ABSENCE_WITNESS_FIELD,
   fellowshipFieldsAssertedAbsent,
   planFellowshipAbsenceClears,
   withoutFellowshipFieldsAssertedAbsent,
@@ -7576,9 +7577,25 @@ async function fundFacetObservationsCitedBy(
       ...materializationReadScopeFilter(),
       entityKey: fundKey,
       sourceName: YALE_FELLOWSHIP_DATABASE_SOURCE,
-      field: { $in: [...FUND_AUTHORITY_FIELDS, 'title', FUND_RETIREMENT_FIELD] },
+      field: {
+        $in: [
+          ...FUND_AUTHORITY_FIELDS,
+          'title',
+          FUND_RETIREMENT_FIELD,
+          FELLOWSHIP_ABSENCE_WITNESS_FIELD,
+        ],
+      },
     }).lean());
-  const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
+  const { kept: unwithdrawn } = partitionObservationsByInvalidatedRun(
+    read,
+    await invalidatedScrapeRunIds(),
+  );
+  // A fund value the fund lane has since claimed absent (#6507) must not become the
+  // authority on a row another lane owns, or a collapsed facet would be re-filled there.
+  const kept = withoutFellowshipFieldsAssertedAbsent(
+    unwithdrawn,
+    fellowshipFieldsAssertedAbsent(unwithdrawn),
+  );
   const retirement = newestFundRetirement(kept);
   if (!fundFacetsDescribeProgram(entityDoc?.title, newestFundTitle(kept))) return [];
   return kept.filter(
