@@ -145,9 +145,8 @@ function officeAnApplicationGoesThrough(sentence: string): string | undefined {
   const reading = leadingName(sentence.slice(route.index + route[0].length));
   if (!reading) return undefined;
   const systemName = reading.name.replace(/[.,;:]+$/, '');
-  const isSystem =
-    NAMES_AN_APPLICATION_SYSTEM.test(systemName) || FOLLOWS_AS_A_SYSTEM.test(reading.rest);
-  return isSystem ? officeOwningSystem(systemName) : undefined;
+  if (NAMES_AN_APPLICATION_SYSTEM.test(systemName)) return officeOwningSystem(systemName);
+  return FOLLOWS_AS_A_SYSTEM.test(reading.rest) ? officeName(systemName) : undefined;
 }
 
 function officeAnApplicationIsSubmittedTo(sentence: string): string | undefined {

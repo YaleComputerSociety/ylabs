@@ -128,6 +128,18 @@ describe('the administering office a program page states (#4589)', () => {
     ).toBe('Department of Fixtures');
   });
 
+  it('reads the whole multi-word office name a website route names', () => {
+    expect(
+      officeIn('Application to this competition is via the Department of Fixture Science website.'),
+    ).toBe('Department of Fixture Science');
+    expect(
+      officeIn('Applications are submitted via the Council on Fixture Regional Studies portal.'),
+    ).toBe('Council on Fixture Regional Studies');
+    expect(
+      officeIn('Application is via the Center for Fixture and Professional Experience website.'),
+    ).toBe('Center for Fixture and Professional Experience');
+  });
+
   it('reads awarded through, accepts applications, pleased to award and submit to an office', () => {
     expect(
       officeIn('The Fixture Travel Grant is awarded through Fixture Center and supports study.'),
