@@ -1890,6 +1890,32 @@ describe('each guard counts exactly the observation it holds (#6441)', () => {
       },
     },
     {
+      guard: 'regressive-prose',
+      field: 'fullDescription',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'fullDescription',
+          value: DEGRADED_DESCRIPTION,
+        },
+      ],
+      opts: { loadActiveProse: async () => USEFUL_DESCRIPTION },
+    },
+    {
+      guard: 'weaker-prose',
+      field: 'fullDescription',
+      inputs: () => [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'horsley-lab',
+          field: 'fullDescription',
+          value: MISSION,
+        },
+      ],
+      opts: { loadActiveProse: async () => RESEARCH },
+    },
+    {
       guard: 'card-losing-pair',
       field: 'fullDescription',
       inputs: () => [
