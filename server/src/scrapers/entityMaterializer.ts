@@ -30,6 +30,8 @@ import { cachedCardFor } from './cardSynthesisDerivation';
 import { withoutModelCalls } from '../utils/modelClient';
 import {
   decideResearcherFieldWrite,
+  decideUnprovenKeyFieldWrite,
+  isUnprovenNetidKeyOnNameJoin,
   isFillOnlyFieldValue,
   isFillOnlyIdentityJoin,
   writerHeldOnFillOnlyEvidence,
@@ -10447,6 +10449,32 @@ async function withdrawScreenedOfficialProfileLinks(
   return { written, ...paths, changedPaths: written ? changedPaths : [] };
 }
 
+function netidPayloadOfUserKey(userKey: string): string {
+  const raw = userKey.trim();
+  const namespaced = /^netid:/i.test(raw);
+  if (!namespaced && NAMESPACED_USER_KEY_PATTERN.test(raw)) return '';
+  const payload = (namespaced ? raw.replace(/^netid:/i, '') : raw).trim().toLowerCase();
+  if (!payload || /[@\s]/.test(payload)) return '';
+  if (namespaced) return payload;
+  return looksLikeYaleNetid(payload) || isLikelyYaleEmailLocalPart(payload) ? payload : '';
+}
+
+async function writerKeyIsUnprovenOnNameJoin(
+  userKey: string,
+  identityJoin: string | undefined,
+  researcher: any,
+): Promise<boolean> {
+  if (identityJoin !== 'person-name') return false;
+  const payload = netidPayloadOfUserKey(userKey);
+  if (!payload) return false;
+  return isUnprovenNetidKeyOnNameJoin({
+    identityJoin,
+    payload,
+    aliasNetid: await netidForRosterEmailAlias(payload),
+    researcherNetid: textValue(researcher?.identifiers?.netid) || undefined,
+  });
+}
+
 async function releaseFieldWritersThatNoLongerReach(
   researcher: any,
   materializingKey: string,
@@ -10793,6 +10821,9 @@ async function materializeUserIdentityToResearcher(
   if (writerKey) {
     await recordLegacyDirectoryNameHolderAsFillOnly(researcher, writerKey, options.chunkPrefetch);
   }
+  const writerKeyUnproven = writerKey
+    ? await writerKeyIsUnprovenOnNameJoin(writerKey, identityJoin, researcher)
+    : false;
   const resolvedConfidence = (...fields: string[]): unknown =>
     fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
   const storedFieldValue = (field: ResearcherGatedField): unknown =>
@@ -10817,6 +10848,17 @@ async function materializeUserIdentityToResearcher(
     valueOutranksStored = false,
     storedValuePresent: boolean = !created && Boolean(textValue(storedFieldValue(field))),
   ): boolean => {
+    if (writerKeyUnproven) {
+      const unproven = decideUnprovenKeyFieldWrite(
+        researcher.profileFieldWriters,
+        field,
+        writerKey,
+        Boolean(value),
+        storedValuePresent,
+      );
+      if (!unproven.write && unproven.releaseWriter) researcher.profileFieldWriters.delete(field);
+      return unproven.write;
+    }
     const decision = decideResearcherFieldWrite(
       researcher.profileFieldWriters,
       field,
