@@ -370,6 +370,7 @@ describe('a credential the roster put where the given name belongs (#6372)', () 
       ['dept:synthetic:alex-example', 'Alex'],
       ['dept:synthetic:dr-alex-example', 'Dr. Alex'],
       ['dept:synthetic:md-alex-example', 'Md Alex'],
+      ['dept:synthetic:md-example', 'Md'],
     ]) {
       expect(rosterBioPersonKey(person({ key, fname }))).toBe(key);
     }

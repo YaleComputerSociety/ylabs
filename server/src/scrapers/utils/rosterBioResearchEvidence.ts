@@ -184,6 +184,9 @@ export function rosterBioPersonName(person: RosterBioPerson): string {
 
 const DEPT_PERSON_KEY = /^(dept:[^:]+:)(.+)$/;
 
+const writtenAsACredential = (word: string): boolean =>
+  /\./.test(word) || /[a-z][A-Z]/.test(word) || (word.length > 1 && word === word.toUpperCase());
+
 /**
  * The person key a roster entry should carry. A roster that put a credential where the
  * given name belongs ("PhD <surname>") minted `dept:<dept>:phd-<surname>`, which joins to
@@ -195,7 +198,9 @@ const DEPT_PERSON_KEY = /^(dept:[^:]+:)(.+)$/;
 export function rosterBioPersonKey(person: RosterBioPerson): string {
   const match = person.key.match(DEPT_PERSON_KEY);
   const given = typeof person.fname === 'string' ? person.fname.trim() : '';
-  if (!match || !given || !CREDENTIAL_TOKEN.test(given)) return person.key;
+  if (!match || !given || !CREDENTIAL_TOKEN.test(given) || !writtenAsACredential(given)) {
+    return person.key;
+  }
   const credentialSlugs = [slugify(given), given.toLowerCase().replace(/[^a-z]/g, '')];
   if (!credentialSlugs.some((slug) => match[2].startsWith(`${slug}-`))) return person.key;
   const name = rosterBioPersonName(person);
