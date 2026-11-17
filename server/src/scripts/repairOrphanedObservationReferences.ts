@@ -41,6 +41,7 @@ import {
   resolveSafeJsonReportPath,
 } from './scriptWriteGuards';
 import { attributedArchiveSet } from '../models/entityArchival';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const ORPHANED_REFERENCE_ARCHIVE_REASON = 'observations:repair-orphaned-references';
 
@@ -167,8 +168,7 @@ function readPrivateJson<T>(file: string, flag: string): T {
 export function writePrivateJson(value: unknown, file: string, flag: string): void {
   const safePath = resolveSafeJsonReportOutputPath(file, flag);
   fs.mkdirSync(path.dirname(safePath), { recursive: true });
-  fs.writeFileSync(safePath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: 'w' });
-  fs.chmodSync(safePath, 0o600);
+  writeReportFileSync(safePath, `${JSON.stringify(value, null, 2)}\n`, { flag });
 }
 
 function record(value: unknown): Record<string, unknown> {

@@ -19,6 +19,7 @@ import {
   type StaleCitationObservation,
 } from './repairMovedProfilePathCitationsCore';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -305,7 +306,7 @@ async function main(): Promise<void> {
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
+    writeReportFileSync(outputPath, JSON.stringify(report, null, 2));
     console.log(`Saved report to ${outputPath}`);
   }
 

@@ -6,7 +6,6 @@
  * run before the next `researchAreas` materialize.
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -29,6 +28,7 @@ import {
   type TopicTextRekeyRow,
 } from './rekeyResearchTopicsToTopicTextCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -119,7 +119,10 @@ async function main() {
     ),
   );
   if (args.output) {
-    fs.writeFileSync(resolveSafeJsonReportOutputPath(args.output), JSON.stringify(report, null, 2));
+    writeReportFileSync(
+      resolveSafeJsonReportOutputPath(args.output),
+      JSON.stringify(report, null, 2),
+    );
   }
 }
 

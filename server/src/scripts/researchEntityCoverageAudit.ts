@@ -29,6 +29,7 @@ import {
   type Phase0SummaryOnlyEnvironment,
   type Phase0SummaryOnlyMetadata,
 } from './phase0SummaryOnlyAudit';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -173,7 +174,7 @@ export function writeResearchEntityCoverageAuditOutput(result: unknown, output?:
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
 }
 
 export function buildResearchEntityCoverageAuditOutput<T extends object>(

@@ -33,6 +33,7 @@ import {
 } from './repairVanityHostCitationsCore';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 import { staleProvenanceUnset } from './refusedFieldProvenance';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 export interface VanityRepairOptions {
   apply: boolean;
@@ -227,7 +228,7 @@ async function main() {
   if (options.output) {
     const safe = resolveSafeJsonReportOutputPath(options.output);
     fs.mkdirSync(path.dirname(safe), { recursive: true });
-    fs.writeFileSync(safe, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safe, `${JSON.stringify(report, null, 2)}\n`);
   }
 }
 
