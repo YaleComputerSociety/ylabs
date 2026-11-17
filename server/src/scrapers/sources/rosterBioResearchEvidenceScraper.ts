@@ -18,7 +18,7 @@ import {
   planRosterBioResearchRows,
   rosterBioPersonNameKey,
   rosterBioProfileUrl,
-  rosterBioRereadObservation,
+  rosterBioRereadObservations,
   rosterBioResearchObservations,
   type RosterBioCoveredIdentities,
   type RosterBioDepartment,
@@ -223,7 +223,7 @@ export class RosterBioResearchEvidenceScraper implements IScraper {
     );
     const observations: ObservationInput[] = [
       ...scoped.flatMap(rosterBioResearchObservations),
-      ...rereadScoped.map(rosterBioRereadObservation),
+      ...rereadScoped.flatMap(rosterBioRereadObservations),
     ];
     if (observations.length) await ctx.emit(observations);
     return {

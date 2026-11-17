@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   ROSTER_BIO_EVIDENCE_FIELD,
   planRosterBioResearchRows,
+  rosterBioPersonKey,
   rosterBioPersonName,
   rosterBioRereadObservation,
+  rosterBioRereadObservations,
   rosterBioResearchObservations,
   rosterBioTitleVerdict,
   type RosterBioCoveredIdentities,
@@ -308,5 +310,116 @@ describe('roster biography research evidence', () => {
     expect(resolve(keyed, 'Alex Example')?.slug).toBe('dept-synthetic-alex-q-example');
     const netidKeyed = person({ key: 'netid:abc123', departments: ['Synthetic Studies'] });
     expect(resolve(netidKeyed, 'Alex Example')?.slug).toBe('dept-synthetic-alex-example');
+  });
+});
+
+describe('a credential the roster put where the given name belongs (#6372)', () => {
+  const CREDENTIAL_KEY = 'dept:synthetic:phd-example';
+  const credentialLed = (overrides: Partial<RosterBioPerson> = {}) =>
+    person({
+      key: CREDENTIAL_KEY,
+      fname: 'PhD',
+      lname: 'Example',
+      profileUrls: { departmental: 'https://synthetic.yale.edu/profile/alex-example' },
+      ...overrides,
+    });
+
+  it('rebuilds the person key from the recovered name and mints under it', () => {
+    expect(rosterBioPersonKey(credentialLed())).toBe('dept:synthetic:alex-example');
+    expect(rosterBioPersonKey(credentialLed({ fname: 'Ph.D.' }))).toBe(
+      'dept:synthetic:alex-example',
+    );
+    const { planned } = planRosterBioResearchRows([credentialLed()], emptyCovered(), resolver);
+    expect(planned).toHaveLength(1);
+    expect(
+      rosterBioResearchObservations(planned[0]).find((obs) => obs.field === 'inferredPiUserKey')
+        ?.value,
+    ).toBe('dept:synthetic:alex-example');
+  });
+
+  it('mints at the slug the roster lane would mint for the rebuilt key', () => {
+    const config = {
+      deptKey: 'synthetic',
+      deptName: 'Synthetic Studies',
+      schoolName: 'Synthetic School',
+      url: 'https://synthetic.yale.edu/people',
+    } as DeptConfig;
+    const { planned } = planRosterBioResearchRows(
+      [credentialLed({ departments: ['Synthetic Studies'] })],
+      emptyCovered(),
+      rosterBioDepartmentResolver([config]),
+    );
+    expect(planned.map((row) => row.slug)).toEqual(['dept-synthetic-alex-example']);
+  });
+
+  it('mints nothing when no given name can be recovered', () => {
+    const nameless = credentialLed({
+      profileUrls: { departmental: 'https://synthetic.yale.edu/profile/12345' },
+    });
+    expect(rosterBioPersonKey(nameless)).toBe('');
+    const { planned, skipped } = planRosterBioResearchRows([nameless], emptyCovered(), resolver);
+    expect(planned).toEqual([]);
+    expect(skipped.credential_only_given_name).toBe(1);
+  });
+
+  it('keeps the key of a real name that is spelled like or starts with a credential', () => {
+    for (const [key, fname] of [
+      ['dept:synthetic:ma-example', 'Ma'],
+      ['dept:synthetic:phdung-example', 'Phdung'],
+      ['dept:synthetic:mdala-example', 'Mdala'],
+      ['dept:synthetic:alex-example', 'Alex'],
+      ['dept:synthetic:dr-alex-example', 'Dr. Alex'],
+      ['dept:synthetic:md-alex-example', 'Md Alex'],
+      ['dept:synthetic:md-example', 'Md'],
+    ]) {
+      expect(rosterBioPersonKey(person({ key, fname }))).toBe(key);
+    }
+    expect(rosterBioPersonKey(credentialLed({ key: 'netid:abc123' }))).toBe('netid:abc123');
+  });
+
+  it('re-points its own row to the rebuilt key, and keeps re-reading it once re-pointed', () => {
+    const OWN_SLUG = 'dept-synthetic-alex-example';
+    const underOldKey: RosterBioCoveredIdentities = {
+      ...emptyCovered(),
+      personKeys: new Set([CREDENTIAL_KEY]),
+      slugs: new Set([OWN_SLUG]),
+      ownRowSlugsByPersonKey: new Map([[CREDENTIAL_KEY, OWN_SLUG]]),
+    };
+    const first = planRosterBioResearchRows([credentialLed()], underOldKey, resolver);
+    expect(first.planned).toEqual([]);
+    expect(first.reread).toHaveLength(1);
+    const observations = rosterBioRereadObservations(first.reread[0]);
+    expect(observations.map((obs) => obs.field)).toEqual([
+      ROSTER_BIO_EVIDENCE_FIELD,
+      'inferredPiUserKey',
+    ]);
+    expect(observations[1]).toMatchObject({
+      entityKey: OWN_SLUG,
+      value: 'dept:synthetic:alex-example',
+    });
+    expect(observations[1].assertsNoValueFor).toBeUndefined();
+
+    const underNewKey: RosterBioCoveredIdentities = {
+      ...underOldKey,
+      personKeys: new Set(['dept:synthetic:alex-example']),
+      ownRowSlugsByPersonKey: new Map([['dept:synthetic:alex-example', OWN_SLUG]]),
+    };
+    const second = planRosterBioResearchRows([credentialLed()], underNewKey, resolver);
+    expect(second.planned).toEqual([]);
+    expect(second.reread.map((row) => row.slug)).toEqual([OWN_SLUG]);
+  });
+
+  it('adds no lead observation when re-reading a row whose key needed no rebuild', () => {
+    const OWN_SLUG = 'dept-synthetic-alex-example';
+    const covered: RosterBioCoveredIdentities = {
+      ...emptyCovered(),
+      personKeys: new Set(['dept:synthetic:alex-example']),
+      slugs: new Set([OWN_SLUG]),
+      ownRowSlugsByPersonKey: new Map([['dept:synthetic:alex-example', OWN_SLUG]]),
+    };
+    const { reread } = planRosterBioResearchRows([person()], covered, resolver);
+    expect(rosterBioRereadObservations(reread[0]).map((obs) => obs.field)).toEqual([
+      ROSTER_BIO_EVIDENCE_FIELD,
+    ]);
   });
 });
