@@ -15,7 +15,7 @@ The `shared-row` arm is unchanged: it folds a shell only into a stronger record 
 A refused name-only candidate is listed in the dry-run report (`nameOnlyFoldCandidates`, `accountlessClusters.nameOnlyGroups`) for operator review, and the tool never applies it.
 
 Two different people can share a name and a department, and a fold is permanent once applied, so a name is a reason to look and never a reason to merge.
-On Development on 2026-11-16 neither path planned a fold, so the rule changes no current plan.
+On Development on 2026-11-16 the name arm's 2 candidates were already dropped downstream, one by the only-live-lead refusal and one by an operator's different-people verdict, and the cluster arm planned no fold, so the rule changes no current plan.
 The same change records the planning arm on every merge in the report, after a blind check of 10 planned merges could not tell from the report what joined them: they were 6 cited-official-page, 3 orcid-only-holder and 1 shared-row folds, none of them name-only.
 
 ## 2026-11-16: Topics Read From A Page The Lead Filter Refuses Retire, While A Vanished Page Keeps Them (#6386)

@@ -2096,6 +2096,7 @@ export interface AliasTwinResearcher {
 
 export interface AliasTwinPlan {
   targetByTwinResearcherId: Map<string, string>;
+  aliasNetidsByTwinResearcherId: Map<string, { twinNetid: string; realNetid: string }>;
   refusals: Record<AliasTwinFoldRefusal, number>;
 }
 
@@ -2116,6 +2117,7 @@ export function planAliasTwinFolds(input: {
 }): AliasTwinPlan {
   const plan: AliasTwinPlan = {
     targetByTwinResearcherId: new Map(),
+    aliasNetidsByTwinResearcherId: new Map(),
     refusals: Object.fromEntries(ALIAS_TWIN_FOLD_REFUSALS.map((reason) => [reason, 0])) as Record<
       AliasTwinFoldRefusal,
       number
@@ -2147,6 +2149,7 @@ export function planAliasTwinFolds(input: {
       continue;
     }
     plan.targetByTwinResearcherId.set(twin.id, realResearcher.id);
+    plan.aliasNetidsByTwinResearcherId.set(twin.id, { twinNetid: twin.netid, realNetid });
   }
   return plan;
 }

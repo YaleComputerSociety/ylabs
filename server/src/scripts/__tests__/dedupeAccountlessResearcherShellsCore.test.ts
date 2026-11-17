@@ -1243,6 +1243,10 @@ describe('planAliasTwinFolds (#4988, #5092)', () => {
 
   it('folds a local-part twin into the researcher holding the netid its alias resolves to', () => {
     expect([...plan().targetByTwinResearcherId]).toEqual([['twin', 'real']]);
+    expect(plan().aliasNetidsByTwinResearcherId.get('twin')).toEqual({
+      twinNetid: 'jordan.example',
+      realNetid: 'jqe7',
+    });
   });
 
   it('refuses a twin whose netid has signed in to this environment', () => {

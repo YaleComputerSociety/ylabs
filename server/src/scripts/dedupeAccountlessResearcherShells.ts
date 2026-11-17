@@ -1554,7 +1554,11 @@ export async function dedupeAccountlessResearcherShells(options: {
     aliasTwinIds.add(twinId);
     decidedTargetByShellId.set(twinId, realId);
     matchedIdentityByShellId.delete(twinId);
-    matchedEvidenceByShellId.set(twinId, 'netid alias of a login-holding record');
+    const aliasNetids = aliasTwinPlan.aliasNetidsByTwinResearcherId.get(twinId)!;
+    matchedEvidenceByShellId.set(
+      twinId,
+      `netid alias ${aliasNetids.twinNetid} of ${aliasNetids.realNetid}`,
+    );
   }
   const directRefusal = withoutDistinctPeopleFolds(decidedTargetByShellId, distinctPeoplePairs);
   const mergeTargetByShellId = resolveFinalMergeTargets(directRefusal.kept);
