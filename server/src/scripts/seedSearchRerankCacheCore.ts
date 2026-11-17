@@ -243,9 +243,7 @@ export function parseSeedInput(raw: unknown): SeedInputEntry[] {
       query,
       filters: (filters ?? {}) as ResearchGroupFilterInput,
       scores: scores as Record<string, number>,
-      ...(scoredTextHashes
-        ? { scoredTextHashes: scoredTextHashes as Record<string, string> }
-        : {}),
+      ...(scoredTextHashes ? { scoredTextHashes: scoredTextHashes as Record<string, string> } : {}),
     };
   });
 }
