@@ -3,10 +3,7 @@ import {
   PROGRAM_QUERY_STOP_WORDS,
   PROGRAM_SEARCH_SPELLING_FIELDS,
 } from './programSearchSpellingVocabulary';
-import {
-  PROGRAM_FUNDING_INTENT_WORDS,
-  PROGRAM_PAY_INTENT_WORDS,
-} from './programSearchIntentWords';
+import { PROGRAM_FUNDING_INTENT_WORDS, PROGRAM_PAY_INTENT_WORDS } from './programSearchIntentWords';
 import { PROGRAM_TOPIC_TAXONOMY } from './programTopicService';
 
 export const PROGRAM_SEARCH_FIELDS = PROGRAM_SEARCH_SPELLING_FIELDS;
@@ -397,8 +394,7 @@ export const rankProgramSearch = <T extends Record<string, unknown>>(
     .map((program, order) => ({ program, order, standing: standing(program) }))
     .filter((entry) => entry.standing !== 'excludes')
     .filter(
-      (entry) =>
-        !asksForPay || statesPay(entry.program) || titleNamesAny(entry.program, payWords),
+      (entry) => !asksForPay || statesPay(entry.program) || titleNamesAny(entry.program, payWords),
     )
     .filter(
       (entry) =>

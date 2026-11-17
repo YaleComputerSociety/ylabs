@@ -2,10 +2,7 @@ import { Fellowship } from '../models/fellowship';
 import { servedStudentVisibilityTierFilter } from '../models/studentVisibility';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
-import {
-  PROGRAM_FUNDING_INTENT_WORDS,
-  PROGRAM_PAY_INTENT_WORDS,
-} from './programSearchIntentWords';
+import { PROGRAM_FUNDING_INTENT_WORDS, PROGRAM_PAY_INTENT_WORDS } from './programSearchIntentWords';
 import { PROGRAM_QUERY_ALIAS_PHRASES } from './programTopicService';
 import { getResearchSearchSpellingVocabulary } from './researchSearchSpellingVocabulary';
 import {
@@ -57,9 +54,7 @@ const PROGRAM_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
     ...PROGRAM_QUERY_STOP_WORDS,
     ...PROGRAM_PAY_INTENT_WORDS,
     ...PROGRAM_FUNDING_INTENT_WORDS,
-  ].flatMap(
-    (phrase) => foldLatinDiacritics(phrase.toLowerCase()).match(/[a-z]+/g) ?? [],
-  ),
+  ].flatMap((phrase) => foldLatinDiacritics(phrase.toLowerCase()).match(/[a-z]+/g) ?? []),
 );
 
 let cached: { vocabulary: SearchSpellingVocabulary; loadedAt: number } | null = null;
