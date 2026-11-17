@@ -2,6 +2,7 @@ import {
   clampDescriptionLength,
   sanitizeStoredCatalogDescription,
 } from '../utils/descriptionHygiene';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
 
 export const MAX_OBSERVED_FELLOWSHIP_PROSE_CHARS = 20_000;
 
@@ -42,6 +43,11 @@ export function boundedObservedFellowshipProse(value: string): string {
 export function sanitizedObservedFellowshipProse(text: string | undefined): string | undefined {
   if (!text) return undefined;
   return sanitizeStoredCatalogDescription(text, MAX_OBSERVED_FELLOWSHIP_PROSE_CHARS) || undefined;
+}
+
+export function sanitizedObservedSourceText(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  return sanitizedObservedFellowshipProse(redactDirectContactInfo(text));
 }
 
 /**

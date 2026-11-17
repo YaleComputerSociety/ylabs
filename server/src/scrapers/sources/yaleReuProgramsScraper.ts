@@ -35,7 +35,7 @@ import {
 import { parseProgramDate } from '../utils/programDeadline';
 import {
   boundedObservedFellowshipProse,
-  sanitizedObservedFellowshipProse,
+  sanitizedObservedSourceText,
 } from '../fellowshipProse';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
@@ -307,7 +307,7 @@ export function parseReuProgramPage(
     title,
     description,
     eligibility,
-    fullSourceDescription: sanitizedObservedFellowshipProse(bodyText),
+    fullSourceDescription: sanitizedObservedSourceText(bodyText),
     competitionType: competitionTypeForText(identityText),
     sourceUrl: pageUrl,
     applicationLink,

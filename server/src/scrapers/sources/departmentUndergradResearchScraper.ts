@@ -4,7 +4,7 @@
  * This source captures source-backed undergraduate research routes from Yale
  * department pages. It emits access evidence, not active posted opportunities.
  */
-import { sanitizedObservedFellowshipProse } from '../fellowshipProse';
+import { sanitizedObservedSourceText } from '../fellowshipProse';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
@@ -827,7 +827,7 @@ function programRecordToFellowshipObservations(
   if (record.pageTitle) {
     observations.push({ ...base, field: 'sourcePageTitle', value: record.pageTitle });
   }
-  const fullSourceDescription = sanitizedObservedFellowshipProse(record.sourceText);
+  const fullSourceDescription = sanitizedObservedSourceText(record.sourceText);
   if (fullSourceDescription) {
     observations.push({ ...base, field: 'fullSourceDescription', value: fullSourceDescription });
   }

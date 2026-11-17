@@ -38,7 +38,7 @@ import {
 import { parseProgramDate } from '../utils/programDeadline';
 import {
   boundedObservedFellowshipProse,
-  sanitizedObservedFellowshipProse,
+  sanitizedObservedSourceText,
 } from '../fellowshipProse';
 
 export const YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE = 'yale-health-sciences-summer-programs';
@@ -341,7 +341,7 @@ export function parseHealthSciencesProgramPage(
     title,
     description,
     eligibility,
-    fullSourceDescription: sanitizedObservedFellowshipProse(bodyText),
+    fullSourceDescription: sanitizedObservedSourceText(bodyText),
     competitionType: 'Summer Undergraduate Research Program (Health Sciences)',
     sourceUrl: pageUrl,
     applicationLink,

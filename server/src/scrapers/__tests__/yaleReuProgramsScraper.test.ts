@@ -128,6 +128,28 @@ describe('parseReuProgramPage', () => {
     expect(String(source?.value)).not.toContain('fixture-reu@astro.example.edu');
   });
 
+  it('redacts a mid-sentence contact email from the stored page text (#6402)', () => {
+    const midSentenceEmail = 'fixture.office@example.edu';
+    const candidate = parseReuProgramPage(
+      astronomyReuHtml.replace(
+        '<h2>Eligibility</h2>',
+        `<p>Write to ${midSentenceEmail} with questions about housing and stipends.</p><h2>Eligibility</h2>`,
+      ),
+      astronomyUrl,
+      'Yale Department of Astronomy',
+      referenceDate,
+    );
+    const source = String(
+      candidateToObservations(candidate!).find(
+        (observation) => observation.field === 'fullSourceDescription',
+      )?.value ?? '',
+    );
+    expect(source).toContain('Open to sophomores and juniors majoring in physics or astronomy.');
+    expect(source).not.toContain(midSentenceEmail);
+    expect(source).not.toMatch(/fixture\.office|fixture-reu/);
+    expect(source).not.toMatch(/@/);
+  });
+
   it('rejects a non-Yale source page (source citations must be Yale-owned)', () => {
     const candidate = parseReuProgramPage(
       astronomyReuHtml.replace(astronomyUrl, ''),
