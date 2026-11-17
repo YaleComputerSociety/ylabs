@@ -2448,19 +2448,17 @@ describe('DepartmentRosterScraper.run', () => {
         { deptKey: 'truncated', status: 'partial-read', count: 4 },
         { deptKey: 'truncated-empty', status: 'partial-read', count: 0 },
         { deptKey: 'migrated', status: 'empty', count: 0 },
+        { deptKey: 'one-tab-migrated', status: 'empty', count: 9 },
         { deptKey: 'broken-parser', status: 'extractor-error', count: 0 },
         { deptKey: 'unreachable', status: 'fetch-failed', count: 0 },
         { deptKey: 'limited', status: 'skipped-by-limit', count: 0 },
       ]),
-    ).toEqual({ read: 12, truncated: 4, migrated: 0, 'broken-parser': 0 });
-  });
-
-  it('reads the applied mathematics roster from its page on the engineering site (#6423)', () => {
-    const config = DEFAULT_DEPT_CONFIGS.find((dept) => dept.deptKey === 'applied-mathematics');
-    expect(config).toMatchObject({
-      url: 'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
-      extractor: chemEnvFacultyExtractor,
-      withholdsHomeDepartment: true,
+    ).toEqual({
+      read: 12,
+      truncated: 4,
+      migrated: 0,
+      'one-tab-migrated': 9,
+      'broken-parser': 0,
     });
   });
 

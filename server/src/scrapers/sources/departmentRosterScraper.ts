@@ -272,6 +272,19 @@ const ROSTER_LANES_NEVER_ATTEMPTED_STATUSES: ReadonlySet<string> = new Set([
  * because a tab sharing its `deptKey` with an earlier tab emits nobody new when it
  * re-lists the same people, and an `empty` status withholds the whole department.
  */
+export function htmlLaneStatus(
+  walk: Pick<
+    RosterLaneWalk,
+    'pages' | 'pagesFetched' | 'stopReason' | 'readWholeRoster' | 'distinctEntries'
+  >,
+  truncatedByLimit: boolean,
+): string {
+  if (walk.pagesFetched === 0) return 'fetch-failed';
+  if (walk.pages.length === 0 && walk.stopReason === 'extractor-error') return 'extractor-error';
+  if (!walk.readWholeRoster || truncatedByLimit) return 'partial-read';
+  return walk.distinctEntries.length === 0 ? 'empty' : 'ok';
+}
+
 const ROSTER_BARREN_STATUSES = new Set(['empty', 'extractor-error', 'rendered-extractor-error']);
 
 /**
@@ -284,24 +297,12 @@ export function rosterUnitYields(
 ): Record<string, number> {
   const yields: Record<string, number> = {};
   for (const dept of perDept) {
-    if (dept.status === 'ok') yields[dept.deptKey] = dept.count;
-    else if (dept.status === 'partial-read' && dept.count > 0) yields[dept.deptKey] = dept.count;
-    else if (ROSTER_BARREN_STATUSES.has(dept.status)) yields[dept.deptKey] = 0;
+    const readSomething = dept.status === 'partial-read' && dept.count > 0;
+    if (dept.status === 'ok' || readSomething || ROSTER_BARREN_STATUSES.has(dept.status)) {
+      yields[dept.deptKey] = dept.count;
+    }
   }
   return yields;
-}
-
-export function htmlLaneStatus(
-  walk: Pick<
-    RosterLaneWalk,
-    'pages' | 'pagesFetched' | 'stopReason' | 'readWholeRoster' | 'distinctEntries'
-  >,
-  truncatedByLimit: boolean,
-): string {
-  if (walk.pagesFetched === 0) return 'fetch-failed';
-  if (walk.pages.length === 0 && walk.stopReason === 'extractor-error') return 'extractor-error';
-  if (!walk.readWholeRoster || truncatedByLimit) return 'partial-read';
-  return walk.distinctEntries.length === 0 ? 'empty' : 'ok';
 }
 
 /**
@@ -5947,11 +5948,10 @@ export class DepartmentRosterScraper implements IScraper {
       );
     }
 
-    const breakageStatuses = new Set(['empty', 'extractor-error', 'rendered-extractor-error']);
-    const brokenSources = perDept.filter((d) => breakageStatuses.has(d.status));
+    const brokenSources = perDept.filter((d) => ROSTER_BARREN_STATUSES.has(d.status));
     if (brokenSources.length > 0) {
       ctx.log(
-        `WARNING: ${brokenSources.length} configured roster source(s) fetched but yielded no faculty - likely a site migration or renamed layout; re-verify the URL and extractor: ${brokenSources
+        `WARNING: ${brokenSources.length} configured roster source(s) fetched a roster page that yielded no faculty - likely a site migration or renamed layout; re-verify the URL and extractor: ${brokenSources
           .map((d) => `${d.deptKey}(${d.status})`)
           .join(', ')}`,
       );
@@ -5982,7 +5982,7 @@ export class DepartmentRosterScraper implements IScraper {
     const partialFailures = [
       ...brokenSources.map(
         (d) =>
-          `roster source ${d.deptKey} fetched its page but read no faculty (${d.status}); re-verify its URL and extractor before trusting this department's roster`,
+          `roster source ${d.deptKey} ${d.count > 0 ? `read ${d.count} faculty but one of its roster pages read none` : 'fetched its page but read no faculty'} (${d.status}); re-verify its URL and extractor before trusting this department's roster`,
       ),
       ...(rekeyed.partialFailure ? [rekeyed.partialFailure] : []),
     ];
