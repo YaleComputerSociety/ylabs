@@ -81,6 +81,12 @@ It writes Development, and refuses any other database, unless `--environment=bet
 The seeder stores a `textHash` with each resolved score, the `rerankTextHash` of that row's document in the target environment's research-entity index, read through the fail-soft optional Meilisearch path; a document the index has not hashed yet gives none.
 It reads the index only when this shell's `MEILISEARCH_INDEX_PREFIX` names the target (unset for Development, `beta`, `prod`), because a laptop seeding Beta or Production is normally configured for the Development index, and hashing one environment's rows against another's index would store wrong hashes.
 The report's `textHashes` says what happened: `read-from-index`, `index-unreachable` (the read failed, so no hash is stored and the seed still applies), or `index-of-another-environment` (the index was not read); `scoresWithTextHash` counts the scores that carry one.
+An entry may also carry `"scoredTextHashes": { "<slug>": "<hash>" }`, naming the text hash a score was graded against.
+A score with one keeps that hash instead of the index's current one, so a re-seed that carries old scores forward beside new ones leaves the carried-over rows stale where their text has changed (#6427).
+Without it, every carried-over score would read as current and the stale count would fall without any re-scoring.
+`scoresKeepingScoredTextHash` counts the scores that keep a supplied hash, and `plannedEntriesStaleAfterApply` counts the planned entries that will still read as stale after the apply.
+`plannedEntriesStaleAfterApply` covers the text-hash half of staleness only, not the candidate-set rule that counts unscored rows in the top 10.
+A carried-over score whose hash is omitted from the input is indistinguishable from a fresh one and takes the current hash, so a re-seed should check that `scoresKeepingScoredTextHash` equals the number of scores it carries over.
 A seed without hashes is still served and still judged by the candidate-set rule, so seeding Beta or Production from a laptop degrades staleness detection rather than failing.
 A promotion seeds Beta and Production that way, from the laptop that holds the seed file, because a Render shell cannot read it; the exact runbook, its expected counts, turning the serve flag on, verification and rollback are in `docs/release-process.md` ("Seed the search rerank cache after the copy and the reindex").
 

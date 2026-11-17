@@ -88,6 +88,8 @@ describe('research-search:seed-rerank-cache', () => {
       upserted: 0,
       textHashes: 'not-requested',
       scoresWithTextHash: 0,
+      scoresKeepingScoredTextHash: 0,
+      plannedEntriesStaleAfterApply: null,
       seededEntries: null,
       staleSeededEntries: null,
       seededEntriesWithoutTextHashes: null,
@@ -172,6 +174,48 @@ describe('research-search:seed-rerank-cache', () => {
           textHash: buildSearchRerankTextHash(indexDocument('synthetic-coastal-lab')),
         },
         { entityId: entityIds['synthetic-marsh-lab'], score: 1 },
+      ]);
+    });
+
+    it('keeps the hash a carried-over score was graded against and stamps only new scores', async () => {
+      const gradedAgainst = buildSearchRerankTextHash(
+        indexDocument('synthetic-marsh-lab', ['Older Topic']),
+      );
+      const entries = parseSeedInput([
+        { ...SEED_INPUT[0], scoredTextHashes: { 'synthetic-marsh-lab': gradedAgainst } },
+      ]);
+      const readIndexTextHashes = hashesOf(
+        indexDocument('synthetic-coastal-lab'),
+        indexDocument('synthetic-marsh-lab'),
+      );
+
+      const dryRun = await seedSearchRerankCache({
+        entries,
+        apply: false,
+        source: 'test',
+        readIndexTextHashes,
+      });
+      expect(dryRun).toMatchObject({
+        scoresWithTextHash: 2,
+        scoresKeepingScoredTextHash: 1,
+        plannedEntriesStaleAfterApply: 1,
+      });
+
+      await seedSearchRerankCache({
+        entries,
+        apply: true,
+        indexVersion: 'full-synthetic-1',
+        source: 'test',
+        readIndexTextHashes,
+      });
+      const stored = await SearchRerankCache.findOne({ queryKey: coastalKey() }).lean();
+      expect(stored?.scores).toEqual([
+        {
+          entityId: entityIds['synthetic-coastal-lab'],
+          score: 3,
+          textHash: buildSearchRerankTextHash(indexDocument('synthetic-coastal-lab')),
+        },
+        { entityId: entityIds['synthetic-marsh-lab'], score: 1, textHash: gradedAgainst },
       ]);
     });
 
@@ -454,6 +498,43 @@ describe('research-search:seed-rerank-cache resolution of merged and renamed slu
     ]);
   });
 
+  it.each([
+    {
+      winner: 'carried',
+      scores: { 'synthetic-survivor-lab': 2, 'synthetic-merged-lab': 3 },
+      expectedHash: 'graded-against-older-text',
+    },
+    {
+      winner: 'fresh',
+      scores: { 'synthetic-survivor-lab': 3, 'synthetic-merged-lab': 2 },
+      expectedHash: 'current-index-hash',
+    },
+  ])(
+    'keeps the hash of the winning score when a $winner score wins a collision',
+    async ({ scores, expectedHash }) => {
+      await seedSearchRerankCache({
+        entries: parseSeedInput([
+          {
+            query: 'synthetic topic',
+            scores,
+            scoredTextHashes: { 'synthetic-merged-lab': 'graded-against-older-text' },
+          },
+        ]),
+        apply: true,
+        indexVersion: 'full-synthetic-1',
+        source: 'test',
+        readIndexTextHashes: async () =>
+          new Map([[ids['synthetic-survivor-lab'], 'current-index-hash']]),
+      });
+      const stored = await SearchRerankCache.findOne({
+        queryKey: searchRerankCacheQueryKey('synthetic topic', {}),
+      }).lean();
+      expect(stored?.scores).toEqual([
+        { entityId: ids['synthetic-survivor-lab'], score: 3, textHash: expectedHash },
+      ]);
+    },
+  );
+
   it('refuses the whole run before any write when two such scores are 2 or more apart', async () => {
     await expect(
       seedSearchRerankCache({
@@ -491,6 +572,15 @@ describe('research-search:seed-rerank-cache resolution of merged and renamed slu
 });
 
 describe('research-search:seed-rerank-cache input', () => {
+  it('refuses a scored text hash for a slug the entry does not score, or an empty one', () => {
+    expect(() =>
+      parseSeedInput([{ query: 'q', scores: { a: 1 }, scoredTextHashes: { b: 'h' } }]),
+    ).toThrow(/scoredTextHashes/);
+    expect(() =>
+      parseSeedInput([{ query: 'q', scores: { a: 1 }, scoredTextHashes: { a: '' } }]),
+    ).toThrow(/scoredTextHashes/);
+  });
+
   it('refuses a score outside 0 to 3 and a missing query', () => {
     expect(() => parseSeedInput([{ query: 'x', scores: { 'synthetic-lab': 4 } }])).toThrow(
       'from 0 to 3',
