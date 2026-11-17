@@ -493,7 +493,8 @@ export const servedApplicationOpenDate = (program: any, served: ServedProgramDea
 // The stored flag freezes whatever a lane last wrote, so a window that opened since then would
 // still read as closed (#4231). Where the row states a deadline, the served window decides in
 // both directions; without both a deadline and a stated opening date the dates cannot show the
-// window opened, so the stored flag stands unless the window is closed. A deadline served from
+// window opened, so the stored flag stands unless the window is closed. A row that states only an
+// opening date is closed until that date, and after it the stored flag stands (#6453). A deadline served from
 // another copy of the fund (#4382) is that copy's, so where neither copy states an opening date
 // the flag that copy's lane read beside the deadline stands instead of the row's own.
 export const acceptingFromServedWindow = (
@@ -502,7 +503,10 @@ export const acceptingFromServedWindow = (
   now: Date,
 ): boolean | undefined => {
   if (served.stale) return false;
-  if (!served.deadline) return undefined;
+  if (!served.deadline) {
+    const statedOpening = toValidDate(program.applicationOpenDate);
+    return statedOpening && statedOpening.getTime() > now.getTime() ? false : undefined;
+  }
   if (served.closed || served.projectedNextCycle) return false;
   const opensAt = toValidDate(servedApplicationOpenDate(program, served));
   if (!opensAt) return served.duplicateWindow?.isAcceptingApplications;

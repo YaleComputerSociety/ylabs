@@ -128,6 +128,23 @@ describe('fellowship public serializer', () => {
     expect(payload.isAcceptingApplications).toBe(false);
   });
 
+  it('serves a program that states only an opening date as closed until that date (#6453)', () => {
+    const now = new Date('2026-11-17T12:00:00.000Z');
+    const served = (applicationOpenDate: string, isAcceptingApplications: boolean) =>
+      publicFellowshipForStudent(
+        {
+          _id: '67d8928150621bcef434a1e1',
+          title: 'Opening-only program',
+          isAcceptingApplications,
+          applicationOpenDate: new Date(applicationOpenDate),
+        },
+        now,
+      ).isAcceptingApplications;
+    expect(served('2026-12-01T05:00:00.000Z', true)).toBe(false);
+    expect(served('2026-11-15T05:00:00.000Z', false)).toBe(false);
+    expect(served('2026-11-15T05:00:00.000Z', true)).toBe(true);
+  });
+
   it('keeps isAcceptingApplications when the deadline is in the future or absent', () => {
     const now = new Date('2026-08-22T00:00:00.000Z');
     const futureDeadline = publicFellowshipForStudent(
