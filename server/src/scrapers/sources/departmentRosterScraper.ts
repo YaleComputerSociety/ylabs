@@ -23,7 +23,6 @@
  * Honors `--use-cache`, `--limit` (caps total faculty across all depts), and
  * `--only` (filter by deptKey, e.g. `--only econ,mcdb`).
  */
-import { titleIsTruncated } from '../../utils/truncatedTitle';
 import axios from 'axios';
 import { Observation } from '../../models/observation';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
@@ -3142,11 +3141,8 @@ function absolutize(href: string, base: string): string {
   }
 }
 
-export const rosterTitleIsTruncated = (title: string | undefined | null): boolean =>
-  titleIsTruncated(title);
-
 const usableRosterTitle = (title: string | undefined): string | undefined =>
-  title && !rosterTitleIsTruncated(title) ? title : undefined;
+  title && !isTruncatedPersonTitle(title) ? title : undefined;
 
 function cleanText(value: string | undefined | null): string {
   return String(value || '')

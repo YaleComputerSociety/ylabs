@@ -52,7 +52,6 @@ import {
   chemEnvFacultyExtractor,
   engineeringDepartmentFacultyExtractor,
   rosterUnitYields,
-  rosterTitleIsTruncated,
   collapseLaneOutcomesByDepartment,
   type DeptConfig,
   type FacultyEntry,
@@ -6221,28 +6220,6 @@ describe('a roster title cut off before the field it names (#6426)', () => {
   ];
   const titleOf = (emitted: Array<{ entityType: string; field: string; value: unknown }>) =>
     emitted.find((o) => o.entityType === 'user' && o.field === 'title')?.value;
-
-  it('reads a title ending on a connective as truncated, and a complete one as whole', () => {
-    for (const truncated of [
-      'Professor of',
-      'Assistant Professor of',
-      'Synthetic Memorial Professor of',
-      'Professor and Chair of',
-      'Director of the',
-      'Professor of ',
-    ]) {
-      expect(rosterTitleIsTruncated(truncated)).toBe(true);
-    }
-    for (const whole of [
-      'Professor of Earth and Planetary Sciences',
-      'Assistant Professor',
-      'Lecturer in Anthropology',
-      'Professor of Law and Philosophy',
-      '',
-    ]) {
-      expect(rosterTitleIsTruncated(whole)).toBe(false);
-    }
-  });
 
   it('emits no title when the roster title is truncated and nothing states it whole', async () => {
     const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
