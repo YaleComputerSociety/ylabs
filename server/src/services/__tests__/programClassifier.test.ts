@@ -361,6 +361,80 @@ describe('classifyProgram', () => {
   });
 });
 
+describe('mentor matching needs the program to state it (#6455)', () => {
+  it('reads a summer research program whose page states no mentor placement as a program to apply to', () => {
+    const classification = classifyProgram({
+      title: 'Synthetic Summer Research Program',
+      competitionType: 'Summer Undergraduate Research Program',
+      description:
+        'A ten-week summer research program in the synthetic sciences with a stipend and housing for undergraduates.',
+    });
+    expect(classification).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      programKind: 'STRUCTURED_PROGRAM',
+      entryMode: 'APPLY_TO_PROGRAM',
+      mentorMatching: false,
+    });
+    expect(classification.bestNextStep).not.toMatch(/mentor/i);
+  });
+
+  it('reads mentor placement the stored page text states even when the served prose does not', () => {
+    expect(
+      classifyProgram({
+        title: 'Synthetic Summer Research Program',
+        competitionType: 'Summer Undergraduate Research Program',
+        description: 'A ten-week summer research program in the synthetic sciences.',
+        fullSourceDescription:
+          'Each student will be matched with the laboratory of a research mentor for the summer.',
+      }),
+    ).toMatchObject({
+      programKind: 'MENTOR_MATCHING',
+      entryMode: 'DIRECT_FACULTY_MATCHING',
+      mentorMatching: true,
+    });
+  });
+
+  it.each([
+    'Each participant works closely with a Yale faculty member on an independent project.',
+    'Students conduct research in the lab of a Yale faculty member for ten weeks.',
+    'Interns carry out a project under the direction of a principal investigator.',
+    'Each student will join a host laboratory for the summer.',
+    'Participants are assigned to research groups in the department.',
+    'Students are paired with a faculty mentor.',
+    'Each scholar is placed in a faculty lab.',
+  ])('reads mentor placement in %j', (sentence) => {
+    expect(
+      classifyProgram({
+        title: 'Synthetic Summer Research Program',
+        competitionType: 'Summer Undergraduate Research Program',
+        description: sentence,
+      }),
+    ).toMatchObject({ programKind: 'MENTOR_MATCHING', mentorMatching: true });
+  });
+
+  it('does not read a peer cohort or the research itself as mentor placement', () => {
+    expect(
+      classifyProgram({
+        title: 'Synthetic Summer Research Program',
+        competitionType: 'Summer Undergraduate Research Program',
+        description:
+          'Students work closely with each other in a cohort and present their research at a closing symposium.',
+      }),
+    ).toMatchObject({ programKind: 'STRUCTURED_PROGRAM', mentorMatching: false });
+  });
+
+  it('names a research mentor rather than a faculty one when it matches', () => {
+    const classification = classifyProgram({
+      title: 'Synthetic Summer Research Program',
+      competitionType: 'Summer Undergraduate Research Program',
+      description: 'Students will be assigned a graduate student mentor for the summer.',
+    });
+    expect(classification.bestNextStep).toBe(
+      'Apply to the summer research program; admitted students are matched with a research mentor.',
+    );
+  });
+});
+
 describe('classifyProgram internship identity (#2925)', () => {
   it('keeps a travel fund whose purpose list merely permits an internship out of the internship category', () => {
     expect(

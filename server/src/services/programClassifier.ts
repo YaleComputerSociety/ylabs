@@ -390,6 +390,28 @@ function publishedOnDepartmentPage(input: ProgramClassificationInput): boolean {
     .some((segment) => DEPARTMENT_PAGE_PATH_SEGMENT.test(segment));
 }
 
+/**
+ * Whether a summer program's own text says admitted students are placed with a mentor, an
+ * adviser or a lab (#6455). Mentor matching is a claim about the program, so it needs the
+ * page to state it; a page that only describes the research is a program a student applies to.
+ */
+const MENTOR_PLACEMENT = new RegExp(
+  [
+    String.raw`\b(?:matched|paired|assigned|placed)\b[^.]{0,80}?\b(?:mentors?|advis[eo]rs?|lab(?:orator(?:y|ies))?s?|faculty|research\s+groups?|groups?|investigators?)\b`,
+    String.raw`\bunder the (?:advisement|supervision|mentorship|guidance|direction) of\b`,
+    String.raw`\bwork(?:s|ing)?\s+(?:closely\s+)?(?:with|alongside)\s+(?:a|an|their|the)?\s*(?:yale\s+)?(?:faculty(?:\s+members?)?|mentors?|principal\s+investigators?|pis?)\b`,
+    String.raw`\b(?:research|work)\s+in\s+the\s+lab(?:oratory)?\s+of\b`,
+    String.raw`\bjoin(?:s|ing)?\s+(?:a|an|their|the)?\s*(?:host\s+)?lab(?:oratory)?\b`,
+    String.raw`\bhost\s+lab(?:oratory|oratories|s)?\b`,
+    String.raw`\bmentored research\b`,
+    String.raw`\b(?:summer|research|faculty) mentors?\b`,
+  ].join('|'),
+);
+
+function statesMentorPlacement(lowerText: string): boolean {
+  return MENTOR_PLACEMENT.test(lowerText);
+}
+
 function structuredProgram(overrides: Partial<KindClassification>): KindClassification {
   return {
     programCategory: 'RECURRING_PROGRAM',
@@ -718,18 +740,27 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
       /must (?:first )?(?:identify|secure|arrange|have|contact)[^.]{0,40}(?:faculty )?(?:mentor|adviser|advisor)\b/.test(
         lower,
       );
+    const matchesMentor =
+      !mentorFirst &&
+      statesMentorPlacement(`${lower} ${normalizeText(input.fullSourceDescription).toLowerCase()}`);
     return structuredProgram({
       programCategory: 'SUMMER_RESEARCH_PROGRAM',
-      programKind: mentorFirst ? 'STRUCTURED_PROGRAM' : 'MENTOR_MATCHING',
-      entryMode: mentorFirst ? 'SECURE_MENTOR_THEN_APPLY' : 'DIRECT_FACULTY_MATCHING',
+      programKind: matchesMentor ? 'MENTOR_MATCHING' : 'STRUCTURED_PROGRAM',
+      entryMode: mentorFirst
+        ? 'SECURE_MENTOR_THEN_APPLY'
+        : matchesMentor
+          ? 'DIRECT_FACULTY_MATCHING'
+          : 'APPLY_TO_PROGRAM',
       studentFacingCategory: 'Summer research program (REU)',
       requiresMentorBeforeApply: mentorFirst,
-      mentorMatching: !mentorFirst,
+      mentorMatching: matchesMentor,
       undergraduateOnly: true,
       programDates: 'Summer',
       bestNextStep: mentorFirst
         ? 'Identify a Yale faculty mentor in the program area, then apply to the summer research program.'
-        : 'Apply to the summer research program; admitted students are matched with a Yale faculty mentor.',
+        : matchesMentor
+          ? 'Apply to the summer research program; admitted students are matched with a research mentor.'
+          : 'Apply to the summer research program through its official application.',
       prepSteps: mentorFirst
         ? ['Faculty mentor', 'Research interests', 'Official application']
         : ['Research interests', 'Official application'],
