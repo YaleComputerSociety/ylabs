@@ -203,6 +203,13 @@ describe('a program whose own page text admits students pursuing a graduate degr
       'Applicants should plan to pursue a master or PhD degree after graduation.',
       'Students pursuing a PhD degree are not eligible.',
       'Our mentors are pursuing a doctoral degree.',
+      'Open to undergraduates interested in pursuing a PhD degree.',
+      'The program welcomes juniors and seniors considering pursuing a master or PhD degree.',
+      'Open to rising seniors who plan on pursuing a doctoral degree.',
+      'Eligible applicants are undergraduates hoping to start pursuing a PhD degree.',
+      'Applications from undergraduates preparing for pursuing a PhD degree are encouraged.',
+      'We welcome students from groups underrepresented in fields where few are pursuing a PhD degree.',
+      'Open to students interested in pursuing a PhD degree.',
     ]) {
       expect(programAudience({ undergraduateOnly: true, fullSourceDescription })).toBe(
         'UNDERGRADUATE',

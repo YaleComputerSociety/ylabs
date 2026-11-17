@@ -42,9 +42,14 @@ const ELIGIBILITY_LIST_NAMES_GRADUATES = new RegExp(
   `\\b(?:open\\s+to|available\\s+to|eligible\\s+(?:are|to\\s+apply\\s+are)|applications\\s+from|invites?\\s+applications\\s+from|welcomes?)\\b[^.]{0,160}?\\b${GRADUATE_GROUP}\\b`,
   'i',
 );
-/** The applicant frame admits students working toward a graduate degree: "applications from students pursuing a bachelor, master or PhD degree". */
+/**
+ * The applicants themselves are working toward a graduate degree: "applications from students
+ * that are currently pursuing a bachelor, master or PhD degree". The degree must belong to the
+ * applicant noun, so a future plan ("undergraduates interested in pursuing a PhD") stays
+ * undergraduate.
+ */
 const ELIGIBILITY_LIST_NAMES_GRADUATE_DEGREE_IN_PROGRESS =
-  /\b(?:open\s+to|available\s+to|eligible|applications\s+from|invites?\s+applications\s+from|welcomes?)\b[^.]{0,120}?\b(?:pursuing|enrolled\s+in|working\s+toward)\s+(?:an?\s+)?(?:[a-z']+,?\s+){0,4}?(?:master'?s?|ph\.?\s?d\.?|doctoral)\b[^.]{0,40}?\bdegrees?\b/i;
+  /\b(?:open\s+to|available\s+to|eligible|applications\s+from|invites?\s+applications\s+from|welcomes?)\b[^.]{0,80}?\b(?:students|applicants|candidates|individuals)\s+(?:(?:that|who)\s+are\s+)?(?:currently\s+)?(?:pursuing|enrolled\s+in|working\s+toward)\s+(?:an?\s+)?(?:[a-z']+,?\s+){0,4}?(?:master'?s?|ph\.?\s?d\.?|doctoral)\b[^.]{0,40}?\bdegrees?\b/i;
 /** Graduate students named as colleagues, mentors or staff, not as applicants. */
 const COLLEAGUE_ROLE =
   /\b(?:alongside|paired\s+with|mentor(?:s|ed|ing)?|run\s+by|led\s+by|supervised\s+by|taught\s+by|assisted\s+by|(?:reviewed|judged|evaluated|selected|chosen)\s+by|work(?:s|ing)?\s+with)\b/i;
