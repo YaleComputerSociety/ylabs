@@ -36,10 +36,7 @@ import {
   programPageTitle,
 } from '../utils/programPageEvidence';
 import { parseProgramDate } from '../utils/programDeadline';
-import {
-  boundedObservedFellowshipProse,
-  sanitizedObservedSourceText,
-} from '../fellowshipProse';
+import { boundedObservedFellowshipProse, sanitizedObservedSourceText } from '../fellowshipProse';
 
 export const YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE = 'yale-health-sciences-summer-programs';
 

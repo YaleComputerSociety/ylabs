@@ -33,10 +33,7 @@ import {
   programPageTitle,
 } from '../utils/programPageEvidence';
 import { parseProgramDate } from '../utils/programDeadline';
-import {
-  boundedObservedFellowshipProse,
-  sanitizedObservedSourceText,
-} from '../fellowshipProse';
+import { boundedObservedFellowshipProse, sanitizedObservedSourceText } from '../fellowshipProse';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 export const YALE_REU_PROGRAMS_SOURCE = 'yale-reu-programs';
