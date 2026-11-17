@@ -137,6 +137,25 @@ describe('an unproven netid key never holds a field on a name join (#6447)', () 
     expect(writerOf(after, 'websiteUrl')).toBeUndefined();
   });
 
+  it('never makes the name match the writer when another researcher holds the payload as a netid', async () => {
+    await seedAliasKey();
+    const holder = await Researcher.create({
+      displayName: 'Fixture Ottoline Brack',
+      identifiers: { netid: ALIAS },
+      profile: {},
+      profileLinks: [],
+      status: 'UNKNOWN',
+      archived: false,
+    });
+    const person = await seedPerson();
+
+    const result = await resolve(ALIAS_KEY);
+    expect(String(result.entityId)).toBe(String(holder._id));
+    const nameMatch = await readPerson(person._id);
+    expect(nameMatch.profile?.websiteUrl).toBeUndefined();
+    expect(writerOf(nameMatch, 'websiteUrl')).toBeUndefined();
+  });
+
   it('keeps the writer when the directory alias map resolves the key to this researcher', async () => {
     await seedAliasKey();
     await seedDirectoryAliasEvidence();

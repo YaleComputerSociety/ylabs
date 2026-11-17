@@ -10464,7 +10464,6 @@ async function writerKeyIsUnprovenOnNameJoin(
   return isUnprovenNetidKeyOnNameJoin({
     identityJoin,
     payload,
-    payloadHeldAsNetid: Boolean(await Researcher.exists({ 'identifiers.netid': payload })),
     aliasNetid: await netidForRosterEmailAlias(payload),
     researcherNetid: textValue(researcher?.identifiers?.netid) || undefined,
   });

@@ -306,12 +306,11 @@ describe('an unproven netid key on a name join (#6447)', () => {
   const evidence = {
     identityJoin: 'person-name',
     payload: 'fixture.quillmarsh',
-    payloadHeldAsNetid: false,
     aliasNetid: undefined,
     researcherNetid: 'fq6447',
   };
 
-  it('is unproven only on a name join with no netid holder and no alias to this researcher', () => {
+  it('is unproven on a name join unless this researcher holds the payload or the alias maps to it', () => {
     expect(isUnprovenNetidKeyOnNameJoin(evidence)).toBe(true);
     expect(isUnprovenNetidKeyOnNameJoin({ ...evidence, identityJoin: 'account-email' })).toBe(
       false,
@@ -319,8 +318,10 @@ describe('an unproven netid key on a name join (#6447)', () => {
     expect(isUnprovenNetidKeyOnNameJoin({ ...evidence, identityJoin: 'account-netid' })).toBe(
       false,
     );
-    expect(isUnprovenNetidKeyOnNameJoin({ ...evidence, payloadHeldAsNetid: true })).toBe(false);
     expect(isUnprovenNetidKeyOnNameJoin({ ...evidence, payload: '' })).toBe(false);
+    expect(
+      isUnprovenNetidKeyOnNameJoin({ ...evidence, researcherNetid: 'Fixture.Quillmarsh' }),
+    ).toBe(false);
   });
 
   it('counts an alias-map hit on this researcher as proven, and one on another netid as not', () => {

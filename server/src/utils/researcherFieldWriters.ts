@@ -177,7 +177,6 @@ export type ResearcherFieldWriteDecision =
 export interface NetidKeyIdentityEvidence {
   identityJoin: string | undefined;
   payload: string;
-  payloadHeldAsNetid: boolean;
   aliasNetid: string | undefined;
   researcherNetid: string | undefined;
 }
@@ -185,15 +184,18 @@ export interface NetidKeyIdentityEvidence {
 /**
  * Whether a netid-shaped user key reached this researcher by a name join alone with nothing to
  * show it is that person (#6447). The `netid:` namespace often carries an email local part, a
- * misnomer #2831 measured and kept, so the key is proven when some researcher holds the payload
- * as a netid or the directory alias map resolves it to this researcher's netid (#5744).
+ * misnomer #2831 measured and kept, so the key is proven only by this researcher: it holds the
+ * payload as its own netid, or the directory alias map resolves the payload to its netid (#5744).
+ * Another researcher holding the payload is not proof, because it points at a different person.
  */
 export function isUnprovenNetidKeyOnNameJoin(evidence: NetidKeyIdentityEvidence): boolean {
   if (evidence.identityJoin !== 'person-name') return false;
-  if (!evidence.payload || evidence.payloadHeldAsNetid) return false;
+  const payload = evidence.payload.trim().toLowerCase();
+  if (!payload) return false;
   const researcherNetid = evidence.researcherNetid?.trim().toLowerCase();
+  if (!researcherNetid) return true;
   const aliasNetid = evidence.aliasNetid?.trim().toLowerCase();
-  return !(aliasNetid && researcherNetid && aliasNetid === researcherNetid);
+  return payload !== researcherNetid && aliasNetid !== researcherNetid;
 }
 
 export type UnprovenKeyFieldWriteDecision =
