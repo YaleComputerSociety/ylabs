@@ -349,6 +349,17 @@ export const sanitizeResearchEntityCopy = (
     ),
   );
 
+const RESEARCH_AT_POSSESSIVE_OBJECT_PATTERN =
+  /\b[Rr]esearch\s+at\s+(?:his|her|their|(?:(?:\p{Lu}[\p{L}'’-]*|\p{Lu}\.|(?:Dr|Prof|Mr|Mrs|Ms|Mx)\.)\s+){0,4}\p{Lu}[\p{L}.-]*['’]s?)$/u;
+
+const isObjectOfResearchAt = (possessive: string, offset: number, whole: string): boolean =>
+  RESEARCH_AT_POSSESSIVE_OBJECT_PATTERN.test(`${whole.slice(0, offset)}${possessive}`);
+
+const swapLabUnlessObjectOfResearchAt =
+  (researchVerbPhrase: string) =>
+  (match: string, possessive: string, offset: number, whole: string): string =>
+    isObjectOfResearchAt(possessive, offset, whole) ? match : `${possessive} ${researchVerbPhrase}`;
+
 export const sanitizeFacultyResearchCopy = (
   value: string,
   entity?: ResearchEntityCopyInput | null,
@@ -380,30 +391,69 @@ export const sanitizeFacultyResearchCopy = (
       `${possessive} research centers on`,
     )
     .replace(/\bResearch\s+Lab\b/g, 'research program')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+studies\b/gu, '$1 research studies')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+focuses\s+on\b/gu, '$1 research focuses on')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+uses\b/gu, '$1 research uses')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu, '$1 research develops')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu, '$1 research investigates')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu, '$1 research studies')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+studies\b/gu,
+      swapLabUnlessObjectOfResearchAt('research studies'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+focuses\s+on\b/gu,
+      swapLabUnlessObjectOfResearchAt('research focuses on'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+uses\b/gu,
+      swapLabUnlessObjectOfResearchAt('research uses'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu,
+      swapLabUnlessObjectOfResearchAt('research develops'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu,
+      swapLabUnlessObjectOfResearchAt('research investigates'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu,
+      swapLabUnlessObjectOfResearchAt('research studies'),
+    )
     .replace(
       /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu,
-      '$1 research focuses on',
+      swapLabUnlessObjectOfResearchAt('research focuses on'),
     )
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu, '$1 research uses')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu, '$1 research develops')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu,
+      swapLabUnlessObjectOfResearchAt('research uses'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu,
+      swapLabUnlessObjectOfResearchAt('research develops'),
+    )
     .replace(
       /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu,
-      '$1 research investigates',
+      swapLabUnlessObjectOfResearchAt('research investigates'),
     )
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g, '$1 research studies')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g, '$1 research focuses on')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g, '$1 research uses')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g, '$1 research develops')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g, '$1 research investigates')
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g,
+      swapLabUnlessObjectOfResearchAt('research studies'),
+    )
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g,
+      swapLabUnlessObjectOfResearchAt('research focuses on'),
+    )
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g,
+      swapLabUnlessObjectOfResearchAt('research uses'),
+    )
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g,
+      swapLabUnlessObjectOfResearchAt('research develops'),
+    )
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g,
+      swapLabUnlessObjectOfResearchAt('research investigates'),
+    )
     .replace(
       /\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g,
-      '$1 research examines',
+      swapLabUnlessObjectOfResearchAt('research examines'),
     )
     .replace(/^My\s+lab\s+focuses\s+on\b/i, 'This research focuses on')
     .replace(/^My\s+lab\s+studies\b/i, 'This research studies')
