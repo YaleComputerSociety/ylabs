@@ -230,6 +230,8 @@ const STATES_RESEARCH =
   /\b(?:research(?!-(?:based|informed))(?:ers?|ing)?|stud(?:y|ies|ied|ying)(?!\s+cent(?:er|re))|investigat\w*|examin\w*|explor\w*|analy[sz]\w*|trials?|experiments?\w*|published)\b/i;
 const CLINICAL_OR_TEACHING_PRACTICE =
   /\b(?:(?:in|beyond) (?:his|her|their) clinical (?:work|practice)|professional interests|trainee education|supervis(?:es|ed|ing) (?:\w+ ){0,3}(?:trainees|interns|residents|fellows|students)|(?:providing|provides|provide) clinical (?:care|consultation|services)|clinical consultation|(?:designing|designs|develops|developing) curricul(?:a|um)|teaching to|as an? instructor|helping (?:children|adolescents|patients|families|clients))\b/i;
+const STATED_INTEREST_WITH_SUBJECT =
+  /\b(?:interested in|(?<!professional )interests (?:include|are|lie in)|focus(?:es|ed)? on|specializ(?:es|ed|ing) in)\s+\w+/i;
 const QI_OR_PROGRAM_WORK =
   /\b(?:programs?|program development|systems?(?:-level)?|pathways?|quality|evaluat\w*|partnership|model)\b/i;
 const GENERIC_RESEARCH_WORDS = new Set(
@@ -240,6 +242,12 @@ const GENERIC_RESEARCH_WORDS = new Set(
   ).split(' '),
 );
 
+function statesOnlyClinicalOrTeachingPractice(sentence: string): boolean {
+  const anchor = CLINICAL_OR_TEACHING_PRACTICE.exec(sentence);
+  if (!anchor) return false;
+  return !STATED_INTEREST_WITH_SUBJECT.test(sentence.slice(anchor.index + anchor[0].length));
+}
+
 export function rosterBioMintRefusal(
   evidenceSentences: readonly string[],
   name: string,
@@ -247,7 +255,7 @@ export function rosterBioMintRefusal(
   const text = evidenceSentences.join(' ');
   if (
     !STATES_RESEARCH.test(text) &&
-    evidenceSentences.every((sentence) => CLINICAL_OR_TEACHING_PRACTICE.test(sentence)) &&
+    evidenceSentences.every(statesOnlyClinicalOrTeachingPractice) &&
     !QI_OR_PROGRAM_WORK.test(text)
   ) {
     return 'clinical_teaching_or_consultation_only';
