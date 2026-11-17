@@ -65,37 +65,155 @@ export interface StoredPersonImageHolderLike {
   profile?: { imageUrl?: unknown } | null;
 }
 
-function storedHolderIdentity(holder: StoredPersonImageHolderLike): string | undefined {
-  const netid =
-    typeof holder.identifiers?.netid === 'string' ? holder.identifiers.netid.trim() : '';
-  if (netid) return `netid:${netid.toLowerCase()}`;
-  return holder._id === undefined || holder._id === null ? undefined : `id:${String(holder._id)}`;
+interface ImageHolderIdentity {
+  identity: string;
+  name: string;
+  netid?: string;
+}
+
+const lowerNetid = (value: unknown): string =>
+  typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+function storedHolderIdentity(
+  holder: StoredPersonImageHolderLike,
+): ImageHolderIdentity | undefined {
+  const netid = lowerNetid(holder.identifiers?.netid);
+  const name = String(holder.displayName ?? '').trim();
+  if (netid) return { identity: `netid:${netid}`, name, netid };
+  return holder._id === undefined || holder._id === null
+    ? undefined
+    : { identity: `id:${String(holder._id)}`, name };
 }
 
 const NETID_SUBJECT_KEY = /^netid:(.+)$/;
 
+const isEmailAliasPayload = (payload: string): boolean => payload.includes('.');
+
+export type EmailAliasNetids = ReadonlyMap<string, string>;
+
 /**
  * The researcher identity an observation's key names: a netid key names that netid, and a
  * per-roster key names the one researcher whose display name has that slug, if only one does.
+ * A `netid:` key whose payload is an email alias proves no netid (#2831), so it names a netid
+ * only where the directory alias map resolves it, and otherwise stands for nobody already counted.
  */
 function observationIdentityResolver(
   researchers: Iterable<StoredPersonImageHolderLike>,
-): (observation: PersonImageObservationLike) => string | undefined {
-  const identityByNameSlug = new Map<string, string | null>();
+  aliasNetids: EmailAliasNetids,
+): (observation: PersonImageObservationLike) => ImageHolderIdentity | undefined {
+  const identityByNameSlug = new Map<string, ImageHolderIdentity | null>();
+  const nameByNetid = new Map<string, string>();
   for (const researcher of researchers) {
-    const slug = slugify(String(researcher.displayName ?? ''));
     const identity = storedHolderIdentity(researcher);
-    if (!slug || !identity) continue;
+    if (!identity) continue;
+    if (identity.netid) nameByNetid.set(identity.netid, identity.name);
+    const slug = slugify(identity.name);
+    if (!slug) continue;
     const known = identityByNameSlug.get(slug);
-    identityByNameSlug.set(slug, known === undefined || known === identity ? identity : null);
+    identityByNameSlug.set(
+      slug,
+      known === undefined || known?.identity === identity.identity ? identity : null,
+    );
   }
+  const netidIdentity = (netid: string): ImageHolderIdentity => ({
+    identity: `netid:${netid}`,
+    name: nameByNetid.get(netid) ?? '',
+    netid,
+  });
   return (observation) => {
     const key = String(observation.entityKey ?? '');
-    const netid = NETID_SUBJECT_KEY.exec(key)?.[1]?.trim();
-    if (netid) return `netid:${netid.toLowerCase()}`;
+    const payload = lowerNetid(NETID_SUBJECT_KEY.exec(key)?.[1]);
+    if (payload) {
+      if (nameByNetid.has(payload) || !isEmailAliasPayload(payload)) return netidIdentity(payload);
+      const aliasNetid = lowerNetid(aliasNetids.get(payload));
+      return aliasNetid ? netidIdentity(aliasNetid) : { identity: `alias:${payload}`, name: '' };
+    }
     const rosterName = PER_ROSTER_NAME_KEY.exec(key)?.[1];
     return (rosterName && identityByNameSlug.get(rosterName)) || undefined;
   };
+}
+
+const exactFullName = (name: string): string =>
+  name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+function provablyOnePerson(left: ImageHolderIdentity, right: ImageHolderIdentity): boolean {
+  if (left.netid && right.netid) return left.netid === right.netid;
+  const leftName = exactFullName(left.name);
+  return Boolean(leftName) && leftName === exactFullName(right.name);
+}
+
+/**
+ * How many people hold a picture (#6284). Undercounting would serve a site default, so holders
+ * merge only on proof: a shared netid, or the same full name where one of them has no netid.
+ * Two holders with different netids are always two people.
+ */
+export function distinctPeopleAmongHolders(holders: Iterable<ImageHolderIdentity>): number {
+  const byIdentity = new Map<string, ImageHolderIdentity>();
+  for (const holder of holders) {
+    const known = byIdentity.get(holder.identity);
+    byIdentity.set(holder.identity, known && known.name ? known : holder);
+  }
+  const people: ImageHolderIdentity[][] = [];
+  for (const holder of byIdentity.values()) {
+    const matches = people.filter((person) =>
+      person.some((member) => provablyOnePerson(member, holder)),
+    );
+    const merged = [holder, ...matches.flat()];
+    const distinctNetids = new Set(merged.map((member) => member.netid).filter(Boolean));
+    if (distinctNetids.size > 1) {
+      people.push([holder]);
+      continue;
+    }
+    for (const match of matches) people.splice(people.indexOf(match), 1);
+    people.push(merged);
+  }
+  return people.length;
+}
+
+function holdersByPicture(
+  researchers: readonly StoredPersonImageHolderLike[],
+  observations: Iterable<PersonImageObservationLike>,
+  aliasNetids: EmailAliasNetids,
+): Map<string, ImageHolderIdentity[]> {
+  const observationIdentity = observationIdentityResolver(researchers, aliasNetids);
+  const holdersByKey = new Map<string, ImageHolderIdentity[]>();
+  const count = (value: unknown, identity: ImageHolderIdentity | undefined) => {
+    const key = personImageShareKey(value);
+    if (!key || !identity) return;
+    holdersByKey.set(key, [...(holdersByKey.get(key) ?? []), identity]);
+  };
+  for (const researcher of researchers) {
+    count(researcher.profile?.imageUrl, storedHolderIdentity(researcher));
+  }
+  for (const observation of observations) {
+    count(observation.value, observationIdentity(observation));
+  }
+  return holdersByKey;
+}
+
+/**
+ * The email-alias payloads worth resolving: those on a picture whose holders reach the bar
+ * before any merge, since only there can a resolved alias change the count.
+ */
+export function emailAliasPayloadsOnCandidatePictures(
+  researchers: readonly StoredPersonImageHolderLike[],
+  observations: readonly PersonImageObservationLike[],
+  minHolders: number = OVER_SHARED_PERSON_IMAGE_MIN_SUBJECTS,
+): string[] {
+  const payloads = new Set<string>();
+  for (const holders of holdersByPicture(researchers, observations, new Map()).values()) {
+    if (new Set(holders.map((holder) => holder.identity)).size < minHolders) continue;
+    for (const holder of holders) {
+      if (holder.identity.startsWith('alias:'))
+        payloads.add(holder.identity.slice('alias:'.length));
+    }
+  }
+  return [...payloads].sort();
 }
 
 /**
@@ -108,27 +226,30 @@ export function overSharedStoredPersonImageKeys(
   researchers: readonly StoredPersonImageHolderLike[],
   observations: Iterable<PersonImageObservationLike> = [],
   minHolders: number = OVER_SHARED_PERSON_IMAGE_MIN_SUBJECTS,
+  aliasNetids: EmailAliasNetids = new Map(),
 ): Set<string> {
-  const observationIdentity = observationIdentityResolver(researchers);
-  const identitiesByKey = new Map<string, Set<string>>();
-  const count = (value: unknown, identity: string | undefined) => {
-    const key = personImageShareKey(value);
-    if (!key || !identity) return;
-    const identities = identitiesByKey.get(key) ?? new Set<string>();
-    identities.add(identity);
-    identitiesByKey.set(key, identities);
-  };
-  for (const researcher of researchers) {
-    count(researcher.profile?.imageUrl, storedHolderIdentity(researcher));
-  }
-  for (const observation of observations) {
-    count(observation.value, observationIdentity(observation));
-  }
   const overShared = new Set<string>();
-  for (const [key, identities] of identitiesByKey) {
-    if (identities.size >= minHolders) overShared.add(key);
+  for (const [key, holders] of holdersByPicture(researchers, observations, aliasNetids)) {
+    if (distinctPeopleAmongHolders(holders) >= minHolders) overShared.add(key);
   }
   return overShared;
+}
+
+const ALIAS_RESOLVE_BATCH = 16;
+
+async function resolveEmailAliasNetids(payloads: readonly string[]): Promise<EmailAliasNetids> {
+  if (payloads.length === 0) return new Map();
+  const { netidForRosterEmailAlias } = await import('./entityMaterializer');
+  const resolved = new Map<string, string>();
+  for (let start = 0; start < payloads.length; start += ALIAS_RESOLVE_BATCH) {
+    const batch = payloads.slice(start, start + ALIAS_RESOLVE_BATCH);
+    const netids = await Promise.all(batch.map((payload) => netidForRosterEmailAlias(payload)));
+    batch.forEach((payload, index) => {
+      const netid = netids[index];
+      if (netid) resolved.set(payload, netid);
+    });
+  }
+  return resolved;
 }
 
 export async function readOverSharedPersonImageKeys(): Promise<Set<string>> {
@@ -147,9 +268,17 @@ export async function readOverSharedPersonImageKeys(): Promise<Set<string>> {
       { displayName: 1, 'profile.imageUrl': 1, 'identifiers.netid': 1 },
     ).lean<StoredPersonImageHolderLike[]>(),
   ]);
+  const aliasNetids = await resolveEmailAliasNetids(
+    emailAliasPayloadsOnCandidatePictures(researchers, observations),
+  );
   return new Set([
     ...overSharedPersonImageKeys(observations),
-    ...overSharedStoredPersonImageKeys(researchers, observations),
+    ...overSharedStoredPersonImageKeys(
+      researchers,
+      observations,
+      OVER_SHARED_PERSON_IMAGE_MIN_SUBJECTS,
+      aliasNetids,
+    ),
   ]);
 }
 
