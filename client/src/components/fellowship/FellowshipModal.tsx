@@ -482,7 +482,9 @@ const FellowshipModal = ({
                             <span className="text-xs text-brand">
                               {fellowship.deadlineProjectedNextCycle
                                 ? 'Estimated next deadline'
-                                : 'Deadline'}
+                                : fellowship.deadlineRollingReview
+                                  ? 'Rolling review closes'
+                                  : 'Deadline'}
                             </span>
                             <p className="text-sm font-medium text-brand-navy">
                               {formatFellowshipDate(fellowship.deadline, 'deadline')}
@@ -490,6 +492,11 @@ const FellowshipModal = ({
                             {fellowship.deadlineProjectedNextCycle && (
                               <p className="text-xs text-brand">
                                 Projected from the last cycle - unconfirmed, verify at source.
+                              </p>
+                            )}
+                            {fellowship.deadlineRollingReview && (
+                              <p className="text-xs text-brand">
+                                Applications are reviewed on a rolling basis until this date.
                               </p>
                             )}
                             {deadlineTextConflict && (

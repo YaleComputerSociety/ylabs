@@ -348,3 +348,23 @@ describe('the closing-soon countdown matches the calendar (#5158)', () => {
     ).toBe('Due today');
   });
 });
+
+describe('a rolling-review program (#6407)', () => {
+  it('describes the served date as the close of a rolling window', () => {
+    const status = getFellowshipApplicationStatus(
+      makeFellowship({ deadline: '2026-06-30T16:00:00.000Z', deadlineRollingReview: true }),
+      NOW,
+    );
+    expect(status.kind).toBe('open');
+    expect(status.label).toBe('Accepting applications');
+    expect(status.detail).toMatch(/^Reviewed on a rolling basis until /);
+  });
+
+  it('keeps a fixed deadline as a due date', () => {
+    const status = getFellowshipApplicationStatus(
+      makeFellowship({ deadline: '2026-06-30T16:00:00.000Z' }),
+      NOW,
+    );
+    expect(status.detail).toMatch(/^Due /);
+  });
+});

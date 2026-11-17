@@ -49,6 +49,7 @@ import {
   programDeadlineClosesAt,
   sameProgramDeadlineNextCycle,
 } from '../utils/programDeadlineInstant';
+import { programStatesRollingReview } from '../utils/programRollingReview';
 import {
   servedUpcomingDuplicateWindow,
   type UpcomingDuplicateWindow,
@@ -406,10 +407,21 @@ export interface ServedProgramDeadline {
   closed: boolean;
   projectedNextCycle: boolean;
   stale: boolean;
+  rollingReview: boolean;
   duplicateWindow?: UpcomingDuplicateWindow;
 }
 
 export const servedProgramDeadline = (program: any, now: Date): ServedProgramDeadline => {
+  const servedWindow = servedProgramDeadlineWindow(program, now);
+  const rollingReview =
+    Boolean(servedWindow.deadline) && !servedWindow.closed && programStatesRollingReview(program);
+  return { ...servedWindow, rollingReview };
+};
+
+const servedProgramDeadlineWindow = (
+  program: any,
+  now: Date,
+): Omit<ServedProgramDeadline, 'rollingReview'> => {
   const duplicateWindow = servedUpcomingDuplicateWindow(program, now);
   if (duplicateWindow) {
     return {
@@ -531,6 +543,7 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
   if (windowAcceptance !== undefined) publicFellowship.isAcceptingApplications = windowAcceptance;
   publicFellowship.deadlineProjectedNextCycle = served.projectedNextCycle;
   publicFellowship.deadlineStale = served.stale;
+  publicFellowship.deadlineRollingReview = served.rollingReview;
 
   const deadlineDate = toValidDate(publicFellowship.deadline);
   if (deadlineDate) {
