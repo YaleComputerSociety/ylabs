@@ -1077,6 +1077,45 @@ export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
   return out;
 };
 
+const FACULTY_SECTION_HEADING = /\b(?:professors?|lecturers?|instructors?)\b/i;
+
+const singularSectionTitle = (heading: string): string => heading.replace(/s$/, '');
+
+/**
+ * An engineering department faculty page: the stories cards, then any named section
+ * ("<rank>s") that lists people in content columns as a name and an email, with no card
+ * (#6423). The section heading is the only title the page states for those people.
+ */
+export const engineeringDepartmentFacultyExtractor: FacultyExtractor = (html, ctx) => {
+  const cards = chemEnvFacultyExtractor(html, ctx);
+  const $ = cheerio.load(html);
+  const columnEntries: FacultyEntry[] = [];
+  let sectionHeading = '';
+  $('h2, .content-columns').each((_i, el) => {
+    const node = $(el);
+    if (el.tagName === 'h2') {
+      sectionHeading = cleanText(node.text());
+      return;
+    }
+    if (!FACULTY_SECTION_HEADING.test(sectionHeading)) return;
+    node.children('[class^="content"]').each((_j, column) => {
+      const cell = $(column);
+      const { name, ...listedName } = rosterListedName(cleanText(cell.find('h3').first().text()));
+      if (!name) return;
+      const email = (cell.find('a[href^="mailto:"]').first().attr('href') || '')
+        .replace(/^mailto:/i, '')
+        .trim();
+      columnEntries.push({
+        name,
+        ...listedName,
+        title: singularSectionTitle(sectionHeading),
+        ...(email ? { email } : {}),
+      });
+    });
+  });
+  return [...cards, ...columnEntries];
+};
+
 /**
  * Newer Yale Drupal directory theme shared across many FAS humanities and
  * professional-school people pages.
@@ -2987,7 +3026,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     schoolName: 'Yale Faculty of Arts and Sciences',
     url: 'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
     paginated: false,
-    extractor: chemEnvFacultyExtractor,
+    extractor: engineeringDepartmentFacultyExtractor,
     withholdsHomeDepartment: true,
     namesCatalogDepartment: true,
   },

@@ -50,6 +50,7 @@ import {
   csRenderedExtractor,
   csFacultyDataExtractor,
   chemEnvFacultyExtractor,
+  engineeringDepartmentFacultyExtractor,
   rosterUnitYields,
   collapseLaneOutcomesByDepartment,
   type DeptConfig,
@@ -2380,7 +2381,7 @@ describe('DepartmentRosterScraper.run', () => {
     expect(configsByKey.get('applied-mathematics')).toMatchObject({
       deptName: 'Applied Mathematics',
       url: 'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
-      extractor: chemEnvFacultyExtractor,
+      extractor: engineeringDepartmentFacultyExtractor,
     });
     expect(configsByKey.get('history-science-medicine-public-health')).toMatchObject({
       deptName: 'History of Science, Medicine & Public Health',
@@ -6151,5 +6152,59 @@ describe('dept-faculty-roster userType comes from the person, not the page (#575
       deptListing('chem', 'Chemistry', 'Professor of Chemistry'),
     ]);
     expect(typings.at(-1)).toBe('faculty');
+  });
+});
+
+describe('engineeringDepartmentFacultyExtractor (#6423)', () => {
+  const page = `
+    <main>
+      <h2>Faculty</h2>
+      <div class="stories">
+        <a class="block stories-item py-2 !no-underline" href="/research-and-faculty/faculty-directory/alpha-example">
+          <h3 class="!pb-0 block text-brand-blue">Alpha Example <em class="fa fa-arrow-right"></em></h3>
+          <span class="text-black block font-bold">Professor of Applied Mathematics</span>
+        </a>
+      </div>
+      <div><h2 class="text-brand-blue">Gibbs Assistant Professors</h2></div>
+      <div class="grid gap-8 content-columns grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 bordered columns4">
+        <div class="content1 px-4"><h3>Gamma Sample</h3><p><a href="mailto:gamma.sample@example.edu">gamma.sample@example.edu</a></p></div>
+        <div class="content2 px-4"><h3>Delta Placeholder</h3><p><a href="mailto:delta.placeholder@example.edu">delta.placeholder@example.edu</a></p></div>
+      </div>
+      <div><h2>Contact Us</h2></div>
+      <div class="grid content-columns columns2">
+        <div class="content1 px-4"><h3>Epsilon Office</h3><p><a href="mailto:office@example.edu">office@example.edu</a></p></div>
+      </div>
+    </main>
+  `;
+  const ctx = {
+    pageUrl:
+      'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
+  };
+
+  it('reads the cards and a named rank section, titling its people from the heading', () => {
+    expect(
+      engineeringDepartmentFacultyExtractor(page, ctx).map(({ name, title, email }) => ({
+        name,
+        title,
+        email,
+      })),
+    ).toEqual([
+      { name: 'Alpha Example', title: 'Professor of Applied Mathematics', email: undefined },
+      {
+        name: 'Gamma Sample',
+        title: 'Gibbs Assistant Professor',
+        email: 'gamma.sample@example.edu',
+      },
+      {
+        name: 'Delta Placeholder',
+        title: 'Gibbs Assistant Professor',
+        email: 'delta.placeholder@example.edu',
+      },
+    ]);
+  });
+
+  it('reads no one from a column section whose heading names no faculty rank', () => {
+    const names = engineeringDepartmentFacultyExtractor(page, ctx).map((entry) => entry.name);
+    expect(names).not.toContain('Epsilon Office');
   });
 });
