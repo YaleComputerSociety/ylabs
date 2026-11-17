@@ -46,7 +46,6 @@
  * Read-only against Mongo. Writes nothing but its report.
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
@@ -74,6 +73,7 @@ import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import { connectScriptMongo } from '../db/connections';
 import { postChatCompletion } from '../utils/modelClient';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -646,7 +646,7 @@ async function main(): Promise<void> {
         rightArm: baselineLeft ? b.arm : a.arm,
       };
     });
-    fs.writeFileSync(
+    writeReportFileSync(
       reportPath,
       `${JSON.stringify(
         {

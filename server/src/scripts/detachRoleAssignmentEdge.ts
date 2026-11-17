@@ -30,6 +30,7 @@ import { LIVE_ROLE_EDGE_FILTER } from '../services/archivedResearchEntityRoleEdg
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -163,9 +164,11 @@ export async function detachRoleAssignmentEdge(
   if (!args.apply || !live) return { ...shape, detached: false, regatedRow: false };
   if (args.snapshot) {
     fs.mkdirSync(path.dirname(args.snapshot), { recursive: true });
-    fs.writeFileSync(args.snapshot, `${JSON.stringify({ takenAt: new Date(), edge }, null, 2)}\n`, {
-      mode: 0o600,
-    });
+    writeReportFileSync(
+      args.snapshot,
+      `${JSON.stringify({ takenAt: new Date(), edge }, null, 2)}\n`,
+      { flag: '--snapshot' },
+    );
   }
   if (args.endAsHistorical) {
     const firstObservedAfterEnd = Boolean(

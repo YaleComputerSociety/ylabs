@@ -15,6 +15,7 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import { planFieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -377,7 +378,7 @@ function writeOutput(report: unknown, output?: string): void {
   if (output) {
     const safeOutput = resolveSafeJsonReportOutputPath(output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${serialized}\n`);
+    writeReportFileSync(safeOutput, `${serialized}\n`);
   }
   console.log(serialized);
 }

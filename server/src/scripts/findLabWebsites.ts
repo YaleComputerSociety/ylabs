@@ -35,6 +35,7 @@ import {
   type LabSiteVerdict,
 } from './findLabWebsitesCore';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -516,7 +517,7 @@ async function main() {
   if (args.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
 
   console.log(JSON.stringify({ ...report, refused: report.refused.slice(0, 10) }, null, 2));
