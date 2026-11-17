@@ -39,6 +39,17 @@ describe('profileImagePictureKey (#5640)', () => {
     expect(profileImagePictureKey(DRUPAL_FILE_A)).toBe(profileImagePictureKey(DRUPAL_FILE_B));
   });
 
+  it('gives one key to a Drupal file and its styled WebP derivative (#6284)', () => {
+    const webpDerivative =
+      'https://fixture.yale.edu/sites/default/files/styles/square_160/public/2024-02/avery-synthetic.jpg.webp?h=1&itok=3';
+    expect(profileImagePictureKey(webpDerivative)).toBe(profileImagePictureKey(DRUPAL_FILE_B));
+  });
+
+  it('keeps a file uploaded as WebP apart from a JPEG of the same base name', () => {
+    const uploadedWebp = 'https://fixture.yale.edu/sites/default/files/2024-02/avery-synthetic.webp';
+    expect(profileImagePictureKey(uploadedWebp)).not.toBe(profileImagePictureKey(DRUPAL_FILE_B));
+  });
+
   it('keeps the same picture id on two different hosts apart', () => {
     expect(profileImagePictureKey(DRUPAL_PICTURE_B)).not.toBe(
       profileImagePictureKey(DRUPAL_PICTURE_B.replace('fixture.yale.edu', 'other.yale.edu')),
