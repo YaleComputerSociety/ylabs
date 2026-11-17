@@ -1469,6 +1469,9 @@ const linkIdentity = (link: unknown): string => {
  * subdocument that carries its own `_id`, which the lane's observed link never has, so a
  * whole-value comparison read every unchanged set as changed and re-saved it on every resolve.
  * Links are compared by label and URL in any order; a changed, added or removed link differs.
+ * Order and surrounding whitespace are deliberately ignored: the detail view lists links in
+ * stored order and nothing reads the first link as primary, so a lane that reorders or
+ * re-spaces the same links has nothing a student would see to write.
  */
 export function sameLinkSet(stored: unknown, projected: unknown): boolean {
   if (!Array.isArray(stored) || !Array.isArray(projected)) return false;
