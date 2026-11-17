@@ -21,7 +21,6 @@
 import axios, { type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import crypto from 'crypto';
 import { FROZEN_MODEL_RESPONSE_HEADER, isModelEndpointUrl } from '../utils/modelClient';
-import { withoutPreambleMessage } from '../utils/modelInputGuard';
 import {
   type CaptureMode,
   isBenchmarkModeActive,
@@ -80,13 +79,16 @@ const isModelRequest = (config: InternalAxiosRequestConfig): boolean =>
   isModelEndpointUrl(config.url);
 
 export function modelRequestKey(url: string, body: unknown): string {
-  const parsed = withoutPreambleMessage(typeof body === 'string' ? JSON.parse(body) : body);
+  const parsed = typeof body === 'string' ? JSON.parse(body) : body;
   const digest = crypto
     .createHash('sha256')
     .update(`${url}\n${canonicalJson(parsed ?? null)}`)
     .digest('hex');
   return `model-request:v1:${digest}`;
 }
+
+const configModelRequestKey = (config: InternalAxiosRequestConfig): string =>
+  modelRequestKey(config.url as string, config.benchmarkKeyBody ?? config.data);
 
 const modelRequestKeyByConfig = new WeakMap<object, string>();
 
@@ -101,7 +103,7 @@ export function beginBenchmarkCapture(): void {
   };
   capture.requestInterceptorId = axios.interceptors.request.use((config) => {
     if (isModelRequest(config)) {
-      const requestKey = modelRequestKey(config.url as string, config.data);
+      const requestKey = configModelRequestKey(config);
       modelRequestKeyByConfig.set(config, requestKey);
       capture.requested.add(benchmarkPageKey(MODEL_RESPONSE_NAMESPACE, requestKey));
     }
@@ -184,10 +186,7 @@ export function beginBenchmarkReplay(
   replay.interceptorId = axios.interceptors.request.use((config) => {
     if (isModelRequest(config)) {
       if (replay.liveModel) return config;
-      const key = benchmarkPageKey(
-        MODEL_RESPONSE_NAMESPACE,
-        modelRequestKey(config.url as string, config.data),
-      );
+      const key = benchmarkPageKey(MODEL_RESPONSE_NAMESPACE, configModelRequestKey(config));
       if (replay.pages.has(key)) {
         replay.served.add(key);
         return serveFrozenModelResponse(config, replay.pages.get(key));

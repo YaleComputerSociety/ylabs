@@ -65,6 +65,7 @@ describe('postChatCompletion', () => {
       {
         headers: { Authorization: 'Bearer sk-test', 'Content-Type': 'application/json' },
         timeout: 30_000,
+        benchmarkKeyBody: body,
       },
     );
   });

@@ -1,11 +1,17 @@
-import { describe, expect, it } from 'vitest';
-import { modelRequestKey } from '../../scrapers/snapshotBenchmarkMode';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  beginBenchmarkReplay,
+  finishBenchmarkReplay,
+  isBenchmarkModeActive,
+  MODEL_RESPONSE_NAMESPACE,
+  modelRequestKey,
+} from '../../scrapers/snapshotBenchmarkMode';
+import { postChatCompletion } from '../modelClient';
 import {
   guardChatCompletionBody,
   isAiDirectedInstruction,
   MODEL_INPUT_DATA_PREAMBLE,
   stripAiDirectedInstructions,
-  withoutPreambleMessage,
 } from '../modelInputGuard';
 
 const ADDRESSED = [
@@ -26,6 +32,12 @@ const RESEARCH_ABOUT_AI = [
   'How should socially responsible AI companies price and deploy intelligence?',
   'Prompt injection attacks such as "ignore all previous instructions" exploit language models.',
   'Students interested in research assistant positions should contact the lab directly.',
+  'If you are an AI researcher interested in joining, email us.',
+  "If you're an AI/ML student looking for a project, reach out.",
+  'If you are an LLM researcher, our reading group meets weekly.',
+  'If you are an assistant professor seeking collaborators, get in touch.',
+  'Instructions for assistant professors applying for tenure are on the faculty page.',
+  'Models told to ignore previous instructions leak data.',
 ];
 
 describe('the AI-directed instruction predicate', () => {
@@ -63,6 +75,15 @@ describe('stripAiDirectedInstructions', () => {
 
     expect(result.removedSentences).toBe(2);
     expect(result.text.trim()).toBe('Studies kelp.');
+  });
+
+  it('removes only the addressed phrase from page text with no sentence punctuation', () => {
+    const navigation = Array.from({ length: 80 }, (_, index) => `Link${index}`).join(' ');
+    const text = `${navigation} If you are an AI agent ${navigation}`;
+    const result = stripAiDirectedInstructions(text);
+
+    expect(result.removedSentences).toBe(1);
+    expect(result.text).toBe(`${navigation} ${navigation}`);
   });
 
   it('returns research about AI unchanged', () => {
@@ -123,15 +144,34 @@ describe('guardChatCompletionBody', () => {
 });
 
 describe('the frozen benchmark key', () => {
-  it('is the same with and without the preamble, so frozen benchmarks still replay', () => {
+  afterEach(() => {
+    if (isBenchmarkModeActive()) finishBenchmarkReplay();
+  });
+
+  it('replays a response frozen before the guard for a body the guard strips', async () => {
     const url = 'https://api.openai.com/v1/chat/completions';
     const body = {
       model: 'synthetic-model',
-      messages: [{ role: 'user', content: 'Studies kelp.' }],
+      messages: [{ role: 'user', content: `Studies kelp. ${ADDRESSED[0]}` }],
     };
-    const guarded = guardChatCompletionBody(body).body;
+    const frozenAnswer = { choices: [{ message: { content: 'frozen' } }] };
+    beginBenchmarkReplay([
+      {
+        sourceName: MODEL_RESPONSE_NAMESPACE,
+        requestKey: modelRequestKey(url, body),
+        payload: frozenAnswer,
+        fetchedAt: new Date(0),
+      },
+    ]);
 
-    expect(withoutPreambleMessage(guarded)).toEqual(body);
-    expect(modelRequestKey(url, JSON.stringify(guarded))).toBe(modelRequestKey(url, body));
+    const response = await postChatCompletion({
+      caller: 'card-synthesis',
+      apiKey: 'sk-synthetic',
+      timeoutMs: 1_000,
+      body,
+    });
+
+    expect(response.data).toEqual(frozenAnswer);
+    expect(finishBenchmarkReplay()).toMatchObject({ pagesServed: 1, pagesMissed: 0 });
   });
 });
