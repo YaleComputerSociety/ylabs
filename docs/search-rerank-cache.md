@@ -24,7 +24,10 @@ The serve path is off unless `SEARCH_RERANK_CACHE_ENABLED=true`, and with the fl
 With the flag on, a non-empty text query whose candidate pool is paginated locally (a hybrid query with no explicit sort) looks up its key once, through an in-process memo of five minutes, so the pages of one search cost one read.
 After the keyword and semantic legs are fused and the student filters narrow the pool, `applyCachedRerank` reorders the first 30 rows by cached score, highest first, with the fused order as the tiebreak.
 A row the entry does not score takes the neutral score 0.5, below a row scored 1 and above a row scored 0, and every row after the first 30 keeps its place.
-The neutral was 1.5 until #6411, which ranked every row new to a seeded pool above the rows the seed judged marginal; on the 67 seeded round-1 queries that cost nDCG@10 0.897 -> 0.837 on 2026-11-16.
+The neutral was 1.5 until #6411, which ranked every row new to a seeded pool above the rows the seed judged marginal.
+On 2026-11-16 the 67 seeded round-1 queries served nDCG@10 0.842 through the route against 0.922 before, both on the same grades.
+An offline replay of those 67 queries on that day's pools gave 0.837 at neutral 1.5 and 0.897 at neutral 0.5.
+`rerankedTop` in `scripts/rerankSeedingRoundCore.ts` reads the same constant, so a seeding round's gate measures the order search serves.
 The reorder runs before the page is sliced, so every page of one search reads the same order, and the total and the facet counts are unchanged.
 The service core demotion (#5748) runs after it, so a cached score cannot lift a core above research rows, and the rerank-candidate read the live-miss job scores skips the demotion, so the rows it scores are the window the cache reorders.
 
