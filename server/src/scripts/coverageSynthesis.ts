@@ -27,6 +27,7 @@ import {
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import type { ServingRowContext } from '../scrapers/utils/fullDescriptionServingBar';
 import { appendSynthesizedDescription } from './synthesizedDescriptionObservation';
+import { keepServedWriterBody, keepServedWriterBodyReason } from './keepServedWriterBody';
 import {
   REFUSED_REDRAFT_RETIRE_REASON_PREFIX,
   decideRefusedRedraftRetire,
@@ -175,6 +176,7 @@ export interface CoverageEntityReport {
   synthesized: boolean;
   written: boolean;
   adopted?: boolean;
+  servedBodyKept?: boolean;
   observationDropped?: boolean;
   observationDroppedBy?: string[];
   description?: string;
@@ -745,6 +747,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
   let written = 0;
   let observationDropped = 0;
   let adopted = 0;
+  let servedBodyKept = 0;
   let entityErrors = 0;
 
   await mapWithConcurrency(entities, args.concurrency, async (entity) => {
@@ -978,6 +981,21 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
       if (!materializedId) return;
       report.adopted = await servesWrittenBody(materializedId);
       if (report.adopted) adopted += 1;
+      else if (changed && liveBody && decision?.result) {
+        const kept = await keepServedWriterBody({
+          anchors,
+          sourceName: SOURCE_NAME,
+          servedBody: liveBody,
+          refusedBody: decision.result.description,
+          reason: keepServedWriterBodyReason(WRITER_CONTRACT_VERSION),
+        });
+        if (kept.restored) {
+          report.servedBodyKept = true;
+          servedBodyKept += 1;
+          const rematerializedId = await materializeWrittenRow(entity);
+          if (rematerializedId) await regater.add([rematerializedId]);
+        }
+      }
     } catch (error) {
       entityErrors += 1;
       console.error(`[coverage-synthesis] ${entity.slug}: ${sanitizeLogValue(error)}`);
@@ -1024,6 +1042,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
       return counts;
     }, {}),
     adopted,
+    servedBodyKept,
     entityErrors,
     connectionDrops: { ...connectionDrops },
     regated: regates.reduce((sum, entry) => sum + entry.scopedEntities, 0),
