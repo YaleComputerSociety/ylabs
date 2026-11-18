@@ -5,13 +5,36 @@ import allowlist from './searchDocumentInputResyncAllowlist.json';
 
 const SCRIPTS_DIR = path.resolve(__dirname, '..');
 
-const WRITE_METHODS =
-  'updateOne|updateMany|bulkWrite|findOneAndUpdate|findByIdAndUpdate|replaceOne';
-const MODEL_WRITE = new RegExp(
-  `\\b(?:ResearchEntity|Researcher|RoleAssignment)\\s*\\.\\s*(?:${WRITE_METHODS})\\s*\\(`,
-);
+const WRITE_METHODS = [
+  'updateOne',
+  'updateMany',
+  'bulkWrite',
+  'replaceOne',
+  'findOneAndUpdate',
+  'findByIdAndUpdate',
+  'findOneAndReplace',
+  'create',
+  'insertOne',
+  'insertMany',
+  'deleteOne',
+  'deleteMany',
+  'findOneAndDelete',
+  'findByIdAndDelete',
+].join('|');
+const MODELS = 'ResearchEntity|Researcher|RoleAssignment';
+const COLLECTION_NAMES = ['research_entities', 'researchers', 'role_assignments']
+  .flatMap((name) => [`'${name}'`, `"${name}"`])
+  .concat(['RESEARCH_ENTITIES', 'RESEARCHERS', 'ROLE_ASSIGNMENTS'])
+  .join('|');
+const WRITE_CALL = `\\s*\\.\\s*(?:${WRITE_METHODS})\\s*\\(`;
+
+const MODEL_WRITE = new RegExp(`\\b(?:${MODELS})(?:\\s*\\.\\s*collection)?${WRITE_CALL}`);
 const RAW_COLLECTION_WRITE = new RegExp(
-  `collection\\(\\s*(?:'research_entities'|"research_entities"|'researchers'|"researchers"|'role_assignments'|"role_assignments"|RESEARCH_ENTITIES)\\s*\\)\\s*\\.\\s*(?:${WRITE_METHODS})\\s*\\(`,
+  `collection\\(\\s*(?:${COLLECTION_NAMES})\\s*\\)${WRITE_CALL}`,
+);
+const RAW_COLLECTION_ALIAS = new RegExp(
+  `\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=[^;]*?collection\\(\\s*(?:${COLLECTION_NAMES})\\s*\\)\\s*;`,
+  'g',
 );
 const SHARED_RESYNC = new RegExp(
   [
@@ -24,22 +47,34 @@ const SHARED_RESYNC = new RegExp(
     .map((name) => `\\b${name}\\b`)
     .join('|'),
 );
+const IMPORT_STATEMENT = /^\s*import\b[\s\S]*?\bfrom\s*['"][^'"]+['"];?/gm;
+const COMMENT = /\/\*[\s\S]*?\*\/|(^|[^:'"`])\/\/.*$/gm;
+
+const callsSharedResync = (source: string): boolean =>
+  SHARED_RESYNC.test(source.replace(IMPORT_STATEMENT, '').replace(COMMENT, '$1'));
 
 export interface ScannedSource {
   file: string;
   source: string;
 }
 
-// File-level text scan, like the #6375 guard: a write through a helper module or a re-sync run
-// by a caller is invisible to it, so those go on the allowlist with the reason. The
-// student-visibility gate and the materializer do not count as a re-sync, because both
+const writesThroughCollectionAlias = (source: string): boolean =>
+  [...source.matchAll(RAW_COLLECTION_ALIAS)].some(([, alias]) =>
+    new RegExp(`\\b${alias.replace(/\$/g, '\\$')}${WRITE_CALL}`).test(source),
+  );
+
+// File-level text scan, like the #6375 guard: a write through a helper module, `new Model().save()`,
+// or a re-sync run by a caller is invisible to it, so those go on the allowlist with the reason.
+// The student-visibility gate and the materializer do not count as a re-sync, because both
 // re-index only rows whose own fields they changed (#6538).
 export function unsyncedSearchInputWriters(sources: readonly ScannedSource[]): string[] {
   return sources
     .filter(
       ({ source }) =>
-        (MODEL_WRITE.test(source) || RAW_COLLECTION_WRITE.test(source)) &&
-        !SHARED_RESYNC.test(source),
+        (MODEL_WRITE.test(source) ||
+          RAW_COLLECTION_WRITE.test(source) ||
+          writesThroughCollectionAlias(source)) &&
+        !callsSharedResync(source),
     )
     .map(({ file }) => file)
     .sort();
@@ -104,8 +139,68 @@ describe('scripts that write a search-document input re-sync search (#6538)', ()
       file: 'read.ts',
       source: "await db.collection('research_entities').find({}).toArray();",
     };
+    const created = {
+      file: 'created.ts',
+      source: "await RoleAssignment.create({ role: 'lead' });",
+    };
+    const deleted = {
+      file: 'deleted.ts',
+      source: 'await ResearchEntity.deleteMany({ archived: true });',
+    };
+    const modelCollection = {
+      file: 'model-collection.ts',
+      source: 'await Researcher.collection.insertMany(rows);',
+    };
+    const renamedAlias = {
+      file: 'renamed-alias.ts',
+      source:
+        "const edges = mongoose.connection.collection('role_assignments');\nawait edges.updateMany({}, update);",
+    };
+    const constantName = {
+      file: 'constant.ts',
+      source: 'await db.collection(RESEARCHERS).findOneAndReplace(filter, doc);',
+    };
+    const importOnly = {
+      file: 'import-only.ts',
+      source:
+        "import { syncEntity } from '../services/meiliSyncService';\nawait ResearchEntity.updateOne({ _id }, update);",
+    };
+    const commentOnly = {
+      file: 'comment-only.ts',
+      source: 'await ResearchEntity.updateOne({ _id }, update); // syncEntity runs later',
+    };
+    const passedAsCallback = {
+      file: 'callback.ts',
+      source:
+        'await ResearchEntity.updateOne({ _id }, update);\nconst regater = createChunkedRegater(regateRematerializedEntities, 1);',
+    };
     expect(
-      unsyncedSearchInputWriters([raw, aliasedCollection, rawCollection, resynced, readOnly]),
-    ).toEqual(['aliased.ts', 'collection.ts', 'raw.ts']);
+      unsyncedSearchInputWriters([
+        raw,
+        aliasedCollection,
+        rawCollection,
+        resynced,
+        readOnly,
+        created,
+        deleted,
+        modelCollection,
+        renamedAlias,
+        constantName,
+        importOnly,
+        commentOnly,
+        passedAsCallback,
+      ]),
+    ).toEqual([
+      'aliased.ts',
+      'collection.ts',
+      'comment-only.ts',
+      'constant.ts',
+      'created.ts',
+      'deleted.ts',
+      'import-only.ts',
+      'model-collection.ts',
+      'raw.ts',
+      'renamed-alias.ts',
+    ]);
   });
 });
