@@ -440,6 +440,34 @@ const DIRECTIONS_QUERY_PARAMS = ['directionsmode', 'daddr', 'saddr'];
  * host, so the resolver's direct-personal-site shortcut waves the path checks
  * through. 6 rows served turn-by-turn driving directions as their website (#3184).
  */
+const HOSTING_PROVIDER_ENVIRONMENT_HOST_SUFFIXES = [
+  'pantheonsite.io',
+  'wpengine.com',
+  'wpenginepowered.com',
+  'kinsta.cloud',
+  'acquia-sites.com',
+  'platformsh.site',
+];
+
+const STAGING_ENVIRONMENT_LABEL =
+  /^(?:dev|development|staging|stage|test|preview|qa|uat)(?:[-\d]|$)/;
+
+/**
+ * A hosting provider's own environment hostname, or a host whose first label names a
+ * development or staging environment, serves a copy of a site rather than the public site, so
+ * it is never a person's or a research row's website (#6432).
+ */
+export function isStagingSiteUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  if (HOSTING_PROVIDER_ENVIRONMENT_HOST_SUFFIXES.some((suffix) => host.endsWith(`.${suffix}`))) {
+    return true;
+  }
+  const labels = host.split('.');
+  return labels.length >= 3 && STAGING_ENVIRONMENT_LABEL.test(labels[0]);
+}
+
 export function isMapOrDirectionsUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
@@ -1275,7 +1303,8 @@ export function isWithheldResearchWebsiteUrl(
     isInstitutionalPublicityPageUrl(value) ||
     isPostingPageCitedAsResearchWebsite(value, entity) ||
     isCoursePageUrl(value) ||
-    isPatientCarePageCitedAsResearchWebsite(value, entity)
+    isPatientCarePageCitedAsResearchWebsite(value, entity) ||
+    isStagingSiteUrl(value)
   );
 }
 
@@ -1291,7 +1320,8 @@ export function isInadmissiblePersonWebsiteUrl(value: unknown): boolean {
     isCourseListingPageUrl(value) ||
     isPostingPageUrl(value) ||
     isPatientCarePageUrl(value) ||
-    isMapOrDirectionsUrl(value)
+    isMapOrDirectionsUrl(value) ||
+    isStagingSiteUrl(value)
   );
 }
 

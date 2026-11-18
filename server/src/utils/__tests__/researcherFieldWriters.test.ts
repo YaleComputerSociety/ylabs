@@ -3,6 +3,7 @@ import {
   decideResearcherFieldWrite,
   decideUnprovenKeyFieldWrite,
   isUnprovenNetidKeyOnNameJoin,
+  fillOnlyNameStanding,
   isFillOnlyFieldValue,
   isFillOnlyIdentityJoin,
   researcherFieldWriter,
@@ -362,5 +363,81 @@ describe('an unproven netid key on a name join (#6447)', () => {
       write: false,
       releaseWriter: true,
     });
+  });
+});
+
+describe('a fuller fill-only name beside a first-and-last list name (#6431)', () => {
+  const directoryKey = researcherFieldWriter('netid:syn1', 'account-netid', 0.9, true);
+  const nameJoinedKey = researcherFieldWriter('dept:syn:alex-b-example', 'person-name', 0.7, true);
+  const LIST_NAME = 'Alex Example';
+  const STATED_NAME = 'Alex B. Example';
+
+  type Held = { writers: Map<string, ReturnType<typeof researcherFieldWriter>>; name?: string };
+  const resolve = (held: Held, writer: typeof directoryKey, value: string): boolean => {
+    const decision = decideResearcherFieldWrite(
+      held.writers,
+      'displayName',
+      writer,
+      true,
+      Boolean(held.name),
+      false,
+      fillOnlyNameStanding(value, held.name),
+    );
+    if (!decision.write) return false;
+    if (decision.writerChanged) held.writers.set('displayName', decision.writer);
+    const changed = held.name !== value;
+    held.name = value;
+    return changed;
+  };
+  const settle = (order: Array<[typeof directoryKey, string]>) => {
+    const held: Held = { writers: new Map() };
+    for (const [writer, value] of order) resolve(held, writer, value);
+    const secondPassWrites = order.filter(([writer, value]) => resolve(held, writer, value)).length;
+    return { name: held.name, holder: held.writers.get('displayName')?.userKey, secondPassWrites };
+  };
+
+  it('keeps the fuller stated name whichever key resolves first, and a second pass writes nothing', () => {
+    const listFirst = settle([
+      [directoryKey, LIST_NAME],
+      [nameJoinedKey, STATED_NAME],
+    ]);
+    const statedFirst = settle([
+      [nameJoinedKey, STATED_NAME],
+      [directoryKey, LIST_NAME],
+    ]);
+    for (const outcome of [listFirst, statedFirst]) {
+      expect(outcome).toEqual({
+        name: STATED_NAME,
+        holder: 'dept:syn:alex-b-example',
+        secondPassWrites: 0,
+      });
+    }
+  });
+
+  it('compares only names that agree on the first and last name', () => {
+    expect(fillOnlyNameStanding('Alex Example', 'Alex B. Example')).toBe('shorter');
+    expect(fillOnlyNameStanding('Alex B. Example', 'Alex Example')).toBe('fuller');
+    expect(fillOnlyNameStanding('Alex Sample', 'Alex B. Example')).toBeUndefined();
+    expect(fillOnlyNameStanding('Alex Example', 'Alexandra B. Example')).toBeUndefined();
+    expect(fillOnlyNameStanding('Alex Example', 'Alex Example')).toBeUndefined();
+    expect(fillOnlyNameStanding('Alex Example Jr.', 'Alex Example')).toBeUndefined();
+    expect(fillOnlyNameStanding('Alex Example Sample', 'Alex Example')).toBeUndefined();
+    expect(fillOnlyNameStanding('Alex Example', 'Alex Example Sample')).toBeUndefined();
+  });
+
+  it('never lets a fuller fill-only name replace a value a key that is not fill-only holds', () => {
+    const profileKey = researcherFieldWriter('netid:syn2', 'official-profile-page', 1);
+    const writers = new Map([['displayName', profileKey]]);
+    expect(
+      decideResearcherFieldWrite(
+        writers,
+        'displayName',
+        nameJoinedKey,
+        true,
+        true,
+        false,
+        fillOnlyNameStanding(STATED_NAME, LIST_NAME),
+      ),
+    ).toEqual({ write: false, releaseWriter: false });
   });
 });

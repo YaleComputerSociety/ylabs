@@ -19,7 +19,7 @@ import { materializeEntity } from '../entityMaterializer';
 
 const OWNER_PAGE = 'https://medicine.yale.edu/profile/fixture-quillsby-person/';
 const PATIENT_CARE_PAGE = 'https://medicine.example.edu/fixturedept/clinical-service/fixture/';
-const PERSONAL_SITE = 'https://fixtureperson.example.org/';
+const PERSONAL_SITE = 'https://fixturequillsby.example.org/';
 const DIRECTIONS_LINK = 'https://www.google.com/maps?daddr=1.5,-2.5&directionsMode=driving';
 const PROGRAMME_COURSES = 'https://fixturedept.example.edu/fixtureprogramme/courses';
 

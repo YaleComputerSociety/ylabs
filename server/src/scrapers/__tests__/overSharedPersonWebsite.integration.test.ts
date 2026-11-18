@@ -24,7 +24,7 @@ import {
 const OWNER_PAGE = 'https://medicine.yale.edu/profile/fixture-quillsby-person/';
 const CHROME_PAGE = 'https://school.example.edu/about/fixture-stories/fixture-fund-story/';
 const LAB_SITE = 'https://school.example.edu/lab/fixture-lab/';
-const PERSONAL_SITE = 'https://fixtureperson.example.org/';
+const PERSONAL_SITE = 'https://fixturequillsby.example.org/';
 const OWNER_KEY = 'dept:fixture:fixture-person';
 
 describe('a website asserted for many different people is cleared on resolve (#5645)', () => {
