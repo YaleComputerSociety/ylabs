@@ -200,6 +200,7 @@ export interface OfficialProfileIdentity {
   imageUrl?: string;
   departments: string[];
   primaryAppointmentUnits?: string[];
+  nonPrimaryAppointmentUnits?: string[];
   bio?: string;
   researchInterests: string[];
   orcid?: string;
@@ -3208,12 +3209,39 @@ function firstPersonSpecificYaleEmail(
 // another (#6185). It states no appointment, so it is never read as one.
 const HOST_SITE_DEPARTMENT_LINE = '[class*="profile-meta__department-line"]';
 
+const NON_PRIMARY_APPOINTMENT_TYPES: ReadonlySet<string> = new Set([
+  'secondary',
+  'dual',
+  'fully joint',
+]);
+
+function nonPrimaryAppointmentUnits(
+  $: cheerio.CheerioAPI,
+  appointmentCards: cheerio.Cheerio<any>,
+): string[] {
+  const units: string[] = [];
+  appointmentCards.each((_i, card) => {
+    const appointmentType = textValue(
+      $(card).find('[class*="appointment-card__type"]').first().text(),
+    ).toLowerCase();
+    if (!NON_PRIMARY_APPOINTMENT_TYPES.has(appointmentType)) return;
+    const unit = textValue(
+      $(card).find('[class*="appointment-card__academic-unit"]').first().text(),
+    );
+    if (unit && unit.length < 160) units.push(unit);
+  });
+  return uniqueStrings(units).slice(0, 10);
+}
+
 function statedPrimaryAppointmentUnits(
   $: cheerio.CheerioAPI,
-): Pick<OfficialProfileIdentity, 'primaryAppointmentUnits'> {
+): Pick<OfficialProfileIdentity, 'primaryAppointmentUnits' | 'nonPrimaryAppointmentUnits'> {
   const appointmentCards = $('.profile-details-appointment-card');
   if (appointmentCards.length === 0) return {};
-  return { primaryAppointmentUnits: primaryAppointmentUnits($, appointmentCards) };
+  return {
+    primaryAppointmentUnits: primaryAppointmentUnits($, appointmentCards),
+    nonPrimaryAppointmentUnits: nonPrimaryAppointmentUnits($, appointmentCards),
+  };
 }
 
 function extractDepartments($: cheerio.CheerioAPI): string[] {
@@ -4595,6 +4623,17 @@ function statedPrimaryAppointmentSchool(
   return distinct.length === 1 ? distinct[0] : undefined;
 }
 
+function statedNonPrimaryAppointmentSchools(
+  identity: OfficialProfileIdentity,
+  primarySchool: string,
+  schoolForDepartment: SchoolForDepartment | null,
+): string[] {
+  if (!schoolForDepartment || !primarySchool) return [];
+  return uniqueStrings(
+    (identity.nonPrimaryAppointmentUnits ?? []).map((unit) => schoolForDepartment(unit) ?? ''),
+  ).filter((school) => school && school !== primarySchool);
+}
+
 export function identityToResearchEntitySchoolObservations(
   identity: OfficialProfileIdentity,
   entity: Record<string, any>,
@@ -4604,16 +4643,19 @@ export function identityToResearchEntitySchoolObservations(
   if (!school) return [];
   const entityId = idValue(entity._id || entity.id);
   const entityKey = textValue(entity.slug || entity._id);
+  const base = {
+    entityType: 'researchEntity' as const,
+    ...(entityId ? { entityId } : {}),
+    ...(entityKey ? { entityKey } : {}),
+    sourceUrl: identity.canonicalUrl,
+    confidenceOverride: 0.8,
+  };
+  const otherSchools = statedNonPrimaryAppointmentSchools(identity, school, schoolForDepartment);
   return [
-    {
-      entityType: 'researchEntity',
-      ...(entityId ? { entityId } : {}),
-      ...(entityKey ? { entityKey } : {}),
-      field: 'school',
-      value: school,
-      sourceUrl: identity.canonicalUrl,
-      confidenceOverride: 0.8,
-    },
+    { ...base, field: 'school', value: school },
+    ...(otherSchools.length > 0
+      ? [{ ...base, field: 'statedAppointmentSchools', value: otherSchools }]
+      : []),
   ];
 }
 

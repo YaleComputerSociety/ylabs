@@ -5,6 +5,16 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-18: A Row Is Findable Under Its Lead's Stated Secondary-Appointment School (#6529)
+
+Decision (the manager, 2026-11-18, option b): a research row should be findable in the school filter under every school its lead holds a stated appointment in, not only the Primary one.
+The lead's own profile states each appointment on a card typed Primary, Secondary, Dual or Fully Joint.
+The Primary card alone sets `school` (#6252), and #5800's rule that `departments` come from the Primary appointment only stands.
+A Secondary, Dual or Fully Joint card in another catalog school is recorded as a separate reading, `statedAppointmentSchools`, which the org-unit canonicalization adds to `schools` only.
+`school` and `departments` are never derived from it, and an empty `school` is never filled from it.
+The reading is latest-wins, so a newer card replaces a stale one; a profile that drops the card emits nothing, so the earlier reading stays live (omission is not absence, as in #6160).
+Measured before the change (2026-11-18, stored captures): 28 served rows cite a `ysph.yale.edu` profile with a non-Primary card in another school, and 14 of them did not list that school in `schools`.
+
 ## 2026-11-17: Captured Page Text Reaches A Model Only As Data (#6396)
 
 Decision (the manager, 2026-11-16, option A): every scraper model call carries one shared data preamble, applied by the model client (`utils/modelInputGuard.ts`, called from `postChatCompletion`), and every user message has sentences addressed to an AI agent removed before it leaves the process.

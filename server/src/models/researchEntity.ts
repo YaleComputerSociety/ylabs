@@ -379,6 +379,10 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: [String],
       default: [],
     },
+    statedAppointmentSchools: {
+      type: [String],
+      default: [],
+    },
     yaleStatusCache: {
       type: String,
       enum: ['active', 'leave', 'departed', 'unknown'],

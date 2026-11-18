@@ -95,6 +95,7 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'schools',
   'departments',
   'orgAffiliationLabels',
+  'statedAppointmentSchools',
   'undergradEvidenceQuote',
   'currentUndergradCount',
   'studentVisibilityTier',
