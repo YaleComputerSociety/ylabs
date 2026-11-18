@@ -331,4 +331,20 @@ describe('applyLeadNetidPlans', () => {
     expect(resyncLinkedRows).not.toHaveBeenCalled();
     expect(result).toEqual({ written: 0, searchResyncFailedEntityIds: [] });
   });
+
+  it('re-syncs the netids already stored when a later store fails, then rethrows', async () => {
+    const failure = new Error('store failed');
+    const storeNetid = vi
+      .fn<(plan: LeadNetidPlan) => Promise<boolean>>()
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(failure);
+    const resyncLinkedRows = vi.fn(async () => []);
+
+    await expect(applyLeadNetidPlans(plans, { storeNetid, resyncLinkedRows })).rejects.toBe(
+      failure,
+    );
+
+    expect(storeNetid).toHaveBeenCalledTimes(2);
+    expect(resyncLinkedRows).toHaveBeenCalledExactlyOnceWith(['r1']);
+  });
 });

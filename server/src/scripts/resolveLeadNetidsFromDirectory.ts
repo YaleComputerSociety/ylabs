@@ -287,6 +287,7 @@ async function main(): Promise<void> {
   };
 
   console.log(JSON.stringify(report, null, 2));
+  if (searchResyncFailedEntityIds.length > 0) process.exitCode = 1;
 
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
