@@ -38,7 +38,7 @@ const planFor = (id: mongoose.Types.ObjectId): StudentVisibilityGatePlan => {
   return plan;
 };
 
-describe('two copies citing one fund page serve one program card (#4289)', () => {
+describe('two copies citing one fund page serve one program card (#4289, #6501)', () => {
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
     await mongoose.connect(memoryServer.getUri('shared_fund_page_program_card_test'));
@@ -71,11 +71,12 @@ describe('two copies citing one fund page serve one program card (#4289)', () =>
     await memoryServer?.stop();
   });
 
-  it('serves the database record and suppresses the other copy as a duplicate', () => {
+  it('serves the copy that can be served when the database record cannot, and suppresses the database record (#6501)', () => {
+    expect(planFor(DATABASE_COPY_ID).reasons).toContain('missing_application_route');
     const duplicates = [planFor(OFFICE_COPY_ID), planFor(DATABASE_COPY_ID)].filter((plan) =>
       plan.reasons.includes('duplicate_program'),
     );
-    expect(duplicates.map((plan) => plan.recordId)).toEqual([String(OFFICE_COPY_ID)]);
-    expect(planFor(DATABASE_COPY_ID).reasons).not.toContain('duplicate_program');
+    expect(duplicates.map((plan) => plan.recordId)).toEqual([String(DATABASE_COPY_ID)]);
+    expect(planFor(OFFICE_COPY_ID).reasons).not.toContain('duplicate_program');
   });
 });
