@@ -226,3 +226,35 @@ export function summarizeRefusals(
   for (const entry of refused) counts[entry.reason] += 1;
   return counts;
 }
+
+export interface LeadNetidApplyDeps {
+  storeNetid: (plan: LeadNetidPlan) => Promise<boolean>;
+  resyncLinkedRows: (researcherIds: string[]) => Promise<string[]>;
+}
+
+/**
+ * A netid is a search-document input of every row the researcher leads (#5958), and this
+ * write bypasses the materializer that would otherwise re-sync them, so the rows linked to
+ * each researcher it changed are re-synced here. A failed store still re-syncs the netids
+ * already written, because a re-run no longer selects researchers that now hold one.
+ */
+export async function applyLeadNetidPlans(
+  plans: readonly LeadNetidPlan[],
+  deps: LeadNetidApplyDeps,
+): Promise<{ written: number; searchResyncFailedEntityIds: string[] }> {
+  const changedResearcherIds: string[] = [];
+  const resyncChanged = async () =>
+    changedResearcherIds.length > 0 ? deps.resyncLinkedRows(changedResearcherIds) : [];
+  try {
+    for (const plan of plans) {
+      if (await deps.storeNetid(plan)) changedResearcherIds.push(plan.researcherId);
+    }
+  } catch (error) {
+    await resyncChanged();
+    throw error;
+  }
+  return {
+    written: changedResearcherIds.length,
+    searchResyncFailedEntityIds: await resyncChanged(),
+  };
+}
