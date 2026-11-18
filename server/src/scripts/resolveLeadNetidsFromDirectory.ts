@@ -18,13 +18,16 @@ import {
 } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
+  applyLeadNetidPlans,
   indexNetidByEmail,
   planLeadNetidResolution,
   summarizePlannedTiers,
   summarizeRefusals,
   type LeadEmailEvidence,
+  type LeadNetidPlan,
   type NetidlessLead,
 } from './resolveLeadNetidsFromDirectoryCore';
+import { resyncResearchRowsLinkedToResearchers } from '../services/researcherLinkedSearchResync';
 import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
@@ -182,6 +185,20 @@ async function loadEmailEvidenceByUrl(
   return byUrl;
 }
 
+async function storeNetidOnNetidlessResearcher(plan: LeadNetidPlan): Promise<boolean> {
+  const result = await Researcher.updateOne(
+    {
+      _id: new mongoose.Types.ObjectId(plan.researcherId),
+      $or: [
+        { 'identifiers.netid': { $exists: false } },
+        { 'identifiers.netid': { $in: ['', null] } },
+      ],
+    },
+    { $set: { 'identifiers.netid': plan.netid } },
+  );
+  return (result.modifiedCount ?? 0) > 0;
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   assertScriptApplyAllowed({
@@ -248,22 +265,12 @@ async function main(): Promise<void> {
   const { planned, refused } = planLeadNetidResolution(leads, netidByEmail, netidsAlreadyHeld);
 
   const toApply = planned.slice(0, args.maxApply);
-  let written = 0;
-  if (args.apply) {
-    for (const plan of toApply) {
-      const result = await Researcher.updateOne(
-        {
-          _id: new mongoose.Types.ObjectId(plan.researcherId),
-          $or: [
-            { 'identifiers.netid': { $exists: false } },
-            { 'identifiers.netid': { $in: ['', null] } },
-          ],
-        },
-        { $set: { 'identifiers.netid': plan.netid } },
-      );
-      written += result.modifiedCount ?? 0;
-    }
-  }
+  const { written, searchResyncFailedEntityIds } = args.apply
+    ? await applyLeadNetidPlans(toApply, {
+        storeNetid: storeNetidOnNetidlessResearcher,
+        resyncLinkedRows: resyncResearchRowsLinkedToResearchers,
+      })
+    : { written: 0, searchResyncFailedEntityIds: [] };
 
   const report = {
     script: SCRIPT_NAME,
@@ -276,6 +283,7 @@ async function main(): Promise<void> {
     refusedByReason: summarizeRefusals(refused),
     appliedLimit: args.maxApply,
     written,
+    searchResyncFailedEntityIds,
   };
 
   console.log(JSON.stringify(report, null, 2));

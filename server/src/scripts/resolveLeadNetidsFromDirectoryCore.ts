@@ -226,3 +226,26 @@ export function summarizeRefusals(
   for (const entry of refused) counts[entry.reason] += 1;
   return counts;
 }
+
+export interface LeadNetidApplyDeps {
+  storeNetid: (plan: LeadNetidPlan) => Promise<boolean>;
+  resyncLinkedRows: (researcherIds: string[]) => Promise<string[]>;
+}
+
+/**
+ * A netid is a search-document input of every row the researcher leads (#5958), and this
+ * write bypasses the materializer that would otherwise re-sync them, so the rows linked to
+ * each researcher it changed are re-synced here.
+ */
+export async function applyLeadNetidPlans(
+  plans: readonly LeadNetidPlan[],
+  deps: LeadNetidApplyDeps,
+): Promise<{ written: number; searchResyncFailedEntityIds: string[] }> {
+  const changedResearcherIds: string[] = [];
+  for (const plan of plans) {
+    if (await deps.storeNetid(plan)) changedResearcherIds.push(plan.researcherId);
+  }
+  const searchResyncFailedEntityIds =
+    changedResearcherIds.length > 0 ? await deps.resyncLinkedRows(changedResearcherIds) : [];
+  return { written: changedResearcherIds.length, searchResyncFailedEntityIds };
+}
