@@ -30,7 +30,10 @@ import {
 } from '../utils/meiliTask';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { usableOpenAiApiKey } from '../utils/openAiApiKey';
-import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
+import {
+  warmControlledVocabularyHeadings,
+  warmServedResearchAreaVocabulary,
+} from '../utils/controlledVocabularyHeadings';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
@@ -171,7 +174,8 @@ export interface ResearchEntitySearchIndexRebuildOptions {
   /**
    * Injectable for the same reason the index and the page fetch are: a rebuild test has no
    * database, and a warm that reached for one would make every rebuild assertion wait for a
-   * connection timeout instead of asserting.
+   * connection timeout instead of asserting. It does not make a connected build cold: the
+   * per-document builder also warms whenever a connection is up (#6542).
    */
   warmVocabulary?: () => Promise<unknown>;
   swapConfirmation?: MeiliSwapConfirmationOptions;
@@ -746,6 +750,9 @@ export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
     entities: any[],
   ) => Promise<ResearchEntitySearchServedLeadMap> = fetchResearchEntitySearchServedLeads,
 ): Promise<Record<string, any>[]> {
+  // Every per-row sync builds here, and a script process never warms the vocabulary on its
+  // own, so without this its documents split a multi-part heading the reconcile keeps (#6542).
+  await warmServedResearchAreaVocabulary();
   const [serving, memberNamesByEntityId, servedLeadByEntityId] = await Promise.all([
     freshDirectoryRemovalServing(),
     fetchMemberNames(docs),
@@ -1333,8 +1340,8 @@ export async function rebuildResearchEntitySearchIndex(
   const startedAt = new Date();
   // A rebuild runs in its own process, so it warms the controlled vocabulary itself rather
   // than inheriting the server's warm. Without it every index document holds the fragments and
-  // the facet offers them as filter values (#3807). Warmed here, at the batch entry point,
-  // rather than in the per-document builder, which `syncEntity` also calls once per row.
+  // the facet offers them as filter values (#3807). The per-document builder warms too, but it
+  // fails open on a read error; this one fails the rebuild instead (#6542).
   await (options.warmVocabulary || warmControlledVocabularyHeadings)();
   const fetchPage = options.fetchPage || fetchResearchEntityPage;
   const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
