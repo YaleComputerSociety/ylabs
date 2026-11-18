@@ -58,9 +58,11 @@ export interface ScannedSource {
   source: string;
 }
 
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const writesThroughCollectionAlias = (source: string): boolean =>
   [...source.matchAll(RAW_COLLECTION_ALIAS)].some(([, alias]) =>
-    new RegExp(`\\b${alias.replace(/\$/g, '\\$')}${WRITE_CALL}`).test(source),
+    new RegExp(`\\b${escapeRegExp(alias)}${WRITE_CALL}`).test(source),
   );
 
 // File-level text scan, like the #6375 guard: a write through a helper module, `new Model().save()`,
