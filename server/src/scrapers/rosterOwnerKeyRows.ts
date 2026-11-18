@@ -7,6 +7,7 @@ import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import { personProfileIdentityFromUrl } from '../scripts/researchEntityPiDedupeCore';
 import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 import { userKeyNamesRoleOrUnitMailbox } from './roleMailboxUserKey';
+import { PERSONAL_RESEARCH_ROW_TYPES } from './utils/centerMemberProfileResearch';
 
 /**
  * One person on two department rosters (#5969).
@@ -181,7 +182,10 @@ export async function loadRosterOwnerKeyRows(
     { _id: 1, slug: 1, createdAt: 1 },
   ).lean()) as Array<{ _id: mongoose.Types.ObjectId; slug?: string; createdAt?: Date }>;
   const rosterRows = rows.filter((row) => row.slug && rosterPrefixForSlug(row.slug));
-  if (rosterRows.length === 0) return byKey;
+  if (rosterRows.length === 0) {
+    await addFoldSurvivors(byKey, rosterPrefixForSlug);
+    return byKey;
+  }
   const keyObservations = (await Observation.find(
     {
       entityType: 'researchEntity',
@@ -256,6 +260,74 @@ export async function loadRosterOwnerKeyRows(
  * the duplicate was folded again on the next dedupe (#6536). The survivor is listed under
  * the owner key that keyed the folded row.
  */
+const MAX_FOLD_CHAIN_DEPTH = 8;
+
+interface FoldSurvivor {
+  id: string;
+  slug: string;
+  createdAt?: Date | null;
+}
+
+/**
+ * The live person-scoped row each folded row's canonical group ends in, following a fold of a
+ * fold (A into B into C) to the end. A chain that loops, runs past the depth bound, ends in
+ * an archived row with no further group, or ends in a row that is not person-scoped (a fold
+ * can merge a person's row into a center) resolves to nothing.
+ */
+async function finalFoldSurvivors(
+  startIds: readonly mongoose.Types.ObjectId[],
+): Promise<Map<string, FoldSurvivor | null>> {
+  const resolved = new Map<string, FoldSurvivor | null>();
+  const pending = new Map<string, { current: string; seen: Set<string> }>();
+  for (const id of startIds) pending.set(String(id), { current: String(id), seen: new Set() });
+  for (let depth = 0; depth < MAX_FOLD_CHAIN_DEPTH && pending.size > 0; depth += 1) {
+    const ids = [...new Set([...pending.values()].map((walk) => walk.current))];
+    const rows = (await ResearchEntity.find(
+      { _id: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) } },
+      { _id: 1, slug: 1, createdAt: 1, archived: 1, canonicalGroupId: 1, entityType: 1 },
+    ).lean()) as Array<{
+      _id: mongoose.Types.ObjectId;
+      slug?: string;
+      createdAt?: Date;
+      archived?: boolean;
+      canonicalGroupId?: mongoose.Types.ObjectId | null;
+      entityType?: string;
+    }>;
+    const byId = new Map(rows.map((row) => [String(row._id), row]));
+    for (const [start, walk] of [...pending]) {
+      const row = byId.get(walk.current);
+      walk.seen.add(walk.current);
+      if (!row) {
+        resolved.set(start, null);
+        pending.delete(start);
+      } else if (row.archived !== true) {
+        const personScoped = PERSONAL_RESEARCH_ROW_TYPES.includes(String(row.entityType));
+        resolved.set(
+          start,
+          personScoped && row.slug
+            ? { id: String(row._id), slug: row.slug, createdAt: row.createdAt ?? null }
+            : null,
+        );
+        pending.delete(start);
+      } else if (row.canonicalGroupId && !walk.seen.has(String(row.canonicalGroupId))) {
+        walk.current = String(row.canonicalGroupId);
+      } else {
+        resolved.set(start, null);
+        pending.delete(start);
+      }
+    }
+  }
+  for (const start of pending.keys()) resolved.set(start, null);
+  return resolved;
+}
+
+/**
+ * A roster row archived into a canonical group no longer lists as the person's row, so the
+ * next roster read minted a new one beside the live survivor it had been folded into, and
+ * the duplicate was folded again on the next dedupe (#6536). The survivor is listed under
+ * the owner key that keyed the folded row, and only when that key reaches exactly one
+ * distinct survivor, so the target never depends on read order.
+ */
 async function addFoldSurvivors(
   byKey: Map<string, RosterOwnerKeyRow[]>,
   rosterPrefixForSlug: (slug: string) => string,
@@ -268,11 +340,9 @@ async function addFoldSurvivors(
     (row) => row.slug && row.canonicalGroupId && rosterPrefixForSlug(row.slug),
   );
   if (foldedRoster.length === 0) return;
-  const survivors = (await ResearchEntity.find(
-    { _id: { $in: foldedRoster.map((row) => row.canonicalGroupId) }, archived: { $ne: true } },
-    { _id: 1, slug: 1, createdAt: 1 },
-  ).lean()) as Array<{ _id: mongoose.Types.ObjectId; slug?: string; createdAt?: Date }>;
-  const survivorById = new Map(survivors.map((row) => [String(row._id), row]));
+  const survivorByGroup = await finalFoldSurvivors(
+    foldedRoster.map((row) => row.canonicalGroupId as mongoose.Types.ObjectId),
+  );
   const keyObservations = (await Observation.find(
     {
       entityType: 'researchEntity',
@@ -291,15 +361,23 @@ async function addFoldSurvivors(
     keys.add(observation.value);
     ownerKeysBySlug.set(observation.entityKey, keys);
   }
+  const survivorsByOwnerKey = new Map<string, Map<string, FoldSurvivor>>();
   for (const row of foldedRoster) {
     const keys = ownerKeysBySlug.get(row.slug as string);
-    const survivor = survivorById.get(String(row.canonicalGroupId));
-    if (!keys || keys.size !== 1 || !survivor?.slug) continue;
+    const survivor = survivorByGroup.get(String(row.canonicalGroupId));
+    if (!keys || keys.size !== 1 || !survivor) continue;
     const [ownerKey] = [...keys];
+    const reached = survivorsByOwnerKey.get(ownerKey) ?? new Map<string, FoldSurvivor>();
+    reached.set(survivor.slug, survivor);
+    survivorsByOwnerKey.set(ownerKey, reached);
+  }
+  for (const [ownerKey, reached] of survivorsByOwnerKey) {
+    if (reached.size !== 1) continue;
+    const [survivor] = [...reached.values()];
     const list = byKey.get(ownerKey) ?? [];
     if (list.some((candidate) => candidate.slug === survivor.slug)) continue;
     list.push({
-      id: String(survivor._id),
+      id: survivor.id,
       slug: survivor.slug,
       rosterPrefix: rosterPrefixForSlug(survivor.slug),
       createdAt: survivor.createdAt ?? null,
