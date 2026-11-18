@@ -1277,7 +1277,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   Record<string, ReadonlySet<string>>
 > = {
   'lab-microsite-description-llm': new Set(['name', 'displayName']),
-  'official-profile-pi-backfill': new Set(['entityType', 'kind']),
+  'official-profile-pi-backfill': new Set(['entityType', 'kind', 'school']),
   'yale-research-official': new Set(['entityType', 'kind']),
   'centers-institutes-index': new Set(['entityType', 'kind']),
   'center-member-profile-research': new Set(['researchSummary', 'bio']),

@@ -146,7 +146,10 @@ import { type OfficialProfilePageIdentity } from '../../services/officialProfile
 import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import { isDepartmentHeadingChrome } from '../utils/departmentHeadingChrome';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
-import { catalogDepartment } from '../directoryExportDepartmentEvidence';
+import {
+  catalogDepartment,
+  catalogSchoolForDepartment,
+} from '../directoryExportDepartmentEvidence';
 import type { CanonicalDepartment } from '../utils/directoryExportDepartment';
 import { imageElementSource } from '../utils/imageElementSource';
 import {
@@ -195,6 +198,7 @@ export interface OfficialProfileIdentity {
   title: string;
   imageUrl?: string;
   departments: string[];
+  primaryAppointmentUnits?: string[];
   bio?: string;
   researchInterests: string[];
   orcid?: string;
@@ -3168,6 +3172,14 @@ function firstPersonSpecificYaleEmail(
 // another (#6185). It states no appointment, so it is never read as one.
 const HOST_SITE_DEPARTMENT_LINE = '[class*="profile-meta__department-line"]';
 
+function statedPrimaryAppointmentUnits(
+  $: cheerio.CheerioAPI,
+): Pick<OfficialProfileIdentity, 'primaryAppointmentUnits'> {
+  const appointmentCards = $('.profile-details-appointment-card');
+  if (appointmentCards.length === 0) return {};
+  return { primaryAppointmentUnits: primaryAppointmentUnits($, appointmentCards) };
+}
+
 function extractDepartments($: cheerio.CheerioAPI): string[] {
   const appointmentCards = $('.profile-details-appointment-card');
   if (appointmentCards.length > 0) return primaryAppointmentUnits($, appointmentCards);
@@ -4031,6 +4043,7 @@ export function extractOfficialProfileIdentity(
     ...(titleFromVerifiedTemplate ? { titleFromVerifiedTemplate: true } : {}),
     ...(imageUrl ? { imageUrl } : {}),
     departments: extractDepartments($),
+    ...statedPrimaryAppointmentUnits($),
     ...(bio ? { bio } : {}),
     researchInterests,
     ...(profileNetidSlug ? { profileNetid: profileNetidSlug } : {}),
@@ -4515,6 +4528,53 @@ export function identityToResearchEntityDepartmentObservations(
       ...(entityKey ? { entityKey } : {}),
       field: 'departments',
       value: identity.departments,
+      sourceUrl: identity.canonicalUrl,
+      confidenceOverride: 0.8,
+    },
+  ];
+}
+
+export type SchoolForDepartment = (department: string) => string | undefined;
+
+const STATED_PRIMARY_SCHOOL_HOSTS: ReadonlySet<string> = new Set(['ysph.yale.edu']);
+
+function profileHostname(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function statedPrimaryAppointmentSchool(
+  identity: OfficialProfileIdentity,
+  schoolForDepartment: SchoolForDepartment | null,
+): string | undefined {
+  const units = identity.primaryAppointmentUnits ?? [];
+  if (!schoolForDepartment || units.length === 0) return undefined;
+  if (!STATED_PRIMARY_SCHOOL_HOSTS.has(profileHostname(identity.canonicalUrl))) return undefined;
+  const schools = units.map((unit) => schoolForDepartment(unit));
+  if (schools.some((school) => !school)) return undefined;
+  const distinct = uniqueStrings(schools as string[]);
+  return distinct.length === 1 ? distinct[0] : undefined;
+}
+
+export function identityToResearchEntitySchoolObservations(
+  identity: OfficialProfileIdentity,
+  entity: Record<string, any>,
+  schoolForDepartment: SchoolForDepartment | null,
+): ObservationInput[] {
+  const school = statedPrimaryAppointmentSchool(identity, schoolForDepartment);
+  if (!school) return [];
+  const entityId = idValue(entity._id || entity.id);
+  const entityKey = textValue(entity.slug || entity._id);
+  return [
+    {
+      entityType: 'researchEntity',
+      ...(entityId ? { entityId } : {}),
+      ...(entityKey ? { entityKey } : {}),
+      field: 'school',
+      value: school,
       sourceUrl: identity.canonicalUrl,
       confidenceOverride: 0.8,
     },
@@ -5681,6 +5741,11 @@ export async function loadCatalogDepartmentWhenConnected(): Promise<CanonicalDep
   return catalogDepartment();
 }
 
+export async function loadCatalogSchoolWhenConnected(): Promise<SchoolForDepartment | null> {
+  if (!mongooseConnectionWasOpened()) return null;
+  return catalogSchoolForDepartment();
+}
+
 export class OfficialProfilePiBackfillScraper implements IScraper {
   readonly name = SOURCE_NAME;
   readonly displayName = 'Official profile PI backfill';
@@ -5728,6 +5793,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       targetKeys?: string[],
     ) => Promise<Array<Record<string, any>>> = selectOrganizationDirectorProfileTargets,
     private readonly catalogDepartmentLoader: () => Promise<CanonicalDepartment | null> = loadCatalogDepartmentWhenConnected,
+    private readonly catalogSchoolLoader: () => Promise<SchoolForDepartment | null> = loadCatalogSchoolWhenConnected,
   ) {}
 
   private pageReads = new LanePageReads();
@@ -5795,6 +5861,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     let canonicalDepartment: Promise<CanonicalDepartment | null> | null = null;
     const canonicalDepartmentForRun = (): Promise<CanonicalDepartment | null> =>
       (canonicalDepartment ??= this.catalogDepartmentLoader());
+    let schoolForDepartment: Promise<SchoolForDepartment | null> | null = null;
+    const schoolForDepartmentForRun = (): Promise<SchoolForDepartment | null> =>
+      (schoolForDepartment ??= this.catalogSchoolLoader());
     const runOnlyWebsiteObservationBackfill =
       (runLeadDirectWebsiteBackfill || runSourceUrlWebsiteBackfill) &&
       !runQueuedPiBackfill &&
@@ -6082,6 +6151,11 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
               }
               observations.push(
                 ...identityToResearchEntityDepartmentObservations(identity, entity),
+                ...identityToResearchEntitySchoolObservations(
+                  identity,
+                  entity,
+                  await schoolForDepartmentForRun(),
+                ),
               );
               const existingUser = await existingUserForIdentity(identity);
               if (existingUser) {
