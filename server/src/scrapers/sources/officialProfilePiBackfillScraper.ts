@@ -58,6 +58,7 @@ import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
 import {
   isNavMenuChromeTitle,
   isPageHeadingTitle,
+  isTruncatedPersonTitle,
   sanitizePersonTitle,
 } from '../../utils/titleHygiene';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
@@ -214,8 +215,9 @@ export interface OfficialProfileIdentity {
    */
   statesNoTitle?: boolean;
   /**
-   * The emitted title is the appointment in the contact-information field, the template verified
-   * in #6177, so its read is marked as taken from the profile's title block.
+   * The emitted title is the whole appointment block of a verified profile template (the
+   * contact-information field of #6177, or a template in VERIFIED_TITLE_BLOCK_SELECTORS, #6494),
+   * so its read is marked as taken from the profile's title block.
    */
   titleFromVerifiedTemplate?: boolean;
   inMemoriam?: boolean;
@@ -1346,8 +1348,42 @@ function officialProfileTitles(
   return {
     stated,
     emitted,
-    fromVerifiedTemplate: Boolean(emitted) && emitted === contactAppointment,
+    fromVerifiedTemplate:
+      Boolean(emitted) &&
+      (emitted === contactAppointment || emitted === verifiedTitleBlockAppointment($)),
   };
+}
+
+/**
+ * Profile templates whose appointment block was verified against stored captures (#6494): the
+ * Drupal person node's title field (politicalscience, 42 of 42 pages) and the environment
+ * profile's position block (48 of 50; the other two are a pipe-joined pair and an overlong list).
+ */
+const VERIFIED_TITLE_BLOCK_SELECTORS = [
+  '.field-name-field-title .field-item',
+  '.profile__position',
+];
+
+/**
+ * The appointment a verified block states whole. A page with more than one distinct block, or a
+ * block that cleaning or sanitizing would cut down, or that ends before the field it names (#6445), states no
+ * single verified appointment, so the title it yields stays unmarked.
+ */
+function verifiedTitleBlockAppointment($: cheerio.CheerioAPI): string {
+  const blocks = uniqueStrings(
+    VERIFIED_TITLE_BLOCK_SELECTORS.flatMap((selector) =>
+      $(selector)
+        .toArray()
+        .filter((element) => !insideProfileContentCard($, element))
+        .map((element) => textValue(blockSeparatedText($(element)))),
+    ).filter(Boolean),
+  );
+  if (blocks.length !== 1) return '';
+  const [block] = blocks;
+  const statedWhole =
+    cleanOfficialProfileTitle(block) === block && sanitizePersonTitle(block) === block;
+  if (!statedWhole || isTruncatedPersonTitle(block)) return '';
+  return block;
 }
 
 function isUsefulOfficialProfileBioText(value: string): boolean {

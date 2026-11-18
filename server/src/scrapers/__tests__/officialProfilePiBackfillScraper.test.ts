@@ -6448,3 +6448,97 @@ describe('keyed visible-profile-bio titles and the verified-template marker (#61
     expect(emitted.some((o) => o.field === 'title')).toBe(false);
   });
 });
+
+describe('verified title-block templates beyond the contact-information field (#6494)', () => {
+  const target = {
+    _id: 'user-synthetic-person',
+    netid: 'sp123',
+    fname: 'Synthetic',
+    lname: 'Person',
+    name: 'Synthetic Person',
+    slug: 'synthetic-person',
+  };
+  const page = (body: string) => `<!doctype html><html><head>
+    <title>Synthetic Person | Fixture Department</title></head><body>
+    <h1 class="page-title">Synthetic Person</h1>
+    ${body}
+    </body></html>`;
+  const drupalTitleField = (value: string) =>
+    `<div class="profile">
+      <div class="field field-name-field-title field-type-text field-label-hidden">
+        <div class="field-items"><div class="field-item even">${value}</div></div>
+      </div>
+    </div>`;
+  const positionBlock = (value: string) =>
+    `<div class="flexhero__text--inner">
+      <div class="intro-text profile__position global-spacing--small">
+        <p><span class="semijoin" data-self-delimiter="; ">${value}</span></p>
+      </div>
+    </div>`;
+  const identityOf = (html: string, url: string) =>
+    extractOfficialProfileIdentity(html, url, target, { requireEmail: false });
+
+  it('marks the appointment of a Drupal person title field', () => {
+    const identity = identityOf(
+      page(drupalTitleField('Associate Professor of Fixture Studies')),
+      'https://fixture.yale.edu/people/synthetic-person',
+    );
+
+    expect(identity?.title).toBe('Associate Professor of Fixture Studies');
+    expect(identity?.titleFromVerifiedTemplate).toBe(true);
+  });
+
+  it('marks the appointment of a profile position block', () => {
+    const identity = identityOf(
+      page(positionBlock('Professor of Fixture Ecology; Director of the Fixture Program')),
+      'https://fixture.yale.edu/directory/faculty/synthetic-person',
+    );
+
+    expect(identity?.title).toBe('Professor of Fixture Ecology; Director of the Fixture Program');
+    expect(identity?.titleFromVerifiedTemplate).toBe(true);
+  });
+
+  it('leaves unmarked a title that sanitizing cut from a longer block', () => {
+    const identity = identityOf(
+      page(positionBlock('Lecturer | Research Scientist')),
+      'https://fixture.yale.edu/directory/faculty/synthetic-person',
+    );
+
+    expect(identity?.title).toBe('Lecturer');
+    expect(identity?.titleFromVerifiedTemplate).toBeUndefined();
+  });
+
+  it('leaves unmarked a block cut off before the field it names', () => {
+    const identity = identityOf(
+      page(drupalTitleField('Assistant Professor of')),
+      'https://fixture.yale.edu/people/synthetic-person',
+    );
+
+    expect(identity?.titleFromVerifiedTemplate).toBeUndefined();
+  });
+
+  it('leaves unmarked a page whose verified blocks state different appointments', () => {
+    const identity = identityOf(
+      page(
+        drupalTitleField('Professor of Fixture Studies') +
+          drupalTitleField('Lecturer in Fixture Studies'),
+      ),
+      'https://fixture.yale.edu/people/synthetic-person',
+    );
+
+    expect(identity?.titleFromVerifiedTemplate).toBeUndefined();
+  });
+
+  it('leaves unmarked a title read from elsewhere on a page with a verified block', () => {
+    const identity = identityOf(
+      page(
+        '<div class="person-title">Director of Fixture Studies</div>' +
+          drupalTitleField('Professor in the Fixture Department'),
+      ),
+      'https://fixture.yale.edu/people/synthetic-person',
+    );
+
+    expect(identity?.title).toBe('Director of Fixture Studies');
+    expect(identity?.titleFromVerifiedTemplate).toBeUndefined();
+  });
+});
