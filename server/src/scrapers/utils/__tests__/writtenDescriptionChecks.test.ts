@@ -7,6 +7,7 @@ import {
 } from '../../coverageSynthesis';
 import {
   coversResearchPage,
+  coversResearchPageStatements,
   hasFirstPerson,
   hasFusedPageHeading,
   hasGreetingText,
@@ -92,6 +93,80 @@ describe('coverage: the body names the research page subject (#5537)', () => {
         'Follows fish across the Caribbean through field surveys after marine heatwaves and bleaching events, and tests how they recover and compete for space.',
       ),
     ).toBe('missing-research-page-coverage');
+  });
+});
+
+describe('coverage: a body restating a profile page research statement (#6464)', () => {
+  const PROFILE_TEXT = [
+    'About Example Person',
+    'Example Person',
+    'Professor of Example Studies',
+    'Room / Office: Hall 101',
+    'Office Address: P.O. Box 123456',
+    'Ph.D., Example University',
+    "Example Person's research focuses on tidal wetland carbon storage and marsh resilience to sea level rise.",
+    'The group measures sediment cores and models how salt marshes respond to storms.',
+    'Example Person received the Example Award from Example University in 2015.',
+    'Example Person received the Example Award from Example Society in 2017.',
+    'Example Person received the Example Award from Example Foundation in 2019.',
+  ].join('\n');
+  const profilePage = [{ text: PROFILE_TEXT, isResearchPageText: true }];
+  const RESTATED =
+    'Studies tidal wetland carbon storage and marsh resilience to sea level rise. The group measures sediment cores and models how salt marshes respond to storms.';
+
+  it('ranks the name, office and award words first, which the older arms require', () => {
+    expect(researchPageFrequentTerms([PROFILE_TEXT])).toEqual([
+      'example',
+      'person',
+      'award',
+      'received',
+      'office',
+    ]);
+    expect(coversResearchPage(RESTATED, profilePage)).toBe(false);
+  });
+
+  it('admits a body restating the research statement in its own terms', () => {
+    expect(coversResearchPageStatements(RESTATED, profilePage)).toBe(true);
+  });
+
+  it('still refuses an off-subject body and a body naming only the award', () => {
+    expect(
+      coversResearchPageStatements(
+        'Studies medieval French poetry and the history of the printed book.',
+        profilePage,
+      ),
+    ).toBe(false);
+    expect(
+      coversResearchPageStatements(
+        'Received the Example Award from Example University, Example Society and Example Foundation.',
+        profilePage,
+      ),
+    ).toBe(false);
+  });
+
+  it('does not admit a restatement that omits the subject the statements repeat', () => {
+    expect(
+      coversResearchPageStatements(
+        'Follows fish across the Caribbean through field surveys after marine heatwaves and bleaching events.',
+        pageEvidence,
+      ),
+    ).toBe(false);
+  });
+
+  it('accepts the restating body end to end', async () => {
+    const decision = await coverageSynthesisDecision({
+      snippets: [
+        {
+          text: PROFILE_TEXT,
+          sourceName: 'research-page-text',
+          sourceUrl: 'https://profile.example.edu/example-person',
+        },
+      ],
+      entityName: 'Example Person',
+      callLLM: async () => ({ fullDescription: RESTATED, usedSnippetIndexes: [0] }),
+      coverageWriterChecks: true,
+    });
+    expect(decision.refusal).not.toBe('missing-research-page-coverage');
   });
 });
 

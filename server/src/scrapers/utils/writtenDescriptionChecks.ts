@@ -237,6 +237,71 @@ export function ungroundedContentTerms(
 export const RESEARCH_PAGE_FREQUENT_TERM_COUNT = 5;
 const MIN_FREQUENT_TERM_OCCURRENCES = 2;
 
+const CONTACT_LINE =
+  /\b(?:office|room|address|p\.?\s?o\.?\s+box|phone|telephone|tel|fax|e-?mail|mailing|office\s+hours)\b/i;
+const DEGREE_LINE =
+  /^(?:ph\.?\s?d|d\.?\s?phil|m\.?\s?phil|m\.?\s?d|j\.?\s?d|sc\.?\s?d|dr\.?\s?p\.?\s?h|m\.?\s?p\.?\s?h|m\.?\s?b\.?\s?a|m\.?\s?f\.?\s?a|b\.?\s?f\.?\s?a|m\.?\s?s\.?\s?c?|b\.?\s?s\.?\s?c?|m\.?\s?a|b\.?\s?a|b\.?\s?eng|m\.?\s?eng|a\.?\s?b|s\.?\s?b|s\.?\s?m)\b\.?\s*(?:,|\bin\b|\(|$)/i;
+const HONOR_SENTENCE =
+  /\b(?:received|receives|receiving|awarded|won|wins|recipient|elected|named|inducted|honou?red)\b[^.]{0,120}\b(?:awards?|prizes?|medals?|fellows?(?:hip)?s?|honou?rs?|distinctions?|academy|society)\b/i;
+const RESEARCH_STATEMENT_CUE =
+  /\b(?:research|stud(?:y|ies|ying)|investigat\w*|examin\w*|explor\w*|focus(?:es|ed|ing)?|interests?|cent(?:er|re)s?\s+on|concern(?:s|ed)?\s+with|considers|address(?:es)?|aims?|seeks?|develop(?:s|ing)?|designs?|models?|measures?|analy[sz]\w*|probes?)\b/i;
+const ABOUT_NAME_LINE = /^about\s+(.+)$/i;
+const MAX_ABOUT_NAME_WORDS = 5;
+const MIN_RESTATED_SENTENCE_TERMS = 4;
+
+const isProfileBoilerplateSentence = (sentence: string): boolean =>
+  CONTACT_LINE.test(sentence) || DEGREE_LINE.test(sentence) || HONOR_SENTENCE.test(sentence);
+
+function subjectNameTokens(
+  pageTexts: readonly string[],
+  subjectNames: readonly string[],
+): Set<string> {
+  const names = [...subjectNames];
+  for (const line of pageTexts.flatMap((text) => text.split(/\n+/))) {
+    const about = foldWriterTextForms(line).trim().match(ABOUT_NAME_LINE);
+    if (about && writerWordTokens(about[1]).length <= MAX_ABOUT_NAME_WORDS) names.push(about[1]);
+  }
+  return new Set(names.flatMap(writerContentTerms));
+}
+
+/**
+ * Read from the page's prose sentences, without contact, degree and award sentences or the
+ * person's name. A profile repeats those across its header, citation and award lists, so
+ * counting the whole page made them its "subject" and refused bodies that restated its one
+ * research sentence (#6464).
+ */
+interface ResearchPageStatements {
+  statements: string[][];
+  repeatedTerms: string[];
+}
+
+function researchPageStatements(
+  pageTexts: readonly string[],
+  subjectNames: readonly string[],
+): ResearchPageStatements {
+  const nameTokens = subjectNameTokens(pageTexts, subjectNames);
+  const sentences = pageTexts
+    .flatMap((text) => text.split(/\n+/))
+    .flatMap((line) => foldWriterTextForms(line).split(/(?<=[.!?])\s+(?=\p{Lu})/u))
+    .filter((sentence) => isProseSentenceLine(sentence) && !isProfileBoilerplateSentence(sentence));
+  const termsOf = (sentence: string): string[] => [
+    ...new Set(writerContentTerms(sentence).filter((term) => !nameTokens.has(term))),
+  ];
+  const sentenceCounts = new Map<string, number>();
+  for (const term of sentences.flatMap(termsOf)) {
+    sentenceCounts.set(term, (sentenceCounts.get(term) ?? 0) + 1);
+  }
+  return {
+    statements: sentences
+      .filter((sentence) => RESEARCH_STATEMENT_CUE.test(sentence))
+      .map(termsOf)
+      .filter((terms) => terms.length > 0),
+    repeatedTerms: [...sentenceCounts]
+      .filter(([, count]) => count >= MIN_FREQUENT_TERM_OCCURRENCES)
+      .map(([term]) => term),
+  };
+}
+
 export function researchPageFrequentTerms(pageTexts: readonly string[]): string[] {
   const counts = new Map<string, number>();
   for (const term of pageTexts.flatMap(writerContentTerms)) {
@@ -333,6 +398,27 @@ export function coversResearchPage(
     return true;
   }
   return frequentTerms.some((term) => hasWordSharingStem(term, bodyWords));
+}
+
+/**
+ * A loosen-only third arm: the body restates one of the page's research statements in that
+ * statement's own terms, and names a term repeated across the page's sentences, if any. Measured
+ * on the v2 corpus, it admits 10 of 2,982 bodies paired with another row's page, against 724
+ * the two older arms already admit (#6464).
+ */
+export function coversResearchPageStatements(
+  description: string,
+  evidence: readonly WrittenDescriptionEvidence[],
+  subjectNames: readonly string[] = [],
+): boolean {
+  const pageTexts = evidence.filter((entry) => entry.isResearchPageText).map((e) => e.text);
+  const { statements, repeatedTerms } = researchPageStatements(pageTexts, subjectNames);
+  const bodyWords = writerWordTokens(description);
+  const named = (term: string): boolean => hasWordSharingStem(term, bodyWords);
+  const restated = statements.some(
+    (terms) => terms.filter(named).length >= MIN_RESTATED_SENTENCE_TERMS,
+  );
+  return restated && (repeatedTerms.length === 0 || repeatedTerms.some(named));
 }
 
 const FIRST_PERSON = [

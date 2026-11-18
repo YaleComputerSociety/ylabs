@@ -42,6 +42,7 @@ import { withoutResearchPageChromeMenusAndListings } from './utils/researchPageC
 import {
   coversResearchPage,
   coversResearchPageProse,
+  coversResearchPageStatements,
   hasFirstPerson,
   isCarriedByCitedProse,
   hasFusedPageHeading,
@@ -495,6 +496,9 @@ export interface CoverageSynthesisRefusalDetails {
   ungroundedTerms: string[];
 }
 
+const servingRowSubjectNames = (servingRow: ServingRowContext | null | undefined): string[] =>
+  servingRow?.leadPersonName ? [servingRow.leadPersonName] : [];
+
 /**
  * Every content arm of the writer, run on one drafted body. It is the single owner of
  * those arms so a fresh draft and an already-adopted body are judged by the same code:
@@ -565,9 +569,11 @@ export function judgeWrittenDescription(input: {
       refusalDetails: { ungroundedTerms },
     };
   }
+  const subjectNames = servingRowSubjectNames(input.servingRow);
   if (
     !coversResearchPage(description, evidence) &&
-    !coversResearchPageProse(description, evidence)
+    !coversResearchPageProse(description, evidence) &&
+    !coversResearchPageStatements(description, evidence, subjectNames)
   ) {
     return refuse('missing-research-page-coverage');
   }
