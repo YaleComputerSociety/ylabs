@@ -1531,6 +1531,41 @@ export interface ProgramStudentVisibilityContext {
 
 const COMMON_APPLICATION_TITLE = /\bcommon application\b/i;
 
+export const PROGRAM_STUDENT_VISIBILITY_INPUT_FIELDS = [
+  'additionalInformation',
+  'applicationInformation',
+  'applicationLink',
+  'applicationOpenDate',
+  'deadline',
+  'description',
+  'eligibility',
+  'entryMode',
+  'fullDescription',
+  'fullSourceDescription',
+  'isAcceptingApplications',
+  'links',
+  'mentorMatching',
+  'profileResearchAreas',
+  'profileSynthesisDescription',
+  'programKind',
+  'purpose',
+  'requiresMentorBeforeApply',
+  'researchAreas',
+  'restrictionsToUseOfAward',
+  'shortDescription',
+  'sourceName',
+  'sourcePageTitle',
+  'sourceUrl',
+  'studentFacingCategory',
+  'studentVisibilityOverrideTier',
+  'summary',
+  'title',
+  'undergraduateOnly',
+  'upcomingDuplicateWindow',
+  'yaleCollegeOnly',
+  'yearOfStudy',
+] as const;
+
 export function computeProgramStudentVisibility(
   program: ProgramStudentVisibilityInput,
   context: ProgramStudentVisibilityContext = {},
