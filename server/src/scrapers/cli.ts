@@ -319,8 +319,9 @@ Materialize flags:
                        field an observation sets, for example contactOffice or deadline);
                        user and research rows and every run reconciliation are skipped,
                        and the program visibility gate re-runs after a write that touches
-                       a tier input. Name isAcceptingApplications together with deadline
-                       and applicationOpenDate, since the served flag is derived from them.
+                       a gate or duplicate-copy input (PROGRAM_REGATE_TRIGGER_FIELDS).
+                       Name isAcceptingApplications together with deadline and
+                       applicationOpenDate, since the served flag is derived from them.
                        An unknown or denied path fails and lists the valid ones.
                        Requires --output.
 
