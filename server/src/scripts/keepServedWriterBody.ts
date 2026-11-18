@@ -1,3 +1,4 @@
+import type { Types } from 'mongoose';
 import { Observation } from '../models/observation';
 import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import { resetDescriptionOwnershipCitersCache } from '../scrapers/descriptionOwnershipResolverScreen';
@@ -24,7 +25,8 @@ export interface KeepServedWriterBodyInput {
 export async function keepServedWriterBody(
   input: KeepServedWriterBodyInput,
 ): Promise<{ restored: boolean }> {
-  if (!input.servedBody.trim() || input.servedBody === input.refusedBody) return { restored: false };
+  if (!input.servedBody.trim() || input.servedBody === input.refusedBody)
+    return { restored: false };
   if (input.anchors.length === 0) return { restored: false };
   const scope: Record<string, any> = {
     entityType: 'researchEntity',
@@ -33,10 +35,14 @@ export async function keepServedWriterBody(
     field: 'fullDescription',
     $or: [...input.anchors],
   };
-  const refused = (await Observation.findOne({ ...scope, value: input.refusedBody, superseded: false })
+  const refused = (await Observation.findOne({
+    ...scope,
+    value: input.refusedBody,
+    superseded: false,
+  })
     .sort({ observedAt: -1 })
     .select('_id')
-    .lean()) as { _id: unknown } | null;
+    .lean()) as { _id: Types.ObjectId } | null;
   if (!refused) return { restored: false };
   const served = (await Observation.findOne({
     ...scope,
@@ -46,15 +52,16 @@ export async function keepServedWriterBody(
     rollback: { $exists: false },
   })
     .select('_id')
-    .lean()) as { _id: unknown } | null;
+    .lean()) as { _id: Types.ObjectId } | null;
   if (!served) return { restored: false };
+  const revived = await Observation.updateOne(
+    { _id: served._id, superseded: true, supersededBy: refused._id },
+    { $set: { superseded: false }, $unset: { supersededBy: '' } },
+  );
+  if (revived.modifiedCount !== 1) return { restored: false };
   await Observation.updateOne(
     { _id: refused._id, superseded: false },
     { $set: { superseded: true, rollback: { rolledBackAt: new Date(), reason: input.reason } } },
-  );
-  await Observation.updateOne(
-    { _id: served._id, superseded: true, supersededBy: refused._id },
-    { $set: { superseded: false }, $unset: { supersededBy: '' } },
   );
   resetDescriptionOwnershipCitersCache();
   return { restored: true };
