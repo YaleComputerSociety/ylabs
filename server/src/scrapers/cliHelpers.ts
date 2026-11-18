@@ -6,6 +6,7 @@ import {
 } from './scraperEnvironment';
 import type { ScraperOptions } from './types';
 import { parseUserOnlyFieldsList } from './userMaterializerFieldScope';
+import { parseProgramOnlyFieldsList } from './programMaterializerFieldScope';
 import { resolveSafeJsonReportOutputPath } from '../utils/reportOutputPath';
 import { observedEntityTypes, type ObservedEntityType } from '../models/observation';
 import type { StudentVisibilityGateCollection } from '../services/studentVisibilityGateService';
@@ -28,6 +29,7 @@ export type ScraperCliPreflight =
       runId: string;
       confirmMaterialize: boolean;
       onlyFields: string[];
+      onlyProgramFields: string[];
       skipEntityTypes: ObservedEntityType[];
       skipCenterRosterRetirement: boolean;
       expectCenterPlanPath?: string;
@@ -355,6 +357,19 @@ export function buildScraperCliPreflight(
         : parseUserOnlyFieldsList(
             typeof flags['only-fields'] === 'string' ? flags['only-fields'] : undefined,
           );
+    const onlyProgramFields =
+      flags['only-program-fields'] === undefined
+        ? []
+        : parseProgramOnlyFieldsList(
+            typeof flags['only-program-fields'] === 'string'
+              ? flags['only-program-fields']
+              : undefined,
+          );
+    if (onlyProgramFields.length > 0 && onlyFields.length > 0) {
+      throw new Error(
+        '--only-fields and --only-program-fields cannot be combined: each scopes one row type, so run them separately.',
+      );
+    }
     const skipEntityTypes =
       flags['skip-entity-types'] === undefined
         ? []
@@ -364,6 +379,16 @@ export function buildScraperCliPreflight(
     if (skipEntityTypes.length > 0 && onlyFields.length > 0) {
       throw new Error(
         '--skip-entity-types and --only-fields cannot be combined: --only-fields already materializes user rows only.',
+      );
+    }
+    if (skipEntityTypes.length > 0 && onlyProgramFields.length > 0) {
+      throw new Error(
+        '--skip-entity-types and --only-program-fields cannot be combined: --only-program-fields already materializes program rows only.',
+      );
+    }
+    if (onlyProgramFields.length > 0 && typeof flags.output !== 'string') {
+      throw new Error(
+        '--only-program-fields requires --output <path>: the scoped plan is written there.',
       );
     }
     if (onlyFields.length > 0 && typeof flags.output !== 'string') {
@@ -393,6 +418,7 @@ export function buildScraperCliPreflight(
       runId,
       confirmMaterialize,
       onlyFields,
+      onlyProgramFields,
       skipEntityTypes,
       skipCenterRosterRetirement: !!flags['skip-center-roster-retirement'],
       ...(typeof flags['expect-center-plan'] === 'string'

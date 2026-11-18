@@ -66,26 +66,38 @@ export function canonicalUserMaterializerField(field: string): string | undefine
   return SUPPORTED.has(canonical) ? canonical : undefined;
 }
 
-export function parseUserOnlyFieldsList(value: string | undefined): string[] {
-  if (!value) throw new Error('--only-fields requires a comma-separated list of fields');
+export function parseOnlyFieldsList(
+  value: string | undefined,
+  scope: {
+    flag: string;
+    canonical: (field: string) => string | undefined;
+    supported: readonly string[];
+  },
+): string[] {
+  if (!value) throw new Error(`${scope.flag} requires a comma-separated list of fields`);
   const fields = value
     .split(',')
     .map((field) => field.trim())
     .filter(Boolean);
-  if (fields.length === 0) throw new Error('--only-fields requires at least one field');
+  if (fields.length === 0) throw new Error(`${scope.flag} requires at least one field`);
   const canonical = fields.map((field) => {
-    const resolved = canonicalUserMaterializerField(field);
+    const resolved = scope.canonical(field);
     if (!resolved) {
       throw new Error(
-        `Unsupported --only-fields field: ${field}. Supported: ${[
-          ...USER_MATERIALIZER_SCOPE_FIELDS,
-          ...Object.keys(USER_MATERIALIZER_FIELD_ALIASES),
-        ].join(', ')}`,
+        `Unsupported ${scope.flag} field: ${field}. Supported: ${scope.supported.join(', ')}`,
       );
     }
     return resolved;
   });
   return Array.from(new Set(canonical));
+}
+
+export function parseUserOnlyFieldsList(value: string | undefined): string[] {
+  return parseOnlyFieldsList(value, {
+    flag: '--only-fields',
+    canonical: canonicalUserMaterializerField,
+    supported: [...USER_MATERIALIZER_SCOPE_FIELDS, ...Object.keys(USER_MATERIALIZER_FIELD_ALIASES)],
+  });
 }
 
 // One-directional on purpose: naming `profileFieldWriters` re-records writers without

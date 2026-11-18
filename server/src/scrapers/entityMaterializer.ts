@@ -774,6 +774,7 @@ interface MaterializeOptions {
   cardModel?: string;
   writeOnlyFields?: string[];
   userWriteOnlyFields?: readonly string[];
+  programWriteOnlyFields?: readonly string[];
   /**
    * Keep the field-less post-projection steps (inferred lead edges, access-signal
    * upserts, the department-roster fold) on a `writeOnlyFields` pass. The merge
@@ -16911,6 +16912,7 @@ interface MaterializeFromRunCounts {
   postMaterializationMetrics: Required<ReportPostMaterializationMetrics>;
   changedPathsByEntityType?: Record<string, string[]>;
   userFieldScope?: UserFieldScopeReport;
+  programFieldScope?: ProgramFieldScopeReport;
   centerPlan?: CenterPlanReport;
 }
 
@@ -17067,6 +17069,193 @@ async function materializeUserRowsInFieldScope(
   };
 }
 
+export interface ProgramFieldScopePathChange {
+  path: string;
+  stored: unknown;
+  planned: unknown;
+}
+
+export interface ProgramFieldScopeRow {
+  entityKey?: string;
+  recordId?: string;
+  sourceName?: string;
+  written: boolean;
+  changes: ProgramFieldScopePathChange[];
+  storedNotCaptured?: 'reached-under-another-identity-on-apply';
+  error?: string;
+}
+
+/**
+ * A run key can resolve onto a program row filed under another identity (a fund's facets
+ * reach every row citing the fund), so the pre-read by the run's own keys misses it. The
+ * unapplied plan reads those rows by record id afterwards, which still holds the stored
+ * value because nothing was written; an apply cannot, so it says so instead of printing a
+ * post-write value as the stored one.
+ */
+export function withStoredValuesForRowsReachedElsewhere(
+  rows: ProgramFieldScopeRow[],
+  readById: ReadonlyMap<string, Record<string, unknown>>,
+  applied: boolean,
+): ProgramFieldScopeRow[] {
+  return rows.map((row) => {
+    if (row.sourceName !== undefined || !row.recordId || row.error) return row;
+    if (applied) return { ...row, storedNotCaptured: 'reached-under-another-identity-on-apply' };
+    const doc = readById.get(row.recordId);
+    if (!doc) return row;
+    return {
+      ...row,
+      sourceName: typeof doc.sourceName === 'string' ? doc.sourceName : undefined,
+      changes: row.changes.map((change) => ({
+        ...change,
+        stored: programScopeValue(doc[change.path]),
+      })),
+    };
+  });
+}
+
+export interface ProgramFieldScopeReport {
+  onlyFields: string[];
+  rowsOutsideProgramSkipped: Record<string, number>;
+  runReconciliationsSkipped: true;
+  writtenRecordIds: string[];
+  rows: ProgramFieldScopeRow[];
+}
+
+export function withoutProgramFieldScopeRows<
+  T extends { programFieldScope?: ProgramFieldScopeReport },
+>(counts: T): T {
+  if (!counts.programFieldScope) return counts;
+  const { rows: _rows, ...summary } = counts.programFieldScope;
+  return { ...counts, programFieldScope: { ...summary, rows: [] } };
+}
+
+const programScopeValue = (value: unknown): unknown =>
+  value === undefined ? null : JSON.parse(JSON.stringify(value));
+
+async function materializeProgramRowsInFieldScope(
+  rows: ReadonlyArray<{ entityType: ObservedEntityType; entityId?: string; entityKey?: string }>,
+  options: MaterializeOptions,
+): Promise<MaterializeFromRunCounts> {
+  const onlyFields = [...(options.programWriteOnlyFields ?? [])];
+  const rowsOutsideProgramSkipped: Record<string, number> = {};
+  const programRows = rows.filter((row) => {
+    if (row.entityType === 'fellowship') return true;
+    rowsOutsideProgramSkipped[row.entityType] =
+      (rowsOutsideProgramSkipped[row.entityType] ?? 0) + 1;
+    return false;
+  });
+  let conflicts = 0;
+  let updated = 0;
+  let skipped = 0;
+  let errors = 0;
+  const changedProgramPaths = new Set<string>();
+  const storedByKey = new Map<string, any>(
+    (
+      await Fellowship.find({
+        sourceKey: {
+          $in: programRows
+            .map((row) => row.entityKey)
+            .filter((key): key is string => typeof key === 'string' && key.length > 0),
+        },
+      })
+        .select(['_id', 'sourceKey', 'sourceName', ...onlyFields].join(' '))
+        .lean()
+    ).map((doc: any) => [String(doc.sourceKey), doc]),
+  );
+  const scopeRows: ProgramFieldScopeRow[] = [];
+  const writtenRecordIds = new Set<string>();
+  const progress = startLongRunProgress('field-scoped-program-materialize', programRows.length);
+  const { linkedRowIndexSyncFailedEntityIds } = await materializeObservedEntitiesInChunks(
+    programRows,
+    { ...options, programWriteOnlyFields: undefined, writeOnlyFields: onlyFields },
+    (row, outcome) => {
+      progress.tick('error' in outcome);
+      const stored = row.entityKey ? storedByKey.get(row.entityKey) : undefined;
+      const base = {
+        entityKey: row.entityKey,
+        recordId: stored?._id ? String(stored._id) : undefined,
+        sourceName: stored?.sourceName,
+      };
+      if (!('result' in outcome)) {
+        errors++;
+        scopeRows.push({
+          ...base,
+          written: false,
+          changes: [],
+          error: sanitizeLogValue((outcome.error as Error)?.message ?? String(outcome.error)),
+        });
+        return;
+      }
+      const { result } = outcome;
+      conflicts += result.conflicts;
+      const recordId = base.recordId ?? (result.entityId ? String(result.entityId) : undefined);
+      if (materializeRowOutcome(result) === 'skipped') {
+        skipped++;
+        return;
+      }
+      updated++;
+      const paths = (result.changedPaths ?? []).filter((path) => onlyFields.includes(path));
+      for (const path of paths) changedProgramPaths.add(path);
+      const written = options.dryRun !== true && result.fieldsWritten > 0;
+      if (written && recordId) writtenRecordIds.add(recordId);
+      scopeRows.push({
+        ...base,
+        recordId,
+        written,
+        changes: paths.map((path) => ({
+          path,
+          stored: programScopeValue(stored?.[path]),
+          planned: programScopeValue(
+            result.plannedSet && path in result.plannedSet
+              ? result.plannedSet[path]
+              : result.plannedUnset && path in result.plannedUnset
+                ? undefined
+                : result.resolved?.[path]?.value,
+          ),
+        })),
+      });
+    },
+    MATERIALIZATION_CHUNK_SIZE,
+    1,
+  ).finally(() => progress.stop());
+  const applied = options.dryRun !== true;
+  const missedIds = applied
+    ? []
+    : scopeRows
+        .filter((row) => row.sourceName === undefined && row.recordId && !row.error)
+        .map((row) => toMaterializerObjectId(row.recordId as string))
+        .filter((id): id is NonNullable<typeof id> => Boolean(id));
+  const readById = new Map<string, Record<string, unknown>>(
+    missedIds.length > 0
+      ? (
+          await Fellowship.find({ _id: { $in: missedIds } })
+            .select(['_id', 'sourceName', ...onlyFields].join(' '))
+            .lean()
+        ).map((doc: any) => [String(doc._id), doc])
+      : [],
+  );
+  const reportedRows = withStoredValuesForRowsReachedElsewhere(scopeRows, readById, applied);
+  return {
+    materialized: programRows.length - errors,
+    created: 0,
+    updated,
+    conflicts,
+    skipped,
+    errors,
+    indexSyncFailures: linkedRowIndexSyncFailedEntityIds.size,
+    postMaterializationMetrics: emptyPostMaterializationMetrics(),
+    changedPathsByEntityType:
+      changedProgramPaths.size > 0 ? { fellowship: [...changedProgramPaths].sort() } : {},
+    programFieldScope: {
+      onlyFields,
+      rowsOutsideProgramSkipped,
+      runReconciliationsSkipped: true,
+      writtenRecordIds: [...writtenRecordIds].sort(),
+      rows: reportedRows,
+    },
+  };
+}
+
 export async function materializeFromRun(
   scrapeRunId: string,
   options: MaterializeOptions = {},
@@ -17161,6 +17350,16 @@ async function materializeFromRunUnderRemovalGuard(
     );
   });
 
+  if (options.programWriteOnlyFields && options.programWriteOnlyFields.length > 0) {
+    return materializeProgramRowsInFieldScope(
+      distinct.map((row) => ({
+        entityType: row._id.entityType,
+        entityId: row._id.entityId ? String(row._id.entityId) : undefined,
+        entityKey: row._id.entityKey || undefined,
+      })),
+      options,
+    );
+  }
   if (userWriteScope(options)) {
     return materializeUserRowsInFieldScope(
       distinct.map((row) => ({
