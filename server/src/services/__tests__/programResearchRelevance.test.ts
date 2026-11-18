@@ -446,6 +446,19 @@ describe('classifyProgramResearchRelevance', () => {
             description: 'Projects may not include independent research.',
           }),
         ).toBe(false);
+        for (const description of [
+          'Grants are not available for summer research.',
+          'Funding cannot be used for summer research.',
+          'These awards are never given for independent research.',
+          "The fellowship doesn't pay for thesis research.",
+          'The grant covers language courses, not for summer research.',
+          'Funding is not intended for field research or archival work.',
+          'The award funds internships, and students may apply elsewhere for summer research.',
+          'Grants are offered for summer research-adjacent internships.',
+          'Projects may include research-adjacent outreach.',
+        ]) {
+          expect(related({ ...languageAndResearchGrant, description })).toBe(false);
+        }
       });
 
       it('withholds a multi-purpose fund whose only research evidence is the purpose tag', () => {
