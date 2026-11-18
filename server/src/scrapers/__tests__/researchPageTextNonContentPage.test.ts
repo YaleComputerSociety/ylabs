@@ -17,6 +17,12 @@ const SIGN_IN_PAGE =
 const BOT_CHALLENGE_PAGE =
   '<html><head><script>var x = 1;</script></head><body><h1>Security Check</h1><p>Your browser is being verified before you can reach this site. Consulting the crowd about this request, which can take a few seconds while the check completes. Powered by CrowdSec. Why am I seeing this page? This site uses a security service to protect itself from automated traffic.</p></body></html>';
 
+const GAMBLING_PAGE =
+  '<html><head><title>CONTOH88 | Situs Resmi Slot Gacor</title></head><body><h1>CONTOH88</h1>' +
+  '<p>CONTOH88 hadir sebagai link alternatif resmi yang disediakan untuk member setia maupun member baru, agar akses ke situs utama menjadi lebih mudah, cepat, dan nyaman tanpa hambatan apa pun setiap hari.</p>' +
+  '<p>Jika kamu mencari platform yang mampu memberikan hiburan sekaligus pengalaman bermain yang memuaskan, maka CONTOH88 adalah jawabannya, dengan tampilan yang ramah pengguna dan navigasi yang jelas untuk semua pemain.</p>' +
+  '<p>Untuk mulai bermain, pengguna cukup mengunjungi situs resmi, melakukan pendaftaran akun, lalu login ke dalam platform untuk menikmati berbagai permainan slot online yang tersedia dengan Minimal Deposit Rp 20.000.</p></body></html>';
+
 const SCHOOL_INDEX = 'https://medicine.yale.edu/research/';
 
 const schoolIndexPage =
@@ -90,6 +96,13 @@ describe('research-page-text refuses a fetched page that is not the row content 
 
     expect(emitted).toEqual([]);
     expect(logs.some((line) => line.includes('research page refused: bot-challenge'))).toBe(true);
+  });
+
+  it('re-reads without a cited domain that now serves a gambling page, instead of keeping the old reading', async () => {
+    const { emitted, logs } = await run({ url: PARTNER, html: GAMBLING_PAGE }, BOTH_HOSTS);
+
+    expect(pageText(emitted)?.map((entry) => entry.url)).toEqual([HOME]);
+    expect(logs.some((line) => line.includes('research page refused: gambling-spam'))).toBe(true);
   });
 
   it('stores only the content pages for a row with no earlier reading', async () => {

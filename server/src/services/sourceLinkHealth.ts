@@ -41,6 +41,7 @@ import {
 } from '../utils/excludedHosts';
 import { normalizeWebsiteUrlIdentityKey } from '../utils/websiteUrlIdentityKey';
 import { citationUrlsOf } from './sourceCitations';
+import { isGamblingSpamPage } from '../scrapers/utils/gamblingSpamPage';
 
 export { sourceLinkHealthStatuses, type SourceLinkHealthStatus };
 
@@ -122,6 +123,8 @@ export interface SourceLinkProbeResult {
   privateAddressHost?: boolean;
   publicAddressHost?: boolean;
   excludedHost?: true;
+  /** A 2xx answer whose page is a gambling site, not the cited resource (#6532). */
+  gamblingSpamPage?: true;
 }
 
 /**
@@ -206,6 +209,20 @@ function retryAfterMs(headers: unknown): number | undefined {
   if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
   const at = Date.parse(raw);
   return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
+}
+
+const isYaleHost = (hostname: string): boolean => /(?:^|\.)yale\.edu$/i.test(hostname);
+
+function isHtmlResponse(headers: unknown): boolean {
+  const raw = (headers as Record<string, unknown> | undefined)?.['content-type'];
+  return typeof raw === 'string' && /\btext\/html\b|\bapplication\/xhtml\+xml\b/i.test(raw);
+}
+
+function visibleTextOf(html: string | undefined): string {
+  return (html ?? '')
+    .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ');
 }
 
 export function probeStatusBackoffMs(
@@ -329,7 +346,10 @@ function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
   const { status, errorCode, requestedUrl, finalUrl, redirectStatuses } = probe;
   if (typeof status === 'number' && Number.isFinite(status)) {
     if (status >= 200 && status < 300) {
-      if (landsAwayFromRequestedResource(requestedUrl, finalUrl, redirectStatuses)) {
+      if (
+        probe.gamblingSpamPage ||
+        landsAwayFromRequestedResource(requestedUrl, finalUrl, redirectStatuses)
+      ) {
         return { healthStatus: 'UNAVAILABLE', httpStatusCode: status };
       }
       return { healthStatus: 'HEALTHY', httpStatusCode: status };
@@ -651,11 +671,18 @@ export interface SourceLinkProbeOptions {
 }
 
 const BAN_NOTICE_PREFIX_BYTES = 4_096;
-const BAN_NOTICE_READ_TIMEOUT_MS = 2_000;
+const PAGE_CONTENT_PREFIX_BYTES = 65_536;
+const BODY_PREFIX_READ_TIMEOUT_MS = 2_000;
 
-/** Reads the start of a refusal body, enough to find a stated pause date, without draining the page. */
-async function readBodyPrefix(data: unknown): Promise<string | undefined> {
-  if (typeof data === 'string') return data.slice(0, BAN_NOTICE_PREFIX_BYTES);
+/**
+ * Reads the start of a body without draining the page: enough of a refusal to find a stated
+ * pause date, or enough of a 2xx page to tell a taken-over domain from the cited resource.
+ */
+async function readBodyPrefix(
+  data: unknown,
+  maxBytes: number = BAN_NOTICE_PREFIX_BYTES,
+): Promise<string | undefined> {
+  if (typeof data === 'string') return data.slice(0, maxBytes);
   const stream = data as NodeJS.ReadableStream | undefined;
   if (!stream || typeof stream.on !== 'function') return undefined;
   return new Promise<string | undefined>((resolve) => {
@@ -664,15 +691,15 @@ async function readBodyPrefix(data: unknown): Promise<string | undefined> {
     const finish = () => {
       clearTimeout(timer);
       stream.removeListener('data', onData);
-      resolve(Buffer.concat(chunks).toString('utf8').slice(0, BAN_NOTICE_PREFIX_BYTES));
+      resolve(Buffer.concat(chunks).toString('utf8').slice(0, maxBytes));
     };
     const onData = (chunk: Buffer | string) => {
       const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
       chunks.push(buffer);
       size += buffer.length;
-      if (size >= BAN_NOTICE_PREFIX_BYTES) finish();
+      if (size >= maxBytes) finish();
     };
-    const timer = setTimeout(finish, BAN_NOTICE_READ_TIMEOUT_MS);
+    const timer = setTimeout(finish, BODY_PREFIX_READ_TIMEOUT_MS);
     stream.on('data', onData);
     stream.once('end', finish);
     stream.once('error', finish);
@@ -761,6 +788,14 @@ export async function probeSourceLink(
       // 5xx, and some servers refuse HEAD but answer GET (#6214).
       const response = await request();
       const body = response.status === 403 ? await readBodyPrefix(response.data) : undefined;
+      const gamblingSpamPage =
+        response.status >= 200 &&
+        response.status < 300 &&
+        !isYaleHost(safeUrl.hostname) &&
+        isHtmlResponse(response.headers) &&
+        isGamblingSpamPage(
+          visibleTextOf(await readBodyPrefix(response.data, PAGE_CONTENT_PREFIX_BYTES)),
+        );
       if (response.data && typeof response.data.destroy === 'function') {
         response.data.destroy();
       }
@@ -781,6 +816,7 @@ export async function probeSourceLink(
         requestedUrl,
         ...(resolvedUrl(response) ? { finalUrl: resolvedUrl(response) } : {}),
         ...(redirectStatuses.length > 0 ? { redirectStatuses: [...redirectStatuses] } : {}),
+        ...(gamblingSpamPage ? { gamblingSpamPage: true as const } : {}),
         ...(retryAfterMs(response.headers) !== undefined
           ? { retryAfterMs: retryAfterMs(response.headers) }
           : {}),

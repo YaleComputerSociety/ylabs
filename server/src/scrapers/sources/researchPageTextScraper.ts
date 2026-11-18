@@ -554,9 +554,11 @@ export class ResearchPageTextScraper implements IScraper {
         text: cheerio.load(page.html)('body').text().replace(/\s+/g, ' ').trim(),
       });
       if (nonContent) {
-        transientFailures.push({ url, throttled: false });
-        if (page.url && page.url !== url)
-          transientFailures.push({ url: page.url, throttled: false });
+        if (nonContent !== 'gambling-spam') {
+          transientFailures.push({ url, throttled: false });
+          if (page.url && page.url !== url)
+            transientFailures.push({ url: page.url, throttled: false });
+        }
         ctx.log(`[${row.slug || 'candidate'}] research page refused: ${nonContent}`);
         return null;
       }
