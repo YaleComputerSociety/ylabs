@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
-import allowlist from './reportWriterNoFollowAllowlist.json';
 
 const SERVER_SRC = path.resolve(__dirname, '../..');
 
@@ -33,7 +32,7 @@ export interface ScannedSource {
  * variable alias (`const w = fs.writeFileSync`),
  * a write through a temp file and a copy or rename, or a resolve in one module with the write
  * in another; those are accepted residuals of #6375. A file that resolves a path only to read
- * it and writes something unrelated is a false positive, kept on the allowlist with a reason.
+ * it and writes something unrelated is a false positive.
  */
 export function rawReportWriters(sources: readonly ScannedSource[]): string[] {
   return sources
@@ -68,16 +67,8 @@ function productionSources(): ScannedSource[] {
 }
 
 describe('report writers go through the shared O_NOFOLLOW writer (#6375)', () => {
-  const offenders = rawReportWriters(productionSources());
-  const allowed = new Set<string>(allowlist);
-
-  it('refuses a new raw report writer', () => {
-    expect(offenders.filter((file) => !allowed.has(file))).toEqual([]);
-  });
-
-  it('drops a migrated file from the allowlist, so the list only shrinks', () => {
-    const current = new Set(offenders);
-    expect([...allowed].filter((file) => !current.has(file))).toEqual([]);
+  it('finds no raw report writer in production code', () => {
+    expect(rawReportWriters(productionSources())).toEqual([]);
   });
 
   it('flags a resolved path written with its own call and passes the shared writers', () => {

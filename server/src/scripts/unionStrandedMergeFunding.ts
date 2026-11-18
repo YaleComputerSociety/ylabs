@@ -33,6 +33,7 @@ import {
   MERGE_RELINKABLE_OBSERVATION_FIELDS,
   planStrandedFundingObservationRelink,
 } from './researchEntityPiDedupeCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -356,7 +357,7 @@ async function main(): Promise<void> {
   if (args.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
   console.log(JSON.stringify({ ...report, plan: report.plan.slice(0, 25) }, null, 2));
   await mongoose.disconnect();

@@ -23,6 +23,7 @@ import {
   syncCountMismatches,
   syncHeadroomPreflight,
 } from './syncBetaToDevelopment';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 dotenv.config({ path: path.join(SERVER_ROOT, '.env'), quiet: true });
@@ -92,7 +93,7 @@ export function assertSafeDevelopmentToBetaOptions(options: DevelopmentToBetaOpt
 function writeOutput(report: unknown, output?: string): void {
   if (!output) return;
   fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function main(): Promise<void> {

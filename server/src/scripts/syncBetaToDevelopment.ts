@@ -31,6 +31,7 @@ import {
   assertCopyCarriesEveryDirectoryRemoval,
   directoryRemovalCopyBlockers,
 } from './directoryRemovalCopyGuard';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 export { parseMongoTarget };
 
@@ -431,7 +432,7 @@ function writeOutput(report: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function syncIndexes(
