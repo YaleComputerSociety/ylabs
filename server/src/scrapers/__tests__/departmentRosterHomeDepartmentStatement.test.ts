@@ -285,6 +285,7 @@ describe('the roster lane emits the home department through that statement (#627
       schoolForDepartment: () => null,
       parentDepartmentsFor: (name) =>
         name === 'Fixture Digestive Unit' ? ['Internal Medicine'] : [],
+      hasSubunits: (name) => name === 'Internal Medicine',
     };
     const { emitted, loader } = await run(
       [

@@ -13,7 +13,11 @@ import {
 } from '../scrapers/entityMaterializer';
 import { Observation } from '../models/observation';
 import { planLeadPiProvenanceReback } from './backfillLeadDepartmentInheritanceCore';
-import { resetOrgUnitCanonicalizerCache } from '../scrapers/orgUnitCanonicalization';
+import {
+  getOrgUnitCanonicalizer,
+  resetOrgUnitCanonicalizerCache,
+} from '../scrapers/orgUnitCanonicalization';
+import { OrgUnit } from '../models/orgUnit';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -78,6 +82,36 @@ export const LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER = {
   ],
 };
 
+export function leadDepartmentInheritanceCandidateFilter(sectionParents: readonly string[]) {
+  return sectionParents.length === 0
+    ? LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER
+    : {
+        ...LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER,
+        $or: [
+          ...LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER.$or,
+          { departments: { $in: [...sectionParents] } },
+        ],
+      };
+}
+
+async function departmentsWithCatalogSections(): Promise<string[]> {
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  const sections = await OrgUnit.find({
+    kind: 'SECTION',
+    archived: { $ne: true },
+    status: { $ne: 'INACTIVE' },
+  })
+    .select('name')
+    .lean<Array<{ name?: string }>>();
+  return [
+    ...new Set(
+      sections.flatMap((section) =>
+        section.name ? canonicalizer.parentDepartmentsFor(section.name).slice(0, 1) : [],
+      ),
+    ),
+  ];
+}
+
 interface CandidateRow {
   _id: unknown;
   slug?: string;
@@ -105,7 +139,9 @@ export async function runLeadDepartmentBackfill(options: {
 }> {
   resetOrgUnitCanonicalizerCache();
 
-  const query = ResearchEntity.find(LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER)
+  const query = ResearchEntity.find(
+    leadDepartmentInheritanceCandidateFilter(await departmentsWithCatalogSections()),
+  )
     .select('_id slug manuallyLockedFields')
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);

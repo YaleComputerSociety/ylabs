@@ -302,4 +302,299 @@ describe('inheritSchoolFromLeadPi (#2158)', () => {
     expect(after.school ?? '').toBe('');
     expect(after.schools ?? []).not.toContain('School of Medicine');
   });
+
+  describe("adds the lead's first-hand section beside its parent (#6381)", () => {
+    const LEAD_PAGE = 'https://fixture-medicine.example.edu/profile/fixture-lead/';
+
+    beforeEach(async () => {
+      await Observation.syncIndexes();
+      const medicine = await OrgUnit.findOne({ slug: 'school-of-medicine' }).lean();
+      const internalMedicine = await OrgUnit.create({
+        slug: 'internal-medicine',
+        name: 'Internal Medicine',
+        kind: 'DEPARTMENT',
+        parentOrgUnitId: medicine?._id,
+        status: 'ACTIVE',
+      });
+      await OrgUnit.create({
+        slug: 'cardiovascular-medicine',
+        name: 'Cardiovascular Medicine',
+        kind: 'SECTION',
+        parentOrgUnitId: internalMedicine._id,
+        status: 'ACTIVE',
+      });
+      await OrgUnit.create({
+        slug: 'surgery',
+        name: 'Surgery',
+        kind: 'DEPARTMENT',
+        parentOrgUnitId: medicine?._id,
+        status: 'ACTIVE',
+      });
+      resetOrgUnitCanonicalizerCache();
+    });
+
+    const leadReading = (
+      researcherId: mongoose.Types.ObjectId,
+      field: string,
+      value: unknown,
+      sourceName: string,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      entityType: 'user',
+      entityId: researcherId,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName,
+      sourceUrl: LEAD_PAGE,
+      confidence: 0.9,
+      observedAt: new Date('2026-10-01T00:00:00Z'),
+      superseded: false,
+      field,
+      value,
+      ...extra,
+    });
+
+    const seedRowWithParent = (departments: string[]) =>
+      seedShell({
+        school: 'School of Medicine',
+        schools: ['School of Medicine'],
+        departments,
+        fieldProvenance: {
+          departments: {
+            sourceName: 'ysm-faculty-directory',
+            observationId: new mongoose.Types.ObjectId(),
+            confidence: 0.9,
+          },
+        },
+      });
+
+    it('adds the section a first-hand profile read states beside the parent the row carries', async () => {
+      const entity = await seedRowWithParent(['Internal Medicine']);
+      const lead = await seedLead(entity._id, 'Cardiovascular Medicine');
+      await Observation.insertMany([
+        leadReading(
+          lead._id,
+          'primaryDepartment',
+          'Cardiovascular Medicine',
+          'ysm-faculty-directory',
+        ),
+      ]);
+
+      const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+      expect(result).toMatchObject({
+        inherited: true,
+        addedSection: 'Cardiovascular Medicine',
+        departments: ['Internal Medicine', 'Cardiovascular Medicine'],
+      });
+      expect((await persisted(entity._id)).departments).toEqual([
+        'Internal Medicine',
+        'Cardiovascular Medicine',
+      ]);
+    });
+
+    it('adds the section when only a first-hand title names it', async () => {
+      const entity = await seedRowWithParent(['Internal Medicine']);
+      const lead = await seedLead(entity._id, 'Cardiovascular Medicine');
+      await Observation.insertMany([
+        leadReading(
+          lead._id,
+          'title',
+          'Associate Professor of Medicine (Cardiovascular Medicine)',
+          'ysm-faculty-directory',
+        ),
+      ]);
+
+      const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+      expect(result.addedSection).toBe('Cardiovascular Medicine');
+    });
+
+    it('does not add the section to a row that does not carry its parent', async () => {
+      const entity = await seedRowWithParent(['Surgery']);
+      const lead = await seedLead(entity._id, 'Cardiovascular Medicine');
+      await Observation.insertMany([
+        leadReading(
+          lead._id,
+          'primaryDepartment',
+          'Cardiovascular Medicine',
+          'ysm-faculty-directory',
+        ),
+      ]);
+
+      const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+      expect(result).toMatchObject({ inherited: false, skipped: 'has-school-and-department' });
+      expect((await persisted(entity._id)).departments).toEqual(['Surgery']);
+    });
+
+    it('does not add a section that only department roster reads state', async () => {
+      const entity = await seedRowWithParent(['Internal Medicine']);
+      const lead = await seedLead(entity._id, 'Cardiovascular Medicine');
+      await Observation.insertMany([
+        leadReading(
+          lead._id,
+          'primaryDepartment',
+          'Cardiovascular Medicine',
+          'dept-faculty-roster',
+        ),
+        leadReading(
+          lead._id,
+          'title',
+          'Professor of Medicine (Cardiovascular Medicine)',
+          'dept-faculty-roster',
+          { extraction: { source: 'profileTitleBlock' } },
+        ),
+      ]);
+
+      const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+      expect(result).toMatchObject({ inherited: false, skipped: 'has-school-and-department' });
+      expect((await persisted(entity._id)).departments).toEqual(['Internal Medicine']);
+    });
+
+    it('keeps every department, the school and the provenance the row already had', async () => {
+      const entity = await seedRowWithParent(['Internal Medicine', 'Genetics']);
+      const lead = await seedLead(entity._id, 'Cardiovascular Medicine');
+      await Observation.insertMany([
+        leadReading(
+          lead._id,
+          'primaryDepartment',
+          'Cardiovascular Medicine',
+          'ysm-faculty-directory',
+        ),
+      ]);
+      const before = await persisted(entity._id);
+
+      await inheritSchoolFromLeadPi(String(entity._id));
+
+      const after = await persisted(entity._id);
+      expect(after.departments).toEqual([
+        'Internal Medicine',
+        'Genetics',
+        'Cardiovascular Medicine',
+      ]);
+      expect(after.school).toBe(before.school);
+      expect(after.schools).toEqual(before.schools);
+      expect(after.fieldProvenance.departments).toEqual(before.fieldProvenance.departments);
+    });
+
+    it('writes nothing on a second run', async () => {
+      const entity = await seedRowWithParent(['Internal Medicine']);
+      const lead = await seedLead(entity._id, 'Cardiovascular Medicine');
+      await Observation.insertMany([
+        leadReading(
+          lead._id,
+          'primaryDepartment',
+          'Cardiovascular Medicine',
+          'ysm-faculty-directory',
+        ),
+      ]);
+      await inheritSchoolFromLeadPi(String(entity._id));
+      const afterFirst = await persisted(entity._id);
+
+      const second = await inheritSchoolFromLeadPi(String(entity._id));
+
+      expect(second).toMatchObject({ inherited: false, skipped: 'has-school-and-department' });
+      expect(await persisted(entity._id)).toEqual(afterFirst);
+    });
+
+    it('does not add a section that only a center lane states as the department', async () => {
+      const entity = await seedRowWithParent(['Internal Medicine']);
+      const lead = await seedLead(entity._id, 'Cardiovascular Medicine');
+      await Observation.insertMany([
+        leadReading(lead._id, 'primaryDepartment', 'Cardiovascular Medicine', 'yale-cancer-center'),
+      ]);
+
+      const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+      expect(result).toMatchObject({ inherited: false, skipped: 'has-school-and-department' });
+      expect((await persisted(entity._id)).departments).toEqual(['Internal Medicine']);
+    });
+
+    it("does not add the section to a row carrying another department's subunit parent", async () => {
+      const medicine = await OrgUnit.findOne({ slug: 'school-of-medicine' }).lean();
+      const pediatrics = await OrgUnit.create({
+        slug: 'pediatrics',
+        name: 'Pediatrics',
+        kind: 'DEPARTMENT',
+        parentOrgUnitId: medicine?._id,
+        status: 'ACTIVE',
+      });
+      await OrgUnit.create({
+        slug: 'pediatric-cardiology',
+        name: 'Pediatric Cardiology',
+        kind: 'SECTION',
+        parentOrgUnitId: pediatrics._id,
+        status: 'ACTIVE',
+      });
+      resetOrgUnitCanonicalizerCache();
+      const entity = await seedRowWithParent(['Pediatrics']);
+      const lead = await seedLead(entity._id, 'Cardiovascular Medicine');
+      await Observation.insertMany([
+        leadReading(
+          lead._id,
+          'primaryDepartment',
+          'Cardiovascular Medicine',
+          'ysm-faculty-directory',
+        ),
+      ]);
+
+      const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+      expect(result).toMatchObject({ inherited: false, skipped: 'has-school-and-department' });
+      expect((await persisted(entity._id)).departments).toEqual(['Pediatrics']);
+    });
+
+    it('adds a two-level section beside its nearest parent, not its top department', async () => {
+      const cardiovascular = await OrgUnit.findOne({ slug: 'cardiovascular-medicine' }).lean();
+      await OrgUnit.create({
+        slug: 'heart-failure',
+        name: 'Heart Failure',
+        kind: 'SECTION',
+        parentOrgUnitId: cardiovascular?._id,
+        status: 'ACTIVE',
+      });
+      resetOrgUnitCanonicalizerCache();
+      const entity = await seedRowWithParent(['Cardiovascular Medicine']);
+      const lead = await seedLead(entity._id, 'Heart Failure');
+      await Observation.insertMany([
+        leadReading(lead._id, 'primaryDepartment', 'Heart Failure', 'ysm-faculty-directory'),
+      ]);
+
+      const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+      expect(result).toMatchObject({
+        inherited: true,
+        addedSection: 'Heart Failure',
+        departments: ['Cardiovascular Medicine', 'Heart Failure'],
+      });
+      expect((await persisted(entity._id)).departments).toEqual([
+        'Cardiovascular Medicine',
+        'Heart Failure',
+      ]);
+    });
+
+    it("does not add a section that only a same-named researcher's profile read states (#6219)", async () => {
+      const entity = await seedRowWithParent(['Internal Medicine']);
+      const lead = await seedLead(entity._id, 'Cardiovascular Medicine');
+      const namesake = await Researcher.create({
+        displayName: lead.displayName,
+        profile: { primaryDepartment: 'Cardiovascular Medicine' },
+      });
+      await Observation.insertMany([
+        leadReading(
+          namesake._id,
+          'primaryDepartment',
+          'Cardiovascular Medicine',
+          'ysm-faculty-directory',
+          { sourceUrl: 'https://fixture-medicine.example.edu/profile/fixture-namesake/' },
+        ),
+      ]);
+
+      const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+      expect(result).toMatchObject({ inherited: false, skipped: 'has-school-and-department' });
+      expect((await persisted(entity._id)).departments).toEqual(['Internal Medicine']);
+    });
+  });
 });

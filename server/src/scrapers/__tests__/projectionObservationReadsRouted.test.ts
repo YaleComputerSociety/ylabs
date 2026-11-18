@@ -158,6 +158,11 @@ const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string
       'Its live-row read is routed through `entityDocForId`. The read still listed here is a read-after-write: it re-reads the row to verify what this pass wrote and whether the index is in step, so frozen input would answer about the state before the write.',
   },
   {
+    fn: 'addLeadSectionBesideParent',
+    reason:
+      "The inheritance pass's section addition, split out of `inheritSchoolFromLeadPi` (#6381). Its only entity read is the same read-after-write: it re-reads the row it just wrote to sync the index, so frozen input would answer about the state before the write.",
+  },
+  {
     fn: 'assertLeadPiInheritanceObservations',
     reason:
       'Reads the row back after appending observations in the same pass, to turn an id into the slug it just asserted under. Same read-after-write reason.',
