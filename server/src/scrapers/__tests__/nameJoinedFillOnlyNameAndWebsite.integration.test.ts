@@ -155,6 +155,25 @@ describe('fill-only names and name-joined website fills (#6431, #6432)', () => {
     expect((await stored(person._id))?.profile?.websiteUrl).toBeUndefined();
   });
 
+  it('fills an empty website from a name-joined key when a first-hand profile lane states it', async () => {
+    await seedDirectoryKey();
+    await seedRosterKey();
+    await Observation.insertMany([
+      observation(
+        ROSTER_KEY,
+        'official-profile-pi-backfill',
+        'https://fixture-studies.example.edu/profile/fixture-q-quillsby',
+        'website',
+        'https://lab.example.org/',
+      ),
+    ]);
+    const person = await seedPersonHeldByDirectory();
+
+    await resolve(ROSTER_KEY);
+
+    expect((await stored(person._id))?.profile?.websiteUrl).toBe('https://lab.example.org/');
+  });
+
   it('fills an empty website from a name-joined key when the site carries the surname', async () => {
     await seedDirectoryKey();
     await seedRosterKey([['website', 'https://quillsby-lab.example.org/']]);
