@@ -315,11 +315,15 @@ Materialize flags:
                        types, mints, run reconciliations and the visibility gate
                        are skipped. Per-key paths go to --output only.
   --only-program-fields <paths>
-                       Write only these Fellowship paths on the run's program rows (any
-                       top-level Fellowship schema path, for example contactOffice or
-                       deadline); user and research rows and every run reconciliation are
-                       skipped, and the program visibility gate re-runs after any write.
-                       An unknown path fails and lists the valid ones. Requires --output.
+                       Write only these Fellowship paths on the run's program rows (a
+                       field an observation sets, for example contactOffice or deadline);
+                       user and research rows and every run reconciliation are skipped,
+                       and the program visibility gate re-runs after a write that touches
+                       a gate or duplicate-copy input (PROGRAM_REGATE_TRIGGER_FIELDS).
+                       Name isAcceptingApplications together with deadline and
+                       applicationOpenDate, since the served flag is derived from them.
+                       An unknown or denied path fails and lists the valid ones.
+                       Requires --output.
 
 Prune flags:
   --apply              Delete matching rows. Omit for dry-run.
