@@ -908,7 +908,7 @@ export const YALE_STATUS_DERIVED_FIELDS = [
 
 export const MATERIALIZER_DERIVED_FIELD_GROUPS: ReadonlyArray<readonly string[]> = [
   ['entityType', 'kind'],
-  ['school', 'schools', 'departments', 'orgAffiliationLabels'],
+  ['school', 'schools', 'departments', 'orgAffiliationLabels', 'statedAppointmentSchools'],
   ['recentGrants', 'recentGrantPeriods', 'recentGrantCount', 'fundingAgencies'],
   YALE_STATUS_DERIVED_FIELDS,
 ];

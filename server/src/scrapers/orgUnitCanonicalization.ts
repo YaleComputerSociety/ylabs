@@ -708,7 +708,11 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   };
   const hasSchool = Object.prototype.hasOwnProperty.call(set, 'school');
   const hasDepartments = Object.prototype.hasOwnProperty.call(set, 'departments');
-  if (!hasSchool && !hasDepartments) return result;
+  const hasStatedAppointmentSchools = Object.prototype.hasOwnProperty.call(
+    set,
+    'statedAppointmentSchools',
+  );
+  if (!hasSchool && !hasDepartments && !hasStatedAppointmentSchools) return result;
 
   const canonicalizer = await getOrgUnitCanonicalizer();
   let clearedSchoolLabel = '';
@@ -795,7 +799,9 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   else if (asStringList(existing?.schools).length > 0) set.schools = [];
 
   const assertedSchool = hasSchool ? stringValue(set.school) : '';
+  const decidesSchool = hasSchool || hasDepartments;
   if (
+    decidesSchool &&
     !assertedSchool &&
     schools.length > 1 &&
     isCrossSchoolOrganizationEntity(set.entityType ?? existing?.entityType) &&
@@ -803,9 +809,21 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   ) {
     set.school = '';
     result.unresolvablePrimarySchool = true;
-  } else if (!canonicalEffectiveSchool && schools.length > 0) {
+  } else if (decidesSchool && !canonicalEffectiveSchool && schools.length > 0) {
     set.school = schools[0];
   }
+
+  const statedAppointmentSchools = asStringList(
+    hasStatedAppointmentSchools ? set.statedAppointmentSchools : existing?.statedAppointmentSchools,
+  )
+    .map((school) => canonicalizer.canonicalizeSchool(school))
+    .filter((canonical) => canonical.matched)
+    .map((canonical) => canonical.value);
+  const withStatedSchools = [...schools];
+  for (const school of statedAppointmentSchools) {
+    if (school && !withStatedSchools.includes(school)) withStatedSchools.push(school);
+  }
+  if (withStatedSchools.length > schools.length) set.schools = withStatedSchools;
 
   return result;
 }

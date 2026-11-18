@@ -7,6 +7,7 @@ import {
 import type { ResolvedField } from '../confidenceResolver';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import {
+  applyResearchEntityOrgUnitCanonicalization,
   buildOrgUnitResolverIndex,
   createOrgUnitCanonicalizer,
   resetOrgUnitCanonicalizerCache,
@@ -299,6 +300,43 @@ describe('projectFromLog', () => {
     expect(result.set.school).toBe('School of Medicine');
     expect(result.set.schools).toEqual(['School of Medicine']);
     expect(result.set.orgAffiliationLabels).toEqual(['Department of Genetics']);
+    expect('name' in result.set).toBe(false);
+  });
+
+  it("adds a lead's stated non-Primary school to schools without touching school or departments (#6529)", async () => {
+    setOrgUnitCanonicalizerForTesting(
+      createOrgUnitCanonicalizer(
+        buildOrgUnitResolverIndex([
+          { slug: 'school-of-public-health', name: 'School of Public Health', kind: 'SCHOOL' },
+          { slug: 'school-of-medicine', name: 'School of Medicine', kind: 'SCHOOL' },
+          { slug: 'biostatistics', name: 'Biostatistics', kind: 'DEPARTMENT' },
+        ]),
+        new Map([['Biostatistics', 'School of Public Health']]),
+      ),
+    );
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        writeOnlyFields: ['statedAppointmentSchools'],
+        resolved: {
+          name: resolvedField('Synthetic Biostatistics Group'),
+          statedAppointmentSchools: resolvedField(['School of Medicine']),
+        },
+        entityDoc: {
+          _id: 'e'.repeat(24),
+          school: 'School of Public Health',
+          schools: ['School of Public Health'],
+          departments: ['Biostatistics'],
+          confidenceByField: {},
+        },
+        applyResearchEntityOrgUnitCanonicalization:
+          applyResearchEntityOrgUnitCanonicalization as ProjectFromLogInput['applyResearchEntityOrgUnitCanonicalization'],
+      }),
+    );
+    expect(result.set.statedAppointmentSchools).toEqual(['School of Medicine']);
+    expect(result.set.schools).toEqual(['School of Public Health', 'School of Medicine']);
+    expect(result.set.school ?? 'School of Public Health').toBe('School of Public Health');
+    expect(result.set.departments ?? ['Biostatistics']).toEqual(['Biostatistics']);
     expect('name' in result.set).toBe(false);
   });
 

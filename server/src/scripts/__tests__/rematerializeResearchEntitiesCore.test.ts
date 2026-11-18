@@ -593,10 +593,17 @@ describe('withDerivedMaterializerFields', () => {
   });
 
   it('writes the whole org-unit closure whichever member the operator scoped', () => {
-    const closure = ['departments', 'orgAffiliationLabels', 'school', 'schools'];
+    const closure = [
+      'departments',
+      'orgAffiliationLabels',
+      'school',
+      'schools',
+      'statedAppointmentSchools',
+    ];
     expect(withDerivedMaterializerFields(['departments']).sort()).toEqual(closure);
     expect(withDerivedMaterializerFields(['school']).sort()).toEqual(closure);
     expect(withDerivedMaterializerFields(['schools']).sort()).toEqual(closure);
+    expect(withDerivedMaterializerFields(['statedAppointmentSchools']).sort()).toEqual(closure);
   });
 
   it('leaves an unrelated scope alone and does not duplicate a complete group', () => {

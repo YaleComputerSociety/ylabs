@@ -161,6 +161,70 @@ describe('a YSPH research row states the school of its Primary appointment (#625
     ).toEqual([]);
   });
 
+  it('states the schools of Secondary, Dual and Fully Joint cards apart from the Primary school', () => {
+    const identity = extractOfficialProfileIdentity(
+      ysphProfileHtml(
+        appointmentCard('Biostatistics', 'Associate Professor on Term', 'Primary') +
+          appointmentCard('Internal Medicine', 'Associate Professor', 'Secondary') +
+          appointmentCard('Chronic Disease Epidemiology', 'Associate Professor', 'Dual'),
+      ),
+      YSPH_PROFILE_URL,
+      ENTITY,
+    );
+
+    expect(identity?.nonPrimaryAppointmentUnits).toEqual([
+      'Internal Medicine',
+      'Chronic Disease Epidemiology',
+    ]);
+    expect(
+      identityToResearchEntitySchoolObservations(identity!, ENTITY, schoolForDepartment),
+    ).toEqual([
+      expect.objectContaining({ field: 'school', value: 'School of Public Health' }),
+      expect.objectContaining({
+        field: 'statedAppointmentSchools',
+        value: ['School of Medicine'],
+        sourceUrl: YSPH_PROFILE_URL,
+      }),
+    ]);
+  });
+
+  it('never states the Primary school again as a non-Primary school', () => {
+    const identity = {
+      ...identityWith(['Biostatistics']),
+      nonPrimaryAppointmentUnits: ['Chronic Disease Epidemiology'],
+    };
+
+    expect(
+      identityToResearchEntitySchoolObservations(identity, ENTITY, schoolForDepartment).map(
+        (observation) => observation.field,
+      ),
+    ).toEqual(['school']);
+  });
+
+  it('drops a non-Primary unit the catalog does not name', () => {
+    const identity = {
+      ...identityWith(['Biostatistics']),
+      nonPrimaryAppointmentUnits: ['Fixture Studies Program', 'Internal Medicine'],
+    };
+
+    expect(
+      identityToResearchEntitySchoolObservations(identity, ENTITY, schoolForDepartment).find(
+        (observation) => observation.field === 'statedAppointmentSchools',
+      )?.value,
+    ).toEqual(['School of Medicine']);
+  });
+
+  it('states no other school when the Primary school itself is not stated', () => {
+    const identity = {
+      ...identityWith(['Biostatistics', 'Internal Medicine']),
+      nonPrimaryAppointmentUnits: ['Internal Medicine'],
+    };
+
+    expect(
+      identityToResearchEntitySchoolObservations(identity, ENTITY, schoolForDepartment),
+    ).toEqual([]);
+  });
+
   it('keeps the lane school reading latest-wins, so a changed card replaces the earlier school', () => {
     expect(
       LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE['official-profile-pi-backfill']?.has('school'),
