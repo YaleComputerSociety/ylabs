@@ -17064,7 +17064,36 @@ export interface ProgramFieldScopeRow {
   sourceName?: string;
   written: boolean;
   changes: ProgramFieldScopePathChange[];
+  storedNotCaptured?: 'reached-under-another-identity-on-apply';
   error?: string;
+}
+
+/**
+ * A run key can resolve onto a program row filed under another identity (a fund's facets
+ * reach every row citing the fund), so the pre-read by the run's own keys misses it. The
+ * unapplied plan reads those rows by record id afterwards, which still holds the stored
+ * value because nothing was written; an apply cannot, so it says so instead of printing a
+ * post-write value as the stored one.
+ */
+export function withStoredValuesForRowsReachedElsewhere(
+  rows: ProgramFieldScopeRow[],
+  readById: ReadonlyMap<string, Record<string, unknown>>,
+  applied: boolean,
+): ProgramFieldScopeRow[] {
+  return rows.map((row) => {
+    if (row.sourceName !== undefined || !row.recordId || row.error) return row;
+    if (applied) return { ...row, storedNotCaptured: 'reached-under-another-identity-on-apply' };
+    const doc = readById.get(row.recordId);
+    if (!doc) return row;
+    return {
+      ...row,
+      sourceName: typeof doc.sourceName === 'string' ? doc.sourceName : undefined,
+      changes: row.changes.map((change) => ({
+        ...change,
+        stored: programScopeValue(doc[change.path]),
+      })),
+    };
+  });
 }
 
 export interface ProgramFieldScopeReport {
@@ -17168,6 +17197,23 @@ async function materializeProgramRowsInFieldScope(
     MATERIALIZATION_CHUNK_SIZE,
     1,
   ).finally(() => progress.stop());
+  const applied = options.dryRun !== true;
+  const missedIds = applied
+    ? []
+    : scopeRows
+        .filter((row) => row.sourceName === undefined && row.recordId && !row.error)
+        .map((row) => toMaterializerObjectId(row.recordId as string))
+        .filter(Boolean);
+  const readById = new Map<string, Record<string, unknown>>(
+    missedIds.length > 0
+      ? (
+          await Fellowship.find({ _id: { $in: missedIds } })
+            .select(['_id', 'sourceName', ...onlyFields].join(' '))
+            .lean()
+        ).map((doc: any) => [String(doc._id), doc])
+      : [],
+  );
+  const reportedRows = withStoredValuesForRowsReachedElsewhere(scopeRows, readById, applied);
   return {
     materialized: programRows.length - errors,
     created: 0,
@@ -17184,7 +17230,7 @@ async function materializeProgramRowsInFieldScope(
       rowsOutsideProgramSkipped,
       runReconciliationsSkipped: true,
       writtenRecordIds: [...writtenRecordIds].sort(),
-      rows: scopeRows,
+      rows: reportedRows,
     },
   };
 }
