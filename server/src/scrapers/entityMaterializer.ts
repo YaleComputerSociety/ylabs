@@ -17135,7 +17135,11 @@ async function materializeProgramRowsInFieldScope(
   const storedByKey = new Map<string, any>(
     (
       await Fellowship.find({
-        sourceKey: { $in: programRows.map((row) => row.entityKey).filter(Boolean) },
+        sourceKey: {
+          $in: programRows
+            .map((row) => row.entityKey)
+            .filter((key): key is string => typeof key === 'string' && key.length > 0),
+        },
       })
         .select(['_id', 'sourceKey', 'sourceName', ...onlyFields].join(' '))
         .lean()
@@ -17203,7 +17207,7 @@ async function materializeProgramRowsInFieldScope(
     : scopeRows
         .filter((row) => row.sourceName === undefined && row.recordId && !row.error)
         .map((row) => toMaterializerObjectId(row.recordId as string))
-        .filter(Boolean);
+        .filter((id): id is NonNullable<typeof id> => Boolean(id));
   const readById = new Map<string, Record<string, unknown>>(
     missedIds.length > 0
       ? (
