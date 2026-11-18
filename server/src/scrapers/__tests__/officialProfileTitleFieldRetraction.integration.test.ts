@@ -32,6 +32,7 @@ const PI_KEY = 'netid:rq1';
 const PAGE_HEADLINE = 'Fixture lab wins an award for its coastal sediment study';
 const STALE_APPOINTMENT = 'Associate Professor of Fixture Studies';
 const APPOINTMENT = 'Professor of Fixture Studies';
+const TRAINEE_APPOINTMENT = 'Postdoctoral Fellow';
 
 const piProfile = (name: string, titleBlock: string) => `
   <html>
@@ -180,6 +181,29 @@ describe('official-profile-pi-backfill retires a title its page no longer states
     const again = await reconcileUserFieldRetractions({ sourceName: PI_SOURCE, rederive });
     expect(again).toMatchObject({ retiredObservations: 0, retractions: [] });
     expect(rederive).toHaveBeenCalledTimes(1);
+  });
+
+  it('retires the stale lane title on a page stating only a trainee appointment, and keeps the rival lane trainee title', async () => {
+    const traineePage = piProfile(
+      'Rowan Quillfeather',
+      `<div class="title">${TRAINEE_APPOINTMENT}</div>`,
+    );
+    const traineeRead = piRead(traineePage);
+    expect(traineeRead.length).toBeGreaterThan(0);
+    expect(traineeRead.some((row) => row.field === 'title')).toBe(false);
+    expect(traineeRead.every((row) => row.assertsNoValueFor?.includes('title'))).toBe(true);
+
+    await appendRun(PI_SOURCE, [assertedTitle(STALE_APPOINTMENT)]);
+    await appendRun(RIVAL_SOURCE, [assertedTitle(TRAINEE_APPOINTMENT)]);
+    const rederive = vi.fn().mockResolvedValue(undefined);
+    await appendRun(PI_SOURCE, traineeRead);
+    await reconcileUserFieldRetractions({ sourceName: PI_SOURCE, rederive });
+    await appendRun(PI_SOURCE, piRead(traineePage));
+
+    const applied = await reconcileUserFieldRetractions({ sourceName: PI_SOURCE, rederive });
+    expect(applied).toMatchObject({ outcome: 'reconciled', retiredObservations: 1 });
+    expect(await liveTitles(PI_SOURCE)).toEqual([]);
+    expect(await liveTitles(RIVAL_SOURCE)).toEqual([`${PI_KEY} ${TRAINEE_APPOINTMENT}`]);
   });
 
   it('keeps a title the page still states', async () => {
