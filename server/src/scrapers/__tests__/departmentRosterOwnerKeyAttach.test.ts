@@ -222,3 +222,47 @@ describe('one person on two rosters keeps one research row (#5969)', () => {
     expect(keys.size).toBe(2);
   });
 });
+
+describe('a person whose earlier roster row was folded into a live row (#6536)', () => {
+  const survivor: RosterOwnerKeyRow = {
+    id: 'survivor-row',
+    slug: 'synthetic-canonical-lab',
+    rosterPrefix: '',
+    createdAt: '2025-06-01T00:00:00.000Z',
+    mintedFromRosterHost: '',
+    leadPrimaryIdentityUrls: [],
+    foldSurvivor: true,
+  };
+  const decide = (rows: RosterOwnerKeyRow[], ownerKey = OWNER_KEY) =>
+    decideRosterAttach({
+      ownerKey,
+      ownSlug: rosterResearchEntitySlug(PERSON, ROSTER_B),
+      ownRosterPrefix: rosterResearchEntitySlugPrefix(ROSTER_B),
+      personName: PERSON.name,
+      rowsByOwnerKey: new Map([[ownerKey, rows]]),
+      mintedThisRun: new Map(),
+    });
+
+  it('attaches to the survivor instead of minting a row beside it, even when the survivor slug carries no name', () => {
+    expect(decide([survivor])).toEqual({
+      targetSlug: 'synthetic-canonical-lab',
+      reason: 'attach-fold-survivor',
+    });
+  });
+
+  it('keeps writing its own live row when it has one', () => {
+    expect(decide([survivor, rowOn(ROSTER_B)])).toEqual({
+      targetSlug: rosterResearchEntitySlug(PERSON, ROSTER_B),
+      reason: 'mint-own',
+    });
+  });
+
+  it('never attaches through a name-only key, survivor or not', () => {
+    const nameKey = 'dept:synthetic-beta:ada-alpha';
+    expect(decide([survivor], nameKey).reason).toBe('mint-own');
+  });
+
+  it('still mints for a person with no row and no fold', () => {
+    expect(decide([]).reason).toBe('mint-own');
+  });
+});

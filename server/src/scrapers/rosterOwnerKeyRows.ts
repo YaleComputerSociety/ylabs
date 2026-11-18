@@ -35,6 +35,11 @@ export interface RosterOwnerKeyRow {
   createdAt?: Date | string | null;
   mintedFromRosterHost: string;
   leadPrimaryIdentityUrls: string[];
+  /**
+   * The live row an earlier roster row of this person was folded into (#6536). A fold is a
+   * same-person verdict already made, so it is the attach target outright.
+   */
+  foldSurvivor?: boolean;
 }
 
 export type RosterOwnerKeyRows = ReadonlyMap<string, readonly RosterOwnerKeyRow[]>;
@@ -113,7 +118,12 @@ export function selectRosterAttachTarget(
 
 export interface RosterAttachDecision {
   targetSlug: string;
-  reason: 'mint-own' | 'attach-existing' | 'attach-minted-this-run' | 'refused-name-disagrees';
+  reason:
+    | 'mint-own'
+    | 'attach-existing'
+    | 'attach-fold-survivor'
+    | 'attach-minted-this-run'
+    | 'refused-name-disagrees';
 }
 
 /**
@@ -132,8 +142,12 @@ export function decideRosterAttach(input: {
   const mintOwn: RosterAttachDecision = { targetSlug: input.ownSlug, reason: 'mint-own' };
   if (!input.ownSlug || !rosterOwnerKeyIsAttachWitness(input.ownerKey)) return mintOwn;
   const rows = input.rowsByOwnerKey.get(input.ownerKey) ?? [];
-  const ownRow = rows.find((row) => row.slug === input.ownSlug);
-  const elsewhere = rows.filter((row) => row.rosterPrefix !== input.ownRosterPrefix);
+  const ownRow = rows.find((row) => row.slug === input.ownSlug && !row.foldSurvivor);
+  const survivor = rows.find((row) => row.foldSurvivor && row.slug !== input.ownSlug);
+  if (survivor && !ownRow) return { targetSlug: survivor.slug, reason: 'attach-fold-survivor' };
+  const elsewhere = rows.filter(
+    (row) => row.rosterPrefix !== input.ownRosterPrefix && !row.foldSurvivor,
+  );
   if (elsewhere.length > 0) {
     if (elsewhere.some((row) => !rowNamesRosterPerson(row, input.personName))) {
       return { targetSlug: input.ownSlug, reason: 'refused-name-disagrees' };
@@ -232,7 +246,69 @@ export async function loadRosterOwnerKeyRows(
     });
     byKey.set(ownerKey, list);
   }
+  await addFoldSurvivors(byKey, rosterPrefixForSlug);
   return byKey;
+}
+
+/**
+ * A roster row archived into a canonical group no longer lists as the person's row, so the
+ * next roster read minted a new one beside the live survivor it had been folded into, and
+ * the duplicate was folded again on the next dedupe (#6536). The survivor is listed under
+ * the owner key that keyed the folded row.
+ */
+async function addFoldSurvivors(
+  byKey: Map<string, RosterOwnerKeyRow[]>,
+  rosterPrefixForSlug: (slug: string) => string,
+): Promise<void> {
+  const folded = (await ResearchEntity.find(
+    { slug: { $regex: '^dept-' }, archived: true, canonicalGroupId: { $ne: null } },
+    { slug: 1, canonicalGroupId: 1 },
+  ).lean()) as Array<{ slug?: string; canonicalGroupId?: mongoose.Types.ObjectId }>;
+  const foldedRoster = folded.filter(
+    (row) => row.slug && row.canonicalGroupId && rosterPrefixForSlug(row.slug),
+  );
+  if (foldedRoster.length === 0) return;
+  const survivors = (await ResearchEntity.find(
+    { _id: { $in: foldedRoster.map((row) => row.canonicalGroupId) }, archived: { $ne: true } },
+    { _id: 1, slug: 1, createdAt: 1 },
+  ).lean()) as Array<{ _id: mongoose.Types.ObjectId; slug?: string; createdAt?: Date }>;
+  const survivorById = new Map(survivors.map((row) => [String(row._id), row]));
+  const keyObservations = (await Observation.find(
+    {
+      entityType: 'researchEntity',
+      entityKey: { $in: foldedRoster.map((row) => row.slug as string) },
+      field: 'inferredPiUserKey',
+      sourceName: ROSTER_SOURCE_NAME,
+      superseded: false,
+    },
+    { entityKey: 1, value: 1 },
+  ).lean()) as Array<{ entityKey?: string; value?: unknown }>;
+  const ownerKeysBySlug = new Map<string, Set<string>>();
+  for (const observation of keyObservations) {
+    if (!observation.entityKey || typeof observation.value !== 'string') continue;
+    if (!rosterOwnerKeyIsAttachWitness(observation.value)) continue;
+    const keys = ownerKeysBySlug.get(observation.entityKey) ?? new Set<string>();
+    keys.add(observation.value);
+    ownerKeysBySlug.set(observation.entityKey, keys);
+  }
+  for (const row of foldedRoster) {
+    const keys = ownerKeysBySlug.get(row.slug as string);
+    const survivor = survivorById.get(String(row.canonicalGroupId));
+    if (!keys || keys.size !== 1 || !survivor?.slug) continue;
+    const [ownerKey] = [...keys];
+    const list = byKey.get(ownerKey) ?? [];
+    if (list.some((candidate) => candidate.slug === survivor.slug)) continue;
+    list.push({
+      id: String(survivor._id),
+      slug: survivor.slug,
+      rosterPrefix: rosterPrefixForSlug(survivor.slug),
+      createdAt: survivor.createdAt ?? null,
+      mintedFromRosterHost: '',
+      leadPrimaryIdentityUrls: [],
+      foldSurvivor: true,
+    });
+    byKey.set(ownerKey, list);
+  }
 }
 
 export function rosterHostOfUrl(url: string | undefined | null): string {
