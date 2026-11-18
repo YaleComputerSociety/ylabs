@@ -1,4 +1,7 @@
-import type { StudentVisibilityTier } from '../models/studentVisibility';
+import {
+  publicStudentVisibilityTiers,
+  type StudentVisibilityTier,
+} from '../models/studentVisibility';
 import { YALE_FELLOWSHIP_DATABASE_SOURCE } from '../scrapers/fellowshipSourcePrecedence';
 import { recordSpecificApplicationPortalIdentity } from '../utils/researchHomeWebsiteUrl';
 
@@ -97,8 +100,15 @@ const tierPreference = (tier: unknown): number => TIER_PREFERENCE[String(tier)] 
 const fellowshipDatabasePreference = (sourceName: unknown): number =>
   sourceName === YALE_FELLOWSHIP_DATABASE_SOURCE ? 0 : 1;
 
+const SERVABLE_TIERS: ReadonlySet<string> = new Set(publicStudentVisibilityTiers);
+
+const servablePreference = (tier: unknown): number => (SERVABLE_TIERS.has(String(tier)) ? 0 : 1);
+
+// The database record wins only among copies that can be served (#4289 as narrowed by #6501),
+// so a database copy that cannot be served never suppresses a mate that can.
 function preferredCopy(a: ProgramDuplicateCandidate, b: ProgramDuplicateCandidate): number {
   return (
+    servablePreference(a.tier) - servablePreference(b.tier) ||
     fellowshipDatabasePreference(a.sourceName) - fellowshipDatabasePreference(b.sourceName) ||
     tierPreference(a.tier) - tierPreference(b.tier) ||
     a.id.localeCompare(b.id)
@@ -248,8 +258,9 @@ function forEachPair(indexes: readonly number[], visit: (a: number, b: number) =
 
 /**
  * Maps each redundant copy of a fund to the copy that is served in its place. The kept copy
- * is the Yale fellowship database's record whenever the fund has one (owner decision, #4289),
- * then the one most fit to serve on its own, then the oldest row.
+ * is one that can be served on its own whenever the fund has one (#6501), among those the Yale
+ * fellowship database's record (owner decision, #4289), then the one most fit to serve, then
+ * the oldest row.
  */
 export function selectDuplicateProgramCopies(
   programs: readonly ProgramDuplicateCandidate[],

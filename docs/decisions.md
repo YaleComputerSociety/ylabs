@@ -1413,6 +1413,10 @@ This is a stored-data change: a served deadline moves only after the gate applie
 
 When a program has a copy in the Yale fellowship database and another lane's copy, the database record is the one served (#4289, owner decision).
 
+Narrowed 2026-11-17 (#6501, manager ruling): the database record wins only among copies that can be served on their own.
+A database copy that cannot be served never suppresses a mate that can; when no copy can be served, the database record is still the one kept.
+Measured on Development before the change: 1 of 60 duplicate groups changes its kept copy, and no group gains or loses a member.
+
 ## 2026-10-01: The Yale Fellowship Database Is An Official Source (#4284)
 
 The owner decided that the Yale Student Grants and Fellowships database (`yale.communityforce.com`) is an official source, so a fund's own FundDetails page is Yale's official record of that fund.
