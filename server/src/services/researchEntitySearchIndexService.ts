@@ -30,7 +30,10 @@ import {
 } from '../utils/meiliTask';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { usableOpenAiApiKey } from '../utils/openAiApiKey';
-import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
+import {
+  warmControlledVocabularyHeadings,
+  warmServedResearchAreaVocabulary,
+} from '../utils/controlledVocabularyHeadings';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
@@ -746,6 +749,9 @@ export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
     entities: any[],
   ) => Promise<ResearchEntitySearchServedLeadMap> = fetchResearchEntitySearchServedLeads,
 ): Promise<Record<string, any>[]> {
+  // Every per-row sync builds here, and a script process never warms the vocabulary on its
+  // own, so without this its documents split a multi-part heading the reconcile keeps (#6542).
+  await warmServedResearchAreaVocabulary();
   const [serving, memberNamesByEntityId, servedLeadByEntityId] = await Promise.all([
     freshDirectoryRemovalServing(),
     fetchMemberNames(docs),
