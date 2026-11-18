@@ -108,7 +108,7 @@ const isMentoredResearchPathway = (programKind: string, fields: string[]): boole
 // narrower than FUNDS_RESEARCH_PROSE because "language study that can support research" names
 // research as an outcome rather than a use (#4291).
 const RESEARCH_AS_ELIGIBLE_USE =
-  /\b(?:(?<!non-)research\s+(?:expenses|costs|travel|trips?)\b|(?:use[sd]?|using|spen[dt]|funds?|funding|grants?|awards?|support)(?:\s+[\w-]+){0,2}\s+for\s+(?:(?:[\w-]+,?\s+){1,4}(?:and|or|and\/or)\s+)?research\b(?!\s+(?:opportunit|experience|interests?|careers?|staff|assistant|positions?))|(?<!\b(?:experience|prior)\s+(?:in\s+)?)(?:conduct|conducting|undertake|undertaking)\s+(?:[\w-]+\s+){0,2}research\b)/i;
+  /\b(?:(?<!non-)research\s+(?:expenses|costs|travel|trips?)\b|(?:use[sd]?|using|spen[dt]|funds?|funding|grants?|awards?|support)(?:\s+[\w-]+){0,2}\s+for\s+(?:(?:[\w-]+,?\s+){1,4}(?:and|or|and\/or)\s+)?research\b(?!\s+(?:opportunit|experience|interests?|careers?|staff|assistant|positions?))|(?<!\b(?:experience|prior)\s+(?:in\s+)?)(?:conduct|conducting|undertake|undertaking)\s+(?:[\w-]+\s+){0,2}research\b|\b(?:funds?|funding|grants?|awards?|support|fellowships?)\b(?:(?!\b(?:no|not|never|nor|without|cannot)\b|\w+n['’]t\b)(?:[^.;,]|,(?=\d))){0,120}?\bfor\s+(?:summer|independent|original|thesis|senior|field|archival|dissertation)\s+research(?![-\w])(?!\s+(?:opportunit|experience|interests?|careers?|staff|assistant|positions?))|\bprojects?\s+(?:may|can|might)\s+include\s+(?:[\w-]+\s+){0,2}research(?![-\w])(?!\s+(?:opportunit|experience|interests?|careers?|staff|assistant|positions?)))/i;
 
 const DISCLAIMS_RESEARCH = /\bnon-research\b/i;
 
