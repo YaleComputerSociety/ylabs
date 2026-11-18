@@ -409,6 +409,45 @@ describe('classifyProgramResearchRelevance', () => {
         ).toBe(true);
       });
 
+      it('serves a grant for summer research beside internships or language study (#6481)', () => {
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description:
+              'The program awards grants ranging from $2,500 to $5,000 to current undergraduate and graduate students for summer research, internships, or language study in the region.',
+          }),
+        ).toBe(true);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description:
+              'Projects may include independent research, language courses, or opportunities to develop language proficiency.',
+          }),
+        ).toBe(true);
+      });
+
+      it('still withholds a fund that names summer research only to deny it or as an opportunity (#6481)', () => {
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description: 'The grant does not fund summer research; it supports internships only.',
+          }),
+        ).toBe(false);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description:
+              'Fellows also learn about funding for summer research opportunities at the center.',
+          }),
+        ).toBe(false);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description: 'Projects may not include independent research.',
+          }),
+        ).toBe(false);
+      });
+
       it('withholds a multi-purpose fund whose only research evidence is the purpose tag', () => {
         expect(
           related({
