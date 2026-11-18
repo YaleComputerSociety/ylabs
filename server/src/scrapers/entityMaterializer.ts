@@ -9336,6 +9336,7 @@ function deriveUserIdentityFields(materializationObs: any[], now: Date) {
     imageUrl,
     websiteUrl,
     websiteUrlConfidence,
+    websiteUrlSources,
     orcid,
     profileUrls,
   };

@@ -38,6 +38,12 @@ describe('a name-joined website fill needs a witness (#6432)', () => {
     expect(nameJoinedWebsiteFillIsWitnessed({ ...lee, url: 'https://leelab.example.org/' })).toBe(
       true,
     );
+    expect(nameJoinedWebsiteFillIsWitnessed({ ...lee, url: 'https://alexlee.example.org/' })).toBe(
+      true,
+    );
+    expect(nameJoinedWebsiteFillIsWitnessed({ ...lee, url: 'https://alee.example.org/' })).toBe(
+      true,
+    );
     expect(nameJoinedWebsiteFillIsWitnessed({ ...lee, url: 'https://example.org/lee-group' })).toBe(
       true,
     );

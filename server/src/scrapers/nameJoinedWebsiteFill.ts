@@ -13,16 +13,19 @@ const compact = (value: string): string =>
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 
-const surnameOf = (name: unknown): string => {
-  if (typeof name !== 'string') return '';
+const nameParts = (name: unknown): { given: string; surname: string } => {
+  if (typeof name !== 'string') return { given: '', surname: '' };
   const tokens = name.trim().split(/\s+/).filter(Boolean);
-  return tokens.length > 1 ? compact(tokens[tokens.length - 1]) : '';
+  return tokens.length > 1
+    ? { given: compact(tokens[0]), surname: compact(tokens[tokens.length - 1]) }
+    : { given: '', surname: '' };
 };
 
 const SURNAME_SITE_SUFFIXES = ['', 'lab', 'labs', 'group', 'research'];
 
-function urlCarriesSurname(url: string, surname: string): boolean {
+function urlCarriesSurname(url: string, given: string, surname: string): boolean {
   if (surname.length < MIN_SURNAME_LENGTH) return false;
+  const nameForms = [surname, `${given}${surname}`, `${given.charAt(0)}${surname}`];
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -34,7 +37,7 @@ function urlCarriesSurname(url: string, surname: string): boolean {
     .map(compact)
     .filter(Boolean);
   return tokens.some((token) =>
-    SURNAME_SITE_SUFFIXES.some((suffix) => token === `${surname}${suffix}`),
+    nameForms.some((form) => SURNAME_SITE_SUFFIXES.some((suffix) => token === `${form}${suffix}`)),
   );
 }
 
@@ -57,5 +60,6 @@ export function nameJoinedWebsiteFillIsWitnessed(input: {
   ) {
     return true;
   }
-  return urlCarriesSurname(input.url, surnameOf(input.personName));
+  const { given, surname } = nameParts(input.personName);
+  return urlCarriesSurname(input.url, given, surname);
 }
