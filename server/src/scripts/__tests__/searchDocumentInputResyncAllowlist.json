@@ -33,7 +33,6 @@
   "repairPersonNameNoise.ts": "Pending #6538: raw researcher displayName write, an input of every linked row; the gate it runs re-indexes only tier changes.",
   "repairUnbackedLabNames.ts": "Pending #6538: raw write on research rows; it re-materializes, which re-syncs only when the materializer itself changes a field, so the raw write alone is not covered and runs the student-visibility gate, which re-indexes only rows whose tier or gate fields changed.",
   "repointWrongPersonOfficialProfileLinks.ts": "Pending #6538: raw write on research rows; it runs the student-visibility gate, which re-indexes only rows whose tier or gate fields changed.",
-  "resolveLeadNetidsFromDirectory.ts": "Pending #6538: raw researcher netid write; fixed by #6537, which removes this entry.",
   "restoreDetachedRoleAssignmentEdge.ts": "Pending #6538: raw write on research rows; it runs the student-visibility gate, which re-indexes only rows whose tier or gate fields changed.",
   "restoreMergeTombstoneRows.ts": "Pending #6538: raw archived write on research rows, which moves a row into or out of the indexed corpus.",
   "retireDirectoryExportDepartments.ts": "Pending #6538: raw write on researchers.",
