@@ -27,6 +27,22 @@ describe('a name-joined website fill needs a witness (#6432)', () => {
     ).toBe(true);
   });
 
+  it('needs the surname as a whole host label or path segment, not inside another word', () => {
+    const lee = { personName: 'Alex Lee', contributingSources: ['dept-faculty-roster'] };
+    expect(
+      nameJoinedWebsiteFillIsWitnessed({ ...lee, url: 'https://sleep-lab.example.org/' }),
+    ).toBe(false);
+    expect(
+      nameJoinedWebsiteFillIsWitnessed({ ...lee, url: 'https://example.org/colleen-group/' }),
+    ).toBe(false);
+    expect(nameJoinedWebsiteFillIsWitnessed({ ...lee, url: 'https://leelab.example.org/' })).toBe(
+      true,
+    );
+    expect(nameJoinedWebsiteFillIsWitnessed({ ...lee, url: 'https://example.org/lee-group' })).toBe(
+      true,
+    );
+  });
+
   it('never treats a surname of under three letters, or a missing one, as a witness', () => {
     expect(
       nameJoinedWebsiteFillIsWitnessed({

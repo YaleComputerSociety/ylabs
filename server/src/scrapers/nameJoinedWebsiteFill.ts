@@ -9,7 +9,7 @@ const MIN_SURNAME_LENGTH = 3;
 const compact = (value: string): string =>
   value
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 
@@ -19,14 +19,23 @@ const surnameOf = (name: unknown): string => {
   return tokens.length > 1 ? compact(tokens[tokens.length - 1]) : '';
 };
 
+const SURNAME_SITE_SUFFIXES = ['', 'lab', 'labs', 'group', 'research'];
+
 function urlCarriesSurname(url: string, surname: string): boolean {
   if (surname.length < MIN_SURNAME_LENGTH) return false;
+  let parsed: URL;
   try {
-    const parsed = new URL(url);
-    return compact(`${parsed.hostname}${parsed.pathname}`).includes(surname);
+    parsed = new URL(url);
   } catch {
     return false;
   }
+  const tokens = `${parsed.hostname} ${parsed.pathname}`
+    .split(/[./_\s-]+/)
+    .map(compact)
+    .filter(Boolean);
+  return tokens.some((token) =>
+    SURNAME_SITE_SUFFIXES.some((suffix) => token === `${surname}${suffix}`),
+  );
 }
 
 /**
