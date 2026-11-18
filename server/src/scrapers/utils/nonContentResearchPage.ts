@@ -1,4 +1,7 @@
-export type NonContentResearchPageReason = 'bot-challenge' | 'sign-in-wall' | 'school-landing';
+import { isGamblingSpamPage } from './gamblingSpamPage';
+
+export type NonContentResearchPageReason =
+  'bot-challenge' | 'sign-in-wall' | 'school-landing' | 'gambling-spam';
 
 interface PageLike {
   url: string;
@@ -49,7 +52,8 @@ const normalizedPath = (url: URL): string => url.pathname.replace(/\/+$/, '').to
 
 /**
  * Why a fetched or stored research page is not the row's content (#6460): a bot-challenge
- * interstitial, a sign-in wall, or a school's own front or research index. Such a page states
+ * interstitial, a sign-in wall, a school's own front or research index, or a gambling page a
+ * taken-over personal domain now serves (#6532). Such a page states
  * nothing about the row, so it is never page-text evidence. A school's index describes the whole
  * school, so it is refused for every row; measured 2026-11-17, only person rows cite or land on one.
  */
@@ -68,5 +72,6 @@ export function nonContentResearchPageReason(page: PageLike): NonContentResearch
   ) {
     return 'school-landing';
   }
+  if (isGamblingSpamPage(text)) return 'gambling-spam';
   return null;
 }
