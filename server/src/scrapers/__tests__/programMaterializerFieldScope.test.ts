@@ -7,6 +7,17 @@ import {
   unclassifiedFellowshipSchemaPaths,
 } from '../programMaterializerFieldScope';
 import { parseUserOnlyFieldsList } from '../userMaterializerFieldScope';
+import { withDerivedMaterializerFields } from '../entityMaterializer';
+import {
+  PROGRAM_REGATE_TRIGGER_FIELDS,
+  programFieldScopeRegateFields,
+} from '../programMaterializerFieldScope';
+import {
+  DUPLICATE_PROGRAM_COPY_INPUT_FIELDS,
+  duplicateProgramCopyCandidate,
+  upcomingDuplicateWindowCandidate,
+} from '../../services/studentVisibilityGateService';
+import { PROGRAM_STUDENT_VISIBILITY_INPUT_FIELDS } from '../../services/studentVisibilityTier';
 
 describe('--only-program-fields parsing (#6473)', () => {
   it('accepts observation fields, trims and dedupes them', () => {
@@ -64,4 +75,62 @@ describe('every Fellowship schema path is classified for the program scope (#647
       [...PROGRAM_MATERIALIZER_SCOPE_FIELDS, ...denied].filter((field) => !schemaPaths.has(field)),
     ).toEqual([]);
   });
+});
+
+describe('a field-scoped program write re-gates only when the gate reads a named field (#6473)', () => {
+  it('re-gates for a field the tier function reads', () => {
+    expect(programFieldScopeRegateFields(['deadline', 'awardAmount'])).toEqual(['deadline']);
+  });
+
+  it('does not re-gate when no named field is read by the gate or the duplicate loader', () => {
+    expect(programFieldScopeRegateFields(['awardAmount', 'contactEmail', 'hoursPerWeek'])).toEqual(
+      [],
+    );
+  });
+
+  it('covers every field the duplicate-copy selection reads, so a kept copy cannot change unseen', () => {
+    expect(
+      DUPLICATE_PROGRAM_COPY_INPUT_FIELDS.filter(
+        (field) => !PROGRAM_REGATE_TRIGGER_FIELDS.has(field),
+      ),
+    ).toEqual([]);
+  });
+
+  it('does not widen a non-trigger program field into a trigger field through derived fields', () => {
+    const nonTrigger = PROGRAM_MATERIALIZER_SCOPE_FIELDS.filter(
+      (field) => !PROGRAM_REGATE_TRIGGER_FIELDS.has(field),
+    );
+    expect(nonTrigger.length).toBeGreaterThan(0);
+    for (const field of nonTrigger) {
+      expect(programFieldScopeRegateFields(withDerivedMaterializerFields([field]))).toEqual([]);
+    }
+  });
+
+  it('covers every field the tier function reads', () => {
+    expect(
+      PROGRAM_STUDENT_VISIBILITY_INPUT_FIELDS.filter(
+        (field) => !PROGRAM_REGATE_TRIGGER_FIELDS.has(field),
+      ),
+    ).toEqual([]);
+  });
+
+  it.each(['duplicateProgramCopyCandidate', 'upcomingDuplicateWindowCandidate'] as const)(
+    '%s reads no program field outside the duplicate list',
+    (builder) => {
+      const reads = new Set<string>();
+      const program = new Proxy(
+        {},
+        {
+          get(target, key, receiver) {
+            if (typeof key === 'string') reads.add(key);
+            return Reflect.get(target, key, receiver);
+          },
+        },
+      );
+      const build = { duplicateProgramCopyCandidate, upcomingDuplicateWindowCandidate }[builder];
+      build(program, 'fixture-id', 'student_ready');
+      const listed = new Set<string>(DUPLICATE_PROGRAM_COPY_INPUT_FIELDS);
+      expect([...reads].filter((field) => !listed.has(field))).toEqual([]);
+    },
+  );
 });

@@ -1,4 +1,6 @@
 import { Fellowship } from '../models/fellowship';
+import { DUPLICATE_PROGRAM_COPY_INPUT_FIELDS } from '../services/studentVisibilityGateService';
+import { PROGRAM_STUDENT_VISIBILITY_INPUT_FIELDS } from '../services/studentVisibilityTier';
 import { parseOnlyFieldsList } from './userMaterializerFieldScope';
 
 export const PROGRAM_MATERIALIZER_SCOPE_FIELDS: readonly string[] = [
@@ -91,4 +93,13 @@ export function parseProgramOnlyFieldsList(value: string | undefined): string[] 
     canonical: (field) => (known.has(field) ? field : undefined),
     supported: PROGRAM_MATERIALIZER_SCOPE_FIELDS,
   });
+}
+
+export const PROGRAM_REGATE_TRIGGER_FIELDS: ReadonlySet<string> = new Set([
+  ...PROGRAM_STUDENT_VISIBILITY_INPUT_FIELDS,
+  ...DUPLICATE_PROGRAM_COPY_INPUT_FIELDS,
+]);
+
+export function programFieldScopeRegateFields(fields: readonly string[]): string[] {
+  return fields.filter((field) => PROGRAM_REGATE_TRIGGER_FIELDS.has(field));
 }

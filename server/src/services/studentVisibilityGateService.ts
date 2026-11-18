@@ -2665,6 +2665,50 @@ export interface DuplicateProgramCopies {
   upcomingWindowByKeptId: Map<string, UpcomingDuplicateWindow>;
 }
 
+export const DUPLICATE_PROGRAM_COPY_INPUT_FIELDS = [
+  'applicationLink',
+  'applicationOpenDate',
+  'deadline',
+  'description',
+  'isAcceptingApplications',
+  'links',
+  'sourceName',
+  'sourceUrl',
+  'title',
+] as const;
+
+export function duplicateProgramCopyCandidate(
+  program: Record<string, any>,
+  id: string,
+  tier: StudentVisibilityTier,
+) {
+  return {
+    id,
+    title: program.title,
+    description: program.description,
+    sourceName: program.sourceName,
+    sourceUrl: program.sourceUrl,
+    applicationLink: program.applicationLink,
+    links: program.links,
+    tier,
+  };
+}
+
+export function upcomingDuplicateWindowCandidate(
+  program: Record<string, any>,
+  id: string,
+  tier: StudentVisibilityTier,
+) {
+  return {
+    id,
+    title: program.title,
+    deadline: program.deadline,
+    applicationOpenDate: program.applicationOpenDate,
+    isAcceptingApplications: program.isAcceptingApplications,
+    servableOnItsOwn: PUBLIC_TIERS.has(tier),
+  };
+}
+
 // Which copy of a fund serves is a corpus-wide question, so it is answered over every live
 // program even when the plan is scoped to some of them.
 export async function loadDuplicateProgramCopies(now: Date): Promise<DuplicateProgramCopies> {
@@ -2675,26 +2719,10 @@ export async function loadDuplicateProgramCopies(now: Date): Promise<DuplicatePr
     tier: computeProgramStudentVisibility(program, { now }).tier,
   }));
   const keptCopyById = selectDuplicateProgramCopies(
-    copies.map(({ program, id, tier }) => ({
-      id,
-      title: program.title,
-      description: program.description,
-      sourceName: program.sourceName,
-      sourceUrl: program.sourceUrl,
-      applicationLink: program.applicationLink,
-      links: program.links,
-      tier,
-    })),
+    copies.map(({ program, id, tier }) => duplicateProgramCopyCandidate(program, id, tier)),
   );
   const upcomingWindowByKeptId = deriveUpcomingDuplicateWindows(
-    copies.map(({ program, id, tier }) => ({
-      id,
-      title: program.title,
-      deadline: program.deadline,
-      applicationOpenDate: program.applicationOpenDate,
-      isAcceptingApplications: program.isAcceptingApplications,
-      servableOnItsOwn: PUBLIC_TIERS.has(tier),
-    })),
+    copies.map(({ program, id, tier }) => upcomingDuplicateWindowCandidate(program, id, tier)),
     keptCopyById,
     now,
   );
