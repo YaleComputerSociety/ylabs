@@ -90,6 +90,7 @@ export {
   scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
 } from './cliHelpers';
+import { programFieldScopeRegateFields } from './programMaterializerFieldScope';
 import { connectScriptMongo, devWriteLeaseDescriptor, runScriptMain } from '../db/connections';
 import {
   armDevHostLeases,
@@ -551,6 +552,7 @@ Concurrency:
       } = materializePreflight;
       const fieldScoped = onlyFields.length > 0;
       const programFieldScoped = onlyProgramFields.length > 0;
+      const programRegateFields = programFieldScopeRegateFields(onlyProgramFields);
       const visibilityGateCollection = visibilityGateCollectionAfterSkipping(skipEntityTypes);
       console.log(`Materializing observations from run ${runId}...`);
       if (fieldScoped) {
@@ -560,7 +562,11 @@ Concurrency:
       }
       if (programFieldScoped) {
         console.log(
-          `Field-scoped program materialize: ${onlyProgramFields.join(', ')}. Only program rows are materialized, only these fields are written, no run reconciliation runs, and the program visibility gate runs after any write.`,
+          `Field-scoped program materialize: ${onlyProgramFields.join(', ')}. Only program rows are materialized, only these fields are written, and no run reconciliation runs. ${
+            programRegateFields.length > 0
+              ? `The program visibility gate runs after any write, because it reads ${programRegateFields.join(', ')}.`
+              : 'The program visibility gate does not run, because it reads none of these fields.'
+          }`,
         );
       }
       if (skipCenterRosterRetirement) {
@@ -609,7 +615,12 @@ Concurrency:
         const report = await getScrapeRunReport(runId);
         let visibilityGate: unknown | undefined;
         const programWrittenRecordIds = result.programFieldScope?.writtenRecordIds ?? [];
-        if (programFieldScoped && !guard.options.dryRun && programWrittenRecordIds.length > 0) {
+        if (
+          programFieldScoped &&
+          programRegateFields.length > 0 &&
+          !guard.options.dryRun &&
+          programWrittenRecordIds.length > 0
+        ) {
           console.log(
             `\nRunning the program visibility gate over the ${programWrittenRecordIds.length} written program row(s) and their fund mates...`,
           );
