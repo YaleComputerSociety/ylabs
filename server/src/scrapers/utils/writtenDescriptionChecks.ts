@@ -402,9 +402,7 @@ export function coversResearchPage(
 
 /**
  * A loosen-only third arm: the body restates one of the page's research statements in that
- * statement's own terms, and names a term repeated across the page's sentences, if any. Measured
- * on the v2 corpus, it admits 10 of 2,982 bodies paired with another row's page, against 724
- * the two older arms already admit (#6464).
+ * statement's own terms, and names a term repeated across the page's sentences, if any (#6464).
  */
 export function coversResearchPageStatements(
   description: string,
