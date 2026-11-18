@@ -194,6 +194,42 @@ describe("a fund's own facets outrank another lane's inference (#4173)", () => {
     expect(facetsOf(await officeRow())).toEqual(FUND_FACETS);
   });
 
+  it('a fund facet the fund lane has since claimed absent does not re-fill the citing row (#6507)', async () => {
+    const everyRegion = [
+      'Africa',
+      'Asia',
+      'Europe',
+      'Latin America and Caribbean',
+      'Middle East & Persian Gulf',
+      'North America',
+      'Oceania',
+    ];
+    const regionsAfter = async (claimsAbsence: boolean) => {
+      await Observation.deleteMany({});
+      await Fellowship.deleteMany({});
+      await seedOfficeRow([FUND_PAGE]);
+      await seedFund(FUND_PAGE, { globalRegions: everyRegion }, '2026-02-01T00:00:00Z');
+      await Observation.create({
+        entityType: 'fellowship',
+        entityKey: FUND_KEY,
+        field: 'sourceKey',
+        value: FUND_KEY,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: GRANTS,
+        sourceUrl: FUND_PAGE,
+        confidence: 0.95,
+        observedAt: new Date('2026-03-10T00:00:00Z'),
+        superseded: false,
+        ...(claimsAbsence ? { assertsNoValueFor: ['globalRegions'] } : {}),
+      });
+      await materializeEntity('fellowship', { entityKey: OFFICE_KEY });
+      return (await officeRow())?.globalRegions ?? [];
+    };
+
+    expect(await regionsAfter(false)).toEqual(everyRegion);
+    expect(await regionsAfter(true)).toEqual([]);
+  });
+
   it('a facet the fund does not state stays with the owning lane', async () => {
     await seedOfficeRow([FUND_PAGE]);
     await seedFund(FUND_PAGE, { purpose: ['Research'] }, '2026-02-01T00:00:00Z');

@@ -379,6 +379,55 @@ describe('parseFundDetailPage', () => {
     expect(regionsOf(['North America'])).toEqual(['North America']);
   });
 
+  it('withdraws its earlier region value when the fund ticks every region (#6507)', () => {
+    const everyRegion = [
+      'Africa',
+      'Asia',
+      'Europe',
+      'Latin America and Caribbean',
+      'Middle East & Persian Gulf',
+      'North America',
+      'Oceania',
+    ];
+    const witnessFor = (html: string) => {
+      const fund = parseFundDetailPage(html, { title: '', url: FUND_A_URL }, referenceDate)!;
+      const observations = fundToObservations(fund);
+      return {
+        claims: observations.find((obs) => obs.field === 'sourceKey')?.assertsNoValueFor ?? [],
+        emitsRegions: observations.some((obs) => obs.field === 'globalRegions'),
+      };
+    };
+    const withRegions = (regions: string[]) =>
+      FUND_A_DETAIL_HTML.replace(
+        facetPanel(4, 'Global Region or Country', [
+          'Europe',
+          '-- France (Western Europe)',
+          'Asia',
+          '-- Japan (East Asia)',
+        ]),
+        facetPanel(4, 'Global Region or Country', regions),
+      );
+
+    expect(witnessFor(withRegions(everyRegion))).toEqual({
+      claims: ['globalRegions'],
+      emitsRegions: false,
+    });
+    expect(witnessFor(withRegions(everyRegion.slice(0, 6)))).toEqual({
+      claims: [],
+      emitsRegions: true,
+    });
+    const withoutRegionFacet = FUND_A_DETAIL_HTML.replace(
+      facetPanel(4, 'Global Region or Country', [
+        'Europe',
+        '-- France (Western Europe)',
+        'Asia',
+        '-- Japan (East Asia)',
+      ]),
+      '',
+    );
+    expect(witnessFor(withoutRegionFacet)).toEqual({ claims: [], emitsRegions: false });
+  });
+
   it('never reads the contact block', () => {
     const fund = parseFundDetailPage(
       FUND_A_DETAIL_HTML,
