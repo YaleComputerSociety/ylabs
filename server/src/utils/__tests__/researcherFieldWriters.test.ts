@@ -420,6 +420,9 @@ describe('a fuller fill-only name beside a first-and-last list name (#6431)', ()
     expect(fillOnlyNameStanding('Alex Sample', 'Alex B. Example')).toBeUndefined();
     expect(fillOnlyNameStanding('Alex Example', 'Alexandra B. Example')).toBeUndefined();
     expect(fillOnlyNameStanding('Alex Example', 'Alex Example')).toBeUndefined();
+    expect(fillOnlyNameStanding('Alex Example Jr.', 'Alex Example')).toBeUndefined();
+    expect(fillOnlyNameStanding('Alex Example Sample', 'Alex Example')).toBeUndefined();
+    expect(fillOnlyNameStanding('Alex Example', 'Alex Example Sample')).toBeUndefined();
   });
 
   it('never lets a fuller fill-only name replace a value a key that is not fill-only holds', () => {
