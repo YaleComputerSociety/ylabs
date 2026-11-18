@@ -25,27 +25,37 @@ export async function keepServedWriterBody(
   input: KeepServedWriterBodyInput,
 ): Promise<{ restored: boolean }> {
   if (!input.servedBody.trim() || input.servedBody === input.refusedBody) return { restored: false };
-  const scope = {
+  if (input.anchors.length === 0) return { restored: false };
+  const scope: Record<string, any> = {
     entityType: 'researchEntity',
     ...materializationReadScopeFilter(),
     sourceName: input.sourceName,
     field: 'fullDescription',
     $or: [...input.anchors],
   };
-  const served = (await Observation.findOne({ ...scope, value: input.servedBody, superseded: true })
-    .sort({ observedAt: -1 })
-    .select('_id')
-    .lean()) as { _id: unknown } | null;
   const refused = (await Observation.findOne({ ...scope, value: input.refusedBody, superseded: false })
     .sort({ observedAt: -1 })
     .select('_id')
     .lean()) as { _id: unknown } | null;
-  if (!served || !refused) return { restored: false };
+  if (!refused) return { restored: false };
+  const served = (await Observation.findOne({
+    ...scope,
+    value: input.servedBody,
+    superseded: true,
+    supersededBy: refused._id,
+    rollback: { $exists: false },
+  })
+    .select('_id')
+    .lean()) as { _id: unknown } | null;
+  if (!served) return { restored: false };
   await Observation.updateOne(
     { _id: refused._id, superseded: false },
     { $set: { superseded: true, rollback: { rolledBackAt: new Date(), reason: input.reason } } },
   );
-  await Observation.updateOne({ _id: served._id, superseded: true }, { $set: { superseded: false } });
+  await Observation.updateOne(
+    { _id: served._id, superseded: true, supersededBy: refused._id },
+    { $set: { superseded: false }, $unset: { supersededBy: '' } },
+  );
   resetDescriptionOwnershipCitersCache();
   return { restored: true };
 }
