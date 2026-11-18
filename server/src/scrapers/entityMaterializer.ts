@@ -261,6 +261,7 @@ import {
   resolvePooledDepartment,
   type DepartmentSpecificityCatalog,
 } from './pooledDepartmentSpecificity';
+import { FIRST_HAND_DEPARTMENT_SOURCES } from './firstHandDepartmentSources';
 import {
   MaterializationChunkPrefetch,
   prefetchObjectIdString,
@@ -5722,12 +5723,6 @@ async function leadDepartmentWithParentSchool(
   return school ? { department, school } : undefined;
 }
 
-const LEAD_SECTION_FIRST_HAND_DEPARTMENT_SOURCES: ReadonlySet<string> = new Set([
-  'ysm-faculty-directory',
-  'yse-faculty-directory',
-  'official-profile-pi-backfill',
-]);
-
 export interface LeadSection {
   section: string;
   parent: string;
@@ -5776,7 +5771,7 @@ export function statesLeadSectionFirstHand(
     if (lane === DEPARTMENT_ROSTER_APPOINTMENT_SOURCE) return false;
     if (observation.field === 'primaryDepartment') {
       return (
-        LEAD_SECTION_FIRST_HAND_DEPARTMENT_SOURCES.has(lane) &&
+        FIRST_HAND_DEPARTMENT_SOURCES.has(lane) &&
         singleCatalogUnit(canonicalizer, observation.value) === section
       );
     }
