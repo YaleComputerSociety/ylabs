@@ -35,7 +35,11 @@ import { ChainedHostSlotLimiter, type HostSlotLimiter } from './utils/hostConcur
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { installSweepPageReuse } from './utils/sweepPageReuse';
 import { installScraperFetchHooks } from './utils/scraperFetchHooks';
-import { materializeFromRun, withoutUserFieldScopeRows } from './entityMaterializer';
+import {
+  materializeFromRun,
+  withoutProgramFieldScopeRows,
+  withoutUserFieldScopeRows,
+} from './entityMaterializer';
 import {
   autoMaterializeCenterRosterRefusal,
   CENTER_PLAN_HELD_BACK_EXIT_CODE,
@@ -599,17 +603,25 @@ Concurrency:
           ...(skipCenterRosterRetirement ? { skipCenterRosterRetirement } : {}),
           ...(centerPlanGuard ? { centerPlanGuard } : {}),
         });
-        console.log(JSON.stringify(withoutUserFieldScopeRows(result), null, 2));
+        console.log(
+          JSON.stringify(withoutProgramFieldScopeRows(withoutUserFieldScopeRows(result)), null, 2),
+        );
         const report = await getScrapeRunReport(runId);
         let visibilityGate: unknown | undefined;
-        const gateCollection = programFieldScoped ? 'programs' : visibilityGateCollection;
-        if (
-          !guard.options.dryRun &&
-          result.errors === 0 &&
-          !fieldScoped &&
-          gateCollection &&
-          (!programFieldScoped || result.updated > 0)
-        ) {
+        const programWrittenRecordIds = result.programFieldScope?.writtenRecordIds ?? [];
+        if (programFieldScoped && !guard.options.dryRun && programWrittenRecordIds.length > 0) {
+          console.log(
+            `\nRunning the program visibility gate over the ${programWrittenRecordIds.length} written program row(s) and their fund mates...`,
+          );
+          visibilityGate = await runStudentVisibilityGate({
+            collection: 'programs',
+            mode: 'apply',
+            recordIds: programWrittenRecordIds,
+          });
+          console.log(JSON.stringify(visibilityGate, null, 2));
+        }
+        const gateCollection = programFieldScoped ? undefined : visibilityGateCollection;
+        if (!guard.options.dryRun && result.errors === 0 && !fieldScoped && gateCollection) {
           const sourceName = (report as any).run?.sourceName;
           console.log(
             `\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`,

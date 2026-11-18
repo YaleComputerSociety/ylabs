@@ -17052,11 +17052,39 @@ async function materializeUserRowsInFieldScope(
   };
 }
 
+export interface ProgramFieldScopePathChange {
+  path: string;
+  stored: unknown;
+  planned: unknown;
+}
+
+export interface ProgramFieldScopeRow {
+  entityKey?: string;
+  recordId?: string;
+  sourceName?: string;
+  written: boolean;
+  changes: ProgramFieldScopePathChange[];
+  error?: string;
+}
+
 export interface ProgramFieldScopeReport {
   onlyFields: string[];
   rowsOutsideProgramSkipped: Record<string, number>;
   runReconciliationsSkipped: true;
+  writtenRecordIds: string[];
+  rows: ProgramFieldScopeRow[];
 }
+
+export function withoutProgramFieldScopeRows<
+  T extends { programFieldScope?: ProgramFieldScopeReport },
+>(counts: T): T {
+  if (!counts.programFieldScope) return counts;
+  const { rows: _rows, ...summary } = counts.programFieldScope;
+  return { ...counts, programFieldScope: { ...summary, rows: [] } };
+}
+
+const programScopeValue = (value: unknown): unknown =>
+  value === undefined ? null : JSON.parse(JSON.stringify(value));
 
 async function materializeProgramRowsInFieldScope(
   rows: ReadonlyArray<{ entityType: ObservedEntityType; entityId?: string; entityKey?: string }>,
@@ -17075,24 +17103,67 @@ async function materializeProgramRowsInFieldScope(
   let skipped = 0;
   let errors = 0;
   const changedProgramPaths = new Set<string>();
+  const storedByKey = new Map<string, any>(
+    (
+      await Fellowship.find({
+        sourceKey: { $in: programRows.map((row) => row.entityKey).filter(Boolean) },
+      })
+        .select(['_id', 'sourceKey', 'sourceName', ...onlyFields].join(' '))
+        .lean()
+    ).map((doc: any) => [String(doc.sourceKey), doc]),
+  );
+  const scopeRows: ProgramFieldScopeRow[] = [];
+  const writtenRecordIds = new Set<string>();
   const progress = startLongRunProgress('field-scoped-program-materialize', programRows.length);
   const { linkedRowIndexSyncFailedEntityIds } = await materializeObservedEntitiesInChunks(
     programRows,
     { ...options, programWriteOnlyFields: undefined, writeOnlyFields: onlyFields },
-    (_row, outcome) => {
+    (row, outcome) => {
       progress.tick('error' in outcome);
+      const stored = row.entityKey ? storedByKey.get(row.entityKey) : undefined;
+      const base = {
+        entityKey: row.entityKey,
+        recordId: stored?._id ? String(stored._id) : undefined,
+        sourceName: stored?.sourceName,
+      };
       if (!('result' in outcome)) {
         errors++;
+        scopeRows.push({
+          ...base,
+          written: false,
+          changes: [],
+          error: sanitizeLogValue((outcome.error as Error)?.message ?? String(outcome.error)),
+        });
         return;
       }
       const { result } = outcome;
       conflicts += result.conflicts;
+      const recordId = base.recordId ?? (result.entityId ? String(result.entityId) : undefined);
       if (materializeRowOutcome(result) === 'skipped') {
         skipped++;
         return;
       }
       updated++;
-      for (const path of result.changedPaths ?? []) changedProgramPaths.add(path);
+      const paths = (result.changedPaths ?? []).filter((path) => onlyFields.includes(path));
+      for (const path of paths) changedProgramPaths.add(path);
+      const written = options.dryRun !== true && result.fieldsWritten > 0;
+      if (written && recordId) writtenRecordIds.add(recordId);
+      scopeRows.push({
+        ...base,
+        recordId,
+        written,
+        changes: paths.map((path) => ({
+          path,
+          stored: programScopeValue(stored?.[path]),
+          planned: programScopeValue(
+            result.plannedSet && path in result.plannedSet
+              ? result.plannedSet[path]
+              : result.plannedUnset && path in result.plannedUnset
+                ? undefined
+                : result.resolved?.[path]?.value,
+          ),
+        })),
+      });
     },
     MATERIALIZATION_CHUNK_SIZE,
     1,
@@ -17108,7 +17179,13 @@ async function materializeProgramRowsInFieldScope(
     postMaterializationMetrics: emptyPostMaterializationMetrics(),
     changedPathsByEntityType:
       changedProgramPaths.size > 0 ? { fellowship: [...changedProgramPaths].sort() } : {},
-    programFieldScope: { onlyFields, rowsOutsideProgramSkipped, runReconciliationsSkipped: true },
+    programFieldScope: {
+      onlyFields,
+      rowsOutsideProgramSkipped,
+      runReconciliationsSkipped: true,
+      writtenRecordIds: [...writtenRecordIds].sort(),
+      rows: scopeRows,
+    },
   };
 }
 

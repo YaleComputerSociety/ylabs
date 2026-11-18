@@ -139,13 +139,29 @@ describe('a fellowship materialize scoped to named fields (#6473)', () => {
         programWriteOnlyFields: ['contactOffice'],
       });
 
+      const row: any = await Fellowship.findOne({ sourceKey: KEY }).lean();
       expect(result.changedPathsByEntityType).toEqual({ fellowship: ['contactOffice'] });
       expect(result.programFieldScope).toEqual({
         onlyFields: ['contactOffice'],
         rowsOutsideProgramSkipped: { user: 1 },
         runReconciliationsSkipped: true,
+        writtenRecordIds: [],
+        rows: [
+          {
+            entityKey: KEY,
+            recordId: String(row._id),
+            sourceName: LANE,
+            written: false,
+            changes: [
+              {
+                path: 'contactOffice',
+                stored: 'Fixture Office of Fellowships',
+                planned: 'Fixture Office of Undergraduate Research',
+              },
+            ],
+          },
+        ],
       });
-      const row: any = await Fellowship.findOne({ sourceKey: KEY }).lean();
       expect(row?.contactOffice).toBe('Fixture Office of Fellowships');
     });
 
@@ -156,6 +172,8 @@ describe('a fellowship materialize scoped to named fields (#6473)', () => {
 
       expect(result.updated).toBe(1);
       const row: any = await Fellowship.findOne({ sourceKey: KEY }).lean();
+      expect(result.programFieldScope?.writtenRecordIds).toEqual([String(row._id)]);
+      expect(result.programFieldScope?.rows.map((entry) => entry.written)).toEqual([true]);
       expect(row?.contactOffice).toBe('Fixture Office of Undergraduate Research');
       expect(row?.title).toBe('Fixture Scoped Award');
       expect(await mongoose.connection.db!.collection('researchers').countDocuments()).toBe(0);
