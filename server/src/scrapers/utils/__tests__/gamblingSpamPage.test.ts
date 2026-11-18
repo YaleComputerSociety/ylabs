@@ -27,6 +27,14 @@ describe('isGamblingSpamPage (#6532)', () => {
     expect(isGamblingSpamPage(ONE_PHRASE_RESEARCH)).toBe(false);
   });
 
+  it('keeps a person page for someone named Judi', () => {
+    expect(
+      isGamblingSpamPage(
+        'Judi Rivera studies slot online scheduling for clinics and directs the lab.',
+      ),
+    ).toBe(false);
+  });
+
   it('does not read a hyphenated class name as a phrase', () => {
     expect(isGamblingSpamPage('<div class="slot-online judi-card">Lab news</div>')).toBe(false);
   });

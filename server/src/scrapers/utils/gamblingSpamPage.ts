@@ -1,7 +1,7 @@
 const GAMBLING_SITE_PHRASES: readonly RegExp[] = [
   /\bgacor\b/i,
   /\btogel\b/i,
-  /\bjudi\b/i,
+  /\bjudi\s+(?:online|slot|bola)\b/i,
   /\bsitus\s+(?:resmi|slot|judi)\b/i,
   /\bslot\s+(?:online|gacor|deposit)\b/i,
   /\bminimal\s+(?:deposit|withdraw)\b/i,
@@ -18,9 +18,12 @@ const MIN_DISTINCT_PHRASES = 2;
  *
  * The phrases are the Indonesian-language gambling-site vocabulary those pages carry, and a page
  * needs two distinct ones, so research about gambling, which uses English terms such as casino,
- * betting or slot machines, is never matched. Measured on Development 2026-11-18: of 4,094 live
+ * betting or slot machines, is never matched, and neither is the given name Judi on a person page. Measured on Development 2026-11-18: of 4,094 live
  * page-text observations, 4 pages matched, every one a gambling page with 3 to 5 phrases, and
  * every other page on those rows matched none.
+ *
+ * A taken-over domain is permanent, so the page-text lane treats such a page as gone rather than
+ * as a transient failure: the row's earlier reading from that host is not kept alive by it.
  */
 export function isGamblingSpamPage(text: string): boolean {
   let distinct = 0;

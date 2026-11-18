@@ -57,6 +57,14 @@ describe('a cited domain that now serves a gambling page (#6532)', () => {
     expect(classifySourceLinkHealth(probe).healthStatus).toBe('HEALTHY');
   });
 
+  it('reads no content from a Yale host, which no outside party can take over', async () => {
+    requestMock.mockResolvedValue(answer(GAMBLING_PAGE_HTML));
+
+    const probe = await probeSourceLink('https://lab.yale.edu/');
+
+    expect(probe.gamblingSpamPage).toBeUndefined();
+  });
+
   it('reads no content from a non-HTML answer', async () => {
     requestMock.mockResolvedValue(answer(GAMBLING_PAGE_HTML, 'application/pdf'));
 

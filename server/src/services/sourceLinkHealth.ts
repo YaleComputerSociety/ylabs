@@ -211,6 +211,8 @@ function retryAfterMs(headers: unknown): number | undefined {
   return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
 }
 
+const isYaleHost = (hostname: string): boolean => /(?:^|\.)yale\.edu$/i.test(hostname);
+
 function isHtmlResponse(headers: unknown): boolean {
   const raw = (headers as Record<string, unknown> | undefined)?.['content-type'];
   return typeof raw === 'string' && /\btext\/html\b|\bapplication\/xhtml\+xml\b/i.test(raw);
@@ -789,6 +791,7 @@ export async function probeSourceLink(
       const gamblingSpamPage =
         response.status >= 200 &&
         response.status < 300 &&
+        !isYaleHost(safeUrl.hostname) &&
         isHtmlResponse(response.headers) &&
         isGamblingSpamPage(
           visibleTextOf(await readBodyPrefix(response.data, PAGE_CONTENT_PREFIX_BYTES)),

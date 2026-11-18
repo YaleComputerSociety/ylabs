@@ -682,8 +682,10 @@ Both sit outside every prompt file and cache key on purpose, so never move the p
 The topic readings export and `--print-writer-prompt` apply the same guard for local-Claude drafting, the `--capture-evidence` writer evidence file carries the preamble but keeps its text raw (a harness reading it must call `stripAiDirectedInstructions`), and `research-page-text` counts rows holding such a sentence in its run notes and `aiDirectedInstructionRows` metric while storing the text as captured.
 
 A page that is not the row's content is never page-text evidence (`nonContentResearchPageReason` in `scrapers/utils/nonContentResearchPage.ts`, #6460, #6532): a bot-challenge interstitial, a sign-in wall, a school's own front or research index, or a gambling page that a taken-over personal domain now serves.
-It is refused at capture like a transient failure and dropped on every read of stored page text, so a row already storing one stops using it on its next resolve with no field write.
+It is dropped on every read of stored page text, so a row already storing one stops using it on its next resolve with no field write.
+At capture a bot challenge, sign-in wall or school index counts as a transient failure, so the row keeps its stored reading, but a gambling page counts as a gone page, because a taken-over domain is permanent and must not keep the earlier reading from that host alive.
 The gambling test (`isGamblingSpamPage`) needs two distinct Indonesian-language gambling-site phrases, so research about gambling, written with English terms, is never matched.
+The link probe skips the test on `yale.edu` hosts, which no outside party can take over.
 The link probe applies the same test to a 2xx HTML answer and records it as `UNAVAILABLE` with the 200 status, the soft-404 precedent, so `isKnownDeadSourceUrl` stops stored-citation re-admission from serving the taken-over domain as a source.
 
 The rendered fetch is the documented exception: its headless browser runs in a Python child that no axios hook reaches, and it takes its own host slot before each render.
