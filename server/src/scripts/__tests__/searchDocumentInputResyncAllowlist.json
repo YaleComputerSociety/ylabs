@@ -44,7 +44,7 @@
   "retireUnevidencedMemberEdges.ts": "Pending #6538: raw role-assignment archived write, which changes the member name fields.",
   "retypeFromDeclaredPageType.ts": "Pending #6538: raw write on research rows; it re-materializes, which re-syncs only when the materializer itself changes a field, so the raw write alone is not covered and runs the student-visibility gate, which re-indexes only rows whose tier or gate fields changed.",
   "retypeGrantMintedLabShells.ts": "Pending #6538: raw write on research rows; it re-materializes, which re-syncs only when the materializer itself changes a field, so the raw write alone is not covered and runs the student-visibility gate, which re-indexes only rows whose tier or gate fields changed.",
-  "seedE2eSmokeData.ts": "Seeds the disposable local e2e smoke database; local:seed runs meili:seed right after it, which builds the index from the seeded rows.",
+  "seedE2eSmokeData.ts": "Seeds only the disposable local e2e smoke database; local:seed runs meili:seed right after it, and a bare e2e:seed-smoke run leaves that local index for the next meili:seed.",
   "tombstoneSamePersonArchives.ts": "Pending #6538: raw write on research rows; it re-materializes, which re-syncs only when the materializer itself changes a field, so the raw write alone is not covered.",
   "unfoldResearcherShell.ts": "Pending #6538: raw researcher archived and dedupe writes, inputs of every linked row.",
   "unionStrandedMergeFunding.ts": "Pending #6538: raw grant-field and updatedAt write on research rows.",
