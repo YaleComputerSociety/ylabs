@@ -799,7 +799,9 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   else if (asStringList(existing?.schools).length > 0) set.schools = [];
 
   const assertedSchool = hasSchool ? stringValue(set.school) : '';
+  const decidesSchool = hasSchool || hasDepartments;
   if (
+    decidesSchool &&
     !assertedSchool &&
     schools.length > 1 &&
     isCrossSchoolOrganizationEntity(set.entityType ?? existing?.entityType) &&
@@ -807,7 +809,7 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   ) {
     set.school = '';
     result.unresolvablePrimarySchool = true;
-  } else if ((hasSchool || hasDepartments) && !canonicalEffectiveSchool && schools.length > 0) {
+  } else if (decidesSchool && !canonicalEffectiveSchool && schools.length > 0) {
     set.school = schools[0];
   }
 

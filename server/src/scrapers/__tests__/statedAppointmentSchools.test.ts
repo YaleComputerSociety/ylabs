@@ -19,8 +19,12 @@ beforeEach(() => {
         { slug: 'fixture-public-health', name: PUBLIC_HEALTH, kind: 'SCHOOL' },
         { slug: 'fixture-medicine', name: MEDICINE, kind: 'SCHOOL' },
         { slug: 'fixture-biostatistics', name: 'Fixture Biostatistics', kind: 'DEPARTMENT' },
+        { slug: 'fixture-cardiology', name: 'Fixture Cardiology', kind: 'DEPARTMENT' },
       ]),
-      new Map([['Fixture Biostatistics', PUBLIC_HEALTH]]),
+      new Map([
+        ['Fixture Biostatistics', PUBLIC_HEALTH],
+        ['Fixture Cardiology', MEDICINE],
+      ]),
     ),
   );
 });
@@ -62,6 +66,20 @@ describe("a lead's stated non-Primary appointment school joins a row's schools o
 
     expect(set).not.toHaveProperty('school');
     expect(set.schools).toEqual([MEDICINE]);
+  });
+
+  it('never clears a cross-school center school from a pass carrying only stated schools', async () => {
+    const set: Record<string, unknown> = { statedAppointmentSchools: [MEDICINE] };
+
+    const result = await applyResearchEntityOrgUnitCanonicalization(set, {
+      entityType: 'CENTER',
+      school: PUBLIC_HEALTH,
+      departments: ['Fixture Biostatistics', 'Fixture Cardiology'],
+    });
+
+    expect(set).not.toHaveProperty('school');
+    expect(result.unresolvablePrimarySchool).toBeFalsy();
+    expect(set.schools).toEqual([PUBLIC_HEALTH, MEDICINE]);
   });
 
   it('lists a stated school once when the Primary school already names it', async () => {
