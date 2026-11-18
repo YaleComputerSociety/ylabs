@@ -7,6 +7,7 @@ import {
   unclassifiedFellowshipSchemaPaths,
 } from '../programMaterializerFieldScope';
 import { parseUserOnlyFieldsList } from '../userMaterializerFieldScope';
+import { withDerivedMaterializerFields } from '../entityMaterializer';
 import {
   PROGRAM_REGATE_TRIGGER_FIELDS,
   programFieldScopeRegateFields,
@@ -93,6 +94,16 @@ describe('a field-scoped program write re-gates only when the gate reads a named
         (field) => !PROGRAM_REGATE_TRIGGER_FIELDS.has(field),
       ),
     ).toEqual([]);
+  });
+
+  it('does not widen a non-trigger program field into a trigger field through derived fields', () => {
+    const nonTrigger = PROGRAM_MATERIALIZER_SCOPE_FIELDS.filter(
+      (field) => !PROGRAM_REGATE_TRIGGER_FIELDS.has(field),
+    );
+    expect(nonTrigger.length).toBeGreaterThan(0);
+    for (const field of nonTrigger) {
+      expect(programFieldScopeRegateFields(withDerivedMaterializerFields([field]))).toEqual([]);
+    }
   });
 
   it('covers every field the tier function reads', () => {
