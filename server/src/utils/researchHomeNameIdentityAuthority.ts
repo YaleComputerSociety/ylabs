@@ -653,15 +653,27 @@ function personNameOrderedParts(value: string): string | null {
       ? commaParts.pop()
       : undefined;
   if (commaParts.length > 2) return null;
-  const ordered = commaParts.length === 2 ? `${commaParts[1]} ${commaParts[0]}` : commaParts[0];
-  return suffix ? `${ordered} ${suffix}` : ordered;
+  if (commaParts.length === 1) return suffix ? `${commaParts[0]} ${suffix}` : commaParts[0];
+  const givenTokens = commaParts[1].split(/\s+/).filter(Boolean);
+  const givenSuffix =
+    !suffix &&
+    givenTokens.length > 1 &&
+    isGenerationalSuffixPart(givenTokens[givenTokens.length - 1])
+      ? givenTokens.pop()
+      : undefined;
+  const trailing = suffix ?? givenSuffix;
+  const ordered = `${givenTokens.join(' ')} ${commaParts[0]}`;
+  return trailing ? `${ordered} ${trailing}` : ordered;
 }
 
 // Writes the ordered tokens back as a name, keeping the comma before a generational suffix
 // when the source name carried one, so a derived name matches the person's own spelling.
 function personNameFromOrderedTokens(source: string, tokens: string[]): string {
   const last = tokens[tokens.length - 1] ?? '';
-  const sourceCommaSuffix = /,\s*[^,]+$/.test(source) && isGenerationalSuffixPart(last);
+  const sourceCommaSuffix =
+    isGenerationalSuffixPart(source.split(',').pop() ?? '') &&
+    source.includes(',') &&
+    isGenerationalSuffixPart(last);
   return sourceCommaSuffix && tokens.length > 1
     ? `${tokens.slice(0, -1).join(' ')}, ${last}`
     : tokens.join(' ');

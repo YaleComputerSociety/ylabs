@@ -2330,6 +2330,8 @@ describe('a lead-derived research name keeps a generational suffix and every giv
   it('still reorders an inverted family-and-given name, with or without a suffix', () => {
     expect(nameFor('Fixture, Quill')).toBe('Quill Fixture Faculty Research');
     expect(nameFor('Fixture, Quill, Jr.')).toBe('Quill Fixture, Jr. Faculty Research');
+    expect(nameFor('Fixture, Quill III')).toBe('Quill Fixture III Faculty Research');
+    expect(nameFor('Fixture, Quill Jr.')).toBe('Quill Fixture Jr. Faculty Research');
   });
 
   it('keeps a given name that is also an article, a particle and a multi-part given name', () => {
