@@ -2311,6 +2311,37 @@ describe('a campus building is not a person-scoped name (#4916)', () => {
   });
 });
 
+describe('a lead-derived research name keeps a generational suffix and every given name (#6540)', () => {
+  const nameFor = (leadPersonName: string) =>
+    personScopedResearchEntityNameFromLeadPersonName({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      slug: 'ysm-faculty-fixture-row',
+      leadPersonName,
+      currentName: 'Stale Heading Faculty Research',
+    });
+
+  it('keeps a comma-separated generational suffix at the end', () => {
+    expect(nameFor('Quill Fixture, Jr.')).toBe('Quill Fixture, Jr. Faculty Research');
+    expect(nameFor('Quill Fixture, Sr.')).toBe('Quill Fixture, Sr. Faculty Research');
+    expect(nameFor('Quill Fixture Jr.')).toBe('Quill Fixture Jr. Faculty Research');
+    expect(nameFor('Quill Fixture, III')).toBe('Quill Fixture, III Faculty Research');
+  });
+
+  it('still reorders an inverted family-and-given name, with or without a suffix', () => {
+    expect(nameFor('Fixture, Quill')).toBe('Quill Fixture Faculty Research');
+    expect(nameFor('Fixture, Quill, Jr.')).toBe('Quill Fixture, Jr. Faculty Research');
+    expect(nameFor('Fixture, Quill III')).toBe('Quill Fixture III Faculty Research');
+    expect(nameFor('Fixture, Quill Jr.')).toBe('Quill Fixture Jr. Faculty Research');
+  });
+
+  it('keeps a given name that is also an article, a particle and a multi-part given name', () => {
+    expect(nameFor('An Hoa Fixture')).toBe('An Hoa Fixture Faculty Research');
+    expect(nameFor('A Quill Fixture')).toBe('A Quill Fixture Faculty Research');
+    expect(nameFor('Quill van Fixture')).toBe('Quill van Fixture Faculty Research');
+    expect(nameFor('Mary-Quill Ada Fixture')).toBe('Mary-Quill Ada Fixture Faculty Research');
+  });
+});
+
 describe('a URL path segment that only spells the lab name is not evidence of a person', () => {
   const roster = new Set(['sloan', 'quill']);
 
