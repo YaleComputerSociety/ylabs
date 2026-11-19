@@ -640,14 +640,39 @@ const COMPOUND_LABEL_PUNCTUATION_RE = /[&/:;+|]|--|\d/;
 const MIN_PERSON_NAME_WORDS = 2;
 const MAX_PERSON_NAME_TOKENS = 4;
 
-function personNameOrderedTokens(value: string): string[] | null {
-  const commaParts = value.split(',');
+const isGenerationalSuffixPart = (part: string): boolean =>
+  PERSON_NAME_GENERATIONAL_SUFFIXES.has(part.trim().toLowerCase().replace(/\.$/, ''));
+
+// A comma before a generational suffix ("Smith, Jr.") ends the name rather than
+// inverting it, so only a comma between two name parts reads as "Family, Given"
+// (#6540). "A" and "An" are given names as well as articles, so only "The" is dropped.
+function personNameOrderedParts(value: string): string | null {
+  const commaParts = value.split(',').map((part) => part.trim());
+  const suffix =
+    commaParts.length > 1 && isGenerationalSuffixPart(commaParts[commaParts.length - 1])
+      ? commaParts.pop()
+      : undefined;
   if (commaParts.length > 2) return null;
-  const ordered =
-    commaParts.length === 2 ? `${commaParts[1].trim()} ${commaParts[0].trim()}` : commaParts[0];
+  const ordered = commaParts.length === 2 ? `${commaParts[1]} ${commaParts[0]}` : commaParts[0];
+  return suffix ? `${ordered} ${suffix}` : ordered;
+}
+
+// Writes the ordered tokens back as a name, keeping the comma before a generational suffix
+// when the source name carried one, so a derived name matches the person's own spelling.
+function personNameFromOrderedTokens(source: string, tokens: string[]): string {
+  const last = tokens[tokens.length - 1] ?? '';
+  const sourceCommaSuffix = /,\s*[^,]+$/.test(source) && isGenerationalSuffixPart(last);
+  return sourceCommaSuffix && tokens.length > 1
+    ? `${tokens.slice(0, -1).join(' ')}, ${last}`
+    : tokens.join(' ');
+}
+
+function personNameOrderedTokens(value: string): string[] | null {
+  const ordered = personNameOrderedParts(value);
+  if (ordered === null) return null;
   return ordered
     .trim()
-    .replace(/^(?:the|a|an)\s+/i, '')
+    .replace(/^the\s+/i, '')
     .replace(/\((?:[^()]*)\)/g, ' ')
     .split(/\s+/)
     .filter(Boolean);
@@ -771,7 +796,7 @@ export function personScopedResearchEntityNameFromPersonName(entity: {
   if (!isBarePersonNameEntityName(name)) return '';
   const tokens = personNameOrderedTokens(name);
   if (!tokens) return '';
-  return `${tokens.join(' ')} ${researchEntityNameSuffix(entity)}`;
+  return `${personNameFromOrderedTokens(name, tokens)} ${researchEntityNameSuffix(entity)}`;
 }
 
 const HYPHEN_RESEARCH_SUFFIX_RE = /^(.*\S)\s+[-\u2013\u2014]\s*Research$/i;
@@ -940,7 +965,7 @@ export function personScopedResearchEntityNameFromLeadPersonName(entity: {
   if (!isBarePersonNameEntityName(leadPersonName)) return '';
   const tokens = personNameOrderedTokens(leadPersonName);
   if (!tokens) return '';
-  return `${tokens.join(' ')} ${researchEntityNameSuffix(entity)}`;
+  return `${personNameFromOrderedTokens(leadPersonName, tokens)} ${researchEntityNameSuffix(entity)}`;
 }
 
 // A benefactor whose gift names the appointment ("Frank Altschul Professor ...").
