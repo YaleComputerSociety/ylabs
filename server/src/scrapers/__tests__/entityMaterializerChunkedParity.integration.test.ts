@@ -25,10 +25,16 @@ import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { MaterializationChunkPrefetch } from '../materializationChunkPrefetch';
+import { listResearchEntityMergedInRowsBySurvivor } from '../../services/researchEntityCanonicalTombstone';
 import {
   materializationReadScopeFilter,
   materializeEntity,
   materializeObservedEntitiesInChunks,
+  DEFAULT_MATERIALIZATION_CONCURRENCY,
+  materializationConcurrencyFromEnv,
+  MAX_MATERIALIZATION_CONCURRENCY,
+  partitionChunkForConcurrency,
+  runSequentialRowsWithDeptShellSpans,
   type ObservedEntityOutcome,
   type ObservedEntityRow,
 } from '../entityMaterializer';
@@ -166,7 +172,11 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-    await Promise.all([Observation.init(), ResearchEntity.init(), RoleAssignment.init()]);
+    await Promise.all([
+      Observation.createIndexes(),
+      ResearchEntity.createIndexes(),
+      RoleAssignment.createIndexes(),
+    ]);
   });
 
   afterAll(async () => {
@@ -203,9 +213,15 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
     }
     const chunkedCounts = countingQueries();
     const chunked: unknown[] = [];
-    await materializeObservedEntitiesInChunks(rows, { dryRun: true }, (_row, outcome) => {
-      chunked.push(comparable('result' in outcome ? outcome.result : outcome));
-    });
+    await materializeObservedEntitiesInChunks(
+      rows,
+      { dryRun: true },
+      (_row, outcome) => {
+        chunked.push(comparable('result' in outcome ? outcome.result : outcome));
+      },
+      100,
+      1,
+    );
     mongoose.set('debug', false);
 
     expect(chunked).toEqual(perRow);
@@ -256,6 +272,7 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
         chunked.push(comparable('result' in outcome ? outcome.result : outcome));
       },
       2,
+      1,
     );
 
     expect(seen).toEqual(rows);
@@ -308,4 +325,467 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
     prefetch.markTouched('example-id-lab');
     expect(prefetch.observationsForKey('researchEntity', 'example-id-lab').hit).toBe(false);
   }, 120000);
+
+  const seedIndependentLabs = async (count: number): Promise<ObservedEntityRow[]> => {
+    const sharedLead = await Researcher.create({ displayName: 'Shared Lead', archived: false });
+    const rows: ObservedEntityRow[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const slug = `example-plain-lab-${index}`;
+      const lab = await ResearchEntity.create({
+        slug,
+        name: `Example Plain Lab ${index}`,
+        kind: 'lab',
+        archived: false,
+      });
+      await seedObservation({ entityKey: slug }, 'name', `Example Plain Lab ${index} Renamed`);
+      await seedObservation({ entityId: lab._id }, 'researchAreas', [`Topic ${index}`]);
+      await seedObservation(
+        { entityKey: slug },
+        'websiteUrl',
+        `https://example-plain-lab-${index}.yale.edu/`,
+      );
+      await leadRole(lab._id, sharedLead._id);
+      rows.push({ entityType: 'researchEntity', entityKey: slug });
+    }
+    await ResearchEntity.create({
+      slug: 'dept-example-shell',
+      name: 'Example Shell Lab',
+      kind: 'lab',
+      archived: false,
+    });
+    await seedObservation({ entityKey: 'dept-example-shell' }, 'name', 'Example Shell Lab');
+    rows.push({ entityType: 'researchEntity', entityKey: 'dept-example-shell' });
+    return rows;
+  };
+
+  const resetCorpus = async () => {
+    const db = mongoose.connection.db;
+    for (const name of ['observations', 'research_entities', 'role_assignments', 'researchers']) {
+      await db?.collection(name).deleteMany({});
+    }
+  };
+
+  const byKey = (outcomes: Array<{ row: ObservedEntityRow; value: unknown }>) =>
+    outcomes
+      .map(({ row, value }) => ({ key: `${row.entityKey ?? ''}|${row.entityId ?? ''}`, value }))
+      .sort((left, right) => left.key.localeCompare(right.key));
+
+  it('runs in parallel only rows that update their own live, unmerged, stored entity (#5521)', async () => {
+    const rows = [...(await seedCorpus()), ...(await seedIndependentLabs(3))];
+    const prefetch = await MaterializationChunkPrefetch.load({
+      entityType: 'researchEntity',
+      rows,
+      readScopeFilter: materializationReadScopeFilter(),
+      entityDocs: { model: ResearchEntity, keyField: 'slug' },
+    });
+
+    const { independent, sequential } = partitionChunkForConcurrency(rows, prefetch);
+
+    expect(independent.map((row) => row.entityKey)).toEqual([
+      'example-id-lab',
+      'example-plain-lab-0',
+      'example-plain-lab-1',
+      'example-plain-lab-2',
+    ]);
+    expect(sequential).toEqual(rows.filter((row) => !independent.includes(row)));
+    expect(partitionChunkForConcurrency(rows, undefined)).toEqual({
+      independent: [],
+      sequential: rows,
+    });
+  }, 120000);
+
+  it('plans the same projection in a dry run at any concurrency (#5521)', async () => {
+    const rows = [...(await seedCorpus()), ...(await seedIndependentLabs(6))];
+    const collect = async (concurrency: number) => {
+      const outcomes: Array<{ row: ObservedEntityRow; value: unknown }> = [];
+      await materializeObservedEntitiesInChunks(
+        rows,
+        { dryRun: true },
+        (row, outcome) => {
+          outcomes.push({ row, value: comparable('result' in outcome ? outcome.result : outcome) });
+        },
+        100,
+        concurrency,
+      );
+      return byKey(outcomes);
+    };
+
+    const sequential = await collect(1);
+    expect(sequential).toHaveLength(rows.length);
+    expect(await collect(4)).toEqual(sequential);
+  }, 120000);
+
+  it('writes the same corpus at concurrency 4 as sequentially in an apply run (#5521)', async () => {
+    const seed = async () => [...(await seedCorpus()), ...(await seedIndependentLabs(6))];
+    const apply = async (concurrency: number) => {
+      await resetCorpus();
+      const rows = await seed();
+      const errors: unknown[] = [];
+      await materializeObservedEntitiesInChunks(
+        rows,
+        {},
+        (_row, outcome) => {
+          if ('error' in outcome) errors.push(outcome.error);
+        },
+        100,
+        concurrency,
+      );
+      expect(errors).toEqual([]);
+      return projectCorpus();
+    };
+
+    const sequential = await apply(1);
+    expect(await apply(4)).toEqual(sequential);
+  }, 120000);
+
+  const seedMergedSurvivors = async (count: number, hops = 1): Promise<ObservedEntityRow[]> => {
+    const rows: ObservedEntityRow[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const slug = `example-merged-survivor-${index}`;
+      const survivor = await ResearchEntity.create({
+        slug,
+        name: `Example Merged Survivor ${index}`,
+        kind: 'lab',
+        archived: false,
+      });
+      let mergedInto = survivor._id;
+      for (let hop = 0; hop < hops; hop += 1) {
+        const loserSlug = `${slug}-loser-${hop}`;
+        const loser = await ResearchEntity.create({
+          slug: loserSlug,
+          name: `Example Merged Loser ${index}.${hop}`,
+          kind: 'lab',
+          archived: true,
+          canonicalGroupId: mergedInto,
+        });
+        await seedObservation({ entityKey: loserSlug }, 'researchAreas', [`Loser Topic ${index}`], {
+          sourceName: 'dept-faculty-roster',
+        });
+        mergedInto = loser._id;
+      }
+      await seedObservation(
+        { entityKey: slug },
+        'name',
+        `Example Merged Survivor ${index} Renamed`,
+      );
+      await seedObservation({ entityId: survivor._id }, 'researchAreas', [
+        `Survivor Topic ${index}`,
+      ]);
+      rows.push({ entityType: 'researchEntity', entityKey: slug });
+    }
+    return rows;
+  };
+
+  const partitionWithMergeGroups = async (rows: ObservedEntityRow[]) => {
+    const prefetch = await MaterializationChunkPrefetch.load({
+      entityType: 'researchEntity',
+      rows,
+      readScopeFilter: materializationReadScopeFilter(),
+      entityDocs: { model: ResearchEntity, keyField: 'slug' },
+    });
+    const survivors = await ResearchEntity.find({ slug: /^example-merged-survivor-\d+$/ })
+      .select('_id')
+      .lean();
+    const mergeGroups = await listResearchEntityMergedInRowsBySurvivor(
+      survivors.map((row) => String(row._id)),
+    );
+    return partitionChunkForConcurrency(rows, prefetch, mergeGroups);
+  };
+
+  it('runs a merged survivor in parallel once its merge group is known and no sibling names it (#5555)', async () => {
+    const rows = [...(await seedMergedSurvivors(2, 2)), ...(await seedIndependentLabs(2))];
+    const { independent, sequential } = await partitionWithMergeGroups(rows);
+    expect(independent.map((row) => row.entityKey)).toEqual([
+      'example-merged-survivor-0',
+      'example-merged-survivor-1',
+      'example-plain-lab-0',
+      'example-plain-lab-1',
+    ]);
+    expect(sequential.every((row) => String(row.entityKey).startsWith('dept-'))).toBe(true);
+  }, 120000);
+
+  it('keeps a merged survivor sequential when a sibling row is keyed by any row merged into it (#5555)', async () => {
+    const survivors = await seedMergedSurvivors(2, 2);
+    const loserKeyed: ObservedEntityRow = {
+      entityType: 'researchEntity',
+      entityKey: 'example-merged-survivor-0-loser-1',
+    };
+    const loser = await ResearchEntity.findOne({ slug: 'example-merged-survivor-1-loser-0' })
+      .select('_id')
+      .lean();
+    const loserIdAnchored: ObservedEntityRow = {
+      entityType: 'researchEntity',
+      entityId: String(loser?._id),
+    };
+    const rows = [...survivors, loserKeyed, loserIdAnchored];
+    const { independent, sequential } = await partitionWithMergeGroups(rows);
+    expect(independent).toEqual([]);
+    expect(sequential).toEqual(rows);
+  }, 120000);
+
+  it('keeps a merged survivor sequential when its merge group was not loaded (#5555)', async () => {
+    const rows = await seedMergedSurvivors(1);
+    const prefetch = await MaterializationChunkPrefetch.load({
+      entityType: 'researchEntity',
+      rows,
+      readScopeFilter: materializationReadScopeFilter(),
+      entityDocs: { model: ResearchEntity, keyField: 'slug' },
+    });
+    expect(partitionChunkForConcurrency(rows, prefetch).independent).toEqual([]);
+  }, 120000);
+
+  it('writes the same corpus at concurrency 4 as sequentially with merged survivors in the chunk (#5555)', async () => {
+    const seed = async () => [
+      ...(await seedCorpus()),
+      ...(await seedMergedSurvivors(4, 2)),
+      ...(await seedIndependentLabs(4)),
+    ];
+    const apply = async (concurrency: number) => {
+      await resetCorpus();
+      const rows = await seed();
+      const errors: unknown[] = [];
+      await materializeObservedEntitiesInChunks(
+        rows,
+        {},
+        (_row, outcome) => {
+          if ('error' in outcome) errors.push(outcome.error);
+        },
+        100,
+        concurrency,
+      );
+      expect(errors).toEqual([]);
+      return projectCorpus();
+    };
+
+    const sequential = await apply(1);
+    expect(await apply(4)).toEqual(sequential);
+  }, 120000);
+
+  const seedDeptShell = async (
+    slug: string,
+    storedName: string,
+    observedName: string,
+    department: string,
+  ): Promise<ObservedEntityRow> => {
+    await ResearchEntity.create({ slug, name: storedName, kind: 'individual', archived: false });
+    await seedObservation({ entityKey: slug }, 'name', observedName, {
+      sourceName: 'dept-faculty-roster',
+      confidence: 0.7,
+    });
+    await seedObservation({ entityKey: slug }, 'departments', [department], {
+      sourceName: 'dept-faculty-roster',
+      confidence: 0.7,
+    });
+    return { entityType: 'researchEntity', entityKey: slug };
+  };
+
+  const seedLedLab = async (person: string, slug: string) => {
+    const lab = await ResearchEntity.create({
+      slug,
+      name: `${person} Lab`,
+      kind: 'lab',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    const lead = await Researcher.create({ displayName: person, archived: false });
+    await leadRole(lab._id, lead._id);
+  };
+
+  const partitionDeptChunk = async (rows: ObservedEntityRow[]) => {
+    const prefetch = await MaterializationChunkPrefetch.load({
+      entityType: 'researchEntity',
+      rows,
+      readScopeFilter: materializationReadScopeFilter(),
+      entityDocs: { model: ResearchEntity, keyField: 'slug' },
+    });
+    return partitionChunkForConcurrency(rows, prefetch);
+  };
+
+  it('lets live department-roster shells run beside each other, keyed on the person their fold reads (#5555)', async () => {
+    const first = await seedDeptShell(
+      'dept-chemistry-pat-example',
+      'Pat Example Faculty Research',
+      'Pat Example Faculty Research',
+      'Chemistry',
+    );
+    const second = await seedDeptShell(
+      'dept-physics-lee-sample',
+      'Lee Sample Faculty Research',
+      'Lee Sample Faculty Research',
+      'Physics',
+    );
+    const { sequential, deptShellPersonByRow } = await partitionDeptChunk([first, second]);
+    expect(sequential).toEqual([first, second]);
+    expect(deptShellPersonByRow?.get(first)).toBeTruthy();
+    expect(deptShellPersonByRow?.get(second)).toBeTruthy();
+    expect(deptShellPersonByRow?.get(first)).not.toBe(deptShellPersonByRow?.get(second));
+  }, 120000);
+
+  it('keys a noisy and a clean spelling of one person to the same department-roster person (#5555)', async () => {
+    const clean = await seedDeptShell(
+      'dept-chemistry-pat-example',
+      'Pat Example Faculty Research',
+      'Pat Example Faculty Research',
+      'Chemistry',
+    );
+    const noisy = await seedDeptShell(
+      'dept-physics-photo-of-pat-example',
+      'Photo of PAT EXAMPLE, PhD.',
+      'Photo of PAT EXAMPLE, PhD.',
+      'Physics',
+    );
+    const { deptShellPersonByRow } = await partitionDeptChunk([clean, noisy]);
+    expect(deptShellPersonByRow?.get(clean)).toBeTruthy();
+    expect(deptShellPersonByRow?.get(noisy)).toBe(deptShellPersonByRow?.get(clean));
+  }, 120000);
+
+  it('keeps a department-roster shell strictly sequential when a sibling names it or its observations name another person (#5555)', async () => {
+    const named = await seedDeptShell(
+      'dept-chemistry-pat-example',
+      'Pat Example Faculty Research',
+      'Pat Example Faculty Research',
+      'Chemistry',
+    );
+    const stored = await ResearchEntity.findOne({ slug: 'dept-chemistry-pat-example' })
+      .select('_id')
+      .lean();
+    const idAnchored: ObservedEntityRow = {
+      entityType: 'researchEntity',
+      entityId: String(stored?._id),
+    };
+    const renamed = await seedDeptShell(
+      'dept-physics-lee-sample',
+      'Lee Sample Faculty Research',
+      'Robin Other Faculty Research',
+      'Physics',
+    );
+    const { deptShellPersonByRow } = await partitionDeptChunk([named, idAnchored, renamed]);
+    expect([...(deptShellPersonByRow?.keys() ?? [])]).toEqual([]);
+  }, 120000);
+
+  it('overlaps only consecutive department-roster shells of different people, in order against every other row (#5555)', async () => {
+    const row = (entityKey: string): ObservedEntityRow => ({
+      entityType: 'researchEntity',
+      entityKey,
+    });
+    const [a, b, c, x, d, e] = ['a', 'b', 'c', 'x', 'd', 'e'].map(row);
+    const people = new Map([
+      [a, 'one'],
+      [b, 'two'],
+      [c, 'one'],
+      [d, 'three'],
+      [e, 'four'],
+    ]);
+    const events: string[] = [];
+    let active = 0;
+    const overlaps = new Set<string>();
+    const running = new Set<string>();
+    await runSequentialRowsWithDeptShellSpans([a, b, c, x, d, e], people, 4, async (current) => {
+      const key = String(current.entityKey);
+      for (const other of running) overlaps.add([other, key].sort().join(''));
+      running.add(key);
+      active += 1;
+      events.push(`start:${key}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      events.push(`end:${key}`);
+      active -= 1;
+      running.delete(key);
+    });
+    expect(active).toBe(0);
+    expect([...overlaps].sort()).toEqual(['ab', 'de']);
+    expect(events.indexOf('start:c')).toBeGreaterThan(events.indexOf('end:a'));
+    expect(events.indexOf('start:x')).toBeGreaterThan(events.indexOf('end:c'));
+    expect(events.indexOf('start:d')).toBeGreaterThan(events.indexOf('end:x'));
+  });
+
+  it('writes the same corpus at concurrency 4 as sequentially with department-roster shells that fold (#5555)', async () => {
+    const seed = async () => {
+      await seedLedLab('Pat Example', 'pat-example-lab');
+      await seedLedLab('Lee Sample', 'lee-sample-lab');
+      return [
+        ...(await seedCorpus()),
+        await seedDeptShell(
+          'dept-chemistry-lee-sample',
+          'Lee Sample Faculty Research',
+          'Lee Sample Faculty Research',
+          'Chemistry',
+        ),
+        await seedDeptShell(
+          'dept-chemistry-pat-example',
+          'Pat Example Faculty Research',
+          'Pat Example Faculty Research',
+          'Chemistry',
+        ),
+        await seedDeptShell(
+          'dept-chemistry-robin-unled',
+          'Robin Unled Faculty Research',
+          'Robin Unled Faculty Research',
+          'Chemistry',
+        ),
+        await seedDeptShell(
+          'dept-physics-pat-example',
+          'Pat Example Faculty Research',
+          'Pat Example Faculty Research',
+          'Physics',
+        ),
+        await seedDeptShell(
+          'dept-physics-photo-of-pat-example',
+          'Photo of PAT EXAMPLE, PhD.',
+          'Photo of PAT EXAMPLE, PhD.',
+          'Biology',
+        ),
+        ...(await seedIndependentLabs(3)),
+      ];
+    };
+    const apply = async (concurrency: number) => {
+      await resetCorpus();
+      const rows = await seed();
+      const errors: unknown[] = [];
+      await materializeObservedEntitiesInChunks(
+        rows,
+        {},
+        (_row, outcome) => {
+          if ('error' in outcome) errors.push(outcome.error);
+        },
+        100,
+        concurrency,
+      );
+      expect(errors).toEqual([]);
+      const edges = (await RoleAssignment.find({ archived: { $ne: true } })
+        .select('personId target.id role')
+        .lean()) as Array<{ target?: { id?: unknown }; role?: unknown }>;
+      const slugById = new Map(
+        (
+          (await ResearchEntity.find({}).select('slug').lean()) as Array<{
+            _id: unknown;
+            slug?: string;
+          }>
+        ).map((row) => [String(row._id), row.slug]),
+      );
+      return {
+        corpus: await projectCorpus(),
+        edges: edges.map((edge) => `${slugById.get(String(edge.target?.id))}|${edge.role}`).sort(),
+      };
+    };
+
+    const sequential = await apply(1);
+    const folded = (sequential.corpus as Array<{ slug: string; archived?: boolean }>).filter(
+      (row) => row.slug.startsWith('dept-') && row.archived,
+    );
+    expect(folded.length).toBeGreaterThan(0);
+    expect(await apply(4)).toEqual(sequential);
+  }, 180000);
+
+  it('reads concurrency from MATERIALIZE_CONCURRENCY, defaulting to 8 and falling back to sequential on an invalid value', () => {
+    expect(materializationConcurrencyFromEnv(undefined)).toBe(DEFAULT_MATERIALIZATION_CONCURRENCY);
+    expect(materializationConcurrencyFromEnv('  ')).toBe(DEFAULT_MATERIALIZATION_CONCURRENCY);
+    expect(DEFAULT_MATERIALIZATION_CONCURRENCY).toBe(8);
+    expect(materializationConcurrencyFromEnv('1')).toBe(1);
+    expect(materializationConcurrencyFromEnv('2.5')).toBe(1);
+    expect(materializationConcurrencyFromEnv('0')).toBe(1);
+    expect(materializationConcurrencyFromEnv('-3')).toBe(1);
+    expect(materializationConcurrencyFromEnv('many')).toBe(1);
+    expect(materializationConcurrencyFromEnv(' 8 ')).toBe(8);
+    expect(materializationConcurrencyFromEnv('999')).toBe(MAX_MATERIALIZATION_CONCURRENCY);
+  });
 });

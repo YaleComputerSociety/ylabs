@@ -57,7 +57,7 @@ describe('every served-DTO entry point warms the controlled vocabulary (#3817)',
 
   it.each([
     'export async function getResearchGroupDetail',
-    'export async function searchResearchGroupsViaMeili',
+    'async function searchResearchGroupsForQuery',
   ])('%s warms before it builds anything', (declaration) => {
     expect(bodyOf(declaration)).toContain('await warmServedResearchAreaVocabulary()');
   });

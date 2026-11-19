@@ -1,7 +1,17 @@
 import axios from './axios';
 import { getApiBaseUrl } from './apiBaseUrl';
+import { captureJourneyEvent } from './productAnalytics';
 
 export type LegacyResearchEventType = 'ways_in_click' | 'contact_route_click' | 'source_link_click';
+
+export const CONTACT_ROUTE_SURFACES = ['lead_card', 'reach_out'] as const;
+export type ContactRouteSurface = (typeof CONTACT_ROUTE_SURFACES)[number];
+export const CONTACT_ROUTE_SURFACE_ATTRIBUTE = 'data-contact-route-surface';
+
+export const readContactRouteSurface = (value: unknown): ContactRouteSurface | undefined =>
+  (CONTACT_ROUTE_SURFACES as readonly unknown[]).includes(value)
+    ? (value as ContactRouteSurface)
+    : undefined;
 
 export const RESEARCH_JOURNEY_EVENT_TYPES = [
   'research_search',
@@ -44,7 +54,9 @@ export type ResearchJourneyPayload =
         | 'admin_trust'
         | 'research_area'
         | 'research_type'
-        | 'hosts_undergrads';
+        | 'hosts_undergrads'
+        | 'welcomes_undergrads'
+        | 'mentors_undergrads';
     }
   | { operation: 'save' | 'remove'; surface: ResearchSaveSurface }
   | { entityCountBucket: '1' | '2' | '3-4' | '5+' }
@@ -234,7 +246,9 @@ export const setResearchAnalyticsEnabled = (enabled: boolean): void => {
 export const trackResearchEvent = async (params: TrackResearchEventParams): Promise<void> => {
   if (analyticsEnabled === false) return;
   bindUnloadFlush();
-  eventBuffer.push(buildOutgoingEvent(params));
+  const outgoing = buildOutgoingEvent(params);
+  eventBuffer.push(outgoing);
+  captureJourneyEvent(outgoing);
   if (eventBuffer.length >= RESEARCH_EVENT_MAX_BATCH) {
     await flushResearchAnalytics();
     return;

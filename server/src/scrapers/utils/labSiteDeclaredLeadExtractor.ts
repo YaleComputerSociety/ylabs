@@ -19,12 +19,12 @@
  * Candidate pages are therefore tried in turn and the first stated lead wins.
  */
 
-import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { fetchPageWithPolicy } from './httpFetch';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { LAB_SITE_DECLARED_LEAD_PROMPT, LAB_SITE_DECLARED_LEAD_PROMPT_HASH } from '../prompts';
 import { htmlToText } from '../sources/labMicrositeDescriptionLLMExtractor';
+import { postChatCompletion } from '../../utils/modelClient';
 
 export { LAB_SITE_DECLARED_LEAD_PROMPT_HASH };
 
@@ -174,7 +174,6 @@ export function declaredLeadCandidateUrls(rootUrl: string, rootHtml: string): st
 const defaultFetchPage: LabSitePageFetcher = async (url) => {
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
       timeoutMs: 10_000,
     });
     return { url: page.url, html: page.html };
@@ -184,9 +183,11 @@ const defaultFetchPage: LabSitePageFetcher = async (url) => {
 };
 
 const defaultCallLLM: DeclaredLeadLLMFn = async (input) => {
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'lab-site-declared-lead',
+    apiKey: input.apiKey,
+    timeoutMs: 30_000,
+    body: {
       model: input.model,
       response_format: { type: 'json_object' },
       reasoning_effort: DECLARED_LEAD_REASONING_EFFORT,
@@ -202,14 +203,7 @@ const defaultCallLLM: DeclaredLeadLLMFn = async (input) => {
         },
       ],
     },
-    {
-      headers: {
-        Authorization: `Bearer ${input.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 30_000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== 'string') throw new Error('LLM returned empty content');
   const parsed = JSON.parse(content) as Partial<DeclaredLeadExtraction>;

@@ -5,12 +5,18 @@ import type {
   LabRosterDisclosure,
   LabRosterUndergraduate,
 } from '../../types/labDetail';
+import { formatNewYorkCalendarDate } from '../../utils/newYorkDate';
 import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
+import { isCorroboratedPersonPageUrl } from '../../utils/yalePersonPagePrefix';
+import type { UndergraduateMemberLine } from '../../utils/undergraduateMemberEvidence';
 
 const MAX_PRESENTED_TEAM_MEMBERS = 24;
 
-const GROUPS: Array<{ role: LabMemberRole; label: string }> = [
-  { role: 'undergrad', label: 'Undergraduate researchers' },
+type TeamGroup = { role: LabMemberRole; label: string };
+
+const UNDERGRADUATE_GROUP: TeamGroup = { role: 'undergrad', label: 'Undergraduate researchers' };
+
+const OTHER_GROUPS: TeamGroup[] = [
   { role: 'postdoc', label: 'Postdoctoral researchers' },
   { role: 'grad-student', label: 'Graduate students' },
   { role: 'staff', label: 'Research staff' },
@@ -20,13 +26,6 @@ const GROUPS: Array<{ role: LabMemberRole; label: string }> = [
 
 const displayName = (member: LabMember): string =>
   member.user.displayName || [member.user.fname, member.user.lname].filter(Boolean).join(' ');
-
-const observedLabel = (value?: string): string => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return '';
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
-};
 
 const PAST_UNDERGRADUATES_SHOWN_FIRST = 6;
 
@@ -65,10 +64,44 @@ const byYearThenLastName = (
   );
 };
 
-function UndergraduateLine({ member }: { member: LabRosterUndergraduate }) {
+const memberNameKey = (value: string | undefined): string =>
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const scrollHighlightedMemberIntoView = (node: HTMLLIElement | null) => {
+  node?.scrollIntoView?.({ block: 'center' });
+};
+
+const highlightedCardClassName = (isHighlighted: boolean): string =>
+  isHighlighted
+    ? 'border-[var(--yr-gold)] bg-gold-soft'
+    : 'border-[var(--yr-line)] bg-[var(--yr-panel)]';
+
+const highlightedItemProps = (isHighlighted: boolean) => ({
+  ref: isHighlighted ? scrollHighlightedMemberIntoView : undefined,
+  'data-highlighted-member': isHighlighted || undefined,
+  'aria-current': isHighlighted ? ('true' as const) : undefined,
+});
+
+function UndergraduateLine({
+  member,
+  isHighlighted = false,
+}: {
+  member: LabRosterUndergraduate;
+  isHighlighted?: boolean;
+}) {
   const years = undergraduateYears(member);
   return (
-    <li className="flex min-w-0 items-baseline justify-between gap-3 text-sm leading-relaxed">
+    <li
+      {...highlightedItemProps(isHighlighted)}
+      className={`flex min-w-0 items-baseline justify-between gap-3 text-sm leading-relaxed ${
+        isHighlighted ? '-mx-2 rounded-control bg-gold-soft px-2 ring-1 ring-[var(--yr-gold)]' : ''
+      }`}
+    >
       <span className="min-w-0 font-medium text-ink">{member.name}</span>
       {years && <span className="shrink-0 text-xs tabular-nums text-muted">{years}</span>}
     </li>
@@ -78,13 +111,20 @@ function UndergraduateLine({ member }: { member: LabRosterUndergraduate }) {
 function UndergraduateCard({
   member,
   profileUrl,
+  isHighlighted = false,
 }: {
   member: LabRosterUndergraduate;
   profileUrl: string;
+  isHighlighted?: boolean;
 }) {
   const years = undergraduateYears(member);
   return (
-    <li className="min-w-0 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm">
+    <li
+      {...highlightedItemProps(isHighlighted)}
+      className={`min-w-0 rounded-card border px-3 py-2 text-sm ${highlightedCardClassName(
+        isHighlighted,
+      )}`}
+    >
       <a
         href={profileUrl}
         target="_blank"
@@ -103,12 +143,19 @@ function UndergraduateCard({
 
 function UndergraduateResearchers({
   undergraduates,
+  highlightedMemberName,
 }: {
   undergraduates: LabRosterUndergraduate[];
+  highlightedMemberName?: string;
 }) {
-  const [showAllPast, setShowAllPast] = useState(false);
+  const highlightedKey = memberNameKey(highlightedMemberName);
+  const isHighlighted = (member: LabRosterUndergraduate) =>
+    Boolean(highlightedKey) && memberNameKey(member.name) === highlightedKey;
   const current = undergraduates.filter((member) => member.status === 'current');
   const past = undergraduates.filter((member) => member.status === 'past').sort(byYearThenLastName);
+  const [showAllPast, setShowAllPast] = useState(
+    () => past.findIndex(isHighlighted) >= PAST_UNDERGRADUATES_SHOWN_FIRST,
+  );
   const shownPast = showAllPast ? past : past.slice(0, PAST_UNDERGRADUATES_SHOWN_FIRST);
   const withProfile = current.flatMap((member) => {
     const profileUrl = safeHttpUrl(member.profileUrl);
@@ -118,37 +165,58 @@ function UndergraduateResearchers({
 
   return (
     <div>
-      <h3 className="mb-1 text-sm font-semibold text-ink">Undergraduate researchers</h3>
       {current.length > 0 && (
-        <p className="mb-2 text-xs leading-relaxed text-muted">
-          Current undergraduates can tell you what research in this lab is like.
-        </p>
+        <>
+          <h3 className="mb-1 text-sm font-semibold text-ink">Undergraduate researchers</h3>
+          <p className="mb-2 text-xs leading-relaxed text-muted">
+            Current undergraduates can tell you what research in this lab is like.
+          </p>
+        </>
       )}
       {withProfile.length > 0 && (
         <ul className="mb-2 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
           {withProfile.map(({ member, profileUrl }) => (
-            <UndergraduateCard key={member.name} member={member} profileUrl={profileUrl} />
+            <UndergraduateCard
+              key={member.name}
+              member={member}
+              profileUrl={profileUrl}
+              isHighlighted={isHighlighted(member)}
+            />
           ))}
         </ul>
       )}
       {withoutProfile.length > 0 && (
         <ul className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
           {withoutProfile.map((member) => (
-            <UndergraduateLine key={member.name} member={member} />
+            <UndergraduateLine
+              key={member.name}
+              member={member}
+              isHighlighted={isHighlighted(member)}
+            />
           ))}
         </ul>
       )}
       {past.length > 0 && (
         <div className={current.length > 0 ? 'mt-4' : ''}>
-          <h4 className="mb-1 text-xs font-semibold text-muted">
-            Past undergraduate researchers ({past.length})
-          </h4>
+          {current.length > 0 ? (
+            <h4 className="mb-1 text-xs font-semibold text-muted">
+              Past undergraduate researchers ({past.length})
+            </h4>
+          ) : (
+            <h3 className="mb-1 text-sm font-semibold text-ink">
+              Past undergraduate researchers ({past.length})
+            </h3>
+          )}
           <ul
             id="past-undergraduate-researchers"
             className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2"
           >
             {shownPast.map((member) => (
-              <UndergraduateLine key={member.name} member={member} />
+              <UndergraduateLine
+                key={member.name}
+                member={member}
+                isHighlighted={isHighlighted(member)}
+              />
             ))}
           </ul>
           {past.length > PAST_UNDERGRADUATES_SHOWN_FIRST && (
@@ -168,12 +236,119 @@ function UndergraduateResearchers({
   );
 }
 
+const memberLineHeading = (line: UndergraduateMemberLine): string =>
+  line.status === 'current' ? 'Undergraduate researchers' : 'Past undergraduate researchers';
+
+const memberLineText = (line: UndergraduateMemberLine): string =>
+  line.status === 'current'
+    ? `${line.count} current ${line.count === 1 ? 'undergraduate' : 'undergraduates'}`
+    : 'past undergraduate researchers';
+
+const memberLinePage = (sourceUrl: string, leadPersonNames: readonly string[]) =>
+  isCorroboratedPersonPageUrl(sourceUrl, leadPersonNames)
+    ? { lists: 'The official profile lists', link: 'See the profile' }
+    : { lists: 'The lab’s own page lists', link: 'See the lab’s page' };
+
+function UndergraduateMemberLineRow({
+  line,
+  leadPersonNames,
+}: {
+  line: UndergraduateMemberLine;
+  leadPersonNames: readonly string[];
+}) {
+  const sourceUrl = safeHttpUrl(line.sourceUrl);
+  const page = memberLinePage(sourceUrl, leadPersonNames);
+  return (
+    <div>
+      <h3 className="mb-1 text-sm font-semibold text-ink">{memberLineHeading(line)}</h3>
+      <p className="text-sm leading-relaxed text-ink-soft">
+        {page.lists} {memberLineText(line)}.{' '}
+        {sourceUrl && (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel={EXTERNAL_LINK_REL}
+            className="-my-1.5 inline-block py-1.5 font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
+          >
+            {page.link}
+          </a>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function TeamMemberGroup({
+  group: { role, label },
+  members,
+  highlightedMemberName,
+}: {
+  group: TeamGroup;
+  members: LabMember[];
+  highlightedMemberName?: string;
+}) {
+  const groupedMembers = members.filter((member) => member.role === role);
+  if (groupedMembers.length === 0) return null;
+  const highlightedKey = memberNameKey(highlightedMemberName);
+  return (
+    <div>
+      <h3 className="mb-2 text-sm font-semibold text-ink">{label}</h3>
+      <ul className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+        {groupedMembers.map((member) => {
+          const name = displayName(member);
+          const isHighlighted = Boolean(highlightedKey) && memberNameKey(name) === highlightedKey;
+          const profileUrl = safeHttpUrl(member.rosterEvidence?.profileUrl);
+          const content = (
+            <>
+              <span className="block font-semibold text-ink">{name}</span>
+              {member.user.title && (
+                <span className="mt-0.5 block text-xs leading-relaxed text-muted">
+                  {member.user.title}
+                </span>
+              )}
+            </>
+          );
+          return (
+            <li
+              key={`${member.user.publicKey || name}-${member.role}`}
+              {...highlightedItemProps(isHighlighted)}
+              className={`min-w-0 rounded-card border px-3 py-2 text-sm ${highlightedCardClassName(
+                isHighlighted,
+              )}`}
+            >
+              {profileUrl ? (
+                <a
+                  href={profileUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable block min-h-11 rounded-control py-1 yr-focus-ring"
+                  aria-label={`${name}, ${label}. Open official public profile`}
+                >
+                  {content}
+                </a>
+              ) : (
+                <div className="min-h-11 py-1">{content}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export default function ResearchTeamSection({
   members,
   roster,
+  undergraduateLines = [],
+  leadPersonNames = [],
+  highlightedMemberName,
 }: {
   members: LabMember[];
   roster: LabRosterDisclosure;
+  undergraduateLines?: UndergraduateMemberLine[];
+  leadPersonNames?: readonly string[];
+  highlightedMemberName?: string;
 }) {
   const undergraduates = roster.undergraduates ?? [];
   const listsCurrentUndergraduates = undergraduates.some((member) => member.status === 'current');
@@ -181,11 +356,18 @@ export default function ResearchTeamSection({
     .filter((member) => Boolean(member.rosterEvidence))
     .filter((member) => !(listsCurrentUndergraduates && member.role === 'undergrad'))
     .slice(0, MAX_PRESENTED_TEAM_MEMBERS);
-  if (teamMembers.length === 0 && undergraduates.length === 0) return null;
-  const hasCurrentTeam = teamMembers.length > 0 || listsCurrentUndergraduates;
+  if (teamMembers.length === 0 && undergraduates.length === 0 && undergraduateLines.length === 0) {
+    return null;
+  }
+  const hasCurrentTeam =
+    teamMembers.length > 0 ||
+    listsCurrentUndergraduates ||
+    undergraduateLines.some((line) => line.status === 'current');
+  const currentUndergraduateLines = undergraduateLines.filter((line) => line.status === 'current');
+  const pastUndergraduateLines = undergraduateLines.filter((line) => line.status === 'past');
   const sourceUrl = safeHttpUrl(roster.sourceUrl);
   const alumniSourceUrl = safeHttpUrl(roster.alumniSourceUrl);
-  const dateLabel = observedLabel(roster.observedAt);
+  const dateLabel = formatNewYorkCalendarDate(roster.observedAt);
 
   return (
     <section aria-labelledby="research-team-heading">
@@ -213,85 +395,74 @@ export default function ResearchTeamSection({
             until its freshness window expires.
           </p>
         )}
-        {undergraduates.length > 0 && <UndergraduateResearchers undergraduates={undergraduates} />}
-        {GROUPS.map(({ role, label }) => {
-          const groupedMembers = teamMembers.filter((member) => member.role === role);
-          if (groupedMembers.length === 0) return null;
-          return (
-            <div key={role}>
-              <h3 className="mb-2 text-sm font-semibold text-ink">{label}</h3>
-              <ul className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-                {groupedMembers.map((member) => {
-                  const name = displayName(member);
-                  const profileUrl = safeHttpUrl(member.rosterEvidence?.profileUrl);
-                  const content = (
-                    <>
-                      <span className="block font-semibold text-ink">{name}</span>
-                      {member.user.title && (
-                        <span className="mt-0.5 block text-xs leading-relaxed text-muted">
-                          {member.user.title}
-                        </span>
-                      )}
-                    </>
-                  );
-                  return (
-                    <li
-                      key={`${member.user.publicKey || name}-${member.role}`}
-                      className="min-w-0 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm"
-                    >
-                      {profileUrl ? (
-                        <a
-                          href={profileUrl}
-                          target="_blank"
-                          rel={EXTERNAL_LINK_REL}
-                          className="yr-pressable block min-h-11 rounded-control py-1 yr-focus-ring"
-                          aria-label={`${name}, ${label}. Open official public profile`}
-                        >
-                          {content}
-                        </a>
-                      ) : (
-                        <div className="min-h-11 py-1">{content}</div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          );
-        })}
-        <p className="text-xs leading-relaxed text-muted">
-          {undergraduates.length > 0 && teamMembers.length > 0
-            ? 'Other members are shown for team context only.'
-            : undergraduates.length > 0
-              ? 'Listed from the lab’s own page.'
-              : 'Membership is shown for team context only. It is not a recommendation to contact an individual.'}
-          {sourceUrl && (
-            <>
-              {' '}
-              <a
-                href={sourceUrl}
-                target="_blank"
-                rel={EXTERNAL_LINK_REL}
-                className="font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
-              >
-                Official roster source
-              </a>
-            </>
-          )}
-          {alumniSourceUrl && (
-            <>
-              {' · '}
-              <a
-                href={alumniSourceUrl}
-                target="_blank"
-                rel={EXTERNAL_LINK_REL}
-                className="font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
-              >
-                Alumni page
-              </a>
-            </>
-          )}
-        </p>
+        {currentUndergraduateLines.map((line) => (
+          <UndergraduateMemberLineRow
+            key={line.status}
+            line={line}
+            leadPersonNames={leadPersonNames}
+          />
+        ))}
+        <TeamMemberGroup
+          group={UNDERGRADUATE_GROUP}
+          members={teamMembers}
+          highlightedMemberName={highlightedMemberName}
+        />
+        {undergraduates.length > 0 && (
+          <UndergraduateResearchers
+            undergraduates={undergraduates}
+            highlightedMemberName={highlightedMemberName}
+          />
+        )}
+        {pastUndergraduateLines.map((line) => (
+          <UndergraduateMemberLineRow
+            key={line.status}
+            line={line}
+            leadPersonNames={leadPersonNames}
+          />
+        ))}
+        {OTHER_GROUPS.map((group) => (
+          <TeamMemberGroup
+            key={group.role}
+            group={group}
+            members={teamMembers}
+            highlightedMemberName={highlightedMemberName}
+          />
+        ))}
+        {(teamMembers.length > 0 || undergraduates.length > 0) && (
+          <p className="text-xs leading-relaxed text-muted">
+            {undergraduates.length > 0 && teamMembers.length > 0
+              ? 'Other members are shown for team context only.'
+              : undergraduates.length > 0
+                ? 'Listed from the lab’s own page.'
+                : 'Membership is shown for team context only. It is not a recommendation to contact an individual.'}
+            {sourceUrl && (
+              <>
+                {' '}
+                <a
+                  href={sourceUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="-my-1.5 inline-block py-1.5 font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
+                >
+                  Official roster source
+                </a>
+              </>
+            )}
+            {alumniSourceUrl && (
+              <>
+                {' · '}
+                <a
+                  href={alumniSourceUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="-my-1.5 inline-block py-1.5 font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
+                >
+                  Alumni page
+                </a>
+              </>
+            )}
+          </p>
+        )}
         {roster.truncated && (
           <p className="text-xs text-muted">Additional verified members are not shown here.</p>
         )}

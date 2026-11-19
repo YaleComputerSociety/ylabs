@@ -11,6 +11,7 @@ import {
   emptySuccessorRefusal,
   goldCarryRefusal,
   parseCaptureArgs,
+  retireRefusal,
   scopeOfStoredBenchmark,
   supersedeRefusal,
 } from '../laneBenchmarkCapture';
@@ -206,5 +207,58 @@ describe('emptySuccessorRefusal', () => {
   it('allows a recapture that plans values, or one replacing a benchmark that planned none', () => {
     expect(emptySuccessorRefusal('example-old', 2, 1)).toBeUndefined();
     expect(emptySuccessorRefusal('example-old', 0, 0)).toBeUndefined();
+  });
+});
+
+describe('retiring a benchmark whose scope its lane no longer reaches (#4776)', () => {
+  const reason = '--reason=the lane no longer targets either row in this scope';
+
+  it('takes only --id and a reason, and stays a dry run by default', () => {
+    const args = parseCaptureArgs(['--retire', '--id=example-old', reason]);
+    expect(args.retire).toBe(true);
+    expect(args.benchmarkId).toBe('example-old');
+    expect(args.retireReason).toBe('the lane no longer targets either row in this scope');
+    expect(args.dryRun).toBe(true);
+  });
+
+  it('refuses a missing or too short reason', () => {
+    expect(() => parseCaptureArgs(['--retire', '--id=example-old'])).toThrow(/--reason/);
+    expect(() => parseCaptureArgs(['--retire', '--id=example-old', '--reason=stale'])).toThrow(
+      /--reason/,
+    );
+  });
+
+  it('refuses any capture or successor flag beside --retire', () => {
+    for (const extra of [
+      '--recapture=example-older',
+      '--mark-successor-of=example-older',
+      '--source=lab-microsite-undergrad-llm',
+      '--only=a-key',
+      '--limit=5',
+      '--without-gold',
+    ]) {
+      expect(() => parseCaptureArgs(['--retire', '--id=example-old', reason, extra])).toThrow(
+        /--retire captures nothing/,
+      );
+    }
+  });
+
+  it('refuses --reason without --retire', () => {
+    expect(() => parseCaptureArgs([...base, reason])).toThrow(/--reason applies only to --retire/);
+  });
+
+  it('refuses a missing, already retired, or superseded benchmark', () => {
+    expect(retireRefusal(null, undefined, 'example-old')).toMatch(/No benchmark example-old/);
+    expect(
+      retireRefusal(
+        { benchmarkId: 'example-old', retiredAt: new Date() },
+        undefined,
+        'example-old',
+      ),
+    ).toMatch(/already retired/);
+    expect(retireRefusal({ benchmarkId: 'example-old' }, 'example-new', 'example-old')).toMatch(
+      /superseded by example-new/,
+    );
+    expect(retireRefusal({ benchmarkId: 'example-old' }, undefined, 'example-old')).toBeNull();
   });
 });

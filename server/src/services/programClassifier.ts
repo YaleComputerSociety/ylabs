@@ -4,7 +4,10 @@ import type {
   ProgramKind,
   ProgramRole,
 } from '../models/fellowship';
-import { isDepartmentResearchGuidancePage } from './departmentResearchGuidance';
+import {
+  isDepartmentResearchGuidancePage,
+  isDepartmentSeniorEssayGuidancePage,
+} from './departmentResearchGuidance';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 
 export interface ProgramClassificationInput {
@@ -50,6 +53,7 @@ const STARTS_RESEARCH_KINDS: ReadonlySet<ProgramKind> = new Set([
   'RA_PROGRAM',
   'MENTOR_MATCHING',
   'DEPARTMENT_RESEARCH_GUIDE',
+  'DEPARTMENT_SENIOR_ESSAY_GUIDE',
 ]);
 
 const FUNDS_RESEARCH_KINDS: ReadonlySet<ProgramKind> = new Set([
@@ -165,6 +169,7 @@ const MENTOR_REQUIREMENT_SENTENCE = new RegExp(
     `\\bmust have as (?:a |an )?${MENTOR_NOUN} (?:a )?(?:member of the )?faculty\\b`,
     `\\bagreed to (?:be|serve as) (?:the |your |a )?${MENTOR_NOUN}\\b`,
     `\\b(?:written )?commitment from (?:a |an |the )?(?:yale )?faculty member\\b`,
+    `\\bcommitment of (?:the |your |a )?(?:yale )?faculty ${MENTOR_NOUN}\\b`,
     `\\bname of (?:your|the) (?:faculty )?${MENTOR_NOUN}\\b`,
     `\\bdeveloped with (?:a |an )?(?:potential )?${MENTOR_ROLE}\\b`,
     `\\b(?:signature|approval|endorsement) (?:of|from) (?:the applicant['’]s |your |a |an |the )?[^.]{0,60}?${MENTOR_NOUN}\\b[^.]{0,20}\\b(?:is |are )?required\\b`,
@@ -173,9 +178,9 @@ const MENTOR_REQUIREMENT_SENTENCE = new RegExp(
     `\\bmust be supervised by (?:a |an |the )?(?:members? of the )?(?:yale )?faculty\\b`,
     `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN} who (?:will|would) (?:supervise|oversee|advise)\\b`,
     `\\b${MENTOR_NOUN}\\b[^.]{0,40}\\b(?:has |have )?agreed to (?:work with|supervise|advise|oversee)\\b`,
-    `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN}(?:['’]s)? (?:letter of )?(?:reference|letter|statement)[^.]{0,30}\\b(?:stipulat|endors|approv|support)\\w*[^.]{0,20}\\b(?:your |the |their |a )?(?:proposed )?(?:project|essay|research)\\b`,
+    `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN}(?:['’]s)? (?:letter of )?(?:reference|letter|statement)[^.]{0,30}\\b(?:stipulat|endors|approv|support)\\w*[^.]{0,40}\\b(?:your |the |their |a )?(?:proposed )?(?:project|essay|research)\\b`,
     `\\bletter approving the (?:proposed )?(?:project|research) from (?:a |the )?(?:member of the )?(?:yale )?faculty\\b`,
-    `\\bletters? (?:(?:of|or) (?:recommendation|reference|support) )?\\(?from (?:a |an |the )?(?:yale )?faculty (?:members?|${MENTOR_NOUN})\\b[^.]{0,60}?\\b(?:relat|relevant|knowledg|familiar|connected|involved|supervis|support)\\w*[^.]{0,30}?\\b(?:your |the |their |this )?(?:proposed (?:project|research)|project|essay|proposal)\\b`,
+    `\\bletters? (?:(?:of|or) (?:recommendation|reference|support) )?\\(?from (?:a |an |the |your )?(?:yale )?faculty (?:members?|${MENTOR_NOUN})\\b[^.]{0,60}?\\b(?:relat|relevant|knowledg|familiar|connected|involved|supervis|support)\\w*[^.]{0,30}?\\b(?:your |the |their |this )?(?:proposed (?:project|research)|project|essay|proposal)\\b`,
     `\\bfrom (?:your|their|the applicant['’]s) (?:own )?(?:senior essay|senior thesis|senior project|thesis|essay|project|research|dissertation) (?:${MENTOR_NOUN}|directors?)\\b`,
   ].join('|'),
   'i',
@@ -250,7 +255,7 @@ const GRADUATE_PROFESSIONAL_AUDIENCE =
 // An audience of researchers who are not Yale students at all is out of scope for a Yale
 // student research surface, so it stays archive review even when the record is research-shaped.
 const NON_YALE_STUDENT_AUDIENCE =
-  /historians, medical practitioners, and other researchers outside of yale|researchers outside of yale/;
+  /historians, medical practitioners, and other researchers outside of yale|researchers outside of yale|(?<!non-)(?<!non )\byale students are (?:not eligible|ineligible)(?: to apply)?(?=[.;,]|$)/;
 
 const GRADUATE_TRAVEL_RESEARCH =
   /\btravel\b|\babroad\b|\boverseas\b|\bfield research\b|\bfieldwork\b/;
@@ -383,6 +388,28 @@ function publishedOnDepartmentPage(input: ProgramClassificationInput): boolean {
     .split('/')
     .filter(Boolean)
     .some((segment) => DEPARTMENT_PAGE_PATH_SEGMENT.test(segment));
+}
+
+/**
+ * Whether a summer program's own text says admitted students are placed with a mentor, an
+ * adviser or a lab (#6455). Mentor matching is a claim about the program, so it needs the
+ * page to state it; a page that only describes the research is a program a student applies to.
+ */
+const MENTOR_PLACEMENT = new RegExp(
+  [
+    String.raw`\b(?:matched|paired|assigned|placed)\b[^.]{0,80}?\b(?:mentors?|advis[eo]rs?|lab(?:orator(?:y|ies))?s?|faculty|research\s+groups?|groups?|investigators?)\b`,
+    String.raw`\bunder the (?:advisement|supervision|mentorship|guidance|direction) of\b`,
+    String.raw`\bwork(?:s|ing)?\s+(?:closely\s+)?(?:with|alongside)\s+(?:a|an|their|the)?\s*(?:yale\s+)?(?:faculty(?:\s+members?)?|mentors?|principal\s+investigators?|pis?)\b`,
+    String.raw`\b(?:research|work)\s+in\s+the\s+lab(?:oratory)?\s+of\b`,
+    String.raw`\bjoin(?:s|ing)?\s+(?:a|an|their|the)?\s*(?:host\s+)?lab(?:oratory)?\b`,
+    String.raw`\bhost\s+lab(?:oratory|oratories|s)?\b`,
+    String.raw`\bmentored research\b`,
+    String.raw`\b(?:summer|research|faculty) mentors?\b`,
+  ].join('|'),
+);
+
+function statesMentorPlacement(lowerText: string): boolean {
+  return MENTOR_PLACEMENT.test(lowerText);
 }
 
 function structuredProgram(overrides: Partial<KindClassification>): KindClassification {
@@ -610,6 +637,21 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
     };
   }
 
+  if (isDepartmentSeniorEssayGuidancePage(input)) {
+    return {
+      programCategory: 'RECURRING_PROGRAM',
+      programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+      entryMode: 'CONTACT_FACULTY',
+      studentFacingCategory: 'Senior essay guidance',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      bestNextStep:
+        "Read the department's senior essay guidance to learn how its majors choose a topic and find a faculty adviser.",
+      prepSteps: ['Senior essay topic', 'Faculty adviser fit'],
+    };
+  }
+
   if (
     RESEARCH_AWARD_TITLE.test(titleLower) &&
     (RESEARCH_CAREER_AWARD_PROSE.test(proseForProgram(input).toLowerCase()) ||
@@ -698,18 +740,27 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
       /must (?:first )?(?:identify|secure|arrange|have|contact)[^.]{0,40}(?:faculty )?(?:mentor|adviser|advisor)\b/.test(
         lower,
       );
+    const matchesMentor =
+      !mentorFirst &&
+      statesMentorPlacement(`${lower} ${normalizeText(input.fullSourceDescription).toLowerCase()}`);
     return structuredProgram({
       programCategory: 'SUMMER_RESEARCH_PROGRAM',
-      programKind: mentorFirst ? 'STRUCTURED_PROGRAM' : 'MENTOR_MATCHING',
-      entryMode: mentorFirst ? 'SECURE_MENTOR_THEN_APPLY' : 'DIRECT_FACULTY_MATCHING',
+      programKind: matchesMentor ? 'MENTOR_MATCHING' : 'STRUCTURED_PROGRAM',
+      entryMode: mentorFirst
+        ? 'SECURE_MENTOR_THEN_APPLY'
+        : matchesMentor
+          ? 'DIRECT_FACULTY_MATCHING'
+          : 'APPLY_TO_PROGRAM',
       studentFacingCategory: 'Summer research program (REU)',
       requiresMentorBeforeApply: mentorFirst,
-      mentorMatching: !mentorFirst,
+      mentorMatching: matchesMentor,
       undergraduateOnly: true,
       programDates: 'Summer',
       bestNextStep: mentorFirst
         ? 'Identify a Yale faculty mentor in the program area, then apply to the summer research program.'
-        : 'Apply to the summer research program; admitted students are matched with a Yale faculty mentor.',
+        : matchesMentor
+          ? 'Apply to the summer research program; admitted students are matched with a research mentor.'
+          : 'Apply to the summer research program through its official application.',
       prepSteps: mentorFirst
         ? ['Faculty mentor', 'Research interests', 'Official application']
         : ['Research interests', 'Official application'],

@@ -61,6 +61,7 @@ import { OrgUnit } from '../../models/orgUnit';
 import { ResearchEntity } from '../../models/researchEntity';
 import { resetOrgUnitCanonicalizerCache } from '../../scrapers/orgUnitCanonicalization';
 import { searchResearchGroupsViaMeili } from '../../services/researchGroupService';
+import { clearResearchFilterVocabularyCache } from '../../services/researchFilterVocabulary';
 import { runOrgUnitBackfill } from '../backfillResearchEntityOrgUnits';
 
 const MEDICINE = 'Yale School of Medicine';
@@ -182,6 +183,7 @@ describe('the browse school dropdown stops offering a campus or a center (#2277)
       db.collection('org_units').deleteMany({}),
     ]);
     resetOrgUnitCanonicalizerCache();
+    clearResearchFilterVocabularyCache();
 
     const medicine = await OrgUnit.create({
       slug: 'yale-school-of-medicine',
@@ -237,7 +239,8 @@ describe('the browse school dropdown stops offering a campus or a center (#2277)
       { slug: 'facet-canonical-lab-one', school: PUBLIC_HEALTH },
       { slug: 'facet-center-lab-one', school: PUBLIC_HEALTH },
     ]);
-    expect(await servedBySchoolFilter(CAMPUS)).toEqual([]);
+    const campusFiltered = await searchResearchGroupsViaMeili('', { school: [CAMPUS] }, 1, 24);
+    expect(campusFiltered.appliedFilters).toEqual({ school: [] });
   });
 
   it('reports the rewritten rows the index refused as sync failures (#3726)', async () => {

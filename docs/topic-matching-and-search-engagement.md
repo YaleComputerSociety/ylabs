@@ -10,8 +10,17 @@ Subjects are inferred at read time only from existing source-backed program fiel
 An inferred subject is a discovery aid, not a claim that an operator curated the program.
 Programs with no supported topic evidence receive no inferred subjects.
 
-A program text query also widens a student's word for their year to the value the sources store: `freshman`, `freshmen`, and `first year` add `first-year`, and `sophomores` adds `sophomore` (`yearOfStudyAliasesForQuery`, #4369).
-`journey:eval --case=programs-student-year-words-reach-sourced-year` checks that those words serve every row `first-year` serves.
+A program query reads a student's word for their year as the eligibility the program states, not as text (`statedYearsInQuery` in `programSearchRelevance.ts`, #6397).
+`first-year`, `first year`, `freshman` and `freshmen` name `First-Year Student`, and `sophomore(s)`, `junior(s)` and `senior(s)` name their years; the year words leave the text match, a program whose stated `yearOfStudy` excludes the year is never returned for that query (it stays listed and visible everywhere else), one stating it ranks above one that states no year, and a query of only year words returns the programs stating them, then those stating no year, so a typed year serves the same set as the year filter (#5235).
+A rising year is read the way the sources file it, under the year before it (`rising juniors` names `Sophomore`), and `rising freshmen` or `rising first-year` names no stated year and stays ordinary words.
+`rising` carries across a list of years, so `rising juniors and seniors` names `Sophomore` and `Junior`.
+Before #6397 the words matched program text, so `first-year` served 14 of the 75 programs stating that year and 4 that exclude it; through the served route it now serves 75 of 75 and none that exclude it.
+`journey:eval --case=programs-student-year-words-reach-sourced-year` checks that `freshman` and `freshmen` serve every row `first-year` serves, and `--case=programs-year-words-serve-the-stated-year` checks that each year query serves every row stating that year and none whose stated years exclude it.
+Pay, funding and thesis wording works the same way (#6398), with pay and funding as two intents: `paid`, `stipend` and their kin restrict results to programs with a stated `awardAmount` or a `compensationSummary` naming pay, while `funded`, `funding` and `grant` restrict them to programs that offer funding by kind or role or state pay; neither reads prose, and `thesis` and `essay` match each other.
+A program whose own title carries the typed pay or funding word also answers it, so a search for a program by its name still finds it.
+Before #6398, `paid` returned 6 programs and `senior thesis` reached 1 of the 17 senior-thesis funding programs; through the served route `paid` now returns all 112 programs stating pay and none without it, and `senior thesis` and `senior essay` each reach 17 of 17.
+`funded` moves from 122 text matches to the 147 programs that offer funding: 27 funds whose text never says "funded" join, including the amountless "funding when awarded" funds that `paid` leaves out, and 2 mentoring programs that were matched only by "funded by" a donor leave.
+`journey:eval --case=programs-pay-and-thesis-words-serve-the-stated-field` checks it.
 
 The same taxonomy normalizes saved-plan research areas and research-home names for fellowship matching.
 Topic overlap contributes to the match score alongside compensation, fellowship-compatible evidence, department overlap, application-route evidence, and cycle status.
@@ -79,3 +88,8 @@ The same holds for search success (#4007): engaged searches, returned-but-ignore
 Without that, an outage alone lowers Search success, because a degraded search that returned nothing cannot be engaged, and the low-result list can surface a query whose only low counts came from the fallback.
 The client `research_search` event reports the same case as the `degraded` outcome rather than `zero_results`, and the research page replaces its coverage-gap recovery with a limited-search notice.
 Attribution is computed from existing bounded analytics events and does not copy query text or direct contact information onto action events.
+
+## Query length
+
+Live research searches are short: of 997 Production searches from 2026-07 to 2026-11-17, 94% had one or two words and 1.6% had four or more, so a retrieval change aimed at long goal phrasings was not built (#6421).
+Re-measure the word-count share monthly from `analytics_events` (`eventType: 'search'`), returning counts only and never query text, before reopening that decision.

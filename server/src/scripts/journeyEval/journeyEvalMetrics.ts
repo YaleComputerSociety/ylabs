@@ -1,10 +1,3 @@
-import { createHash } from 'crypto';
-import {
-  UNDERGRAD_EVIDENCE_VERDICTS,
-  type UndergradEvidenceJudgement,
-  type UndergradEvidenceVerdict,
-} from './journeyEvalJudgements';
-
 export type InvariantStatus = 'pass' | 'fail' | 'inconclusive';
 
 export interface InvariantResult {
@@ -294,6 +287,91 @@ export function tallyCreativePracticeLabels(
   };
 }
 
+export interface FilterBadgeTally {
+  filterTotal: number;
+  served: number;
+  withoutBadge: number;
+}
+
+export interface FilterBadgeInvariant {
+  id: string;
+  title: string;
+}
+
+export function checkFilterRowsServeTheirBadge(
+  invariant: FilterBadgeInvariant,
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const { id, title } = invariant;
+
+  if (tally.served === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The filter served no row, so zero rows without the badge would be a green signal over an empty population',
+      { ...tally },
+    );
+  }
+
+  if (tally.withoutBadge > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed during the walk, so a row may lack the badge only because it was written after its index document',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+
+  return buildInvariant(id, title, tally.withoutBadge === 0, { ...tally });
+}
+
+export const checkWelcomesFilterServesTheBadge = (
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult =>
+  checkFilterRowsServeTheirBadge(
+    {
+      id: 'welcomes-filter-rows-serve-the-badge',
+      title: 'Every row the "Taking undergrads now" filter returns serves the welcomes badge',
+    },
+    tally,
+    corpusBefore,
+    corpusAfter,
+  );
+
+export const checkHostedFilterServesTheBadge = (
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult =>
+  checkFilterRowsServeTheirBadge(
+    {
+      id: 'hosted-filter-rows-serve-the-badge',
+      title: 'Every row the "Has had undergrads before" filter returns serves the hosted badge',
+    },
+    tally,
+    corpusBefore,
+    corpusAfter,
+  );
+
+export const checkAdvisesFilterServesAMentorsEntry = (
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult =>
+  checkFilterRowsServeTheirBadge(
+    {
+      id: 'advises-filter-rows-serve-a-mentors-entry',
+      title: 'Every row the "Advises undergrad research" filter returns serves a mentors entry',
+    },
+    tally,
+    corpusBefore,
+    corpusAfter,
+  );
+
 export function checkCreativePracticeLabelAttribution(
   tally: CreativePracticeLabelTally,
   corpusBefore: CorpusFingerprint,
@@ -322,6 +400,105 @@ export function checkCreativePracticeLabelAttribution(
   }
 
   return buildInvariant(id, title, tally.disagreeing === 0, { ...tally });
+}
+
+export interface TypeBucketTally {
+  bucket: string;
+  facetCount: number;
+  filterTotal: number;
+  served: number;
+  mislabelled: number;
+  attributedToStaleIndex: number;
+}
+
+export interface TypeBucketRead {
+  tallies: readonly TypeBucketTally[];
+  indexLacksResearchType: boolean;
+  leadNamesUnavailable: boolean;
+}
+
+const INDEX_LACKS_RESEARCH_TYPE =
+  'The live index does not declare researchType filterable, so the Type filter answered on entityType and creative practice was not selectable';
+
+export function checkTypeBucketsServeTheirLabel(
+  read: TypeBucketRead,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'type-bucket-rows-serve-its-label';
+  const title =
+    'Every row under Type = Creative practice serves the creative practice label, and no row under Faculty research does';
+  const detail = { tallies: read.tallies };
+
+  if (read.indexLacksResearchType) {
+    return buildInconclusiveInvariant(id, title, INDEX_LACKS_RESEARCH_TYPE, detail);
+  }
+  if (read.tallies.some((tally) => tally.served === 0)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'A Type bucket served no row, so zero mislabelled rows would be a green signal over an empty population',
+      detail,
+    );
+  }
+
+  const unexplained = read.tallies.reduce(
+    (sum, tally) => sum + tally.mislabelled - tally.attributedToStaleIndex,
+    0,
+  );
+  if (unexplained > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed during the walk, so a row may disagree only because it was written after its index document',
+      { ...detail, unexplained, corpusBefore, corpusAfter },
+    );
+  }
+  if (unexplained > 0 && read.leadNamesUnavailable) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The lead-name read failed, so a mislabelled row could not be attributed',
+      { ...detail, unexplained },
+    );
+  }
+  if (unexplained === 0 && read.tallies.some((tally) => tally.attributedToStaleIndex > 0)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'Every mislabelled row is indexed under a research type its stored row no longer derives, so the index is behind the corpus; re-sync it',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, unexplained === 0, { ...detail, unexplained });
+}
+
+export function checkTypeBucketCountsAgree(
+  read: TypeBucketRead,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'type-bucket-count-is-its-filtered-total';
+  const title =
+    'The Creative practice and Faculty research facet counts equal the totals their filters return';
+  const disagreements = read.tallies.filter((tally) => tally.facetCount !== tally.filterTotal);
+  const detail = {
+    tallies: read.tallies,
+    disagreements: disagreements.map((tally) => tally.bucket),
+  };
+
+  if (read.indexLacksResearchType) {
+    return buildInconclusiveInvariant(id, title, INDEX_LACKS_RESEARCH_TYPE, detail);
+  }
+  if (disagreements.length > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed between the facet read and the filtered walks, so their counts describe different corpora',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, disagreements.length === 0, detail);
 }
 
 export type SurvivorWebsiteAttribution =
@@ -594,205 +771,17 @@ export function checkQueryRelevance(
   return buildInvariant(id, title, score.relevant >= minRelevant, { ...score, minRelevant });
 }
 
-export function checkExpectedNoResults(query: string, servedTotal: number): InvariantResult {
+export function checkExpectedNoResults(
+  query: string,
+  servedTotal: number,
+  searchedWords: readonly string[],
+): InvariantResult {
   return buildInvariant(
     `query-returns-nothing:${query}`,
     `A search for "${query}" legitimately returns nothing rather than erroring`,
     servedTotal === 0,
-    { query, served: servedTotal },
+    { query, served: servedTotal, searchedWords: [...searchedWords] },
   );
-}
-
-export interface ProportionInterval {
-  low: number;
-  high: number;
-  z: number;
-}
-
-const Z_95 = 1.959964;
-
-const roundTo4 = (value: number): number => Number(value.toFixed(4));
-
-export function wilsonInterval(
-  successes: number,
-  trials: number,
-  z: number = Z_95,
-): ProportionInterval | null {
-  if (trials <= 0) return null;
-  const proportion = successes / trials;
-  const zSquared = z * z;
-  const denominator = 1 + zSquared / trials;
-  const centre = proportion + zSquared / (2 * trials);
-  const margin =
-    z * Math.sqrt((proportion * (1 - proportion)) / trials + zSquared / (4 * trials * trials));
-  return {
-    low: roundTo4(Math.max(0, (centre - margin) / denominator)),
-    high: roundTo4(Math.min(1, (centre + margin) / denominator)),
-    z,
-  };
-}
-
-export const fingerprintQuote = (quote: string): string =>
-  createHash('sha256').update(quote.replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 16);
-
-const seededDrawRank = (seed: string, rowKey: string): string =>
-  createHash('sha256').update(`${seed}:${rowKey}`).digest('hex');
-
-export function drawSeededSample(
-  rowKeys: readonly string[],
-  seed: string,
-  sampleSize: number,
-): string[] {
-  return [...new Set(rowKeys)]
-    .map((rowKey) => ({ rowKey, rank: seededDrawRank(seed, rowKey) }))
-    .sort((left, right) => (left.rank < right.rank ? -1 : left.rank > right.rank ? 1 : 0))
-    .slice(0, Math.max(0, sampleSize))
-    .map((entry) => entry.rowKey);
-}
-
-export const fingerprintPopulation = (rowKeys: readonly string[]): string =>
-  createHash('sha256')
-    .update([...new Set(rowKeys)].sort().join('\n'))
-    .digest('hex')
-    .slice(0, 16);
-
-export interface UndergradEvidenceServedRow {
-  rowKey: string;
-  quoteFingerprint: string;
-}
-
-export interface UndergradEvidenceJudgementScore {
-  population: number;
-  drawn: number;
-  judged: number;
-  unjudged: number;
-  judgementForAChangedQuote: number;
-  judgementsOutsideTheDraw: number;
-  verdicts: Record<UndergradEvidenceVerdict, number>;
-  verifiable: number;
-  correct: number;
-  badgePrecision: number;
-  badgePrecisionInterval: ProportionInterval | null;
-  grounded: number;
-  laneGroundingPrecision: number;
-  laneGroundingPrecisionInterval: ProportionInterval | null;
-  badgeWordingJudged: number;
-  badgeWordingBacked: number;
-  badgeWordingPrecision: number;
-  badgeWordingInterval: ProportionInterval | null;
-}
-
-const emptyVerdictTally = (): Record<UndergradEvidenceVerdict, number> =>
-  Object.fromEntries(UNDERGRAD_EVIDENCE_VERDICTS.map((verdict) => [verdict, 0])) as Record<
-    UndergradEvidenceVerdict,
-    number
-  >;
-
-export function scoreUndergradEvidenceJudgements(
-  population: readonly UndergradEvidenceServedRow[],
-  judgements: readonly UndergradEvidenceJudgement[],
-  seed: string,
-  sampleSize: number,
-): UndergradEvidenceJudgementScore {
-  const fingerprintByRow = new Map(population.map((row) => [row.rowKey, row.quoteFingerprint]));
-  const judgementByRow = new Map(judgements.map((judgement) => [judgement.rowKey, judgement]));
-  const drawn = drawSeededSample([...fingerprintByRow.keys()], seed, sampleSize);
-  const drawnSet = new Set(drawn);
-
-  const verdicts = emptyVerdictTally();
-  let unjudged = 0;
-  let judgementForAChangedQuote = 0;
-  let badgeWordingJudged = 0;
-  let badgeWordingBacked = 0;
-
-  for (const rowKey of drawn) {
-    const judgement = judgementByRow.get(rowKey);
-    if (!judgement?.verdict) {
-      unjudged += 1;
-      continue;
-    }
-    if (judgement.quoteFingerprint !== fingerprintByRow.get(rowKey)) {
-      judgementForAChangedQuote += 1;
-      continue;
-    }
-    verdicts[judgement.verdict] += 1;
-    if (
-      judgement.verdict !== 'stale_or_unreachable' &&
-      judgement.backsHostedBadgeWording !== undefined
-    ) {
-      badgeWordingJudged += 1;
-      if (judgement.backsHostedBadgeWording) badgeWordingBacked += 1;
-    }
-  }
-
-  const judged = Object.values(verdicts).reduce((total, count) => total + count, 0);
-  const verifiable = judged - verdicts.stale_or_unreachable;
-  const correct = verdicts.correct;
-  const grounded = verifiable - verdicts.not_grounded;
-
-  return {
-    population: fingerprintByRow.size,
-    drawn: drawn.length,
-    judged,
-    unjudged,
-    judgementForAChangedQuote,
-    judgementsOutsideTheDraw: judgements.filter((judgement) => !drawnSet.has(judgement.rowKey))
-      .length,
-    verdicts,
-    verifiable,
-    correct,
-    badgePrecision: asRate(correct, verifiable),
-    badgePrecisionInterval: wilsonInterval(correct, verifiable),
-    grounded,
-    laneGroundingPrecision: asRate(grounded, verifiable),
-    laneGroundingPrecisionInterval: wilsonInterval(grounded, verifiable),
-    badgeWordingJudged,
-    badgeWordingBacked,
-    badgeWordingPrecision: asRate(badgeWordingBacked, badgeWordingJudged),
-    badgeWordingInterval: wilsonInterval(badgeWordingBacked, badgeWordingJudged),
-  };
-}
-
-export interface QuoteAttributionObservation {
-  servedVersionMatchesStored: boolean;
-  storedSourceName: string;
-}
-
-export function checkUndergradEvidenceQuoteAttribution(
-  observations: readonly QuoteAttributionObservation[],
-  corpusBefore: CorpusFingerprint,
-  corpusAfter: CorpusFingerprint,
-): InvariantResult {
-  const id = 'undergrad-evidence-quote-names-its-source';
-  const title = 'Every served undergraduate evidence quote is attributable to a named source';
-  const comparable = observations.filter((observation) => observation.servedVersionMatchesStored);
-  const unattributed = comparable.filter(
-    (observation) => observation.storedSourceName.trim().length === 0,
-  ).length;
-  const detail = {
-    served: observations.length,
-    comparable: comparable.length,
-    skippedStaleIndex: observations.length - comparable.length,
-    unattributed,
-  };
-
-  if (comparable.length === 0) {
-    return buildInconclusiveInvariant(
-      id,
-      title,
-      'No served quote could be compared with its stored row, so a zero unattributed count would be a green signal over an empty population',
-      detail,
-    );
-  }
-  if (unattributed > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
-    return buildInconclusiveInvariant(
-      id,
-      title,
-      'The corpus changed while the quotes were compared, so a quote may look unattributed only because the served and stored rows describe different versions',
-      { ...detail, corpusBefore, corpusAfter },
-    );
-  }
-  return buildInvariant(id, title, unattributed === 0, detail);
 }
 
 export interface ServedQueryPair {
@@ -802,12 +791,25 @@ export interface ServedQueryPair {
   variantKeys: readonly string[];
 }
 
-export type QueryVariantAgreement = 'sameOrderedRows' | 'coversBaselineRows';
+export type QueryVariantAgreement =
+  'sameOrderedRows' | 'sameRowSet' | 'coversBaselineRows' | 'sharesABaselineRow';
 
 const variantAgrees = (pair: ServedQueryPair, agreement: QueryVariantAgreement): boolean => {
   if (agreement === 'coversBaselineRows') {
     const variantKeys = new Set(pair.variantKeys);
     return pair.baselineKeys.every((key) => variantKeys.has(key));
+  }
+  if (agreement === 'sameRowSet') {
+    const baselineKeys = new Set(pair.baselineKeys);
+    const variantKeys = new Set(pair.variantKeys);
+    return (
+      baselineKeys.size === variantKeys.size &&
+      [...baselineKeys].every((key) => variantKeys.has(key))
+    );
+  }
+  if (agreement === 'sharesABaselineRow') {
+    const variantKeys = new Set(pair.variantKeys);
+    return pair.baselineKeys.some((key) => variantKeys.has(key));
   }
   return (
     pair.baselineKeys.length === pair.variantKeys.length &&
@@ -913,4 +915,310 @@ export function checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(
     );
   }
   return buildInvariant(id, title, violations === 0, detail);
+}
+
+export type ServiceCorePlacement = 'demoted' | 'exempt' | 'research';
+
+export interface ServiceCorePlacementRanking {
+  query: string;
+  placements: ReadonlyArray<{ placement: ServiceCorePlacement; reason: string }>;
+}
+
+export function checkServiceCoresRankBelowResearch(
+  rankings: readonly ServiceCorePlacementRanking[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'service-cores-rank-below-research';
+  const title =
+    'No service core the demotion guard places below research rows outranks a research row of a topic query';
+  const perQuery = rankings.map((ranking) => {
+    const lastResearchRank = ranking.placements
+      .map(({ placement }) => placement)
+      .lastIndexOf('research');
+    const outranking = ranking.placements.filter(
+      ({ placement }, rank) => placement === 'demoted' && rank < lastResearchRank,
+    );
+    return {
+      query: ranking.query,
+      ranked: ranking.placements.length,
+      demoted: ranking.placements.filter(({ placement }) => placement === 'demoted').length,
+      exempt: ranking.placements
+        .map(({ placement, reason }, rank) => ({ placement, reason, rank: rank + 1 }))
+        .filter(({ placement }) => placement === 'exempt'),
+      demotedRanks: ranking.placements
+        .map(({ placement }, rank) => (placement === 'demoted' ? rank + 1 : 0))
+        .filter((rank) => rank > 0),
+      demotedOutrankingResearch: outranking.length,
+    };
+  });
+  const detail = { queries: perQuery };
+  if (perQuery.every((query) => query.demoted === 0 && query.exempt.length === 0)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No query served a service core in the window, so the ordering it asserts was never exercised',
+      detail,
+    );
+  }
+  const violations = perQuery.reduce((total, query) => total + query.demotedOutrankingResearch, 0);
+  if (violations > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the rows were classified, so a stored row may describe a different version than the one ranked',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, violations === 0, detail);
+}
+
+export interface ServiceCoreBrowsePlacement {
+  placement: 'demoted' | 'research';
+  reason: string;
+  rescoredSinceAdjustment: boolean;
+  indexedScoreMatchesStored: boolean;
+}
+
+export interface DefaultBrowseWalk {
+  total: number;
+  walked: number;
+}
+
+export function checkServiceCoresRankBelowResearchInBrowse(
+  placements: readonly ServiceCoreBrowsePlacement[],
+  walk: DefaultBrowseWalk,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'service-cores-rank-below-research-in-browse';
+  const title =
+    'No service core the browse-rank adjustment demotes outranks a research row in the default browse';
+  const ranked = placements.map((placement, index) => ({ ...placement, rank: index + 1 }));
+  const research = ranked.filter(({ placement }) => placement === 'research');
+  const demoted = ranked.filter(({ placement }) => placement === 'demoted');
+  const lastResearchRank = research.at(-1)?.rank ?? 0;
+  const outranking = demoted.filter(({ rank }) => rank < lastResearchRank);
+  const detail = {
+    walk,
+    demoted: demoted.length,
+    demotedByReason: Object.fromEntries(
+      [...new Set(demoted.map(({ reason }) => reason))].map((reason) => [
+        reason,
+        demoted.filter((row) => row.reason === reason).length,
+      ]),
+    ),
+    firstDemotedRank: demoted[0]?.rank ?? null,
+    lastResearchRank,
+    demotedOutrankingResearch: outranking.length,
+    outrankingNotRescoredSinceAdjustment: outranking.filter((row) => !row.rescoredSinceAdjustment)
+      .length,
+    outrankingWithStaleIndexedScore: outranking.filter(
+      (row) => row.rescoredSinceAdjustment && !row.indexedScoreMatchesStored,
+    ).length,
+    outrankingRescoredAndIndexed: outranking.filter(
+      (row) => row.rescoredSinceAdjustment && row.indexedScoreMatchesStored,
+    ).length,
+  };
+  if (walk.walked < walk.total) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The walk did not reach the end of the default browse, so a research row below the last page read could still sit under a core',
+      detail,
+    );
+  }
+  if (demoted.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The default browse served no service core, so the ordering it asserts was never exercised',
+      detail,
+    );
+  }
+  if (outranking.length > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the browse was walked, so a stored row may describe a different version than the one ranked',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, outranking.length === 0, detail);
+}
+
+export interface PersonNameQueryObservation {
+  variant: 'prefix' | 'typo';
+  respelled: boolean;
+  rank: number | null;
+}
+
+export function checkPersonNameWordsAreNotRespelled(
+  observations: readonly PersonNameQueryObservation[],
+): InvariantResult {
+  const id = 'person-name-words-are-not-respelled';
+  const title =
+    'A query word that starts or is one edit from a served person name is searched as typed, never spelling-corrected';
+  const respelled = observations.filter((observation) => observation.respelled);
+  const detail = {
+    queried: observations.length,
+    respelled: respelled.length,
+    respelledByVariant: {
+      prefix: respelled.filter((observation) => observation.variant === 'prefix').length,
+      typo: respelled.filter((observation) => observation.variant === 'typo').length,
+    },
+  };
+  if (observations.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No served row offered a person name to query, so a zero respelled count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, respelled.length === 0, detail);
+}
+
+export interface NicknameQueryObservation {
+  expandedToTheGivenName: boolean;
+  rank: number | null;
+}
+
+export function checkNicknameExpansionReachesThePerson(
+  observations: readonly NicknameQueryObservation[],
+): InvariantResult {
+  const id = 'nickname-expansion-reaches-the-person';
+  const title =
+    "A short given name the nickname expansion maps to a person's own given name serves that person in the top 10";
+  const expanded = observations.filter((observation) => observation.expandedToTheGivenName);
+  const unreached = expanded.filter((observation) => observation.rank === null);
+  const detail = {
+    queried: observations.length,
+    expandedToTheGivenName: expanded.length,
+    unreached: unreached.length,
+  };
+  if (expanded.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No sampled person had a short given name the expansion mapped to their own, so a zero unreached count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, unreached.length === 0, detail);
+}
+
+export interface DictionaryWordQueryObservation {
+  respelledDictionaryWords: readonly string[];
+}
+
+export function checkDictionaryWordsAreNotRespelled(
+  observations: readonly DictionaryWordQueryObservation[],
+): InvariantResult {
+  const id = 'dictionary-words-are-not-respelled';
+  const title =
+    'A real English word in a query is searched as typed, never spelling-corrected to a corpus word';
+  const respelled = observations.flatMap((observation) => observation.respelledDictionaryWords);
+  const detail = { queried: observations.length, respelledWords: respelled.length };
+  if (observations.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No query was sent, so a zero respelled count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, respelled.length === 0, detail);
+}
+
+export interface SimilarRailObservation {
+  viewedSharesNames: boolean;
+  cardsShareAName: readonly boolean[];
+}
+
+const sharedNameCardPrecedesTopicalCard = (cardsShareAName: readonly boolean[]): boolean =>
+  cardsShareAName.some(
+    (sharesAName, position) =>
+      sharesAName && cardsShareAName.slice(position + 1).some((later) => !later),
+  );
+
+export function checkSimilarRailRanksSharedNamesLast(
+  rails: readonly SimilarRailObservation[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'similar-rail-ranks-shared-names-last';
+  const title =
+    'A "More like this" card sharing a person name with the viewed row never ranks above a card that does not';
+  const comparable = rails.filter(
+    (rail) => rail.viewedSharesNames && rail.cardsShareAName.length > 0,
+  );
+  const misordered = comparable.filter((rail) =>
+    sharedNameCardPrecedesTopicalCard(rail.cardsShareAName),
+  ).length;
+  const detail = { railsRead: rails.length, railsWithNames: comparable.length, misordered };
+  if (comparable.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No rail belonged to a row with person names, so a zero misordered count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  if (misordered > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the rails were read, so a card may carry names from a different version',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, misordered === 0, detail);
+}
+
+export interface PastCapMemberObservation {
+  memberRowRank: number | null;
+  ownRowRank: number | null;
+  hasOwnRow: boolean;
+}
+
+const pastCapEmptyReason =
+  'No served row lists members past the detail display cap, so a zero count would be a green signal over an empty population';
+
+export function checkPastCapMembersReachTheirRow(
+  observations: readonly PastCapMemberObservation[],
+): InvariantResult {
+  const id = 'past-cap-member-search-reaches-their-row';
+  const title =
+    'A whole-name search for a current member past the detail display cap serves the row that lists them';
+  const missed = observations.filter((observation) => observation.memberRowRank === null).length;
+  const detail = { queried: observations.length, missed };
+  if (observations.length === 0) {
+    return buildInconclusiveInvariant(id, title, pastCapEmptyReason, detail);
+  }
+  return buildInvariant(id, title, missed === 0, detail);
+}
+
+export function checkOwnRowOutranksMemberRow(
+  observations: readonly PastCapMemberObservation[],
+): InvariantResult {
+  const id = 'own-row-outranks-a-row-listing-them-as-member';
+  const title =
+    "A search for a member's name ranks the research they lead above a row that only lists them as a member";
+  const withOwnRow = observations.filter((observation) => observation.hasOwnRow);
+  const outranked = withOwnRow.filter(
+    (observation) =>
+      observation.memberRowRank !== null &&
+      (observation.ownRowRank === null || observation.ownRowRank > observation.memberRowRank),
+  ).length;
+  const detail = { queried: withOwnRow.length, outranked };
+  if (withOwnRow.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No sampled past-cap member leads a served row of their own, so there is no ranking to compare',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, outranked === 0, detail);
 }

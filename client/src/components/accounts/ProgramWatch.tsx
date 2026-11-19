@@ -5,11 +5,11 @@
  * canonical ResearchPlan PROGRAM targets (served by /users/watchedPrograms and
  * /users/watchedProgramPlans). Each watched program keeps its at-a-glance info
  * (deadline, accepting status, eligibility), a link to the program, a private
- * note, an outreach-stage control across the full ResearchPlan pipeline, and an
- * unwatch control. Watching is a personal bookmark; program content stays
+ * note, an application-stage control (Saved through a result such as Awarded or
+ * Not selected), and an unwatch control. Watching is a personal bookmark; program content stays
  * read-only.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import { BrowsableItem } from '../../types/browsable';
@@ -28,7 +28,9 @@ import LoadingSpinner from '../shared/LoadingSpinner';
 import LoadErrorNotice from '../shared/LoadErrorNotice';
 import useFavorites from '../../hooks/useFavorites';
 import useLatestRequest from '../../hooks/useLatestRequest';
-import usePlanNoteAutosave from '../../hooks/usePlanNoteAutosave';
+import usePlanNoteAutosave, { type PersistNoteOptions } from '../../hooks/usePlanNoteAutosave';
+import { keepalivePut } from '../../utils/keepalivePut';
+import PlanNoteSaveStatusText from './PlanNoteSaveStatusText';
 import useUndoableProgramUnwatch, {
   undoRestoresSummary,
   watchedProgramPlanSnapshot,
@@ -43,6 +45,7 @@ import {
 import {
   DEFAULT_RESEARCH_PLAN_STAGE,
   normalizeResearchPlanStage,
+  programDeadlineIsSettled,
   type ResearchPlanStage,
 } from '../../utils/researchPlanStages';
 import {
@@ -52,6 +55,22 @@ import {
 } from '../../utils/watchedDeadlineSummary';
 import { CalendarIcon, EditIcon } from '../shared/icons';
 import useLoadEffect from '../../hooks/useLoadEffect';
+import PlanListControls, { PlanFilterEmptyState } from './PlanListControls';
+import {
+  DEFAULT_PLAN_LIST_VIEW,
+  compareNewestSavedFirst,
+  compareStageOrder,
+  countPlansByStage,
+  orderStably,
+  planMatchesStageFilter,
+  type PlanListView,
+  type PlanStageFilter,
+} from '../../utils/dashboardPlanListView';
+import usePlanDetailSync, {
+  isPlanVersionConflict,
+  type ServedPlanDetail,
+  type ServedPlans,
+} from '../../hooks/usePlanDetailSync';
 
 interface ProgramWatchProps {
   onSummaryChange?: (summary: {
@@ -61,9 +80,16 @@ interface ProgramWatchProps {
     approachingCount?: number;
     notStartedCount?: number;
   }) => void;
+  listView?: PlanListView;
+  onListViewChange?: (view: PlanListView) => void;
 }
 
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+const PLAN_LIST_ID = 'watched-programs';
+const PLAN_LIST_NOUN = 'watched programs';
+
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
+
+type ListLoadMode = 'replace' | 'merge';
 
 const MAX_PROGRAM_NOTE_LENGTH = 2000;
 
@@ -97,25 +123,11 @@ export const watchedProgramDeadlineSummary = (
   };
 };
 
-const persistProgramNote = async (programId: string, note: string) => {
-  try {
-    await axios.put(`/users/watchedProgramPlans/${programId}`, {
-      data: { plan: { privateNotes: note } },
-    });
-  } catch (error) {
-    console.error('Error saving watched program plan.');
-    throw error;
-  }
-  void trackResearchEvent({
-    eventType: 'research_plan_update',
-    entityType: 'fellowship',
-    entityId: programId,
-    payload: { field: 'note_presence' },
-    dedupeKey: createResearchAnalyticsInteractionId('plan'),
-  });
-};
-
-const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
+const ProgramWatch = ({
+  onSummaryChange,
+  listView = DEFAULT_PLAN_LIST_VIEW,
+  onListViewChange,
+}: ProgramWatchProps) => {
   const {
     favIds: watchedIds,
     loaded: watchedIdsLoaded,
@@ -126,64 +138,167 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const [programs, setPrograms] = useState<Fellowship[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
+  const [savedAt, setSavedAt] = useState<Record<string, string | undefined>>({});
+  const [keptInView, setKeptInView] = useState<{ filter: PlanStageFilter; ids: string[] }>({
+    filter: DEFAULT_PLAN_LIST_VIEW.stageFilter,
+    ids: [],
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [programsLoadFailed, setProgramsLoadFailed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedProgram, setSelectedProgram] = useState<Fellowship | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { noteSaveStatuses, saveNote, scheduleNoteSave, cancelNoteSave, markNotePersisted } =
-    usePlanNoteAutosave(persistProgramNote);
+  const planSyncRef = useRef<ReturnType<typeof usePlanDetailSync> | null>(null);
+  const persistProgramNote = useCallback(
+    async (programId: string, note: string, options?: PersistNoteOptions) => {
+      const sync = planSyncRef.current;
+      const send = async (version: string | undefined) => {
+        const body = {
+          data: {
+            plan: { privateNotes: note, ...(version ? { expectedUpdatedAt: version } : {}) },
+          },
+        };
+        const served = options?.keepalive
+          ? await keepalivePut(`/users/watchedProgramPlans/${programId}`, body)
+          : (await axios.put(`/users/watchedProgramPlans/${programId}`, body)).data;
+        return (served as { watchedProgramPlans?: ServedPlans } | undefined)?.watchedProgramPlans;
+      };
+      try {
+        await (sync
+          ? sync.writePlan(programId, send, { immediate: options?.keepalive })
+          : send(undefined));
+      } catch (error) {
+        console.error('Error saving watched program plan.');
+        if (isPlanVersionConflict(error))
+          void sync?.refreshPlanDetails({ adoptVersionOf: programId });
+        throw error;
+      }
+      void trackResearchEvent({
+        eventType: 'research_plan_update',
+        entityType: 'fellowship',
+        entityId: programId,
+        payload: { field: 'note_presence' },
+        dedupeKey: createResearchAnalyticsInteractionId('plan'),
+      });
+    },
+    [],
+  );
+  const {
+    noteSaveStatuses,
+    saveNote,
+    scheduleNoteSave,
+    cancelNoteSave,
+    retainNoteSaves,
+    markNotePersisted,
+  } = usePlanNoteAutosave(persistProgramNote);
+
+  const planSync = usePlanDetailSync({
+    plansPath: '/users/watchedProgramPlans',
+    responseKey: 'watchedProgramPlans',
+    notes,
+    stages,
+    setNotes,
+    setStages,
+    markNotePersisted,
+  });
+  const { recordServedPlan, writePlan, refreshPlanDetails, takeServerStage } = planSync;
+  useEffect(() => {
+    planSyncRef.current = planSync;
+  });
+
   const { unwatchedProgram, unwatchProgram, undoUnwatch, restartUndoWindow } =
     useUndoableProgramUnwatch({
       setFavorite,
       surface: 'saved_plans',
-      onPlanRestored: (programId, plan) => markNotePersisted(programId, plan.privateNotes),
+      onPlanRestored: (programId, plan) => {
+        markNotePersisted(programId, plan.privateNotes);
+        void refreshPlanDetails({ adoptVersionOf: programId });
+      },
     });
 
   const programRequest = useLatestRequest();
 
-  const loadPrograms = useCallback(async () => {
-    const ticket = programRequest.begin();
-    setIsLoading(true);
-    setProgramsLoadFailed(false);
-    try {
-      const [programResponse, planResponse] = await Promise.all([
-        axios.get('/users/watchedPrograms', { withCredentials: true, signal: ticket.signal }),
-        axios.get('/users/watchedProgramPlans', { withCredentials: true, signal: ticket.signal }),
-      ]);
-      if (!ticket.isCurrent()) return;
-      const rawPrograms = programResponse.data.watchedPrograms || [];
-      const loadedPrograms: Fellowship[] = rawPrograms.map((program: any) =>
-        createFellowship(program),
-      );
-      const plans = (planResponse.data.watchedProgramPlans || {}) as Record<
-        string,
-        { privateNotes?: string; stage?: string }
-      >;
-      const loadedNotes: Record<string, string> = {};
-      const loadedStages: Record<string, ResearchPlanStage> = {};
-      for (const program of loadedPrograms) {
-        loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
-        loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
-        markNotePersisted(program.id, loadedNotes[program.id]);
+  const loadedProgramIdsRef = useRef(new Set<string>());
+
+  const loadPrograms = useCallback(
+    async (mode: ListLoadMode = 'replace'): Promise<boolean> => {
+      const ticket = programRequest.begin();
+      const merging = mode === 'merge';
+      if (!merging) {
+        setIsLoading(true);
+        setProgramsLoadFailed(false);
       }
-      setPrograms(loadedPrograms);
-      setNotes(loadedNotes);
-      setStages(loadedStages);
-    } catch {
-      if (!ticket.isCurrent()) return;
-      console.error('Error fetching watched programs.');
-      setPrograms([]);
-      setNotes({});
-      setStages({});
-      setProgramsLoadFailed(true);
-    } finally {
-      if (ticket.isCurrent()) setIsLoading(false);
-    }
-  }, [programRequest, markNotePersisted]);
+      try {
+        const [programResponse, planResponse] = await Promise.all([
+          axios.get('/users/watchedPrograms', { withCredentials: true, signal: ticket.signal }),
+          axios.get('/users/watchedProgramPlans', { withCredentials: true, signal: ticket.signal }),
+        ]);
+        if (!ticket.isCurrent()) return false;
+        const rawPrograms = programResponse.data.watchedPrograms || [];
+        const loadedPrograms: Fellowship[] = rawPrograms.map((program: any) =>
+          createFellowship(program),
+        );
+        const plans = (planResponse.data.watchedProgramPlans || {}) as Record<
+          string,
+          ServedPlanDetail
+        >;
+        const loadedNotes: Record<string, string> = {};
+        const loadedStages: Record<string, ResearchPlanStage> = {};
+        const loadedSavedAt: Record<string, string | undefined> = {};
+        for (const program of loadedPrograms) {
+          loadedSavedAt[program.id] = plans[program.id]?.createdAt;
+          if (merging && loadedProgramIdsRef.current.has(program.id)) continue;
+          loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
+          loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
+          markNotePersisted(program.id, loadedNotes[program.id]);
+          recordServedPlan(program.id, plans[program.id]);
+        }
+        loadedProgramIdsRef.current = new Set([
+          ...(merging ? loadedProgramIdsRef.current : []),
+          ...loadedPrograms.map((program) => program.id),
+        ]);
+        setPrograms(loadedPrograms);
+        setNotes((current) => (merging ? { ...loadedNotes, ...current } : loadedNotes));
+        setStages((current) => (merging ? { ...loadedStages, ...current } : loadedStages));
+        setSavedAt(loadedSavedAt);
+        return true;
+      } catch {
+        if (!ticket.isCurrent() || merging) return false;
+        console.error('Error fetching watched programs.');
+        setPrograms([]);
+        setNotes({});
+        setStages({});
+        setSavedAt({});
+        setProgramsLoadFailed(true);
+        return false;
+      } finally {
+        if (ticket.isCurrent()) setIsLoading(false);
+      }
+    },
+    [programRequest, markNotePersisted, recordServedPlan],
+  );
 
   useLoadEffect(loadPrograms);
+
+  useEffect(() => {
+    if (watchedIdsLoaded) void refreshPlanDetails();
+  }, [watchedIds, watchedIdsLoaded, refreshPlanDetails]);
+
+  const requestedWatchIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (isLoading || programsLoadFailed || !watchedIdsLoaded) return;
+    const known = new Set([
+      ...programs.map((program) => program.id),
+      ...requestedWatchIdsRef.current,
+    ]);
+    const unseen = watchedIds.filter((id) => !known.has(id));
+    if (unseen.length === 0) return;
+    unseen.forEach((id) => requestedWatchIdsRef.current.add(id));
+    void loadPrograms('merge').then((merged) => {
+      if (!merged) unseen.forEach((id) => requestedWatchIdsRef.current.delete(id));
+    });
+  }, [isLoading, programsLoadFailed, watchedIdsLoaded, programs, watchedIds, loadPrograms]);
 
   const retryLoad = () => {
     void reloadFavorites();
@@ -195,9 +310,16 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     [programs, watchedIds],
   );
 
+  useEffect(() => {
+    retainNoteSaves(visiblePrograms.map((program) => program.id));
+  }, [visiblePrograms, retainNoteSaves]);
+
   const nextDeadline = useMemo(
-    () => watchedProgramDeadlineSummary(visiblePrograms),
-    [visiblePrograms],
+    () =>
+      watchedProgramDeadlineSummary(
+        visiblePrograms.filter((program) => !programDeadlineIsSettled(stages[program.id])),
+      ),
+    [visiblePrograms, stages],
   );
 
   const deadlineUrgency = useMemo(() => {
@@ -222,6 +344,40 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
       ...nextDeadline,
     });
   }, [watchedCount, nextDeadline, deadlineUrgency, onSummaryChange]);
+
+  const stageOf = useCallback(
+    (programId: string): ResearchPlanStage => stages[programId] || DEFAULT_RESEARCH_PLAN_STAGE,
+    [stages],
+  );
+
+  const orderedPrograms = useMemo(() => {
+    if (listView.sort === 'deadline') return visiblePrograms;
+    return orderStably(visiblePrograms, (a, b) =>
+      listView.sort === 'stage'
+        ? compareStageOrder(stageOf(a.id), stageOf(b.id))
+        : compareNewestSavedFirst(savedAt[a.id], savedAt[b.id]),
+    );
+  }, [visiblePrograms, stageOf, savedAt, listView.sort]);
+
+  const stageCounts = useMemo(
+    () =>
+      countPlansByStage(
+        visiblePrograms.map((program) => stageOf(program.id)),
+        'program',
+      ),
+    [visiblePrograms, stageOf],
+  );
+
+  const shownPrograms = useMemo(() => {
+    const kept = keptInView.filter === listView.stageFilter ? keptInView.ids : [];
+    return orderedPrograms.filter(
+      (program) =>
+        planMatchesStageFilter(stageOf(program.id), listView.stageFilter, 'program') ||
+        kept.includes(program.id),
+    );
+  }, [orderedPrograms, stageOf, listView.stageFilter, keptInView]);
+
+  const changeListView = (view: PlanListView) => onListViewChange?.(view);
 
   const upcomingDeadlineEventsByProgramId = useMemo(() => {
     const events = upcomingProgramDeadlineEvents(visiblePrograms);
@@ -263,11 +419,21 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     async (programId: string, nextStage: ResearchPlanStage) => {
       const previousStage = stages[programId] || DEFAULT_RESEARCH_PLAN_STAGE;
       if (previousStage === nextStage) return;
+      setKeptInView((current) =>
+        current.filter === listView.stageFilter
+          ? { filter: current.filter, ids: [...current.ids, programId] }
+          : { filter: listView.stageFilter, ids: [programId] },
+      );
       setStages((current) => ({ ...current, [programId]: nextStage }));
       setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saving' }));
       try {
-        await axios.put(`/users/watchedProgramPlans/${programId}`, {
-          data: { plan: { stage: nextStage } },
+        await writePlan(programId, async (version) => {
+          const response = await axios.put(`/users/watchedProgramPlans/${programId}`, {
+            data: {
+              plan: { stage: nextStage, ...(version ? { expectedUpdatedAt: version } : {}) },
+            },
+          });
+          return response.data?.watchedProgramPlans;
         });
         setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saved' }));
         void trackResearchEvent({
@@ -277,13 +443,17 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           payload: { field: 'stage' },
           dedupeKey: createResearchAnalyticsInteractionId('plan'),
         });
-      } catch {
+      } catch (error) {
         console.error('Error saving watched program stage.');
+        if (isPlanVersionConflict(error) && (await takeServerStage(programId))) {
+          setStageStatuses((statuses) => ({ ...statuses, [programId]: 'conflict' }));
+          return;
+        }
         setStages((current) => ({ ...current, [programId]: previousStage }));
         setStageStatuses((statuses) => ({ ...statuses, [programId]: 'error' }));
       }
     },
-    [stages],
+    [stages, writePlan, takeServerStage, listView.stageFilter],
   );
 
   const openModal = (program: Fellowship) => {
@@ -309,7 +479,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     <section>
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="yr-display text-2xl font-semibold text-ink">Program watch</h2>
+          <h2 className="yr-display text-2xl font-semibold text-ink">Watched programs</h2>
           <p className="mt-1 text-sm text-muted">
             Programs and fellowships you are watching, with their deadlines, accepting status, and
             eligibility. Open one to see its details, or unwatch it.
@@ -340,111 +510,126 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           onRetry={retryLoad}
         />
       ) : visiblePrograms.length > 0 ? (
-        <ul>
-          {visiblePrograms.map((program) => {
-            const status = noteSaveStatuses[program.id];
-            const isEditing = editingId === program.id;
-            const note = notes[program.id] || '';
-            const stage = stages[program.id] || DEFAULT_RESEARCH_PLAN_STAGE;
-            return (
-              <li key={program.id} className="mb-2">
-                <BrowseListItem
-                  item={fellowshipToBrowsable(program)}
-                  isFavorite={watchedIds.includes(program.id)}
-                  onToggleFavorite={(event) => {
-                    event.stopPropagation();
-                    toggleWatch(program);
-                  }}
-                  onOpenModal={() => openModal(program)}
-                  footer={
-                    <>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                          <span className="text-xs font-medium text-muted">Outreach stage</span>
-                          <ResearchPlanStageControl
-                            stage={stage}
-                            onChange={(nextStage) => void changeStage(program.id, nextStage)}
-                            controlLabel={`Outreach stage for ${program.title}`}
-                            status={stageStatuses[program.id]}
-                          />
-                        </div>
-                        <div className="flex flex-row gap-1">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEditingId((current) =>
-                                current === program.id ? null : program.id,
-                              )
-                            }
-                            aria-expanded={isEditing}
-                            aria-label={
-                              isEditing
-                                ? `Hide note for ${program.title}`
-                                : `Add note for ${program.title}`
-                            }
-                            title={isEditing ? 'Hide note' : 'Add note'}
-                            className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border p-2 transition-colors yr-focus-ring ${
-                              note
-                                ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'
-                                : 'border-[var(--yr-line)] text-muted hover:border-[var(--yr-line-strong)] hover:text-ink-soft'
-                            }`}
-                          >
-                            <EditIcon size={16} />
-                          </button>
-                          {upcomingDeadlineEventsByProgramId.has(program.id) && (
-                            <button
-                              type="button"
-                              onClick={() => addProgramDeadlineToCalendar(program)}
-                              aria-label={`Add ${program.title} deadline to calendar`}
-                              title="Add deadline to calendar"
-                              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border border-[var(--yr-line)] p-2 text-muted transition-colors hover:border-[var(--yr-line-strong)] hover:text-ink-soft yr-focus-ring"
-                            >
-                              <CalendarIcon size={16} />
-                            </button>
+        <>
+          <PlanListControls
+            surface="program"
+            idPrefix={PLAN_LIST_ID}
+            view={listView}
+            counts={stageCounts}
+            shownCount={shownPrograms.length}
+            pluralNoun={PLAN_LIST_NOUN}
+            onChange={changeListView}
+          />
+          {shownPrograms.length === 0 ? (
+            <PlanFilterEmptyState
+              idPrefix={PLAN_LIST_ID}
+              surface="program"
+              stageFilter={listView.stageFilter}
+              pluralNoun={PLAN_LIST_NOUN}
+              onShowAll={() => changeListView({ ...listView, stageFilter: 'all' })}
+            />
+          ) : (
+            <ul>
+              {shownPrograms.map((program) => {
+                const status = noteSaveStatuses[program.id];
+                const isEditing = editingId === program.id;
+                const note = notes[program.id] || '';
+                const stage = stages[program.id] || DEFAULT_RESEARCH_PLAN_STAGE;
+                return (
+                  <li key={program.id} className="mb-2">
+                    <BrowseListItem
+                      item={fellowshipToBrowsable(program)}
+                      isFavorite={watchedIds.includes(program.id)}
+                      onToggleFavorite={(event) => {
+                        event.stopPropagation();
+                        toggleWatch(program);
+                      }}
+                      onOpenModal={() => openModal(program)}
+                      hideDeadlineUrgency={programDeadlineIsSettled(stage)}
+                      footer={
+                        <>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                              <span className="text-xs font-medium text-muted">
+                                Application stage
+                              </span>
+                              <ResearchPlanStageControl
+                                stage={stage}
+                                onChange={(nextStage) => void changeStage(program.id, nextStage)}
+                                controlLabel={`Application stage for ${program.title}`}
+                                status={stageStatuses[program.id]}
+                                surface="program"
+                              />
+                            </div>
+                            <div className="flex flex-row gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingId((current) =>
+                                    current === program.id ? null : program.id,
+                                  )
+                                }
+                                aria-expanded={isEditing}
+                                aria-label={
+                                  isEditing
+                                    ? `Hide note for ${program.title}`
+                                    : note
+                                      ? `Edit note for ${program.title}`
+                                      : `Add note for ${program.title}`
+                                }
+                                title={isEditing ? 'Hide note' : note ? 'Edit note' : 'Add note'}
+                                className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border p-2 transition-colors yr-focus-ring ${
+                                  note
+                                    ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'
+                                    : 'border-[var(--yr-line)] text-muted hover:border-[var(--yr-line-strong)] hover:text-ink-soft'
+                                }`}
+                              >
+                                <EditIcon size={16} />
+                              </button>
+                              {upcomingDeadlineEventsByProgramId.has(program.id) && (
+                                <button
+                                  type="button"
+                                  onClick={() => addProgramDeadlineToCalendar(program)}
+                                  aria-label={`Add ${program.title} deadline to calendar`}
+                                  title="Add deadline to calendar"
+                                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border border-[var(--yr-line)] p-2 text-muted transition-colors hover:border-[var(--yr-line-strong)] hover:text-ink-soft yr-focus-ring"
+                                >
+                                  <CalendarIcon size={16} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {isEditing && (
+                            <div className="mt-2">
+                              <textarea
+                                aria-label={`Note for ${program.title}`}
+                                value={note}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  setNotes((current) => ({ ...current, [program.id]: value }));
+                                  scheduleNoteSave(program.id, value);
+                                }}
+                                onBlur={() => void saveNote(program.id, note)}
+                                maxLength={MAX_PROGRAM_NOTE_LENGTH}
+                                placeholder="Add a private note about this program…"
+                                rows={2}
+                                className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
+                              />
+                              <PlanNoteSaveStatusText status={status} />
+                            </div>
                           )}
-                        </div>
-                      </div>
-                      {isEditing && (
-                        <div className="mt-2">
-                          <textarea
-                            aria-label={`Note for ${program.title}`}
-                            value={note}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setNotes((current) => ({ ...current, [program.id]: value }));
-                              scheduleNoteSave(program.id, value);
-                            }}
-                            onBlur={() => void saveNote(program.id, note)}
-                            maxLength={MAX_PROGRAM_NOTE_LENGTH}
-                            placeholder="Add a private note about this program…"
-                            rows={2}
-                            className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
-                          />
-                          <p
-                            className={`mt-1 text-xs ${status === 'error' ? 'text-red-700' : 'text-muted'}`}
-                            role={status === 'error' ? 'alert' : 'status'}
-                            aria-live="polite"
-                          >
-                            {status === 'saving'
-                              ? 'Saving…'
-                              : status === 'saved'
-                                ? 'Saved'
-                                : status === 'error'
-                                  ? 'Not saved. Check your connection or sign in again, then retry.'
-                                  : ''}
-                          </p>
-                        </div>
-                      )}
-                      {!isEditing && note && (
-                        <p className="mt-2 truncate text-xs italic text-muted">Note: {note}</p>
-                      )}
-                    </>
-                  }
-                />
-              </li>
-            );
-          })}
-        </ul>
+                          {!isEditing && note && (
+                            <p className="mt-2 truncate text-xs italic text-muted">Note: {note}</p>
+                          )}
+                        </>
+                      }
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       ) : (
         <div className="rounded-card border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
           <h3 className="text-base font-semibold text-ink">No watched programs yet</h3>

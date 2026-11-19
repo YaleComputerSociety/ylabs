@@ -16,7 +16,7 @@ import {
   slugContradictionShape,
   slugNamesAnotherLead,
   surnameCore,
-  visiblePageText,
+  surnameInLabPath,
   surnameInSiteUrl,
   unreachableLabSiteVerification,
   type LabSiteLeadCandidate,
@@ -174,55 +174,28 @@ describe('personNameTokensFromSlug', () => {
 });
 
 describe('slugNamesAnotherLead', () => {
-  const hay = (html: string) => visiblePageText(html);
-
   it('counts a namesake with a different given name', () => {
-    expect(slugNamesAnotherLead('dale-quill', 'Robin Quill', hay('<p>Members</p>'))).toBe(true);
+    expect(slugNamesAnotherLead('dale-quill', 'Robin Quill')).toBe(true);
   });
 
-  it('does not count a two-letter-surname namesake without a lead role', () => {
-    expect(slugNamesAnotherLead('dale-vo', 'Ana Vo', hay('<p>Members</p>'))).toBe(false);
-    expect(
-      slugNamesAnotherLead('dale-vo', 'Ana Vo', hay('<p>Principal Investigator: Dale Vo</p>')),
-    ).toBe(true);
+  it('does not count a two-letter-surname namesake', () => {
+    expect(slugNamesAnotherLead('dale-vo', 'Ana Vo')).toBe(false);
   });
 
-  it('counts a person the page names next to a lead-role phrase', () => {
-    expect(
-      slugNamesAnotherLead(
-        'ada-brook',
-        'Robin Quill',
-        hay('<h2>Principal Investigator</h2><p>Ada E. Brook, PhD</p>'),
-      ),
-    ).toBe(true);
+  it('no longer counts a person merely linked near a lead-role phrase (#5962)', () => {
+    expect(slugNamesAnotherLead('ada-brook', 'Robin Quill')).toBe(false);
   });
 
   it('does not count the lead linked by full name when the lead is shown by initial', () => {
-    expect(slugNamesAnotherLead('robin-quillon', 'R. Quillon', hay('<p>Members</p>'))).toBe(false);
-    expect(
-      slugNamesAnotherLead(
-        'robin-quillon',
-        'R. Quillon',
-        hay('<p>Robin Quillon, principal investigator</p>'),
-      ),
-    ).toBe(false);
+    expect(slugNamesAnotherLead('robin-quillon', 'R. Quillon')).toBe(false);
   });
 
   it('does not count the lead linked surname first when the lead is shown by initial', () => {
-    expect(slugNamesAnotherLead('quillon-robin', 'R. Quillon', hay('<p>Members</p>'))).toBe(false);
+    expect(slugNamesAnotherLead('quillon-robin', 'R. Quillon')).toBe(false);
   });
 
   it('does not let a slug supply its own lead-role evidence through its href', () => {
-    expect(
-      slugNamesAnotherLead(
-        'lab-members',
-        'Robin Quill',
-        hay(
-          '<nav><a href="/people/principal-investigator">Principal Investigator</a>' +
-            '<a href="/people/lab-members">Lab Members</a></nav>',
-        ),
-      ),
-    ).toBe(false);
+    expect(slugNamesAnotherLead('lab-members', 'Robin Quill')).toBe(false);
   });
 
   it('does not read a section or role slug as a person', () => {
@@ -240,37 +213,19 @@ describe('slugNamesAnotherLead', () => {
   });
 
   it('still counts a namesake with a different initial', () => {
-    expect(slugNamesAnotherLead('dale-quillon', 'R. Quillon', hay('<p>Members</p>'))).toBe(true);
+    expect(slugNamesAnotherLead('dale-quillon', 'R. Quillon')).toBe(true);
   });
 
   it('does not count a page linked by its role title', () => {
-    expect(
-      slugNamesAnotherLead(
-        'principal-investigator',
-        'Robin Quill',
-        hay('<a href="/people/principal-investigator">Principal Investigator</a>'),
-      ),
-    ).toBe(false);
+    expect(slugNamesAnotherLead('principal-investigator', 'Robin Quill')).toBe(false);
   });
 
   it('does not count a member the page lists without a lead role', () => {
-    expect(
-      slugNamesAnotherLead(
-        'ada-brook',
-        'Robin Quill',
-        hay('<h2>Lab members</h2><p>Ada Brook, graduate student</p>'),
-      ),
-    ).toBe(false);
+    expect(slugNamesAnotherLead('ada-brook', 'Robin Quill')).toBe(false);
   });
 
   it('does not count a director of undergraduate studies as a lead', () => {
-    expect(
-      slugNamesAnotherLead(
-        'ada-brook',
-        'Robin Quill',
-        hay('<p>Ada Brook, co-director of undergraduate studies</p>'),
-      ),
-    ).toBe(false);
+    expect(slugNamesAnotherLead('ada-brook', 'Robin Quill')).toBe(false);
   });
 });
 
@@ -389,6 +344,20 @@ describe('judgeLeadAgainstSite', () => {
     });
   });
 
+  it('records that the page also names the lead beside a profile-link confirmation', () => {
+    const linkedAndNamed = judge(
+      lead(),
+      '<p>Robin Quill directs the lab.</p><a href="/lab/quill/profile/robin-quill/">Profile</a>',
+    );
+    expect(linkedAndNamed).toMatchObject({
+      matchedBy: 'OFFICIAL_PROFILE_LINK',
+      namedOnPage: true,
+    });
+    const linkedOnly = judge(lead(), '<a href="/lab/quill/profile/robin-quill/">Profile</a>');
+    expect(linkedOnly.matchedBy).toBe('OFFICIAL_PROFILE_LINK');
+    expect(linkedOnly.namedOnPage).toBeUndefined();
+  });
+
   it('confirms on being named, when no profile is linked', () => {
     const result = judge(lead(), '<p>The lab of Robin Quill studies things.</p>');
     expect(result.verdict).toBe('CONFIRMED');
@@ -465,12 +434,41 @@ describe('judgeLeadAgainstSite', () => {
     expect(result.verdict).toBe('UNSTATED');
   });
 
-  it('contradicts when the site names somebody else as its principal investigator', () => {
+  it('contradicts when the row own page names somebody else as its principal investigator', () => {
+    const html =
+      '<html><head><title>Quill Lab</title></head><body>' +
+      '<div><h2>Principal Investigator</h2><a href="/lab/quill/profile/ada-brook/">Ada Brook, PhD</a></div>' +
+      '</body></html>';
+    const website = 'https://medicine.yale.edu/lab/quill/';
+    const result = buildLabSiteLeadVerification(
+      [lead({ displayName: 'Robin Quill' })],
+      { website, visitedUrls: [website], html, pages: [{ url: website, html }] },
+      new Date('2026-11-12T00:00:00.000Z'),
+      'LAB',
+      'Tidal Imaging Lab (TIL)',
+    ).leads[0];
+    expect(result).toMatchObject({ verdict: 'UNSTATED' });
+    const anchored = buildLabSiteLeadVerification(
+      [lead({ displayName: 'Robin Quill' })],
+      {
+        website,
+        visitedUrls: [website],
+        html: html.replace('Quill Lab', 'Tidal Imaging Lab'),
+        pages: [{ url: website, html: html.replace('Quill Lab', 'Tidal Imaging Lab') }],
+      },
+      new Date('2026-11-12T00:00:00.000Z'),
+      'LAB',
+      'Tidal Imaging Lab (TIL)',
+    ).leads[0];
+    expect(anchored).toMatchObject({ verdict: 'CONTRADICTED', contradictedBy: 'NAMED_AS_LEAD' });
+  });
+
+  it('leaves an unanchored principal investigator heading unstated', () => {
     const result = judge(
       lead({ displayName: 'Robin Quill' }),
       '<h2>Principal Investigator</h2><a href="/lab/quill/profile/ada-brook/">Ada Brook, PhD</a>',
     );
-    expect(result.verdict).toBe('CONTRADICTED');
+    expect(result.verdict).toBe('UNSTATED');
   });
 
   it('never contradicts the subject of a faculty research profile', () => {
@@ -640,10 +638,8 @@ describe('unreachableLabSiteVerification', () => {
 });
 
 describe('slugContradictionShape (#4916)', () => {
-  const members = visiblePageText('<p>Members</p>');
-
   it('reads a same-surname person whose given name cannot be the lead as a namesake', () => {
-    expect(slugContradictionShape('dale-quill', 'Robin Quill', members)).toBe('NAMESAKE');
+    expect(slugContradictionShape('dale-quill', 'Robin Quill')).toBe('NAMESAKE');
   });
 
   it('never reads a nickname, an initial, a transliteration or a former name as a namesake', () => {
@@ -654,9 +650,10 @@ describe('slugContradictionShape (#4916)', () => {
       ['dana-quill', 'D. Chui-Ying Quill'],
       ['mohammed-quill', 'Muhammad Quill'],
       ['yury-quill', 'Yuri Quill'],
+      ['dionysis-quill', 'Dionysios Quill'],
       ['dale-quill', 'Robin Quill f.k.a. Dale Quill'],
     ]) {
-      expect(slugContradictionShape(slug, lead, members), `${slug} / ${lead}`).toBe('');
+      expect(slugContradictionShape(slug, lead), `${slug} / ${lead}`).toBe('');
     }
   });
 
@@ -669,8 +666,9 @@ describe('slugContradictionShape (#4916)', () => {
       ['bonnie-quill', 'Ben Quill'],
       ['ali-quill', 'Eli Quill'],
       ['ian-quill', 'Ann Quill'],
+      ['maris-quill', 'Marius Quill'],
     ]) {
-      expect(slugContradictionShape(slug, lead, members), `${slug} / ${lead}`).toBe('NAMESAKE');
+      expect(slugContradictionShape(slug, lead), `${slug} / ${lead}`).toBe('NAMESAKE');
     }
   });
 
@@ -681,28 +679,16 @@ describe('slugContradictionShape (#4916)', () => {
       ['dale-van-brook', 'Robin van Brook'],
       ['dale-brook', 'Robin de Brook'],
     ]) {
-      expect(slugContradictionShape(slug, lead, members), `${slug} / ${lead}`).toBe('NAMESAKE');
+      expect(slugContradictionShape(slug, lead), `${slug} / ${lead}`).toBe('NAMESAKE');
     }
   });
 
   it('spares a possible alias even when the page names it beside a lead role', () => {
-    expect(
-      slugContradictionShape(
-        'dana-quill',
-        'D. Chui-Ying Quill',
-        visiblePageText('<p>Principal Investigator: Dana Quill</p>'),
-      ),
-    ).toBe('');
+    expect(slugContradictionShape('dana-quill', 'D. Chui-Ying Quill')).toBe('');
   });
 
-  it('reads a different person named beside a lead role as named as lead', () => {
-    expect(
-      slugContradictionShape(
-        'ada-brook',
-        'Robin Quill',
-        visiblePageText('<h2>Principal Investigator</h2><p>Ada E. Brook, PhD</p>'),
-      ),
-    ).toBe('NAMED_AS_LEAD');
+  it('no longer reads a different person named beside a lead role as a contradiction', () => {
+    expect(slugContradictionShape('ada-brook', 'Robin Quill')).toBe('');
   });
 
   it('records which shape contradicted a lead', () => {
@@ -717,5 +703,217 @@ describe('slugContradictionShape (#4916)', () => {
     );
     expect(alias.verdict).not.toBe('CONTRADICTED');
     expect(alias.contradictedBy).toBeUndefined();
+  });
+});
+
+describe('a different person stated as the row lead, whatever the slug order', () => {
+  const ownPage = (body: string) =>
+    `<html><head><title>Tidal Imaging Lab</title></head><body>${body}</body></html>`;
+  const verify = (html: string) =>
+    buildLabSiteLeadVerification(
+      [lead({ displayName: 'Avery Qu', officialProfileUrls: [] })],
+      {
+        website: 'https://medicine.yale.edu/lab/tidal/',
+        visitedUrls: ['https://medicine.yale.edu/lab/tidal/'],
+        html,
+        pages: [{ url: 'https://medicine.yale.edu/lab/tidal/', html }],
+      },
+      new Date('2026-11-12T00:00:00.000Z'),
+      'LAB',
+      'Tidal Imaging Lab',
+    ).leads[0];
+
+  it('contradicts on a principal investigator card linked by a surname-first slug', () => {
+    for (const href of ['/people/brook-robin/', '/people/robin-brook/']) {
+      expect(
+        verify(
+          ownPage(
+            `<div><h3><a href="${href}">Robin Brook</a></h3><p>Principal Investigator</p></div>`,
+          ),
+        ),
+        href,
+      ).toMatchObject({ verdict: 'CONTRADICTED', contradictedBy: 'NAMED_AS_LEAD' });
+    }
+  });
+
+  it('never contradicts on a same-surname person, who could be the lead', () => {
+    expect(
+      verify(
+        ownPage(
+          '<div><h3><a href="/people/qu-robin/">Robin Qu</a></h3><p>Principal Investigator</p></div>',
+        ),
+      ),
+    ).toMatchObject({ verdict: 'UNSTATED' });
+  });
+});
+
+describe('a person row adopting a site it appears on (#6313)', () => {
+  const observedAt = new Date('2026-11-15T00:00:00.000Z');
+  const website = 'https://medicine.yale.edu/lab/tidal/';
+  const personRow = (html: string, entityType = 'FACULTY_RESEARCH_AREA') =>
+    buildLabSiteLeadVerification(
+      [lead()],
+      { website, visitedUrls: [website], html, pages: [{ url: website, html }] },
+      observedAt,
+      entityType,
+      'Robin Quill Faculty Research',
+    ).leads[0];
+  const memberPage =
+    '<html><head><title>Tidal Imaging Lab</title></head><body>' +
+    '<p>Principal Investigator: Ada Brook, PhD</p>' +
+    '<h2>Members</h2><div><a href="/profile/robin-quill/">Robin Quill</a><p>Postdoctoral Fellow</p></div>' +
+    '</body></html>';
+
+  it('leaves a person the site only links or names unconfirmed', () => {
+    expect(personRow(memberPage)).toMatchObject({
+      verdict: 'UNSTATED',
+      matchedBy: 'NONE',
+      namedOnPage: true,
+    });
+  });
+
+  it('never contradicts the person row subject on that evidence', () => {
+    expect(personRow(memberPage).verdict).not.toBe('CONTRADICTED');
+  });
+
+  it('confirms a person the site titles as its lead', () => {
+    const leadPage =
+      '<html><head><title>Tidal Imaging Lab</title></head><body>' +
+      '<div class="person"><h3><a href="/profile/robin-quill/">Robin Quill, PhD</a></h3><p>Principal Investigator</p></div>' +
+      '</body></html>';
+    expect(personRow(leadPage)).toMatchObject({
+      verdict: 'CONFIRMED',
+      matchedBy: 'NAMED_AS_ROW_LEAD',
+      evidenceUrl: website,
+    });
+  });
+
+  it.each(['Associate Director, Imaging Core', 'Postdoctoral Associate; Head of Microscopy'])(
+    'leaves a person titled %s by the site unconfirmed',
+    (title) => {
+      const staffPage =
+        '<html><head><title>Tidal Imaging Center</title></head><body>' +
+        `<div class="person"><h3><a href="/profile/robin-quill/">Robin Quill, PhD</a></h3><p>${title}</p></div>` +
+        '</body></html>';
+      expect(personRow(staffPage).verdict).toBe('UNSTATED');
+    },
+  );
+
+  it('still confirms a site whose lab path carries the person surname', () => {
+    const eponymSite = 'https://medicine.yale.edu/lab/quill/';
+    const html = '<p>Robin Quill</p><p>Postdoctoral Fellow</p>';
+    const judged = buildLabSiteLeadVerification(
+      [lead()],
+      { website: eponymSite, visitedUrls: [eponymSite], html, pages: [{ url: eponymSite, html }] },
+      observedAt,
+      'FACULTY_RESEARCH_AREA',
+      'Robin Quill Faculty Research',
+    ).leads[0];
+    expect(judged.verdict).toBe('CONFIRMED');
+  });
+
+  it('still confirms a site whose host carries the person surname and names them', () => {
+    const eponymHost = 'https://quilllab.example.org/';
+    const html = '<p>Robin Quill</p><p>Graduate Student</p>';
+    const judged = buildLabSiteLeadVerification(
+      [lead()],
+      { website: eponymHost, visitedUrls: [eponymHost], html, pages: [{ url: eponymHost, html }] },
+      observedAt,
+      'FACULTY_RESEARCH_AREA',
+      'Robin Quill Faculty Research',
+    ).leads[0];
+    expect(judged.verdict).toBe('CONFIRMED');
+  });
+
+  it('keeps presence confirming the lead of a lab row', () => {
+    const labPage = '<p><a href="/profile/robin-quill/">Robin Quill</a></p>';
+    const judged = buildLabSiteLeadVerification(
+      [lead()],
+      { website, visitedUrls: [website], html: labPage, pages: [{ url: website, html: labPage }] },
+      observedAt,
+      'LAB',
+      'Tidal Imaging Lab',
+    ).leads[0];
+    expect(judged.verdict).toBe('CONFIRMED');
+  });
+});
+
+describe('a surname-named site with a namesake on it (#6313 peer review)', () => {
+  const observedAt = new Date('2026-11-15T00:00:00.000Z');
+  const eponymSite = 'https://medicine.yale.edu/lab/quill/';
+  const verify = (leads: LabSiteLeadCandidate[], html: string) =>
+    buildLabSiteLeadVerification(
+      leads,
+      { website: eponymSite, visitedUrls: [eponymSite], html, pages: [{ url: eponymSite, html }] },
+      observedAt,
+      'FACULTY_RESEARCH_AREA',
+      'Robin Quill Faculty Research',
+    ).leads;
+
+  it('confirms neither of two same-surname candidates on the surname alone', () => {
+    const html =
+      '<p><a href="/profile/robin-quill/">Robin Quill</a></p>' +
+      '<p><a href="/profile/dale-quill/">Dale Quill</a></p>';
+    const judged = verify(
+      [
+        lead(),
+        lead({
+          personId: '000000000000000000000002',
+          displayName: 'Dale Quill',
+          officialProfileUrls: ['https://medicine.yale.edu/profile/dale-quill/'],
+        }),
+      ],
+      html,
+    );
+    expect(judged.map((one) => one.verdict)).toEqual(['UNSTATED', 'UNSTATED']);
+  });
+
+  it('confirms neither same-surname candidate when the site shows only one of them', () => {
+    const html = '<p><a href="/profile/robin-quill/">Robin Quill</a></p>';
+    const judged = verify(
+      [
+        lead(),
+        lead({
+          personId: '000000000000000000000002',
+          displayName: 'Dale Quill',
+          officialProfileUrls: ['https://medicine.yale.edu/profile/dale-quill/'],
+        }),
+      ],
+      html,
+    );
+    expect(judged[0].verdict).toBe('UNSTATED');
+  });
+
+  it('does not confirm a lone subject when the site lists a namesake', () => {
+    const html =
+      '<p><a href="/profile/robin-quill/">Robin Quill</a></p>' +
+      '<p><a href="/lab/quill/profile/dale-quill/">Dale Quill</a></p>';
+    expect(verify([lead()], html)[0].verdict).toBe('UNSTATED');
+  });
+
+  it('does not confirm a lone subject when the site titles an unlinked namesake as its lead', () => {
+    const html =
+      '<html><head><title>Quill Lab</title></head><body>' +
+      '<div class="person"><h3>Dale Quill, PhD</h3><p>Principal Investigator</p></div>' +
+      '<div class="person"><h3><a href="/profile/robin-quill/">Robin Quill</a></h3><p>Graduate Student</p></div>' +
+      '</body></html>';
+    expect(verify([lead()], html)[0].verdict).toBe('UNSTATED');
+  });
+});
+
+describe('surnameInLabPath (#6313)', () => {
+  it('reads the lab segment of a school-hosted lab address', () => {
+    expect(surnameInLabPath('https://medicine.yale.edu/lab/quill/', 'Robin Quill')).toBe(true);
+    expect(surnameInLabPath('https://medicine.yale.edu/labs/quill-lab/', 'Robin Quill')).toBe(true);
+  });
+
+  it('ignores a surname outside the lab segment', () => {
+    expect(surnameInLabPath('https://medicine.yale.edu/lab/tidal/quill/', 'Robin Quill')).toBe(
+      false,
+    );
+    expect(surnameInLabPath('https://medicine.yale.edu/profile/robin-quill/', 'Robin Quill')).toBe(
+      false,
+    );
+    expect(surnameInLabPath('https://medicine.yale.edu/lab/', 'Robin Quill')).toBe(false);
   });
 });

@@ -4,7 +4,12 @@
 export { AdminGrant } from './adminGrant';
 export { AdminAuditEvent } from './adminAuditEvent';
 export { EntityCorrectionReport } from './entityCorrectionReport';
+export {
+  DirectoryRemovalRequest,
+  DIRECTORY_REMOVAL_REQUEST_COLLECTION,
+} from './directoryRemovalRequest';
 export { Fellowship } from './fellowship';
+export { DirectoryRemoval, DIRECTORY_REMOVAL_COLLECTION } from './directoryRemoval';
 export { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from './analytics';
 export { ResearchArea, ResearchField, fieldColorKeys } from './researchArea';
 export { Department, DepartmentCategory, categoryColorKeys } from './department';
@@ -24,6 +29,20 @@ export {
 } from './laneBenchmark';
 export { LaneScorecardSnapshot, LANE_SCORECARD_SNAPSHOT_COLLECTION } from './laneScorecardSnapshot';
 export {
+  ResearchTopicsDerivation,
+  RESEARCH_TOPICS_DERIVATION_COLLECTION,
+} from './researchTopicsDerivation';
+export {
+  CardSynthesisDerivation,
+  CARD_SYNTHESIS_DERIVATION_COLLECTION,
+} from './cardSynthesisDerivation';
+export {
+  WrittenDescriptionDerivation,
+  WRITTEN_DESCRIPTION_DERIVATION_COLLECTION,
+} from './writtenDescriptionDerivation';
+export { SearchRerankCache, SEARCH_RERANK_CACHE_COLLECTION } from './searchRerankCache';
+export { ModelCallUsage, MODEL_CALL_USAGE_COLLECTION } from './modelCallUsage';
+export {
   EngineBenchmark,
   EngineBenchmarkRow,
   ENGINE_BENCHMARK_COLLECTION,
@@ -38,6 +57,14 @@ export { ScrapeRun } from './scrapeRun';
 export { ScrapeSnapshot } from './scrapeSnapshot';
 export { WeeklySweepRun, WEEKLY_SWEEP_RUN_COLLECTION } from './weeklySweepRun';
 export { LoginSignalTally, LOGIN_SIGNAL_TALLY_COLLECTION } from './loginSignalTally';
+export {
+  DeletedAccountEventTally,
+  DELETED_ACCOUNT_EVENT_TALLY_COLLECTION,
+} from './deletedAccountEventTally';
+export {
+  AccountDeletionRequest,
+  ACCOUNT_DELETION_REQUEST_COLLECTION,
+} from './accountDeletionRequest';
 export * from './researchAccessTypes';
 export * from './sourceCoverageTypes';
 export * from './modelPrimitives';

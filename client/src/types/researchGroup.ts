@@ -41,6 +41,15 @@ export interface StudentDecisionExplanation {
   reviewFlags?: string[];
 }
 
+export interface UndergradListEvidence {
+  source: string;
+  signal: 'hosted' | 'welcomes' | 'mentors';
+  kind: 'advised' | 'open';
+  count?: number;
+  latestYear?: number;
+  sourceUrl: string;
+}
+
 export interface PastUndergradAdvisee {
   year?: number;
   programName?: string;
@@ -86,6 +95,15 @@ export interface ResearchEntitySourceLinkHealth {
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
   httpsLandingUrl?: string;
+  httpsSpellingUrl?: string;
+}
+
+export type UndergradInvitationLevel = 'actively_hiring' | 'welcomes_undergrads';
+
+export interface UndergradInvitation {
+  level: UndergradInvitationLevel;
+  quote: string;
+  sourceUrl: string;
 }
 
 export interface ResearchGroup {
@@ -114,15 +132,19 @@ export interface ResearchGroup {
   schools?: string[];
   /** Number of undergrads currently named on the lab roster, when known. */
   currentUndergradCount?: number;
-  /** Verbatim quote from the source page supporting undergraduate access. */
-  undergradEvidenceQuote?: string;
-  /** The page `undergradEvidenceQuote` is quoted from, served only beside a served quote. */
-  undergradEvidenceSourceUrl?: string;
+  /** A sentence on the lab's own page inviting undergraduates, with how strongly it invites. */
+  undergradInvitation?: UndergradInvitation;
   /** Past undergrad advisees discovered via thesis/STARS/etc. scrapers. */
   pastUndergradAdvisees?: PastUndergradAdvisee[];
   fellowshipRecipients?: FellowshipRecipient[];
   /** Served by the API from the one hosted-undergraduates predicate the browse filter also uses. */
   hasUndergradHostingEvidence?: boolean;
+  /** Served by the API from the one welcomes predicate the browse filter also uses. */
+  welcomesUndergrads?: boolean;
+  /** Served by the API from the one mentors predicate the search index also uses. */
+  mentorsUndergrads?: boolean;
+  /** Owner-reviewed official Yale lists naming this row's professor, one entry per list. */
+  undergradListEvidence?: UndergradListEvidence[];
   recentGrants?: RecentGrant[];
   recentGrantCount?: number;
   fundingAgencies?: string[];
@@ -178,9 +200,37 @@ export interface ResearchGroupSearchResponse {
   // and an empty one is not evidence that nothing matches.
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
+  acronymRewrite?: ResearchSearchAcronymRewrite;
+  topicRewrite?: ResearchSearchTopicRewrite;
+  fewCloseMatches?: ResearchSearchFewCloseMatches;
+  // Set when the server changed a school or department filter value: it maps a value
+  // to the spelling the corpus holds and drops one no row holds. A type the live index
+  // cannot filter on yet comes back as the types it did apply (#5141).
+  appliedFilters?: {
+    entityType?: string[];
+    school?: string[];
+    departments?: string[];
+    welcomesUndergrads?: false;
+    mentorsUndergrads?: false;
+  };
+  moreTopicResults?: ResearchEntity[];
 }
 
 export interface ResearchSearchQueryCorrection {
   originalQuery: string;
   correctedQuery: string;
+}
+
+export interface ResearchSearchAcronymRewrite {
+  originalQuery: string;
+  rewrittenQuery: string;
+}
+
+export interface ResearchSearchTopicRewrite {
+  originalQuery: string;
+  topicQuery: string;
+}
+
+export interface ResearchSearchFewCloseMatches {
+  closeMatchCount: number;
 }

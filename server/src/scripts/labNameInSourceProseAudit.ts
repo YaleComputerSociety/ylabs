@@ -20,6 +20,7 @@ import {
   type LabNameProseCandidate,
   type LabNameProseRow,
 } from './labNameInSourceProseAuditCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -148,7 +149,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         safeOutput,
         `${JSON.stringify({ generatedAt: new Date().toISOString(), ...result }, null, 2)}\n`,
       );

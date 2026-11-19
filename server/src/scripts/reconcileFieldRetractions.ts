@@ -6,6 +6,10 @@
  * to act. It exists separately from the sweep lane because the corpus-wide effect
  * of a first pass has to be readable (and refusable) before it is applied, and
  * because the sweep only ever reconciles the one source it just ran.
+ *
+ * A person whose user field it retires is re-derived through a user materialize scoped to that
+ * field (#5711, #5991), so a retired email rewrites only the email pair and a retired ORCID only
+ * the ORCID and its link; a field it cannot scope refuses the run before anything is written.
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -14,11 +18,22 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { materializeEntity } from '../scrapers/entityMaterializer';
 import {
   fieldRetractionContracts,
   reconcileFieldRetractions,
+  reconcileUserFieldRetractions,
+  retractedFieldsBySubject,
+  userFieldRetractionContractFor,
   type FieldRetractionResult,
+  type UserFieldRetractionResult,
+  type UserSubjectRederiver,
 } from '../scrapers/fieldRetraction';
+import {
+  expandUserMaterializerScope,
+  userRederiveOnlyFields,
+} from '../scrapers/userMaterializerFieldScope';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -85,8 +100,62 @@ export function summarizePreFixAbsenceClaimExclusions(results: FieldRetractionRe
   );
 }
 
-export function totalPlannedRetractions(results: FieldRetractionResult[]): number {
-  return results.reduce((sum, result) => sum + result.retractions.length, 0);
+export function totalPlannedRetractions(
+  results: FieldRetractionResult[],
+  userResults: UserFieldRetractionResult[] = [],
+): number {
+  return (
+    results.reduce((sum, result) => sum + result.retractions.length, 0) +
+    userResults.reduce((sum, result) => sum + result.retractions.length, 0)
+  );
+}
+
+export function plannedUserRederives(results: readonly UserFieldRetractionResult[]) {
+  return results.flatMap((result) =>
+    [...retractedFieldsBySubject(result.retractions)].map(([entityKey, retractedFields]) => {
+      const onlyFields = userRederiveOnlyFields(retractedFields);
+      return {
+        sourceName: result.sourceName,
+        entityKey,
+        retractedFields,
+        onlyFields,
+        plannedPaths: expandUserMaterializerScope(onlyFields),
+      };
+    }),
+  );
+}
+
+export interface ScopedUserRederiveRow {
+  entityKey: string;
+  onlyFields: string[];
+  fieldsWritten: number;
+  plannedPaths: string[];
+  outOfScopePaths: string[];
+}
+
+export function scopedUserRederiver(
+  materialize: (
+    entityKey: string,
+    onlyFields: readonly string[],
+  ) => Promise<{ fieldsWritten?: number; plannedPaths?: string[]; outOfScopePaths?: string[] }>,
+  rows: ScopedUserRederiveRow[],
+): UserSubjectRederiver {
+  return async ({ entityKey }, retractedFields) => {
+    const onlyFields = userRederiveOnlyFields(retractedFields);
+    const result = await materialize(entityKey, onlyFields);
+    rows.push({
+      entityKey,
+      onlyFields,
+      fieldsWritten: Number(result?.fieldsWritten ?? 0),
+      plannedPaths: result?.plannedPaths ?? [],
+      outOfScopePaths: result?.outOfScopePaths ?? [],
+    });
+    return result;
+  };
+}
+
+function userRetractionSources(sources: string[]): string[] {
+  return sources.filter((sourceName) => userFieldRetractionContractFor(sourceName));
 }
 
 async function main() {
@@ -102,12 +171,18 @@ async function main() {
   for (const sourceName of args.sources) {
     planned.push(await reconcileFieldRetractions({ sourceName, dryRun: true }));
   }
+  const plannedUser: UserFieldRetractionResult[] = [];
+  for (const sourceName of userRetractionSources(args.sources)) {
+    plannedUser.push(await reconcileUserFieldRetractions({ sourceName, dryRun: true }));
+  }
+
+  const userRederives = plannedUserRederives(plannedUser);
 
   if (args.apply) {
     if (!args.confirm) {
       throw new Error('--confirm-field-retraction is required when --apply is set.');
     }
-    const plannedCount = totalPlannedRetractions(planned);
+    const plannedCount = totalPlannedRetractions(planned, plannedUser);
     if (plannedCount > args.maxApply) {
       throw new Error(
         `Apply would retract ${plannedCount} field assertions, above --max-apply=${args.maxApply}.`,
@@ -116,9 +191,25 @@ async function main() {
   }
 
   const applied: FieldRetractionResult[] = [];
+  const appliedUser: UserFieldRetractionResult[] = [];
+  const rederivedUserRows: ScopedUserRederiveRow[] = [];
+  const rederive = scopedUserRederiver(
+    (entityKey, onlyFields) =>
+      materializeEntity('user', { entityKey }, { dryRun: false, userWriteOnlyFields: onlyFields }),
+    rederivedUserRows,
+  );
   if (args.apply) {
     for (const sourceName of args.sources) {
       applied.push(await reconcileFieldRetractions({ sourceName, dryRun: false }));
+    }
+    for (const sourceName of userRetractionSources(args.sources)) {
+      appliedUser.push(
+        await reconcileUserFieldRetractions({
+          sourceName,
+          dryRun: false,
+          rederive,
+        }),
+      );
     }
   }
 
@@ -137,6 +228,7 @@ async function main() {
       plannedRetractions: result.retractions.length,
       plannedStoredValueClears: result.retractions.filter((entry) => entry.clearsStoredValue)
         .length,
+      soleHolderRemovalsByHost: result.soleHolderRemovalsByHost ?? [],
     })),
     applied: applied.map((result) => ({
       sourceName: result.sourceName,
@@ -144,14 +236,37 @@ async function main() {
       counts: result.counts,
       frozenFields: result.frozenFields,
       regatedEntities: result.regatedEntities,
+      soleHolderRemovalsByHost: result.soleHolderRemovalsByHost ?? [],
     })),
     retractions: planned.flatMap((result) => result.retractions),
+    plannedUser: plannedUser.map((result) => ({
+      sourceName: result.sourceName,
+      outcome: result.outcome,
+      counts: result.counts,
+      frozenFields: result.frozenFields,
+      plannedRetractions: result.retractions.length,
+    })),
+    plannedUserRederives: userRederives,
+    plannedUserRederivePathSet: [
+      ...new Set(userRederives.flatMap((row) => row.plannedPaths)),
+    ].sort(),
+    appliedUser: appliedUser.map((result) => ({
+      sourceName: result.sourceName,
+      outcome: result.outcome,
+      counts: result.counts,
+      frozenFields: result.frozenFields,
+      retiredObservations: result.retiredObservations,
+      rederivedSubjects: result.rederivedSubjects,
+      rederiveErrors: result.rederiveErrors,
+    })),
+    rederivedUsers: rederivedUserRows,
+    rederivedUserPathSet: [...new Set(rederivedUserRows.flatMap((row) => row.plannedPaths))].sort(),
   };
 
   if (args.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
 
   console.log(JSON.stringify({ ...report, retractions: report.retractions.slice(0, 25) }, null, 2));

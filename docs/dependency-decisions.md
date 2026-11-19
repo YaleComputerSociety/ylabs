@@ -4,6 +4,21 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-11-08: Search spell correction reads an English word list from `an-array-of-english-words` (#5493)
+
+The server depends on `an-array-of-english-words` 2.0.0, pinned exactly, so the corrector can tell a real word from a typo: it rewrote "intro" to "into" because the corpus never uses "intro".
+The owner chose an MIT-licensed word list over a hand-kept list of course shorthand on 2026-11-08.
+It is MIT licensed, has no dependencies and no install scripts, and is one 3.4MB JSON array of about 275,000 lowercase words.
+`server/src/services/englishDictionaryWords.ts` reads it once on first use through `createRequire`, so the tsup bundle stays small and the file is read from `node_modules` at runtime, and keeps it as one string plus a `Uint32Array` of offsets, about 4MB of heap where a `Set` measured about 24MB.
+Replacing it means keeping `isEnglishDictionaryWord` and its lowercase ASCII contract.
+
+## 2026-11-10: The root and server move to Mongoose 9.11 and MongoDB driver 7.7 (supersedes #5564)
+
+The root and `server` projects move `mongoose` and its resolution to 9.11.4 together for its prototype-pollution fixes, and `server` moves its direct `mongodb` dependency from `~7.6` to `~7.7`, the line Mongoose 9.11 pins.
+The 2026-10-02 rule below still holds: the direct driver tracks the line Mongoose pins, so one shipped driver is installed and `connection.db` is the same `Db` type the scripts import.
+Leaving it on `~7.6` installed two copies, which is the type breakage Dependabot's #5564 hit.
+`mongodb-memory-server` still pins its own driver 7.5, development-only as before.
+
 ## 2026-10-04: The `passport-cas` git pin is replaced by an in-repo CAS 1.0 strategy (#4036)
 
 The server installed `passport-cas` from a 2020 git commit, held up by `server` `resolutions` that forced `uuid`, `xml2js`, and `underscore` across majors for it alone, and by the only entry in `approvedGitRepositories`.
@@ -25,7 +40,10 @@ The pin stays exact, so a formatter release never reformats files inside an unre
 GHSA-ch52-4w7c-c8xp (npm 1240991) is a high advisory against every `http-cache-semantics` release through 4.2.0, the latest, so there is no version to move to.
 It is ignored by id in `.yarnrc.yml`, with the reasoning beside the entry.
 The flaw is a shared cache serving one user's stored response to another on `max-stale`.
-The only consumer is the scraper's `server/src/scrapers/utils/httpValidatorCache.ts`, which builds every policy with `shared: false`, never calls `satisfiesWithoutRevalidation`, always revalidates with a conditional request, and never serves a cached body to a site user, so that path is not reachable.
+The only consumer is the scraper's `server/src/scrapers/utils/httpValidatorCache.ts`, which builds every policy with `shared: false` and never calls `satisfiesWithoutRevalidation` or the package's freshness or `max-stale` logic, so that path is not reachable.
+Since #6212 it replays a stored body without a request when its own `SCRAPER_HTTP_CACHE_REUSE_HOURS` window allows, and that decision reads only its own verification time and the stored `Cache-Control`.
+It refuses a stored `no-store` or `private` body, any request carrying `Authorization` or `Cookie`, and any response that varies on more than `Accept-Encoding`, pinned by the tests "never reuses a body whose stored response is no-store or private", "never stores or reuses a request that carries credentials" and "never reuses a response that varies on anything but its encoding" in `httpValidatorCache.test.ts`.
+The cache is owner-only on local disk, reused only by this machine's own scraper processes, never stored in Mongo and never served to a site user.
 The exit condition is a patched `http-cache-semantics` release; adopt it and remove the entry.
 A new consumer of the package that does serve from cache invalidates this judgement, so re-read it before adding one.
 
@@ -125,6 +143,7 @@ The `server` `resolutions` pinned `path-to-regexp` to 0.1.13, the patched releas
 Express 5 routes through `router` 2, which depends on `path-to-regexp` 8, so the pin would have forced a matcher the router was never written for, and it is removed rather than moved.
 `@types/express` moves to 5 with it, and the copies that `@types/passport`, `@types/passport-strategy`, and `@types/cookie-session` pull through their `*` ranges are deduplicated onto the same release, so one Express type surface is installed.
 The `qs` pin stays, because Express 5 and `body-parser` 2 both still resolve it.
+On 2026-10-28 the pin moved from 6.16.0 to the patch release 6.16.1 for GHSA-6pq8-jhm2-2vcw, which the CI dependency audit reported against 6.7.0 to 6.16.0 (#5437).
 The behaviour this upgrade had to keep, and where each rule now lives, is recorded in `skills/auth-security/SKILL.md` under the Express 5 request contract.
 
 ## 2026-10-02: The lint toolchain moves to ESLint 10 (#4375)
@@ -163,6 +182,7 @@ The root `resolutions` once forced 5.0.12 onto every consumer, which included th
 `minimatch` 3 calls `brace-expansion` as a CommonJS default function and 5.x exports only named bindings, so any brace glob crashed ESLint with `expand is not a function`.
 
 The root override is now keyed by the declared range, `brace-expansion@npm:^1.1.7` to 1.1.21 and `brace-expansion@npm:^5.0.5` to 5.0.12, so each consumer gets a patched release of the major it was written for.
+On 2026-11-03 (#5451) `minimatch` 11.0.4 declares `brace-expansion@^5.0.12`, which cannot resolve below the patched floor, so the `^5.0.5` key matched no descriptor and was removed.
 The `server` and `client` pins stay unscoped, because both resolve only `minimatch` 10.
 `scripts/security-preflight.test.mjs` pins both halves: every locked `brace-expansion` in the three lockfiles must be on the patched floor of its own major, and the `minimatch` ESLint loads must match a brace set.
 A new parent that declares a range neither key covers resolves unpinned, and the first of those guards fails if the version it locks is not patched.

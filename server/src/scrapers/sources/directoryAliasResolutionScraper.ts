@@ -26,8 +26,8 @@ import {
   type AliasObservationKey,
   type DirectoryIdentity,
 } from '../utils/aliasObservationKeyResolution';
-import { listYalies, type YaliesPerson } from '../../services/yaliesService';
-import { userLookupValueForInferredPiUserKey } from '../entityMaterializer';
+import { FIRST_YALIES_PAGE, listYalies, type YaliesPerson } from '../../services/yaliesService';
+import { netidNamedByUserEntityKey } from '../entityMaterializer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const SOURCE_KEY = 'directory-alias-resolution';
@@ -80,7 +80,7 @@ export async function loadDirectoryIdentities(options?: {
     options?.fetchPage ?? ((page: number) => listYalies({ page, pageSize: DIRECTORY_PAGE_SIZE }));
   const sleep = options?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const people: YaliesPerson[] = [];
-  for (let page = 1; page <= DIRECTORY_MAX_PAGES; page += 1) {
+  for (let page = FIRST_YALIES_PAGE; page < FIRST_YALIES_PAGE + DIRECTORY_MAX_PAGES; page += 1) {
     const rows = await fetchDirectoryPageWithRetry(page, fetchPage, sleep, options?.log);
     people.push(...rows);
     if (rows.length < DIRECTORY_PAGE_SIZE) break;
@@ -105,7 +105,7 @@ async function loadDirectoryIdentitiesCached(ctx: ScraperContext): Promise<Direc
 }
 
 /**
- * Reads the value through `userLookupValueForInferredPiUserKey` rather than off the raw key, and
+ * Reads the value through `netidNamedByUserEntityKey` rather than off the raw key, and
  * drops a self-match, so this agrees with `resolveNetidForRosterEmailAlias` instead of becoming a
  * second opinion about the same question.
  */
@@ -119,7 +119,7 @@ export async function corpusResolvableAliases(): Promise<Set<string>> {
   for (const row of emails) {
     const alias = emailLocalPart(row.value);
     if (!alias) continue;
-    const netid = String(userLookupValueForInferredPiUserKey(row.entityKey) ?? '').toLowerCase();
+    const netid = netidNamedByUserEntityKey(row.entityKey);
     if (!netid || netid === alias) continue;
     const bucket = netidsByAlias.get(alias);
     if (bucket) bucket.add(netid);

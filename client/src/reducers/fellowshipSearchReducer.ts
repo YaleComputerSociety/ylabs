@@ -4,7 +4,13 @@
  * Mirrors searchReducer but for the fellowships listing flow. Extracted so
  * state transitions are testable without mounting the provider.
  */
-import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
+import {
+  Fellowship,
+  FellowshipFilterOptions,
+  ProgramCitizenshipCounts,
+  StudentVisibilityTier,
+} from '../types/types';
+import type { ProgramSearchUrlState } from '../utils/programSearchUrlState';
 
 export type FellowshipQuickFilter =
   | 'open'
@@ -54,6 +60,10 @@ export interface FellowshipSearchState extends StudentProgramFilters {
   searchedQueryString: string;
   exactSpelling: boolean;
   queryCorrection: ProgramSearchQueryCorrection | null;
+  resultsRankedByRelevance: boolean;
+  resultsMissOneWord: boolean;
+  resultsCloseMatchesFrom: number | null;
+  citizenshipCounts: ProgramCitizenshipCounts | null;
   selectedStudentVisibilityTier: StudentVisibilityTier[];
   sortBy: string;
   sortOrder: number;
@@ -96,6 +106,10 @@ export type FellowshipSearchAction =
   | { type: 'SET_PAGE'; payload: number | ((prev: number) => number) }
   | { type: 'SET_QUICK_FILTER'; payload: FellowshipQuickFilter }
   | { type: 'RESET_PROGRAM_FILTERS' }
+  | {
+      type: 'APPLY_URL_STATE';
+      payload: ProgramSearchUrlState;
+    }
   | { type: 'SET_FILTER_BAR_HEIGHT'; payload: number }
   | { type: 'SET_FILTER_OPTIONS'; payload: FellowshipFilterOptions }
   | { type: 'SEARCH_REQUEST'; payload?: { queryString: string } }
@@ -107,6 +121,10 @@ export type FellowshipSearchAction =
         pageSize: number;
         append: boolean;
         queryCorrection?: ProgramSearchQueryCorrection | null;
+        missOneWord?: boolean;
+        closeMatchesFrom?: number | null;
+        citizenshipCounts?: ProgramCitizenshipCounts | null;
+        rankedByRelevance?: boolean;
       };
     }
   | { type: 'SEARCH_FAILURE' }
@@ -121,6 +139,10 @@ export const createInitialFellowshipSearchState = (
   searchedQueryString: '',
   exactSpelling: false,
   queryCorrection: null,
+  resultsRankedByRelevance: false,
+  resultsMissOneWord: false,
+  resultsCloseMatchesFrom: null,
+  citizenshipCounts: null,
   ...createEmptyStudentProgramFilters(),
   selectedStudentVisibilityTier: [],
   sortBy: 'default',
@@ -239,6 +261,20 @@ export function fellowshipSearchReducer(
     case 'RESET_PROGRAM_FILTERS':
       return { ...state, ...createEmptyStudentProgramFilters() };
 
+    case 'APPLY_URL_STATE': {
+      const { queryString, sortBy, sortDirection, ...filters } = action.payload;
+      const sortChanged = sortBy !== 'default';
+      return {
+        ...state,
+        ...filters,
+        queryString,
+        exactSpelling: queryString === state.queryString ? state.exactSpelling : false,
+        sortBy,
+        sortDirection: sortChanged ? sortDirection : state.sortDirection,
+        sortOrder: sortChanged ? (sortDirection === 'asc' ? 1 : -1) : state.sortOrder,
+      };
+    }
+
     case 'SET_FILTER_BAR_HEIGHT':
       return { ...state, filterBarHeight: action.payload };
 
@@ -254,7 +290,17 @@ export function fellowshipSearchReducer(
       };
 
     case 'SEARCH_SUCCESS': {
-      const { fellowships, total, pageSize, append, queryCorrection } = action.payload;
+      const {
+        fellowships,
+        total,
+        pageSize,
+        append,
+        queryCorrection,
+        rankedByRelevance,
+        missOneWord,
+        closeMatchesFrom,
+        citizenshipCounts,
+      } = action.payload;
       const nextFellowships = append ? [...state.fellowships, ...fellowships] : fellowships;
       const nextTotal = total !== undefined ? total : nextFellowships.length;
       return {
@@ -265,6 +311,16 @@ export function fellowshipSearchReducer(
           total !== undefined ? nextFellowships.length >= total : fellowships.length < pageSize,
         isLoading: false,
         queryCorrection: append ? state.queryCorrection : (queryCorrection ?? null),
+        resultsRankedByRelevance: append
+          ? state.resultsRankedByRelevance
+          : rankedByRelevance === true,
+        resultsMissOneWord: append ? state.resultsMissOneWord : missOneWord === true,
+        resultsCloseMatchesFrom: append
+          ? state.resultsCloseMatchesFrom
+          : typeof closeMatchesFrom === 'number'
+            ? closeMatchesFrom
+            : null,
+        citizenshipCounts: append ? state.citizenshipCounts : (citizenshipCounts ?? null),
       };
     }
 
@@ -277,6 +333,9 @@ export function fellowshipSearchReducer(
         isLoading: false,
         loadError: true,
         queryCorrection: null,
+        resultsMissOneWord: false,
+        resultsCloseMatchesFrom: null,
+        citizenshipCounts: null,
       };
 
     case 'LOAD_MORE_FAILURE':

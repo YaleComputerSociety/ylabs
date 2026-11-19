@@ -51,6 +51,7 @@ import {
 import { facultyNameMatchKey, normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import type { BbsTrackHealthSnapshot } from '../bbsTrackRosterRetirement';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
 const SOURCE_KEY = 'bbs-research-track';
 
@@ -62,7 +63,6 @@ const SOURCE_KEY = 'bbs-research-track';
  */
 const BBS_TRACK_PI_ROLE = 'track-pi';
 const BBS_HOST = 'medicine.yale.edu';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PROFILE_REFUSAL_STATUS_CODES: ReadonlySet<number> = new Set([403, 429]);
 export const BBS_REFUSED_PROFILE_RETRY_PAUSE_MS = 60_000;
@@ -686,14 +686,18 @@ function buildTrackRosterHealthObservation(input: {
  *
  * The distinction between a warning and a stage failure is this read: a track that never listed
  * anybody may simply be empty upstream, while a track that used to list PIs and now lists none is
- * unambiguously a defect. Fails open, returning false, because an unanswerable read must not
- * invent a failure.
+ * unambiguously a defect. A process that never opened a database returns false, because an
+ * unanswerable read must not invent a failure; once one was opened, a read during a reconnect
+ * runs and either answers or throws, so a dropped connection never hides a broken track (#5877).
  *
  * The read keys on a topic this track grafts rather than on the track URL, because a graft cites
  * the PI's profile page and never the track page, and no two tracks share a topic.
  */
-async function defaultTrackEverListedPis(track: BbsTrack, sourceId: string): Promise<boolean> {
-  if (mongoose.connection.readyState !== 1 || !mongoose.isValidObjectId(sourceId)) return false;
+export async function defaultTrackEverListedPis(
+  track: BbsTrack,
+  sourceId: string,
+): Promise<boolean> {
+  if (!mongooseConnectionWasOpened() || !mongoose.isValidObjectId(sourceId)) return false;
   const seen = await Observation.exists({
     sourceId,
     entityType: 'researchEntity',
@@ -713,7 +717,6 @@ async function defaultFetchPage(url: string, useCache: boolean): Promise<string 
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrl.toString(), {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

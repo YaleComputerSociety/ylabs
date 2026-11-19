@@ -17,7 +17,9 @@ import FellowshipSearchContextProvider from './providers/FellowshipSearchContext
 import UIContextProvider from './providers/UIContextProvider';
 import ScrollToTop from './components/shared/ScrollToTop';
 import HttpStatusNotifier from './components/HttpStatusNotifier';
+import AccountDeletedNotice from './components/AccountDeletedNotice';
 import LoadingSpinner from './components/shared/LoadingSpinner';
+import { PRIVACY_PATH } from './utils/privacyNotice';
 
 // Only `/research` is eager among content pages: it is the entry point of the
 // student journey and the target of the root redirect, so it must not cost a
@@ -26,6 +28,8 @@ const Fellowships = lazy(() => import('./pages/fellowships'));
 const ResearchDetail = lazy(() => import('./pages/labDetail'));
 const Login = lazy(() => import('./pages/login'));
 const About = lazy(() => import('./pages/about'));
+const GettingStarted = lazy(() => import('./pages/gettingStarted'));
+const Privacy = lazy(() => import('./pages/privacy'));
 const Dashboard = lazy(() => import('./pages/dashboard'));
 const LoginError = lazy(() => import('./pages/loginError'));
 const Analytics = lazy(() => import('./pages/analytics'));
@@ -73,6 +77,7 @@ const App = () => {
                 data-scroll-container
               >
                 <HttpStatusNotifier />
+                <AccountDeletedNotice />
                 <main
                   id="main-content"
                   tabIndex={-1}
@@ -104,6 +109,11 @@ const App = () => {
                           element={<PublicRoute Component={ResearchDetail} />}
                         />
                         <Route path="/about" element={<PublicRoute Component={About} />} />
+                        <Route
+                          path="/getting-started"
+                          element={<PublicRoute Component={GettingStarted} />}
+                        />
+                        <Route path={PRIVACY_PATH} element={<PublicRoute Component={Privacy} />} />
                         <Route
                           path="/account"
                           element={<PrivateRoute Component={RetiredAccountRedirect} />}

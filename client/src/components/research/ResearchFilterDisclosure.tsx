@@ -2,8 +2,17 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { ChevronDownIcon, CloseIcon, FiltersIcon } from '../shared/icons';
 
 import ActiveFilterChip from './ActiveFilterChip';
+import InfoTip from '../shared/InfoTip';
 import {
-  isKnownResearchEntityType,
+  ADVISES_UNDERGRAD_RESEARCH_FILTER_HINT,
+  ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL,
+  HAS_HAD_UNDERGRADS_FILTER_LABEL,
+  TAKING_UNDERGRADS_NOW_FILTER_LABEL,
+  UNDERGRADS_FILTER_COMBINATION_NOTE,
+  UNDERGRADS_FILTER_GROUP_LABEL,
+  UNDERGRADS_OPTION_UNAVAILABLE_NOTE,
+  UNDERGRAD_ZERO_QUERY_ONLY_TIP,
+  isKnownResearchTypeFilterValue,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
 import useMediaQuery from '../../hooks/useMediaQuery';
@@ -21,19 +30,38 @@ interface ResearchFilterDisclosureProps {
   selectedEntityType: string;
   selectedSchool: string;
   selectedDepartment: string;
+  selectedHostsUndergrads?: boolean;
+  selectedWelcomesUndergrads?: boolean;
+  selectedMentorsUndergrads?: boolean;
+  hasActiveQuery?: boolean;
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
   onEntityTypeChange: (value: string) => void;
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
+  onHostsUndergradsChange?: (value: boolean) => void;
+  onWelcomesUndergradsChange?: (value: boolean) => void;
+  onMentorsUndergradsChange?: (value: boolean) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   operatorControls?: ReactNode;
   operatorActiveCount?: number;
+  resultCount?: number;
+  resultCountPending?: boolean;
+  onShowResults?: () => void;
+  isLoadingOptions?: boolean;
+  trailingControl?: ReactNode;
 }
+
+const resultCountFormatter = new Intl.NumberFormat('en-US');
+
+const showResultsLabel = (count: number | undefined): string =>
+  count === undefined
+    ? 'Show results'
+    : `Show ${resultCountFormatter.format(count)} ${count === 1 ? 'result' : 'results'}`;
 
 const positiveFacetOptions = (values: Record<string, number> | undefined): FacetOption[] =>
   Object.entries(values || {})
@@ -46,23 +74,249 @@ const withSelectedOption = (options: FacetOption[], selected: string): FacetOpti
   return [{ value: selected }, ...options];
 };
 
+const servedTrueCount = (facet: Record<string, number> | undefined): number | undefined =>
+  Number.isFinite(facet?.true) ? facet?.true : undefined;
+
+interface UndergraduateToggleProps {
+  label: string;
+  hint?: string;
+  count: number | undefined;
+  countSuffix: string;
+  checked: boolean;
+  unavailableTip?: string;
+  compact: boolean;
+  inputRef?: (node: HTMLElement | null) => void;
+  onChange?: (value: boolean) => void;
+}
+
+const isUnavailableUndergradOption = (count: number | undefined, checked: boolean) =>
+  count === 0 && !checked;
+
+// An option no row would match stays focusable, so a keyboard or screen reader user can
+// reach it and hear why it is unavailable; a native disabled checkbox drops out of the
+// tab order and hides that reason.
+const UndergraduateToggle = ({
+  label,
+  hint,
+  count,
+  countSuffix,
+  checked,
+  unavailableTip,
+  compact,
+  inputRef,
+  onChange,
+}: UndergraduateToggleProps) => {
+  const ownTipId = useId();
+  const unavailableNoteId = useId();
+  const unavailable = isUnavailableUndergradOption(count, checked);
+  const tip = unavailable ? unavailableTip : undefined;
+  const compactTipText = [hint, tip].filter(Boolean).join(' ');
+  const describedBy = compact
+    ? compactTipText
+      ? ownTipId
+      : undefined
+    : [hint ? ownTipId : null, tip ? unavailableNoteId : null].filter(Boolean).join(' ') ||
+      undefined;
+  return (
+    <div className={compact ? 'flex min-w-0 items-center gap-1' : 'min-w-0'}>
+      <label
+        className={`flex min-w-0 items-center gap-3 text-sm font-medium ${unavailable ? 'cursor-not-allowed text-muted' : 'text-ink'} ${compact ? 'min-h-7' : 'min-h-11'}`}
+      >
+        <input
+          ref={inputRef}
+          type="checkbox"
+          checked={checked}
+          aria-disabled={unavailable || undefined}
+          aria-describedby={describedBy}
+          onChange={(event) => {
+            if (!unavailable) onChange?.(event.target.checked);
+          }}
+          className="yr-focus-ring h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+        />
+        <span className="yr-num min-w-0">
+          {label}
+          {countSuffix}
+        </span>
+      </label>
+      {compact && compactTipText && (
+        <InfoTip
+          label={tip ? `Why ${label} is unavailable` : `About ${label}`}
+          text={compactTipText}
+          tipId={ownTipId}
+          align="end"
+        />
+      )}
+      {hint && !compact && (
+        <p id={ownTipId} className="-mt-3 ml-8 text-xs leading-snug text-muted">
+          {hint}
+        </p>
+      )}
+      {tip && !compact && (
+        <p
+          id={unavailableNoteId}
+          className={`${hint ? '' : '-mt-3 '}ml-8 text-xs leading-snug text-muted`}
+        >
+          {tip}
+        </p>
+      )}
+    </div>
+  );
+};
+
+// Clearing every filter removes the control the student pressed, and with no query the
+// page swaps to the browse view, which mounts a new filter bar, so the target is looked
+// up after that render rather than held as a ref.
+export const focusResearchFiltersEntry = () => {
+  window.setTimeout(() => {
+    document.querySelector<HTMLElement>('[data-research-filters-entry]')?.focus();
+  }, 0);
+};
+
+const KEYS_THAT_STEP_A_CLOSED_SELECT = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+]);
+
+const keyStepsAClosedSelect = (key: string): boolean =>
+  key.length === 1 || KEYS_THAT_STEP_A_CLOSED_SELECT.has(key);
+
+const keyOpensASelectList = ({ key, altKey }: { key: string; altKey: boolean }): boolean =>
+  key === 'F4' || (altKey && (key === 'ArrowDown' || key === 'ArrowUp'));
+
+// Applying a filter from the browse view starts a search, and the page renders the
+// search view's own filter controls, so the select the student was on is replaced. The
+// replacement is found by its label once that render has landed.
+const refocusFilterSelectAfterRender = (ariaLabel: string) => {
+  window.setTimeout(() => {
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    document
+      .querySelector<HTMLSelectElement>(`select[aria-label="${CSS.escape(ariaLabel)}"]`)
+      ?.focus();
+  }, 0);
+};
+
+interface ConfirmedFilterSelectProps {
+  value: string;
+  onConfirm: (value: string) => void;
+  ariaLabel: string;
+  className: string;
+  selectRef?: (node: HTMLElement | null) => void;
+  children: ReactNode;
+}
+
+// A closed select changes its value on every typed letter or arrow key, and applying a
+// filter per keystroke ran a search for "Early Modern Studies" while a student typed
+// "Ec". Keyboard steps only move the draft and Enter applies it. Leaving the field keeps
+// the applied value, because an apply on blur from the browse view replaced the filter
+// controls under the student's pending Tab or click. A pick from the open list applies,
+// so opening the list drops the draft: picking the option the draft showed must still
+// differ from the select's value, or the browser fires no change.
+const ConfirmedFilterSelect = ({
+  value,
+  onConfirm,
+  ariaLabel,
+  className,
+  selectRef,
+  children,
+}: ConfirmedFilterSelectProps) => {
+  const [draft, setDraft] = useState(value);
+  const [draftSourceValue, setDraftSourceValue] = useState(value);
+  if (draftSourceValue !== value) {
+    setDraftSourceValue(value);
+    setDraft(value);
+  }
+  const keyboardStepPendingRef = useRef(false);
+  const selectNodeRef = useRef<HTMLSelectElement | null>(null);
+  const confirm = (next: string) => {
+    setDraft(next);
+    if (next === value) return;
+    const hadFocus = document.activeElement === selectNodeRef.current;
+    onConfirm(next);
+    if (hadFocus) refocusFilterSelectAfterRender(ariaLabel);
+  };
+  const markKeyboardStepPending = () => {
+    keyboardStepPendingRef.current = true;
+    window.setTimeout(() => {
+      keyboardStepPendingRef.current = false;
+    }, 0);
+  };
+  return (
+    <select
+      ref={(node) => {
+        selectNodeRef.current = node;
+        selectRef?.(node);
+      }}
+      aria-label={ariaLabel}
+      value={draft}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && draft !== value) {
+          event.preventDefault();
+          confirm(draft);
+          return;
+        }
+        if (event.key === 'Escape' && draft !== value) {
+          event.stopPropagation();
+          setDraft(value);
+          return;
+        }
+        if (keyOpensASelectList(event)) {
+          setDraft(value);
+          return;
+        }
+        if (keyStepsAClosedSelect(event.key)) markKeyboardStepPending();
+      }}
+      onKeyPress={(event) => {
+        if (event.key.length === 1) markKeyboardStepPending();
+      }}
+      onChange={(event) => {
+        if (keyboardStepPendingRef.current) setDraft(event.target.value);
+        else confirm(event.target.value);
+      }}
+      onMouseDown={() => setDraft(value)}
+      onBlur={() => setDraft(value)}
+      className={className}
+    >
+      {children}
+    </select>
+  );
+};
+
 const ResearchFilterDisclosure = ({
   facetDistribution,
   selectedEntityType,
   selectedSchool,
   selectedDepartment,
+  selectedHostsUndergrads = false,
+  selectedWelcomesUndergrads = false,
+  selectedMentorsUndergrads = false,
+  hasActiveQuery = false,
   isApplying,
   hasFacetError,
   departmentLabel,
   onEntityTypeChange,
   onSchoolChange,
   onDepartmentChange,
+  onHostsUndergradsChange,
+  onWelcomesUndergradsChange,
+  onMentorsUndergradsChange,
   onClearAll,
   variant = 'popover',
   isOpen: controlledIsOpen,
   onOpenChange,
   operatorControls,
   operatorActiveCount = 0,
+  resultCount,
+  resultCountPending = false,
+  onShowResults,
+  isLoadingOptions = false,
+  trailingControl,
 }: ResearchFilterDisclosureProps) => {
   const isSidebar = variant === 'sidebar';
   const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
@@ -79,13 +333,17 @@ const ResearchFilterDisclosure = ({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
-  const firstFieldRef = useRef<HTMLSelectElement | null>(null);
+  const firstFieldRef = useRef<HTMLElement | null>(null);
+  const setFirstFieldNode = useCallback((node: HTMLElement | null) => {
+    firstFieldRef.current = node;
+  }, []);
   const panelId = useId();
+  const undergradsCombinationNoteId = useId();
 
   const positiveEntityTypes = useMemo(
     () =>
       positiveFacetOptions(facetDistribution.entityType)
-        .filter((option) => isKnownResearchEntityType(option.value))
+        .filter((option) => isKnownResearchTypeFilterValue(option.value))
         .map((option) => ({ ...option, label: researchEntityTypeFilterLabel(option.value) }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     [facetDistribution.entityType],
@@ -110,22 +368,82 @@ const ResearchFilterDisclosure = ({
     () => withSelectedOption(positiveDepartments, selectedDepartment),
     [positiveDepartments, selectedDepartment],
   );
-  const showEntityType = positiveEntityTypes.length > 1 || Boolean(selectedEntityType);
-  const showSchool = positiveSchools.length > 1 || Boolean(selectedSchool);
-  const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
+  const showEntityType = positiveEntityTypes.length > 0 || Boolean(selectedEntityType);
+  const showSchool = positiveSchools.length > 0 || Boolean(selectedSchool);
+  const showDepartment = positiveDepartments.length > 0 || Boolean(selectedDepartment);
+  const undergradOptions = (
+    [
+      {
+        field: 'welcomesUndergrads',
+        label: TAKING_UNDERGRADS_NOW_FILTER_LABEL,
+        hint: undefined,
+        checked: selectedWelcomesUndergrads,
+        onChange: onWelcomesUndergradsChange,
+      },
+      {
+        field: 'hostsUndergrads',
+        label: HAS_HAD_UNDERGRADS_FILTER_LABEL,
+        hint: undefined,
+        checked: selectedHostsUndergrads,
+        onChange: onHostsUndergradsChange,
+      },
+      {
+        field: 'mentorsUndergrads',
+        label: ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL,
+        hint: ADVISES_UNDERGRAD_RESEARCH_FILTER_HINT,
+        checked: selectedMentorsUndergrads,
+        onChange: onMentorsUndergradsChange,
+      },
+    ] as const
+  )
+    .map((option) => ({ ...option, count: servedTrueCount(facetDistribution[option.field]) }))
+    .filter((option) => Boolean(option.onChange) && (option.checked || option.count !== undefined));
+  // An option at zero is unavailable for one of three reasons, and only a narrowed
+  // selection can be widened: with nothing but a query the student has no filter to
+  // remove, and with neither a query nor a filter the zero is the served total, which
+  // has no agreed wording yet (#6203), so that state says nothing beyond the count.
+  const narrowedBySelection =
+    Boolean(selectedEntityType || selectedSchool || selectedDepartment) ||
+    selectedHostsUndergrads ||
+    selectedWelcomesUndergrads ||
+    selectedMentorsUndergrads ||
+    operatorActiveCount > 0;
+  const undergradUnavailableTip = narrowedBySelection
+    ? UNDERGRADS_OPTION_UNAVAILABLE_NOTE
+    : hasActiveQuery
+      ? UNDERGRAD_ZERO_QUERY_ONLY_TIP
+      : undefined;
   const activeCount =
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
-    Number(Boolean(selectedDepartment));
+    Number(Boolean(selectedDepartment)) +
+    Number(selectedHostsUndergrads) +
+    Number(selectedWelcomesUndergrads) +
+    Number(selectedMentorsUndergrads);
   const triggerCount = activeCount + operatorActiveCount;
-  const visibleFields = (
-    [
-      showEntityType && 'entityType',
-      showSchool && 'school',
-      showDepartment && 'department',
-    ] as const
-  ).filter((field): field is 'entityType' | 'school' | 'department' => Boolean(field));
-  const firstVisibleField = visibleFields[0];
+  type FilterField =
+    | 'entityType'
+    | 'school'
+    | 'department'
+    | 'hostsUndergrads'
+    | 'welcomesUndergrads'
+    | 'mentorsUndergrads';
+  const visibleFields: FilterField[] = [
+    ...undergradOptions.map((option) => option.field),
+    ...(
+      [
+        showEntityType && 'entityType',
+        showSchool && 'school',
+        showDepartment && 'department',
+      ] as const
+    ).filter((field): field is 'entityType' | 'school' | 'department' => Boolean(field)),
+  ];
+  const firstVisibleField: FilterField | undefined = [
+    ...undergradOptions
+      .filter((option) => !isUnavailableUndergradOption(option.count, option.checked))
+      .map((option) => option.field),
+    ...visibleFields.slice(undergradOptions.length),
+  ][0];
   const visibleFacetKey = visibleFields.join(':');
 
   const getFocusableElements = () =>
@@ -150,12 +468,6 @@ const ResearchFilterDisclosure = ({
     },
     [setIsOpen],
   );
-
-  useEffect(() => {
-    if (isSidebar || !isOpen) return;
-    const timeout = window.setTimeout(focusFirstControl, 0);
-    return () => window.clearTimeout(timeout);
-  }, [focusFirstControl, isOpen, isSidebar]);
 
   useEffect(() => {
     if (isSidebar || !isOpen) return;
@@ -194,9 +506,12 @@ const ResearchFilterDisclosure = ({
 
   const emptyMessage = hasFacetError
     ? 'Filter options could not load with this search. Active filters can still be cleared.'
-    : isApplying
+    : isApplying || isLoadingOptions
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';
+
+  const facetCountSuffix = (count: number | undefined): string =>
+    hasFacetError || count === undefined ? '' : ` (${count})`;
 
   const facetCountWarning = hasFacetError && visibleFields.length > 0 && (
     <p className="rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -204,68 +519,114 @@ const ResearchFilterDisclosure = ({
     </p>
   );
 
+  const selectFieldLabelClassName = isSidebar
+    ? 'grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2 text-sm font-medium text-ink'
+    : 'block min-w-0 text-sm font-medium text-ink';
+  const selectClassName = `yr-focus-ring ${isSidebar ? '' : 'mt-1 '}min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink`;
+
   const filterFields = (
     <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
-      <div className="min-w-0 space-y-4">
+      <div className={`min-w-0 ${isSidebar ? 'space-y-2' : 'space-y-4'}`}>
+        {undergradOptions.length > 0 && (
+          <fieldset
+            aria-describedby={undergradOptions.length > 1 ? undergradsCombinationNoteId : undefined}
+            className="min-w-0 border-0 p-0"
+          >
+            <legend
+              className={`text-sm font-semibold text-ink ${isSidebar ? 'float-left leading-6' : ''}`}
+            >
+              {UNDERGRADS_FILTER_GROUP_LABEL}
+            </legend>
+            {undergradOptions.length > 1 && isSidebar && (
+              <InfoTip
+                label={`About ${UNDERGRADS_FILTER_GROUP_LABEL}`}
+                text={UNDERGRADS_FILTER_COMBINATION_NOTE}
+                tipId={undergradsCombinationNoteId}
+                className="ml-1"
+              />
+            )}
+            {undergradOptions.length > 1 && !isSidebar && (
+              <p id={undergradsCombinationNoteId} className="text-xs leading-snug text-muted">
+                {UNDERGRADS_FILTER_COMBINATION_NOTE}
+              </p>
+            )}
+            <div className={`min-w-0 ${isSidebar ? 'clear-left' : ''}`}>
+              {undergradOptions.map((option) => (
+                <UndergraduateToggle
+                  key={option.field}
+                  label={option.label}
+                  hint={option.hint}
+                  count={option.count}
+                  countSuffix={facetCountSuffix(option.count)}
+                  checked={option.checked}
+                  unavailableTip={undergradUnavailableTip}
+                  compact={isSidebar}
+                  inputRef={firstVisibleField === option.field ? setFirstFieldNode : undefined}
+                  onChange={option.onChange}
+                />
+              ))}
+            </div>
+          </fieldset>
+        )}
         {showEntityType && (
-          <label className="block min-w-0 text-sm font-medium text-ink">
+          <label className={selectFieldLabelClassName}>
             Type
-            <select
-              ref={firstVisibleField === 'entityType' ? firstFieldRef : undefined}
-              aria-label="Filter by type"
+            <ConfirmedFilterSelect
+              selectRef={firstVisibleField === 'entityType' ? setFirstFieldNode : undefined}
+              ariaLabel="Filter by type"
               value={selectedEntityType}
-              onChange={(event) => onEntityTypeChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
+              onConfirm={onEntityTypeChange}
+              className={selectClassName}
             >
               <option value="">All types</option>
               {entityTypeOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label || researchEntityTypeFilterLabel(option.value)}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
+                  {facetCountSuffix(option.count)}
                 </option>
               ))}
-            </select>
+            </ConfirmedFilterSelect>
           </label>
         )}
         {showSchool && (
-          <label className="block min-w-0 text-sm font-medium text-ink">
+          <label className={selectFieldLabelClassName}>
             School
-            <select
-              ref={firstVisibleField === 'school' ? firstFieldRef : undefined}
-              aria-label="Filter by school"
+            <ConfirmedFilterSelect
+              selectRef={firstVisibleField === 'school' ? setFirstFieldNode : undefined}
+              ariaLabel="Filter by school"
               value={selectedSchool}
-              onChange={(event) => onSchoolChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
+              onConfirm={onSchoolChange}
+              className={selectClassName}
             >
               <option value="">All schools</option>
               {schoolOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.value}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
+                  {facetCountSuffix(option.count)}
                 </option>
               ))}
-            </select>
+            </ConfirmedFilterSelect>
           </label>
         )}
         {showDepartment && (
-          <label className="block min-w-0 text-sm font-medium text-ink">
+          <label className={selectFieldLabelClassName}>
             Department
-            <select
-              ref={firstVisibleField === 'department' ? firstFieldRef : undefined}
-              aria-label="Filter by department"
+            <ConfirmedFilterSelect
+              selectRef={firstVisibleField === 'department' ? setFirstFieldNode : undefined}
+              ariaLabel="Filter by department"
               value={selectedDepartment}
-              onChange={(event) => onDepartmentChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
+              onConfirm={onDepartmentChange}
+              className={selectClassName}
             >
               <option value="">All departments</option>
               {departmentOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {departmentLabel(option.value)}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
+                  {facetCountSuffix(option.count)}
                 </option>
               ))}
-            </select>
+            </ConfirmedFilterSelect>
           </label>
         )}
         {visibleFields.length === 0 && (
@@ -278,58 +639,107 @@ const ResearchFilterDisclosure = ({
   const clearAllButton = activeCount > 0 && (
     <button
       type="button"
-      onClick={onClearAll}
+      onClick={() => {
+        onClearAll();
+        window.setTimeout(() => {
+          if (panelRef.current?.isConnected) focusFirstControl();
+        }, 0);
+      }}
       className="yr-focus-ring inline-flex min-h-11 w-full items-center justify-center rounded-card border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)]"
     >
       Clear all filters
     </button>
   );
 
-  const activeChips = activeCount > 0 && (
-    <div
-      className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2"
-      aria-label="Active research filters"
-    >
-      {selectedEntityType && (
-        <ActiveFilterChip
-          axis="Type"
-          value={researchEntityTypeFilterLabel(selectedEntityType)}
-          onRemove={() => onEntityTypeChange('')}
-        />
-      )}
-      {selectedSchool && (
-        <ActiveFilterChip
-          axis="School"
-          value={selectedSchool}
-          onRemove={() => onSchoolChange('')}
-        />
-      )}
-      {selectedDepartment && (
-        <ActiveFilterChip
-          axis="Department"
-          value={departmentLabel(selectedDepartment)}
-          onRemove={() => onDepartmentChange('')}
-        />
-      )}
-      <button
-        type="button"
-        onClick={onClearAll}
-        className="yr-focus-ring inline-flex min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-muted hover:text-ink"
+  const activeChips = (besideTrigger: boolean) =>
+    activeCount > 0 && (
+      <div
+        className={
+          besideTrigger
+            ? '-my-1 -ml-1 flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto p-1 *:max-w-full *:shrink-0'
+            : 'mt-2 flex min-w-0 max-w-full flex-wrap gap-2'
+        }
+        aria-label="Active research filters"
       >
-        Clear all active filters
-      </button>
-    </div>
-  );
+        {selectedEntityType && (
+          <ActiveFilterChip
+            axis="Type"
+            value={researchEntityTypeFilterLabel(selectedEntityType)}
+            visibleLabel={
+              besideTrigger ? researchEntityTypeFilterLabel(selectedEntityType) : undefined
+            }
+            onRemove={() => onEntityTypeChange('')}
+          />
+        )}
+        {selectedSchool && (
+          <ActiveFilterChip
+            axis="School"
+            value={selectedSchool}
+            visibleLabel={besideTrigger ? selectedSchool : undefined}
+            onRemove={() => onSchoolChange('')}
+          />
+        )}
+        {selectedDepartment && (
+          <ActiveFilterChip
+            axis="Department"
+            value={departmentLabel(selectedDepartment)}
+            visibleLabel={besideTrigger ? departmentLabel(selectedDepartment) : undefined}
+            onRemove={() => onDepartmentChange('')}
+          />
+        )}
+        {undergradOptions
+          .filter((option) => option.checked)
+          .map((option) => (
+            <ActiveFilterChip
+              key={option.field}
+              axis={UNDERGRADS_FILTER_GROUP_LABEL}
+              value={option.label}
+              visibleLabel={besideTrigger ? option.label : undefined}
+              onRemove={() => option.onChange?.(false)}
+            />
+          ))}
+        {besideTrigger && (
+          <button
+            type="button"
+            onClick={() => {
+              onClearAll();
+              focusResearchFiltersEntry();
+            }}
+            className="yr-focus-ring inline-flex min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-muted hover:text-ink"
+          >
+            Clear all filters
+          </button>
+        )}
+      </div>
+    );
 
   if (isSidebar) {
     return (
       <section aria-label="Research filters" aria-busy={isApplying} className="min-w-0 max-w-full">
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-ink">Research filters</h2>
+        <div className="flex min-w-0 items-center gap-3">
+          <h2
+            data-research-filters-entry=""
+            tabIndex={-1}
+            className="yr-focus-ring -mx-1 rounded-control px-1 text-base font-semibold text-ink"
+          >
+            Research filters
+          </h2>
           {activeCount > 0 && (
-            <span className="min-w-5 rounded-full bg-[var(--yr-blue)] px-1.5 py-0.5 text-center text-xs font-semibold text-white">
-              {activeCount}
-            </span>
+            <>
+              <span className="min-w-5 rounded-full bg-[var(--yr-blue)] px-1.5 py-0.5 text-center text-xs font-semibold text-white">
+                {activeCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  onClearAll();
+                  focusResearchFiltersEntry();
+                }}
+                className="yr-focus-ring -my-2.5 ml-auto inline-flex min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-muted hover:text-ink"
+              >
+                Clear all filters
+              </button>
+            </>
           )}
         </div>
         {isApplying && (
@@ -337,21 +747,22 @@ const ResearchFilterDisclosure = ({
             Applying filters…
           </p>
         )}
-        <div className="mt-4 min-w-0 space-y-4">
+        <div className="mt-3 min-w-0 space-y-4">
           {facetCountWarning}
           {filterFields}
-          {clearAllButton}
         </div>
-        {activeChips}
       </section>
     );
   }
 
   return (
-    <div className="mt-3 min-w-0 max-w-full">
-      <div className="relative min-w-0 max-w-full">
+    <div
+      className={`flex min-w-0 max-w-full items-center gap-2 ${trailingControl ? 'mt-1' : 'mt-3'}`}
+    >
+      <div className="relative min-w-0 max-w-full shrink-0">
         <button
           ref={triggerRef}
+          data-research-filters-entry=""
           type="button"
           aria-expanded={isOpen}
           aria-haspopup="dialog"
@@ -442,12 +853,36 @@ const ResearchFilterDisclosure = ({
                   </section>
                 )}
               </div>
+              <div className="sticky bottom-0 border-t border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeFilters();
+                    onShowResults?.();
+                  }}
+                  className="yr-focus-ring yr-pressable grid min-h-11 w-full place-items-center rounded-control bg-[var(--yr-blue)] px-4 text-sm font-semibold text-white hover:bg-brand-navy"
+                >
+                  <span
+                    aria-hidden={resultCountPending || undefined}
+                    className={`yr-num col-start-1 row-start-1 ${resultCountPending ? 'invisible' : ''}`}
+                  >
+                    {showResultsLabel(resultCount)}
+                  </span>
+                  <span
+                    aria-hidden={resultCountPending ? undefined : true}
+                    className={`col-start-1 row-start-1 ${resultCountPending ? '' : 'invisible'}`}
+                  >
+                    Updating results…
+                  </span>
+                </button>
+              </div>
             </div>
           </>
         )}
       </div>
 
-      {activeChips}
+      {activeChips(true)}
+      {trailingControl && <div className="ml-auto shrink-0">{trailingControl}</div>}
     </div>
   );
 };

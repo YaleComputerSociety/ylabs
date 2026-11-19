@@ -1,0 +1,449 @@
+/**
+ * Research topics a model reads off a row's stored research page text, applied at
+ * materialization under the three rules of #5296: the reading takes stored observations
+ * only, it is cached by an input hash so a re-run makes no new paid call, and its output is
+ * a derived candidate labelled with its own source name, never an observation.
+ *
+ * This module makes no model call and never fetches. `research-topics:derive` and the audited
+ * `research-topics:import-derivations` are the only writers of the cache; the materializer
+ * only reads it.
+ */
+import { computeContentHash } from './contentHashGate';
+import { RESEARCH_PAGE_TOPICS_PROMPT_HASH } from './prompts';
+import { ResearchTopicsDerivation } from '../models/researchTopicsDerivation';
+import {
+  derivePageQuotedResearchTopics,
+  PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
+  PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
+  type QuotedTopic,
+} from './utils/pageQuotedResearchTopics';
+import {
+  RESEARCH_PAGE_TEXT_FIELD,
+  RESEARCH_PAGE_TEXT_SOURCE,
+  researchPageTextEntries,
+  researchPageTextEntriesForTopics,
+  type ResearchPageTextEntry,
+} from './utils/researchPageText';
+import { descriptionPageNamesRowLead } from './sources/labMicrositeDescriptionLLMExtractor';
+import { isPersonResearchRow } from '../utils/researchStatementPassage';
+import { isYalePeoplePageForNetid } from './utils/yalePeoplePageNetid';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
+import { ownOrgUnitLabelsFromObservations } from './utils/ownOrgUnitLabelTopics';
+
+export const RESEARCH_PAGE_TOPICS_MODEL = 'gpt-5-mini';
+export const RESEARCH_PAGE_TOPICS_DERIVED_CONFIDENCE = 0.85;
+
+export interface ResearchPageTextObservationLike {
+  _id?: unknown;
+  entityId?: unknown;
+  entityKey?: unknown;
+  field?: string;
+  value?: unknown;
+  sourceName?: string;
+  sourceUrl?: string | null;
+  observedAt?: Date | string;
+  superseded?: boolean;
+}
+
+/** What a topic reading needs to know about its row to judge whose page a page is. */
+export interface TopicEvidenceRow {
+  entityType?: unknown;
+  kind?: unknown;
+  name?: unknown;
+  websiteUrl?: unknown;
+  leadNames?: readonly (string | null | undefined)[];
+  leadNetids?: readonly string[];
+}
+
+const leadNamesOf = (row: TopicEvidenceRow): string[] =>
+  (row.leadNames ?? []).filter(
+    (name): name is string => typeof name === 'string' && name.trim() !== '',
+  );
+
+const MIN_COMPOUND_SURNAME_PART_LENGTH = 3;
+const SURNAME_PARTICLES = new Set([
+  'van',
+  'von',
+  'del',
+  'der',
+  'den',
+  'dos',
+  'das',
+  'les',
+  'los',
+  'las',
+]);
+
+interface LeadNameReading {
+  personName: string;
+  otherNameTokens?: string[];
+}
+
+const comparableWords = (value: string): string[] =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/**
+ * A lead's name as a page may print it (#6389): the name before post-nominal credentials, and
+ * the name with a compound surname cut to each of its hyphen parts. A part alone is a weaker
+ * witness than a whole surname, so a part reading also needs one of the lead's other names on
+ * the page. Only the topic filter reads these; the description lane keeps the stored name.
+ */
+function leadNameReadings(personName: string): LeadNameReading[] {
+  const beforeCredentials = personName.split(',')[0]?.trim() ?? '';
+  const readings: LeadNameReading[] = [{ personName }];
+  if (beforeCredentials && beforeCredentials !== personName) {
+    readings.push({ personName: beforeCredentials });
+  }
+  const words = beforeCredentials.split(/\s+/).filter(Boolean);
+  const surname = words[words.length - 1] ?? '';
+  if (words.length < 2 || !surname.includes('-')) return readings;
+  const otherNameTokens = comparableWords(words.slice(0, -1).join(' ')).filter(
+    (token) => token.length >= 2,
+  );
+  if (otherNameTokens.length === 0) return readings;
+  for (const part of surname.split('-')) {
+    const letters = comparableWords(part).join('');
+    if (letters.length < MIN_COMPOUND_SURNAME_PART_LENGTH || SURNAME_PARTICLES.has(letters)) {
+      continue;
+    }
+    readings.push({ personName: [...words.slice(0, -1), part].join(' '), otherNameTokens });
+  }
+  return readings;
+}
+
+const pageCarriesAnyToken = (url: string, text: string, tokens: readonly string[]): boolean => {
+  const words = new Set([...comparableWords(url), ...comparableWords(text)]);
+  return tokens.some((token) => words.has(token));
+};
+
+/**
+ * The pages a row's topic reading reads (#6110): `researchPageTextEntriesForTopics`, and on a
+ * person's research row only the pages that name one of its leads by the description lane's
+ * own rule (`descriptionPageNamesRowLead`), so a department, center or core landing page
+ * stored with a person's text never gives that person the unit's topics. The rule's
+ * own-website exception keeps a page under the row's website. A row of another kind, or a
+ * person row with no resolvable lead, reads every page, as the written description does.
+ * The derive script and the materializer must both read through this, or their keys diverge.
+ */
+export function researchPageTextEntriesForRowTopics(
+  value: unknown,
+  row?: TopicEvidenceRow,
+): ResearchPageTextEntry[] {
+  const pages = researchPageTextEntriesForTopics(value);
+  if (!row || !isPersonResearchRow(row)) return pages;
+  const leadNames = leadNamesOf(row);
+  if (leadNames.length === 0) return pages;
+  const storedTextByUrl = new Map<string, string>();
+  for (const entry of researchPageTextEntries(value)) {
+    storedTextByUrl.set(
+      entry.url,
+      [storedTextByUrl.get(entry.url), entry.text].filter(Boolean).join('\n'),
+    );
+  }
+  return pages.filter(
+    (page) =>
+      isYalePeoplePageForNetid(page.url, row.leadNetids ?? []) ||
+      leadNames.flatMap(leadNameReadings).some(({ personName, otherNameTokens }) => {
+        const pageText = storedTextByUrl.get(page.url) ?? page.text;
+        if (otherNameTokens && !pageCarriesAnyToken(page.url, pageText, otherNameTokens)) {
+          return false;
+        }
+        return descriptionPageNamesRowLead({
+          personName,
+          websiteUrl: row.websiteUrl,
+          rowName: row.name,
+          kind: 'individual',
+          pageUrl: page.url,
+          pageText,
+        });
+      }),
+  );
+}
+
+export interface ResearchTopicsDerivationInputs {
+  promptHash: string;
+  model: string;
+}
+
+export const CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS: ResearchTopicsDerivationInputs = {
+  promptHash: RESEARCH_PAGE_TOPICS_PROMPT_HASH,
+  model: RESEARCH_PAGE_TOPICS_MODEL,
+};
+
+/** The identity of the text a reading read, independent of the prompt and the model. */
+export function researchPageTextHash(pages: readonly ResearchPageTextEntry[]): string {
+  return computeContentHash(
+    JSON.stringify(pages.map((page) => ({ url: page.url, text: page.text }))),
+  );
+}
+
+/**
+ * The cache key: every input the model reading depends on. Page order is kept, because the
+ * stored value's order is what the model reads. The filters are not part of it: they run
+ * when the reading is used, so a filter change re-derives every row at no model cost
+ * (owner decision on #5396).
+ */
+export function researchTopicsDerivationInputHash(
+  pages: readonly ResearchPageTextEntry[],
+  inputs: ResearchTopicsDerivationInputs = CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS,
+): string {
+  return computeContentHash(
+    JSON.stringify({
+      pages: pages.map((page) => ({ url: page.url, text: page.text })),
+      promptHash: inputs.promptHash,
+      model: inputs.model,
+    }),
+  );
+}
+
+const observedAtMillis = (observation: ResearchPageTextObservationLike): number => {
+  const time = new Date(observation.observedAt ?? 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+};
+
+export function isResearchPageTextObservation(
+  observation: ResearchPageTextObservationLike,
+): boolean {
+  return (
+    observation.field === RESEARCH_PAGE_TEXT_FIELD &&
+    observation.sourceName === RESEARCH_PAGE_TEXT_SOURCE &&
+    observation.superseded !== true
+  );
+}
+
+/** The newest live page-text reading among a row's observations, if any. */
+export function currentResearchPageTextObservation<T extends ResearchPageTextObservationLike>(
+  observations: readonly T[],
+): T | undefined {
+  return observations
+    .filter(isResearchPageTextObservation)
+    .reduce<T | undefined>(
+      (newest, observation) =>
+        !newest || observedAtMillis(observation) > observedAtMillis(newest) ? observation : newest,
+      undefined,
+    );
+}
+
+export interface StoredResearchTopicsDerivation {
+  inputHash: string;
+  extractedTopics?: QuotedTopic[];
+  extractedField?: QuotedTopic | null;
+}
+
+export type ResearchTopicsDerivationLookup = (
+  inputHash: string,
+) => Promise<StoredResearchTopicsDerivation | null>;
+
+/**
+ * Fails open without a connection, like the content-hash gate: a lookup that cannot answer
+ * contributes nothing rather than blocking the resolve.
+ */
+export const loadResearchTopicsDerivation: ResearchTopicsDerivationLookup = async (inputHash) => {
+  if (!mongooseConnectionWasOpened()) return null;
+  const row = (await ResearchTopicsDerivation.findOne({ inputHash })
+    .select('inputHash extractedTopics extractedField')
+    .lean()) as StoredResearchTopicsDerivation | null;
+  return row ?? null;
+};
+
+export interface DerivedResearchAreaCandidate {
+  field: 'researchAreas';
+  value: string[];
+  sourceName: typeof PAGE_QUOTED_RESEARCH_TOPICS_SOURCE;
+  sourceUrl: string;
+  confidence: number;
+  observedAt: Date;
+  derivationInputHash: string;
+  derivationTextHash: string;
+  derivationContract: string;
+}
+
+export interface ResearchPageTopicsState {
+  /** The hash of the row's current page text, absent when the row has no page-text reading. */
+  currentTextHash?: string;
+  candidate?: DerivedResearchAreaCandidate;
+  /** The candidate is the stored list's own reading, re-judged against the current text. */
+  revalidatesStoredList?: true;
+  readingIsEmpty?: true;
+  /** The lead filter left no page, and the stored derived list cites one of the pages it excluded. */
+  storedListCitesExcludedPage?: true;
+}
+
+/**
+ * What the row's current page text and the cache say. A candidate exists only when the
+ * cache holds a model reading the quote check and post-filters, run now against the
+ * CURRENT stored text, leave at least one topic. That reading is the current text's own,
+ * or, when the current text has none yet, the reading behind the stored derived list: a
+ * page-text re-observation that only rotated news or menu lines must not hand the field to
+ * a weaker lane before anyone reads the new text (#5882). It takes the page text's own
+ * observation time, so the resolver ages it with its evidence. When the row's lead filter
+ * leaves no page, the state carries no text hash, so the stored list is kept rather than
+ * withdrawn: a filter that removes all evidence is silence, not a reading of no topics. The
+ * exception is a stored derived list that cites one of the pages the filter excluded: that
+ * list was read from a page the lane now refuses as this person's evidence, so it is stale
+ * and retires through the ordinary path (#6386).
+ */
+export async function researchPageTopicsStateFor(
+  observations: readonly ResearchPageTextObservationLike[],
+  lookup: ResearchTopicsDerivationLookup = loadResearchTopicsDerivation,
+  storedProvenance?: unknown,
+  row?: TopicEvidenceRow,
+): Promise<ResearchPageTopicsState> {
+  const current = currentResearchPageTextObservation(observations);
+  if (!current) return {};
+  const pages = researchPageTextEntriesForRowTopics(current.value, row);
+  const leadFilterLeftNoEvidence =
+    pages.length === 0 && researchPageTextEntriesForTopics(current.value).length > 0;
+  if (leadFilterLeftNoEvidence) {
+    return storedDerivedListCitesOneOf(
+      storedProvenance,
+      researchPageTextEntriesForTopics(current.value),
+    )
+      ? { storedListCitesExcludedPage: true }
+      : {};
+  }
+  const currentTextHash = researchPageTextHash(pages);
+  if (pages.length === 0) return { currentTextHash };
+  const inputHash = researchTopicsDerivationInputHash(pages);
+  const ownOrgUnitLabels = ownOrgUnitLabelsFromObservations(observations);
+  const derivation = await lookup(inputHash);
+  if (derivation && derivation.inputHash === inputHash) {
+    if ((derivation.extractedTopics ?? []).length === 0) {
+      return { currentTextHash, readingIsEmpty: true };
+    }
+    const candidate = quotedCandidateFrom(derivation, pages, current, ownOrgUnitLabels, {
+      derivationInputHash: inputHash,
+      derivationTextHash: currentTextHash,
+    });
+    return candidate ? { currentTextHash, candidate } : { currentTextHash };
+  }
+  const stored = storedDerivedListProvenance(storedProvenance);
+  if (!stored || stored.derivationTextHash === currentTextHash) return { currentTextHash };
+  const storedReading = await lookup(stored.derivationInputHash);
+  if (!storedReading || storedReading.inputHash !== stored.derivationInputHash) {
+    return { currentTextHash };
+  }
+  const candidate = quotedCandidateFrom(storedReading, pages, current, ownOrgUnitLabels, stored);
+  return candidate
+    ? { currentTextHash, candidate, revalidatesStoredList: true }
+    : { currentTextHash };
+}
+
+interface DerivationHashes {
+  derivationInputHash: string;
+  derivationTextHash: string;
+}
+
+const comparablePageUrl = (url: string): string =>
+  url.trim().replace(/#.*$/, '').replace(/\?.*$/, '').replace(/\/+$/, '').toLowerCase();
+
+function storedDerivedListCitesOneOf(
+  storedProvenance: unknown,
+  pages: readonly ResearchPageTextEntry[],
+): boolean {
+  if (!storedProvenance || typeof storedProvenance !== 'object') return false;
+  const record = storedProvenance as Record<string, unknown>;
+  if (record.sourceName !== PAGE_QUOTED_RESEARCH_TOPICS_SOURCE) return false;
+  if (typeof record.sourceUrl !== 'string' || !record.sourceUrl.trim()) return false;
+  const cited = comparablePageUrl(record.sourceUrl);
+  return pages.some((page) => comparablePageUrl(page.url) === cited);
+}
+
+function storedDerivedListProvenance(storedProvenance: unknown): DerivationHashes | null {
+  if (!storedProvenance || typeof storedProvenance !== 'object') return null;
+  const record = storedProvenance as Record<string, unknown>;
+  if (record.sourceName !== PAGE_QUOTED_RESEARCH_TOPICS_SOURCE) return null;
+  const { derivationInputHash, derivationTextHash } = record;
+  if (typeof derivationInputHash !== 'string' || !derivationInputHash) return null;
+  if (typeof derivationTextHash !== 'string' || !derivationTextHash) return null;
+  return { derivationInputHash, derivationTextHash };
+}
+
+function quotedCandidateFrom(
+  derivation: StoredResearchTopicsDerivation,
+  pages: readonly ResearchPageTextEntry[],
+  current: ResearchPageTextObservationLike,
+  ownOrgUnitLabels: readonly string[],
+  hashes: DerivationHashes,
+): DerivedResearchAreaCandidate | undefined {
+  const result = derivePageQuotedResearchTopics(
+    { topics: derivation.extractedTopics ?? [], field: derivation.extractedField ?? null },
+    pages,
+    ownOrgUnitLabels,
+  );
+  if (result.topics.length === 0) return undefined;
+  return {
+    field: 'researchAreas',
+    value: result.topics,
+    sourceName: PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
+    sourceUrl: result.mainTopicSourceUrl || pages[0].url,
+    confidence: RESEARCH_PAGE_TOPICS_DERIVED_CONFIDENCE,
+    observedAt: new Date(observedAtMillis(current)),
+    derivationInputHash: hashes.derivationInputHash,
+    derivationTextHash: hashes.derivationTextHash,
+    derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
+  };
+}
+
+export async function derivedResearchAreaCandidateFor(
+  observations: readonly ResearchPageTextObservationLike[],
+  lookup: ResearchTopicsDerivationLookup = loadResearchTopicsDerivation,
+): Promise<DerivedResearchAreaCandidate | undefined> {
+  return (await researchPageTopicsStateFor(observations, lookup)).candidate;
+}
+
+/**
+ * A stored list credited to a derivation is withdrawn only when the row's current page text
+ * differs from the text the list was derived from and the list's own reading, re-judged
+ * against the current text, leaves no topic. A prompt, model or filter change leaves
+ * it standing until a reading under the new inputs replaces it through normal resolution,
+ * so a routine prompt edit withdraws nothing (owner decision on #5396). Without a reading
+ * or a cache, as on Beta and Production, which receive rows by promotion without either,
+ * the stored list stands too.
+ */
+export function storedDerivedResearchAreasAreStale(
+  storedProvenance: unknown,
+  state: ResearchPageTopicsState,
+): boolean {
+  const record =
+    storedProvenance && typeof storedProvenance === 'object'
+      ? (storedProvenance as Record<string, unknown>)
+      : {};
+  if (record.sourceName !== PAGE_QUOTED_RESEARCH_TOPICS_SOURCE) return false;
+  if (state.storedListCitesExcludedPage) return true;
+  if (!state.currentTextHash) return false;
+  if (state.revalidatesStoredList) return false;
+  return record.derivationTextHash !== state.currentTextHash;
+}
+
+/**
+ * The provenance entry for a derived list. It carries no observation id, because no
+ * observation states it, and no time, so it is byte-identical on every pass and the
+ * projection's no-op check converges. It records the full input hash of the reading, the
+ * hash of the text alone, which decides staleness, and the filter contract that judged it. Key order matches `fieldProvenanceSchema`.
+ */
+export function derivedResearchAreaProvenance(
+  candidate: Pick<
+    DerivedResearchAreaCandidate,
+    | 'sourceName'
+    | 'sourceUrl'
+    | 'confidence'
+    | 'derivationInputHash'
+    | 'derivationTextHash'
+    | 'derivationContract'
+  >,
+): Record<string, unknown> {
+  return {
+    sourceName: candidate.sourceName,
+    sourceUrl: candidate.sourceUrl,
+    confidence: candidate.confidence,
+    derivationInputHash: candidate.derivationInputHash,
+    derivationTextHash: candidate.derivationTextHash,
+    derivationContract: candidate.derivationContract,
+  };
+}

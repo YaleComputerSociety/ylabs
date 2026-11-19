@@ -148,11 +148,11 @@ export function headingNameFromHtml(html: string): string {
   if (!match) return '';
   return match[1]
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&amp;/g, '&')
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
     .replace(/&#39;/g, "'")
     .replace(/&quot;/g, '"')
     .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .trim();
 }

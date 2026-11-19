@@ -24,6 +24,7 @@ import {
   type SchoolHostMismatchPlanRow,
   type SchoolHostMismatchSummary,
 } from './backfillSchoolHostMismatchCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -96,7 +97,7 @@ export async function runSchoolHostMismatchBackfill(options: {
 
   const query = ResearchEntity.find(filter)
     .select(
-      '_id slug name school schools departments websiteUrl sourceUrls fullDescription researchAreas entityType',
+      '_id slug name school schools departments websiteUrl sourceUrls fullDescription researchAreas entityType fieldValueRefusals',
     )
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
@@ -184,7 +185,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+      writeReportFileSync(safeOutput, JSON.stringify(payload, null, 2));
       console.log(`Saved school/host-mismatch backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result.summary, null, 2));

@@ -26,6 +26,10 @@ import { isLoopbackRequest } from './utils/loopbackAccess';
 import { ensureBootstrapAdminGrant, hasActiveAdminGrant } from './services/adminGrantService';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { triggerReconnect, isTopologyLostError, withMongoReconnect } from './db/connections';
+import {
+  databaseNameFromMongoUrl,
+  operatorEnvironmentForDatabaseName,
+} from './db/operatorDatabaseEnvironment';
 import { authLimiter, markCasValidationAccepted } from './middleware/rateLimiters';
 import { captureServerError } from './utils/errorTracking';
 import {
@@ -37,7 +41,9 @@ import {
   classifyCasCallbackError,
   reportableCasLoginError,
 } from './utils/casCallbackFailure';
-import { CasStrategy, presentedCasTicket } from './utils/casStrategy';
+import { CasStrategy, presentedCasTicket, requestsCasReauthentication } from './utils/casStrategy';
+import { isProductAnalyticsAllowedForSession } from './utils/posthogConfig';
+import { ensureProductAnalyticsId } from './services/productAnalyticsIdentityService';
 
 /**
  * Verbose auth tracing. These logs (per-request deserialization, the
@@ -173,6 +179,45 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 
 function isLocalAuthBypassAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
   return isLocalDevelopmentRuntime(env) && isTruthyEnvFlag(env.LOCAL_AUTH_BYPASS);
+}
+
+type BypassDatabaseTarget = 'development' | 'local' | 'other';
+
+const LOCAL_BYPASS_MONGO_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+function bypassDatabaseTarget(mongoUrl: string | undefined): BypassDatabaseTarget {
+  try {
+    const databaseName = databaseNameFromMongoUrl(String(mongoUrl ?? ''));
+    if (operatorEnvironmentForDatabaseName(databaseName) === 'development') return 'development';
+    const host = new URL(String(mongoUrl)).hostname.toLowerCase();
+    return LOCAL_BYPASS_MONGO_HOSTS.has(host) ? 'local' : 'other';
+  } catch {
+    return 'other';
+  }
+}
+
+const BYPASS_SHARED_DATABASE_LABEL: Record<Exclude<BypassDatabaseTarget, 'local'>, string> = {
+  development: 'the shared Development database',
+  other: 'a database that is not on this machine',
+};
+
+function localAuthBypassStartupNotice(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (!isLocalAuthBypassAllowed(env)) return null;
+  const notice = [
+    '[auth] LOCAL_AUTH_BYPASS is on: every cookieless loopback request signs in as the configured bypass user,',
+    "records that login on this database, and carries the user's admin grant when it holds one.",
+    'For a write-free student check run `yarn served-check <path>`, which starts its own API with LOCAL_AUTH_BYPASS=false',
+    'and refuses to read unless GET /api/check returns {"auth":false}.',
+  ].join(' ');
+  const target = bypassDatabaseTarget(env.MONGODBURL);
+  if (target === 'local') return notice;
+  const banner = `[auth] !!! LOCAL_AUTH_BYPASS IS ON AGAINST ${BYPASS_SHARED_DATABASE_LABEL[target].toUpperCase()} !!!`;
+  return [
+    banner,
+    notice,
+    `[auth] Every local request is a privileged user on ${BYPASS_SHARED_DATABASE_LABEL[target]}, so no read from this server is an anonymous served check.`,
+    banner,
+  ].join('\n');
 }
 
 /**
@@ -494,7 +539,6 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
       lastName: employee.lname,
       userType,
       title: employee.title,
-      department: employee.department || undefined,
     };
   } else if (lookup.kind === 'unavailable') {
     userType = (await lastKnownAccountUserType(netid)) ?? 'unknown';
@@ -527,15 +571,26 @@ passport.use(
   ),
 );
 
-passport.serializeUser(function (user: any, done) {
+const credentialConfirmingSignIns = new WeakSet<express.Request>();
+
+passport.serializeUser(function (
+  req: express.Request,
+  user: any,
+  done: (error: unknown, stored?: unknown) => void,
+) {
   authDebug('Serializing user');
   const principal = publicAuthSessionUser(user);
   if (!principal) {
     done(new Error('Invalid authentication principal'));
     return;
   }
+  const credentialsConfirmed = credentialConfirmingSignIns.has(req);
   withMongoReconnect(() => validateAccount(principal.netId)).then(
-    (account) => done(null, { ...principal, ...mintSessionClaim(account?.sessionVersion) }),
+    (account) =>
+      done(null, {
+        ...principal,
+        ...mintSessionClaim(account?.sessionVersion, Date.now(), { credentialsConfirmed }),
+      }),
     (error: unknown) => done(error),
   );
 });
@@ -555,7 +610,7 @@ passport.deserializeUser(async (stored: unknown, done) => {
       return;
     }
     const account = await withMongoReconnect(() => validateAccount(principal.netId));
-    if (!account || account.archived || !isSessionClaimLive(claim, account.sessionVersion)) {
+    if (!account || account.archived || !isSessionClaimLive(claim, account)) {
       done(null, null);
       return;
     }
@@ -705,6 +760,7 @@ const casLogin = function (
     }
 
     markCasValidationAccepted(req);
+    if (requestsCasReauthentication(req)) credentialConfirmingSignIns.add(req);
 
     req.logIn(user, async function (err) {
       if (err) {
@@ -780,17 +836,36 @@ router.use(async (req, res, next) => {
   next();
 });
 
+const productAnalyticsSessionFields = async (
+  user: AuthenticatedSessionUser,
+  req: express.Request,
+): Promise<{ productAnalytics: boolean; productAnalyticsId?: string }> => {
+  try {
+    const productAnalyticsId = await ensureProductAnalyticsId(user.netId);
+    return productAnalyticsId
+      ? { productAnalytics: true, productAnalyticsId }
+      : { productAnalytics: false };
+  } catch (error) {
+    captureServerError(
+      error instanceof Error ? error : new Error('product analytics id lookup failed'),
+      req,
+    );
+    return { productAnalytics: false };
+  }
+};
+
 router.get('/check', (req, res) => {
   setPrivateAuthResponseHeaders(res);
-  if (req.user) {
-    const user = publicAuthSessionUser(req.user);
-    if (user) {
-      return res.json({ auth: true, user });
-    }
-  } else {
-    return res.json({ auth: false });
+  if (!req.user) return res.json({ auth: false });
+  const user = publicAuthSessionUser(req.user);
+  if (!user) return res.json({ auth: false });
+  if (!isProductAnalyticsAllowedForSession(user)) {
+    return res.json({ auth: true, user, productAnalytics: false });
   }
-  return res.json({ auth: false });
+  void productAnalyticsSessionFields(user, req).then((fields) =>
+    res.json({ auth: true, user, ...fields }),
+  );
+  return undefined;
 });
 
 router.get('/cas', authLimiter, casLogin);
@@ -896,6 +971,7 @@ export {
   isDevLoginRequestAllowed,
   isLocalAuthBypassAllowed,
   isLocalAuthBypassRequestAllowed,
+  localAuthBypassStartupNotice,
   isLocalDevelopmentRuntime,
   localAuthBypassUser,
   localDevOriginFromRequest,

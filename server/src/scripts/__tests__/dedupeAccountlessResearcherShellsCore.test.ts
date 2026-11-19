@@ -8,14 +8,39 @@ import {
   decideShellMerge,
   normalizeResearcherName,
   planResearcherAttributeUnion,
+  yaleOfficialProfileKeys,
   researcherAttributeUnionIsEmpty,
   researcherIdentityTier,
   roleAssignmentEdgeKey,
   shellProfileLinkKindsReleasedWith,
   buildVerifiedPrimaryProfileIndex,
   planAccountlessClusterFolds,
+  decideNameVariantSharedRowFold,
+  decideDirectoryEmailFold,
+  distinctPeoplePairKey,
+  nameVariantShape,
+  withoutDistinctPeopleFolds,
   resolveFinalMergeTargets,
+  researchEntityIdsToRegateAfterFold,
+  plannedMergeArm,
 } from '../dedupeAccountlessResearcherShellsCore';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
+const SYNTHETIC_ORCID_3 = syntheticPersonOrcid(502);
+const SYNTHETIC_ORCID_4 = syntheticPersonOrcid(503);
+const SYNTHETIC_ORCID_5 = syntheticPersonOrcid(504);
+const SYNTHETIC_ORCID_6 = syntheticPersonOrcid(505);
+const SYNTHETIC_ORCID_7 = syntheticPersonOrcid(506);
+const SYNTHETIC_ORCID_8 = syntheticPersonOrcid(507);
+const SYNTHETIC_ORCID_9 = syntheticPersonOrcid(508);
+const SYNTHETIC_ORCID_10 = syntheticPersonOrcid(509);
+const SYNTHETIC_ORCID_11 = syntheticPersonOrcid(510);
+const SYNTHETIC_ORCID_12 = syntheticPersonOrcid(511);
+const SYNTHETIC_ORCID_13 = syntheticPersonOrcid(512);
+const SYNTHETIC_ORCID_14 = syntheticPersonOrcid(513);
+const SYNTHETIC_ORCID_15 = syntheticPersonOrcid(514);
 
 describe('normalizeResearcherName', () => {
   it('lowercases, trims, and collapses whitespace', () => {
@@ -56,25 +81,25 @@ describe('decideShellMerge', () => {
       id: 'canonical-roe',
       displayName: 'Jane Roe',
       email: 'account-roe@example.test',
-      orcid: '0000-0001-2222-3333',
+      orcid: SYNTHETIC_ORCID_1,
     },
     { id: 'canonical-doe', displayName: 'John Doe', email: 'account-doe@example.test' },
     { id: 'namesake-a', displayName: 'Sam Twin', email: 'account-twin-a@example.test' },
     { id: 'namesake-b', displayName: 'Sam Twin', email: 'account-twin-b@example.test' },
   ]);
 
-  it('merges when exactly one same-name account-linked canonical exists', () => {
+  it('refuses a fold into the one same-name account-linked canonical on the name alone', () => {
     expect(decideShellMerge({ displayName: 'jane roe' }, index)).toEqual({
-      merge: true,
+      merge: false,
       canonicalId: 'canonical-roe',
-      reason: 'MERGEABLE',
+      reason: 'NAME_ONLY_EVIDENCE',
       matchedOn: 'name',
     });
   });
 
   it('merges when shell orcid matches the canonical orcid', () => {
     expect(
-      decideShellMerge({ displayName: 'Jane Roe', orcid: '0000-0001-2222-3333' }, index),
+      decideShellMerge({ displayName: 'Jane Roe', orcid: SYNTHETIC_ORCID_1 }, index),
     ).toMatchObject({ merge: true, reason: 'MERGEABLE' });
   });
 
@@ -100,20 +125,21 @@ describe('decideShellMerge', () => {
   });
 
   it('excludes on ORCID conflict against the sole canonical', () => {
-    expect(
-      decideShellMerge({ displayName: 'Jane Roe', orcid: '0000-0001-0000-0000' }, index),
-    ).toEqual({ merge: false, reason: 'ORCID_CONFLICT' });
+    expect(decideShellMerge({ displayName: 'Jane Roe', orcid: SYNTHETIC_ORCID_2 }, index)).toEqual({
+      merge: false,
+      reason: 'ORCID_CONFLICT',
+    });
   });
 
   const netidIndex = buildCanonicalNameIndex([
     { id: 'canonical-netid', displayName: 'Nina Netid', netid: 'nn42' },
   ]);
 
-  it('folds a name-only shell into a netid-backed canonical of the same name', () => {
+  it('refuses a name-only shell against a netid-backed canonical of the same name', () => {
     expect(decideShellMerge({ id: 'name-only', displayName: 'Nina Netid' }, netidIndex)).toEqual({
-      merge: true,
+      merge: false,
       canonicalId: 'canonical-netid',
-      reason: 'MERGEABLE',
+      reason: 'NAME_ONLY_EVIDENCE',
       matchedOn: 'name',
     });
   });
@@ -134,15 +160,32 @@ describe('decideShellMerge', () => {
   });
 
   const mixedIndex = buildCanonicalNameIndex([
-    { id: 'account-backed', displayName: 'Nina Netid', email: 'account-nina@example.test' },
+    {
+      id: 'account-backed',
+      displayName: 'Nina Netid',
+      email: 'account-nina@example.test',
+      orcid: SYNTHETIC_ORCID_14,
+    },
     { id: 'netid-backed', displayName: 'Nina Netid', netid: 'nn42' },
   ]);
 
   it('prefers the account-backed canonical over a same-name netid-backed one', () => {
-    expect(decideShellMerge({ id: 'name-only', displayName: 'Nina Netid' }, mixedIndex)).toEqual({
+    expect(
+      decideShellMerge(
+        { id: 'name-only', displayName: 'Nina Netid', orcid: SYNTHETIC_ORCID_14 },
+        mixedIndex,
+      ),
+    ).toEqual({
       merge: true,
       canonicalId: 'account-backed',
       reason: 'MERGEABLE',
+      matchedOn: 'name',
+      matchedEvidence: `name and ORCID ${SYNTHETIC_ORCID_14}`,
+    });
+    expect(decideShellMerge({ id: 'name-only', displayName: 'Nina Netid' }, mixedIndex)).toEqual({
+      merge: false,
+      canonicalId: 'account-backed',
+      reason: 'NAME_ONLY_EVIDENCE',
       matchedOn: 'name',
     });
   });
@@ -150,13 +193,30 @@ describe('decideShellMerge', () => {
   it('folds a netid-backed shell into the account-backed canonical of the same name', () => {
     expect(
       decideShellMerge(
-        { id: 'netid-backed', displayName: 'Nina Netid', netid: 'nn42' },
+        {
+          id: 'netid-backed',
+          displayName: 'Nina Netid',
+          netid: 'nn42',
+          orcid: SYNTHETIC_ORCID_14,
+        },
         mixedIndex,
       ),
     ).toEqual({
       merge: true,
       canonicalId: 'account-backed',
       reason: 'MERGEABLE',
+      matchedOn: 'name',
+      matchedEvidence: `name and ORCID ${SYNTHETIC_ORCID_14}`,
+    });
+    expect(
+      decideShellMerge(
+        { id: 'netid-backed', displayName: 'Nina Netid', netid: 'nn42' },
+        mixedIndex,
+      ),
+    ).toEqual({
+      merge: false,
+      canonicalId: 'account-backed',
+      reason: 'NAME_ONLY_EVIDENCE',
       matchedOn: 'name',
     });
   });
@@ -181,6 +241,7 @@ describe('decideShellMerge', () => {
       canonicalId: 'canonical-account-netid',
       reason: 'MERGEABLE',
       matchedOn: 'name',
+      matchedEvidence: 'name and netid nn42',
     });
   });
 
@@ -209,6 +270,111 @@ describe('roleAssignmentEdgeKey', () => {
 });
 
 describe('planResearcherAttributeUnion', () => {
+  describe('a joint appointee with two official department pages (#6376)', () => {
+    const official = (host: string) => ({
+      kind: 'YALE_OFFICIAL',
+      purpose: 'PRIMARY_IDENTITY',
+      url: `https://${host}.yale.edu/people/sam-fixture`,
+      verifiedAt: new Date(),
+      healthStatus: 'HEALTHY',
+    });
+    const record = (links: unknown[]) => ({
+      profileLinks: links as any[],
+      identifiers: {},
+      profile: {},
+    });
+
+    it('keeps both department pages when the names agree and no other record holds the page', () => {
+      const plan = planResearcherAttributeUnion(
+        record([official('arthistory-fixture')]),
+        record([official('classics-fixture')]),
+        { namesAgree: true, officialPagesHeldElsewhere: new Set() },
+      );
+      expect(plan.profileLinksToAppend.map((link) => link.url)).toEqual([
+        'https://classics-fixture.yale.edu/people/sam-fixture',
+      ]);
+    });
+
+    it('refuses the page when another live record holds it, or the names disagree', () => {
+      const shellPage = official('classics-fixture');
+      const [heldKey] = yaleOfficialProfileKeys([shellPage]);
+      expect(
+        planResearcherAttributeUnion(
+          record([official('arthistory-fixture')]),
+          record([shellPage]),
+          {
+            namesAgree: true,
+            officialPagesHeldElsewhere: new Set([heldKey]),
+          },
+        ).profileLinksToAppend,
+      ).toEqual([]);
+      expect(
+        planResearcherAttributeUnion(
+          record([official('arthistory-fixture')]),
+          record([shellPage]),
+          {
+            namesAgree: false,
+            officialPagesHeldElsewhere: new Set(),
+          },
+        ).profileLinksToAppend,
+      ).toEqual([]);
+    });
+
+    it('keeps one link per kind for every other kind, and adds nothing without a context', () => {
+      const lab = (n: number) => ({ kind: 'LAB_WEBSITE', url: `https://lab${n}.fixture.edu/` });
+      expect(
+        planResearcherAttributeUnion(record([lab(1)]), record([lab(2)]), {
+          namesAgree: true,
+          officialPagesHeldElsewhere: new Set(),
+        }).profileLinksToAppend,
+      ).toEqual([]);
+      expect(
+        planResearcherAttributeUnion(
+          record([official('arthistory-fixture')]),
+          record([official('classics-fixture')]),
+        ).profileLinksToAppend,
+      ).toEqual([]);
+    });
+  });
+
+  it('never copies an email alias stored as a netid into the empty slot, but copies a netid (#5740)', () => {
+    const empty = { profileLinks: [], identifiers: {}, profile: {} };
+    const shellWith = (netid: string) => ({
+      profileLinks: [],
+      identifiers: { netid },
+      profile: {},
+    });
+    expect(
+      planResearcherAttributeUnion(empty, shellWith('robin.fixture')).identifierGapFills,
+    ).toEqual({});
+    expect(planResearcherAttributeUnion(empty, shellWith('abc123')).identifierGapFills).toEqual({
+      netid: 'abc123',
+    });
+  });
+
+  it('never gap-fills or links an ORCID either side refuses (#5641)', () => {
+    const orcid = SYNTHETIC_ORCID_3;
+    const plan = planResearcherAttributeUnion(
+      {
+        profileLinks: [],
+        identifiers: {},
+        profile: {},
+        fieldValueRefusals: {
+          orcid: [
+            { valueKey: orcid.toLowerCase(), rule: 'other_persons_page', refusedBy: 'fixture' },
+          ],
+        },
+      },
+      {
+        profileLinks: [{ kind: 'ORCID', url: `https://orcid.org/${orcid}` }],
+        identifiers: { orcid },
+        profile: {},
+      },
+    );
+    expect(plan.identifierGapFills).toEqual({});
+    expect(plan.profileLinksToAppend).toEqual([]);
+  });
+
   it('gap-fills profile links, identifiers, and profile fields the canonical lacks', () => {
     const plan = planResearcherAttributeUnion(
       {
@@ -220,14 +386,14 @@ describe('planResearcherAttributeUnion', () => {
         profileLinks: [
           { kind: 'GOOGLE_SCHOLAR', url: 'https://scholar.google.com/citations?user=abc' },
         ],
-        identifiers: { orcid: '0000-0001-2222-3333', googleScholarId: 'abc' },
+        identifiers: { orcid: SYNTHETIC_ORCID_1, googleScholarId: 'abc' },
         profile: { title: 'Adjunct', primaryDepartment: 'Immunobiology', imageUrl: 'https://i/x' },
       },
     );
 
     expect(plan.profileLinksToAppend.map((link) => link.kind)).toEqual(['GOOGLE_SCHOLAR']);
     expect(plan.identifierGapFills).toEqual({
-      orcid: '0000-0001-2222-3333',
+      orcid: SYNTHETIC_ORCID_1,
       googleScholarId: 'abc',
     });
     expect(plan.profileGapFills).toEqual({
@@ -240,12 +406,12 @@ describe('planResearcherAttributeUnion', () => {
     const plan = planResearcherAttributeUnion(
       {
         profileLinks: [{ kind: 'YALE_OFFICIAL', url: 'https://canonical.yale.edu' }],
-        identifiers: { orcid: '0000-0001-2222-3333' },
+        identifiers: { orcid: SYNTHETIC_ORCID_1 },
         profile: { title: 'Professor', primaryDepartment: 'Physics' },
       },
       {
         profileLinks: [{ kind: 'YALE_OFFICIAL', url: 'https://shell.yale.edu' }],
-        identifiers: { orcid: '0000-0001-0000-0000' },
+        identifiers: { orcid: SYNTHETIC_ORCID_2 },
         profile: { title: 'Lecturer', primaryDepartment: 'Chemistry' },
       },
     );
@@ -256,22 +422,22 @@ describe('planResearcherAttributeUnion', () => {
   it('applies a plan into an evolving snapshot so a second shell sees prior fills', () => {
     const canonical = { profileLinks: [], identifiers: {}, profile: {} };
     const firstPlan = planResearcherAttributeUnion(canonical, {
-      profileLinks: [{ kind: 'ORCID', url: 'https://orcid.org/0000-0001-2222-3333' }],
-      identifiers: { orcid: '0000-0001-2222-3333' },
+      profileLinks: [{ kind: 'ORCID', url: `https://orcid.org/${SYNTHETIC_ORCID_1}` }],
+      identifiers: { orcid: SYNTHETIC_ORCID_1 },
     });
     const evolved = applyUnionPlanToSnapshot(canonical, firstPlan);
 
     const secondPlan = planResearcherAttributeUnion(evolved, {
-      profileLinks: [{ kind: 'ORCID', url: 'https://orcid.org/9999-9999-9999-9999' }],
-      identifiers: { orcid: '9999-9999-9999-9999' },
+      profileLinks: [{ kind: 'ORCID', url: `https://orcid.org/${SYNTHETIC_ORCID_4}` }],
+      identifiers: { orcid: SYNTHETIC_ORCID_4 },
     });
     expect(researcherAttributeUnionIsEmpty(secondPlan)).toBe(true);
   });
 });
 
 describe('planResearcherAttributeUnion keeps the ORCID link with its identifier (#4501)', () => {
-  const canonicalOrcid = '9999-9000-9999-9005';
-  const shellOrcid = '9999-9001-9999-9010';
+  const canonicalOrcid = SYNTHETIC_ORCID_5;
+  const shellOrcid = SYNTHETIC_ORCID_6;
   const orcidLink = (orcid: string) => ({ kind: 'ORCID', url: `https://orcid.org/${orcid}` });
 
   it('never appends a shell ORCID link that names another ORCID than the canonical holds', () => {
@@ -339,7 +505,13 @@ describe('decideShellMerge netid arm (#3166)', () => {
         emptyNameIndex,
         netidIndex,
       ),
-    ).toEqual({ merge: true, canonicalId: 'twin', reason: 'MERGEABLE', matchedOn: 'netid' });
+    ).toEqual({
+      merge: true,
+      canonicalId: 'twin',
+      reason: 'MERGEABLE',
+      matchedOn: 'netid',
+      matchedEvidence: 'netid ab12',
+    });
   });
 
   it('folds even when the shell has no usable name at all, which the name arm refuses', () => {
@@ -374,11 +546,11 @@ describe('decideShellMerge netid arm (#3166)', () => {
 
   it('refuses a netid fold when the two rows disagree on ORCID', () => {
     const index = buildCanonicalNetidIndex([
-      { id: 'twin', email: 'account-1@example.test', netid: 'ab12', orcid: '0000-0001-2222-3333' },
+      { id: 'twin', email: 'account-1@example.test', netid: 'ab12', orcid: SYNTHETIC_ORCID_1 },
     ]);
     expect(
       decideShellMerge(
-        { id: 'holder', displayName: 'Someone', netid: 'ab12', orcid: '0000-0001-0000-0000' },
+        { id: 'holder', displayName: 'Someone', netid: 'ab12', orcid: SYNTHETIC_ORCID_2 },
         emptyNameIndex,
         index,
       ),
@@ -387,11 +559,34 @@ describe('decideShellMerge netid arm (#3166)', () => {
 
   it('leaves the name arm reachable and labelled when no netid matches', () => {
     const nameIndex = buildCanonicalNameIndex([
-      { id: 'canonical', displayName: 'Jane Roe', email: 'account-9@example.test' },
+      {
+        id: 'canonical',
+        displayName: 'Jane Roe',
+        email: 'account-9@example.test',
+        orcid: SYNTHETIC_ORCID_15,
+      },
     ]);
     expect(
+      decideShellMerge(
+        { id: 'shell', displayName: 'Jane Roe', orcid: SYNTHETIC_ORCID_15 },
+        nameIndex,
+        netidIndex,
+      ),
+    ).toEqual({
+      merge: true,
+      canonicalId: 'canonical',
+      reason: 'MERGEABLE',
+      matchedOn: 'name',
+      matchedEvidence: `name and ORCID ${SYNTHETIC_ORCID_15}`,
+    });
+    expect(
       decideShellMerge({ id: 'shell', displayName: 'Jane Roe' }, nameIndex, netidIndex),
-    ).toEqual({ merge: true, canonicalId: 'canonical', reason: 'MERGEABLE', matchedOn: 'name' });
+    ).toEqual({
+      merge: false,
+      canonicalId: 'canonical',
+      reason: 'NAME_ONLY_EVIDENCE',
+      matchedOn: 'name',
+    });
   });
 });
 
@@ -436,6 +631,7 @@ describe('decideShellMerge verified-profile arm', () => {
       canonicalId: 'c'.repeat(24),
       reason: 'MERGEABLE',
       matchedOn: 'verified-profile',
+      matchedEvidence: 'verified profile dept.example.edu/p/1001',
     });
   });
 
@@ -449,6 +645,7 @@ describe('decideShellMerge verified-profile arm', () => {
       canonicalId: 'c'.repeat(24),
       reason: 'MERGEABLE',
       matchedOn: 'verified-profile',
+      matchedEvidence: 'verified profile dept.example.edu/p/1001',
     });
   });
 
@@ -525,6 +722,7 @@ describe('decideShellMerge verified-profile arm', () => {
       canonicalId: 'c'.repeat(24),
       reason: 'MERGEABLE',
       matchedOn: 'verified-profile',
+      matchedEvidence: 'verified profile dept.example.edu/p/1001',
     });
   });
 
@@ -558,6 +756,106 @@ describe('planAccountlessClusterFolds', () => {
     displayName: 'Sam Fixture',
     liveRoleEdges: 0,
     ...over,
+  });
+
+  describe('a noisy spelling of a name-only record', () => {
+    const noisy = 'Photo of SAM FIXTURE, PhD.';
+
+    it('groups the noisy copy with the one record whose stored name it sanitizes to, and refuses the fold', () => {
+      const plan = planAccountlessClusterFolds(
+        [member('1', { displayName: noisy }), member('2', { liveRoleEdges: 1 })],
+        [],
+      );
+      expect(plan.groups).toBe(1);
+      expect(plan.foldTargetById.size).toBe(0);
+      expect(plan.foldedGroups).toBe(0);
+      expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+      expect(plan.nameOnlyGroups).toEqual([['1'.padStart(24, '0'), '2'.padStart(24, '0')]]);
+    });
+
+    it('folds the noisy copy into the clean record when they share a healthy verified page', () => {
+      const plan = planAccountlessClusterFolds(
+        [
+          member('1', { displayName: noisy, profileLinks: page(15) }),
+          member('2', { liveRoleEdges: 1, profileLinks: page(15) }),
+        ],
+        [],
+      );
+      expect(plan.foldTargetById.get('1'.padStart(24, '0'))).toBe('2'.padStart(24, '0'));
+      expect(plan.foldedGroups).toBe(1);
+      expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(0);
+    });
+
+    it('folds the evidence-joined pair of a three-record name group and leaves the name-only third unfolded', () => {
+      const department = { primaryDepartment: 'Synthetic Department' };
+      const plan = planAccountlessClusterFolds(
+        [
+          member('1', { ...department, profileLinks: page(16) }),
+          member('2', { ...department, profileLinks: page(16), liveRoleEdges: 1 }),
+          member('3', department),
+        ],
+        [],
+      );
+      expect(plan.groups).toBe(1);
+      expect([...plan.foldTargetById]).toEqual([['1'.padStart(24, '0'), '2'.padStart(24, '0')]]);
+      expect(plan.foldedGroups).toBe(1);
+      expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+      expect(plan.nameOnlyGroups).toEqual([['3'.padStart(24, '0')]]);
+    });
+
+    it('folds every member of a three-record name group that evidence connects', () => {
+      const department = { primaryDepartment: 'Synthetic Department' };
+      const plan = planAccountlessClusterFolds(
+        [
+          member('1', { ...department, profileLinks: page(17) }),
+          member('2', { ...department, profileLinks: page(17), liveRoleEdges: 1, netid: 'sf17' }),
+          member('3', { ...department, netid: 'sf17' }),
+        ],
+        [],
+      );
+      expect(new Map(plan.foldTargetById)).toEqual(
+        new Map([
+          ['1'.padStart(24, '0'), '2'.padStart(24, '0')],
+          ['3'.padStart(24, '0'), '2'.padStart(24, '0')],
+        ]),
+      );
+      expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(0);
+      expect(plan.nameOnlyGroups).toEqual([]);
+    });
+
+    it('leaves two records with identical clean names apart when nothing else joins them', () => {
+      const plan = planAccountlessClusterFolds([member('1'), member('2')], []);
+      expect(plan.foldTargetById.size).toBe(0);
+    });
+
+    it('joins nobody when two name-only records hold the clean name it sanitizes to', () => {
+      const plan = planAccountlessClusterFolds(
+        [member('1', { displayName: noisy }), member('2'), member('3')],
+        [],
+      );
+      expect(plan.foldTargetById.size).toBe(0);
+    });
+
+    it('joins nobody when either record carries a netid or an ORCID', () => {
+      const withNetid = planAccountlessClusterFolds(
+        [member('1', { displayName: noisy, netid: 'abc123' }), member('2')],
+        [],
+      );
+      const withOrcid = planAccountlessClusterFolds(
+        [member('1', { displayName: noisy }), member('2', { orcid: SYNTHETIC_ORCID_7 })],
+        [],
+      );
+      expect(withNetid.foldTargetById.size).toBe(0);
+      expect(withOrcid.foldTargetById.size).toBe(0);
+    });
+
+    it('joins nobody when a record outside the group also holds the clean name', () => {
+      const plan = planAccountlessClusterFolds(
+        [member('1', { displayName: noisy }), member('2')],
+        [{ displayName: 'Sam Fixture' }],
+      );
+      expect(plan.foldTargetById.size).toBe(0);
+    });
   });
 
   it('folds copies sharing a verified page into the copy with the most live edges', () => {
@@ -594,7 +892,10 @@ describe('planAccountlessClusterFolds', () => {
       ],
       [],
     );
-    expect(together.foldTargetById.size).toBe(1);
+    expect(together.groups).toBe(1);
+    expect(together.foldTargetById.size).toBe(0);
+    expect(together.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+    expect(together.nameOnlyGroups).toEqual([['4'.padStart(24, '0'), '5'.padStart(24, '0')]]);
     const apart = planAccountlessClusterFolds(
       [
         member('6', { primaryDepartment: 'Fixture Studies' }),
@@ -627,7 +928,7 @@ describe('planAccountlessClusterFolds', () => {
         member(orcidCopy, {
           profileLinks: page(11),
           displayName: 'Sam McFixture',
-          orcid: '0000-0000-0000-0003',
+          orcid: SYNTHETIC_ORCID_8,
         }),
       ],
       [],
@@ -652,8 +953,8 @@ describe('planAccountlessClusterFolds', () => {
     expect(
       planAccountlessClusterFolds(
         [
-          member('14', { profileLinks: page(5), orcid: '0000-0000-0000-0001' }),
-          member('15', { profileLinks: page(5), orcid: '0000-0000-0000-0002' }),
+          member('14', { profileLinks: page(5), orcid: SYNTHETIC_ORCID_7 }),
+          member('15', { profileLinks: page(5), orcid: SYNTHETIC_ORCID_9 }),
         ],
         [],
       ).refusedGroups.ORCID_CONFLICT,
@@ -699,7 +1000,10 @@ describe('planAccountlessClusterFolds', () => {
     );
     expect(grouped.foldTargetById.get('30'.padStart(24, '0'))).toBe('29'.padStart(24, '0'));
     const nobodyProbed = planAccountlessClusterFolds(
-      [member('31', { profileLinks: unprobed }), member('32', { profileLinks: unprobed })],
+      [
+        member('31', { profileLinks: unprobed }),
+        member('32', { profileLinks: unprobed, displayName: 'Robin Fixture' }),
+      ],
       [],
     );
     expect(nobodyProbed.groups).toBe(0);
@@ -754,6 +1058,7 @@ describe('decideShellMerge shared-row fold (#4911)', () => {
       canonicalId: 'acct',
       reason: 'MERGEABLE',
       matchedOn: 'shared-row',
+      matchedEvidence: 'shared row unrecorded',
     });
   });
 
@@ -793,13 +1098,14 @@ describe('decideShellMerge shared-row fold (#4911)', () => {
       canonicalId: 'acct',
       reason: 'MERGEABLE',
       matchedOn: 'shared-row',
+      matchedEvidence: 'shared row unrecorded',
     });
   });
 
   it('refuses a conflicting ORCID and a professor folded onto a trainee', () => {
     expect(
-      decide({ displayName: 'Avery Placeholder', orcid: '0000-0000-0000-0028' }, [
-        account('acct', 'Avery Placeholder', { orcid: '0000-0000-0000-0036' }),
+      decide({ displayName: 'Avery Placeholder', orcid: SYNTHETIC_ORCID_10 }, [
+        account('acct', 'Avery Placeholder', { orcid: SYNTHETIC_ORCID_11 }),
       ]),
     ).toEqual({ merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'shared-row' });
     expect(
@@ -854,8 +1160,27 @@ describe('planAccountlessClusterFolds shared-row key (#4939)', () => {
       ],
       [],
     );
+    expect(plan.groups).toBe(1);
+    expect(plan.foldedGroups).toBe(0);
+    expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+    expect(plan.nameOnlyGroups).toEqual([['a', 'b']]);
+  });
+
+  it('folds two same-name records on the same live row when they also share a netid', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        member('a', {
+          primaryDepartment: 'Synthetic Studies',
+          liveRowIds: ['row-1'],
+          netid: 'ap123',
+        }),
+        member('b', { liveRowIds: ['row-1'], netid: 'ap123' }),
+      ],
+      [],
+    );
     expect(plan.foldedGroups).toBe(1);
     expect(plan.foldTargetById.size).toBe(1);
+    expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(0);
   });
 
   it('does not group same-name records that share no row and no department', () => {
@@ -877,8 +1202,8 @@ describe('planAccountlessClusterFolds shared-row key (#4939)', () => {
   it('still refuses a shared-row group whose records carry two different ORCIDs', () => {
     const plan = planAccountlessClusterFolds(
       [
-        member('a', { liveRowIds: ['row-1'], orcid: '0000-0000-0000-0028' }),
-        member('b', { liveRowIds: ['row-1'], orcid: '0000-0000-0000-0036' }),
+        member('a', { liveRowIds: ['row-1'], orcid: SYNTHETIC_ORCID_10 }),
+        member('b', { liveRowIds: ['row-1'], orcid: SYNTHETIC_ORCID_11 }),
       ],
       [],
     );
@@ -918,6 +1243,10 @@ describe('planAliasTwinFolds (#4988, #5092)', () => {
 
   it('folds a local-part twin into the researcher holding the netid its alias resolves to', () => {
     expect([...plan().targetByTwinResearcherId]).toEqual([['twin', 'real']]);
+    expect(plan().aliasNetidsByTwinResearcherId.get('twin')).toEqual({
+      twinNetid: 'jordan.example',
+      realNetid: 'jqe7',
+    });
   });
 
   it('refuses a twin whose netid has signed in to this environment', () => {
@@ -933,5 +1262,476 @@ describe('planAliasTwinFolds (#4988, #5092)', () => {
       plan({ researcherByNetid: new Map([['jqe7', { id: 'real', displayName: 'Casey Other' }]]) })
         .refusals['names-disagree'],
     ).toBe(1);
+  });
+});
+
+describe('name-variant shared-row fold (#5592)', () => {
+  const shell = (displayName: string, over: Record<string, unknown> = {}) => ({
+    id: 'shell'.padEnd(24, '0'),
+    displayName,
+    ...over,
+  });
+  const holder = (id: string, displayName: string, over: Record<string, unknown> = {}) => ({
+    id: id.padStart(24, '0'),
+    displayName,
+    tier: 'DIRECTORY' as const,
+    witnessed: true,
+    ...over,
+  });
+
+  it('classifies variant shapes as the owner review graded them', () => {
+    expect(nameVariantShape('Avery Q. Synthetic', 'Avery Synthetic')).toBe(
+      'middle initial or name',
+    );
+    expect(nameVariantShape('Avery Synthetic-Fixture', 'Avery Synthetic Fixture')).toBe(
+      'hyphenation',
+    );
+    expect(nameVariantShape('Avery Synthetic', 'Robin Synthetic')).toBe(
+      'nickname or first-name variant',
+    );
+    expect(nameVariantShape('A. Synthetic', 'Avery Synthetic')).toBe('first initial only');
+    expect(nameVariantShape('Avery Synthetic, PhD', 'Avery Synthetic')).toBe('credential residue');
+  });
+
+  it('folds a name-only shell into the one witnessed stronger holder', () => {
+    const decision = decideNameVariantSharedRowFold(shell('Avery Synthetic'), [
+      holder('1', 'Avery Q. Synthetic'),
+    ]);
+    expect(decision).toEqual({
+      merge: true,
+      canonicalId: '1'.padStart(24, '0'),
+      reason: 'MERGEABLE',
+      matchedOn: 'name-variant-shared-row',
+      matchedEvidence: 'shared row unrecorded with a witnessed person page',
+    });
+  });
+
+  it('refuses a shared row with no identity witness, as for two namesakes on one center', () => {
+    const decision = decideNameVariantSharedRowFold(shell('Avery Synthetic-Fixture'), [
+      holder('1', 'Avery Synthetic Fixture', { witnessed: false }),
+    ]);
+    expect(decision).toMatchObject({ merge: false, reason: 'NO_IDENTITY_WITNESS' });
+  });
+
+  it('refuses a variant shape the review did not approve', () => {
+    const decision = decideNameVariantSharedRowFold(shell('A. Synthetic'), [
+      holder('1', 'Avery Synthetic'),
+    ]);
+    expect(decision?.merge).not.toBe(true);
+  });
+
+  it('resolves to nobody when two equally strong holders qualify', () => {
+    const decision = decideNameVariantSharedRowFold(shell('Avery Synthetic'), [
+      holder('1', 'Avery Q. Synthetic'),
+      holder('2', 'Avery R. Synthetic'),
+    ]);
+    expect(decision).toMatchObject({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL' });
+  });
+
+  it('keeps the ORCID conflict refusal', () => {
+    const decision = decideNameVariantSharedRowFold(
+      shell('Avery Synthetic', { orcid: SYNTHETIC_ORCID_7 }),
+      [holder('1', 'Avery Q. Synthetic', { orcid: SYNTHETIC_ORCID_10 })],
+    );
+    expect(decision).toMatchObject({ merge: false, reason: 'ORCID_CONFLICT' });
+  });
+
+  it('never folds a shell that carries identity, and never folds into a weaker record', () => {
+    expect(
+      decideNameVariantSharedRowFold(shell('Avery Synthetic', { netid: 'zz9999' }), [
+        holder('1', 'Avery Q. Synthetic'),
+      ]),
+    ).toBeUndefined();
+    expect(
+      decideNameVariantSharedRowFold(shell('Avery Synthetic'), [
+        holder('1', 'Avery Q. Synthetic', { tier: 'NAME_ONLY' }),
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('leaves an exact-name fold to the exact-name arm', () => {
+    expect(
+      decideNameVariantSharedRowFold(shell('Avery Synthetic'), [holder('1', 'Avery Synthetic')]),
+    ).toBeUndefined();
+  });
+
+  it('drops every planned fold an operator recorded as two different people, in either order', () => {
+    const plan = new Map([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+    const { kept, refused } = withoutDistinctPeopleFolds(
+      plan,
+      new Set([distinctPeoplePairKey('b', 'a')]),
+    );
+    expect([...kept]).toEqual([['c', 'd']]);
+    expect(refused).toBe(1);
+  });
+});
+
+describe('researchEntityIdsToRegateAfterFold (#5687)', () => {
+  const edge = (personId: string, entityId: string, archived = false) => ({
+    personId,
+    archived,
+    target: { kind: 'RESEARCH_ENTITY', id: entityId },
+  });
+
+  it('adds every live row the survivor holds an edge on to the rows the shell held', () => {
+    const ids = researchEntityIdsToRegateAfterFold({
+      shellEdges: [edge('shell', 'row-a')],
+      survivorEdges: [edge('survivor', 'row-b'), edge('survivor', 'row-c', true)],
+      mergeTargetByShellId: new Map([['shell', 'survivor']]),
+    });
+    expect([...ids].sort()).toEqual(['row-a', 'row-b']);
+  });
+
+  it('ignores edges of people the run did not fold and non-research targets', () => {
+    const ids = researchEntityIdsToRegateAfterFold({
+      shellEdges: [edge('other-shell', 'row-x')],
+      survivorEdges: [
+        edge('other-survivor', 'row-y'),
+        { personId: 'survivor', archived: false, target: { kind: 'ORG_UNIT', id: 'unit-1' } },
+      ],
+      mergeTargetByShellId: new Map([['shell', 'survivor']]),
+    });
+    expect(ids.size).toBe(0);
+  });
+
+  it('returns nothing when there is no fold', () => {
+    const ids = researchEntityIdsToRegateAfterFold({
+      shellEdges: [edge('shell', 'row-a')],
+      survivorEdges: [edge('survivor', 'row-b')],
+      mergeTargetByShellId: new Map(),
+    });
+    expect(ids.size).toBe(0);
+  });
+});
+
+describe('directory-email fold (#5811)', () => {
+  const shell = (displayName: string, extra: Record<string, unknown> = {}) => ({
+    id: 'shell',
+    displayName,
+    ...extra,
+  });
+  const holder = (id: string, displayName: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    displayName,
+    netid: 'fx901',
+    tier: 'DIRECTORY' as const,
+    ...extra,
+  });
+  const paired = (...netids: string[]) => [new Set(netids)];
+  const holdersOf = (...entries: ReturnType<typeof holder>[]) => new Map([['fx901', entries]]);
+
+  it('folds a name-only shell into the one record holding the netid its listing address pairs with', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic'),
+        paired('fx901'),
+        holdersOf(holder('1', 'Jordan Avery Synthetic')),
+      ),
+    ).toEqual({
+      merge: true,
+      canonicalId: '1',
+      reason: 'MERGEABLE',
+      matchedOn: 'directory-email',
+      matchedEvidence: 'listing address paired with netid fx901',
+    });
+  });
+
+  it('folds a nickname the name matcher rejects, because the directory decides', () => {
+    const decision = decideShellMerge(
+      shell('Avi Synthetic'),
+      new Map(),
+      new Map(),
+      [],
+      new Map(),
+      [],
+      [],
+      paired('fx901'),
+      holdersOf(holder('1', 'Avery Synthetic')),
+    );
+    expect(decision).toMatchObject({ merge: true, canonicalId: '1', matchedOn: 'directory-email' });
+  });
+
+  it('plans nothing without a directory pairing, so a page address alone is no witness', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic'),
+        [],
+        holdersOf(holder('1', 'Avery Synthetic')),
+      ),
+    ).toBeUndefined();
+    expect(
+      decideShellMerge(
+        shell('Avi Synthetic'),
+        new Map(),
+        new Map(),
+        [],
+        new Map(),
+        [],
+        [],
+        [],
+        holdersOf(holder('1', 'Avery Synthetic')),
+      ),
+    ).toMatchObject({ merge: false, reason: 'NO_CANONICAL' });
+  });
+
+  it('fails closed when the stated addresses pair with more than one netid', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic'),
+        [new Set(['fx901']), new Set(['fx902'])],
+        holdersOf(holder('1', 'Avery Synthetic')),
+      ),
+    ).toMatchObject({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL' });
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic'),
+        paired('fx901', 'fx902'),
+        holdersOf(holder('1', 'Avery Synthetic')),
+      ),
+    ).toMatchObject({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL' });
+  });
+
+  it('fails closed when two live records hold the paired netid', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic'),
+        paired('fx901'),
+        holdersOf(
+          holder('1', 'Avery Synthetic'),
+          holder('2', 'Avery Synthetic', { tier: 'NETID' }),
+        ),
+      ),
+    ).toMatchObject({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL' });
+  });
+
+  it('leaves a later arm free to fold when its own directory witness is ambiguous', () => {
+    const exactName = buildCanonicalNameIndex([
+      {
+        id: '3',
+        displayName: 'Avery Synthetic',
+        email: 'avery.synthetic@example.test',
+        orcid: SYNTHETIC_ORCID_14,
+      },
+    ]);
+    const decideWith = (names: ReturnType<typeof buildCanonicalNameIndex>) =>
+      decideShellMerge(
+        shell('Avery Synthetic', { orcid: SYNTHETIC_ORCID_14 }),
+        names,
+        new Map(),
+        [],
+        new Map(),
+        [],
+        [],
+        [new Set(['fx901']), new Set(['fx902'])],
+        holdersOf(holder('1', 'Avery Synthetic')),
+      );
+    expect(decideWith(exactName)).toEqual({
+      merge: true,
+      canonicalId: '3',
+      reason: 'MERGEABLE',
+      matchedOn: 'name',
+      matchedEvidence: `name and ORCID ${SYNTHETIC_ORCID_14}`,
+    });
+    expect(decideWith(new Map())).toEqual({
+      merge: false,
+      reason: 'AMBIGUOUS_MULTIPLE_CANONICAL',
+      matchedOn: 'directory-email',
+    });
+  });
+
+  it('never folds two people with distinct ORCIDs', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic', { orcid: SYNTHETIC_ORCID_12 }),
+        paired('fx901'),
+        holdersOf(holder('1', 'Avery Synthetic', { orcid: SYNTHETIC_ORCID_13 })),
+      ),
+    ).toMatchObject({ merge: false, reason: 'ORCID_CONFLICT' });
+  });
+
+  it('keeps the surname and rank vetoes', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Fixture'),
+        paired('fx901'),
+        holdersOf(holder('1', 'Avery Synthetic')),
+      ),
+    ).toBeUndefined();
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic', { title: 'Postdoctoral Associate' }),
+        paired('fx901'),
+        holdersOf(holder('1', 'Avery Synthetic', { title: 'Professor of Fixture Studies' })),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('never treats a directory or netid record as the shell, so two directory records stay two', () => {
+    for (const identity of [{ email: 'avery.fixture@example.test' }, { netid: 'fx903' }]) {
+      expect(
+        decideDirectoryEmailFold(
+          shell('Avery Synthetic', identity),
+          paired('fx901'),
+          holdersOf(holder('1', 'Avery Synthetic')),
+        ),
+      ).toBeUndefined();
+    }
+  });
+
+  it('plans nothing when no live record holds the paired netid', () => {
+    expect(
+      decideDirectoryEmailFold(shell('Avery Synthetic'), paired('fx901'), new Map()),
+    ).toBeUndefined();
+  });
+});
+
+describe('a matching name is never evidence of one person on its own (#6378)', () => {
+  const healthyPrimaryPage = [
+    {
+      kind: 'YALE_OFFICIAL',
+      purpose: 'PRIMARY_IDENTITY',
+      url: 'https://dept.example.edu/p/6378',
+      verifiedAt: new Date(),
+      healthStatus: 'HEALTHY',
+    },
+  ];
+  const namesake = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    displayName: 'Synthetic Person',
+    primaryDepartment: 'Synthetic Studies',
+    liveRoleEdges: 0,
+    ...extra,
+  });
+
+  it('refuses two records sharing a full name and a stated department and nothing else', () => {
+    const plan = planAccountlessClusterFolds([namesake('left'), namesake('right')], []);
+    expect(plan.groups).toBe(1);
+    expect(plan.foldedGroups).toBe(0);
+    expect(plan.foldTargetById.size).toBe(0);
+    expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(1);
+    expect(plan.nameOnlyGroups).toEqual([['left', 'right']]);
+  });
+
+  it('folds the same pair when the two records also share a netid', () => {
+    const plan = planAccountlessClusterFolds(
+      [namesake('left', { netid: 'sp637' }), namesake('right', { netid: 'sp637' })],
+      [],
+    );
+    expect(plan.foldedGroups).toBe(1);
+    expect(plan.foldTargetById.size).toBe(1);
+    expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(0);
+    expect(plan.nameOnlyGroups).toEqual([]);
+  });
+
+  it('folds the same pair when the two records also share a healthy verified primary page', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        namesake('left', { profileLinks: healthyPrimaryPage }),
+        namesake('right', { profileLinks: healthyPrimaryPage }),
+      ],
+      [],
+    );
+    expect(plan.foldedGroups).toBe(1);
+    expect(plan.foldTargetById.size).toBe(1);
+    expect(plan.refusedGroups.NAME_ONLY_EVIDENCE).toBe(0);
+  });
+
+  it('refuses a same-name stronger canonical on the name alone and folds it with an agreeing ORCID', () => {
+    const index = buildCanonicalNameIndex([
+      {
+        id: 'canonical',
+        displayName: 'Synthetic Person',
+        email: 'account-synthetic@example.test',
+        orcid: SYNTHETIC_ORCID_15,
+      },
+    ]);
+    expect(decideShellMerge({ id: 'shell', displayName: 'Synthetic Person' }, index)).toEqual({
+      merge: false,
+      canonicalId: 'canonical',
+      reason: 'NAME_ONLY_EVIDENCE',
+      matchedOn: 'name',
+    });
+    expect(
+      decideShellMerge(
+        { id: 'shell', displayName: 'Synthetic Person', orcid: SYNTHETIC_ORCID_15 },
+        index,
+      ),
+    ).toEqual({
+      merge: true,
+      canonicalId: 'canonical',
+      reason: 'MERGEABLE',
+      matchedOn: 'name',
+      matchedEvidence: `name and ORCID ${SYNTHETIC_ORCID_15}`,
+    });
+  });
+});
+
+describe('plannedMergeArm', () => {
+  const none = new Set<string>();
+
+  it('returns the identity arm that decided the fold when one is recorded', () => {
+    expect(
+      plannedMergeArm(
+        'shell',
+        new Map([['shell', 'netid']]),
+        new Set(['shell']),
+        new Set(['shell']),
+      ),
+    ).toBe('netid');
+  });
+
+  it('returns the accountless-cluster arm for a cluster fold', () => {
+    expect(plannedMergeArm('shell', new Map(), none, new Set(['shell']))).toBe(
+      'accountless-cluster',
+    );
+  });
+
+  it('returns the alias-twin arm for an alias twin fold', () => {
+    expect(plannedMergeArm('shell', new Map(), new Set(['shell']), none)).toBe('alias-twin');
+  });
+
+  it('throws for a shell no arm planned', () => {
+    expect(() => plannedMergeArm('shell', new Map(), none, none)).toThrow(/no planning arm/);
+  });
+});
+
+describe('the evidence recorded on a planned merge', () => {
+  it('records the roster listing that joined a roster-identity fold, not the name', () => {
+    const listingKey = 'lab::entity-1::synthetic-roster::member-7';
+    expect(
+      decideShellMerge({ id: 'shell', displayName: 'Rory Listing' }, new Map(), new Map(), [
+        {
+          id: 'holder',
+          displayName: 'Rory Listing',
+          tier: 'DIRECTORY',
+          rosterListingKey: listingKey,
+        },
+      ]),
+    ).toEqual({
+      merge: true,
+      canonicalId: 'holder',
+      reason: 'MERGEABLE',
+      matchedOn: 'roster-identity',
+      matchedEvidence: `roster listing ${listingKey}`,
+    });
+  });
+
+  it('labels a cluster fold by the join that reaches its survivor, not an identifier shared outside the group', () => {
+    const id = (n: string) => n.padStart(24, '0');
+    const citedPage = 'https://dept.example.edu/p/77';
+    const plan = planAccountlessClusterFolds(
+      [
+        { id: id('1'), displayName: 'Sam Fixture', liveRoleEdges: 0, orcid: SYNTHETIC_ORCID_7 },
+        { id: id('2'), displayName: 'Sam Fixture', liveRoleEdges: 2 },
+        { id: id('9'), displayName: 'Other Person', liveRoleEdges: 0, orcid: SYNTHETIC_ORCID_7 },
+      ],
+      [],
+      [[id('1'), id('2'), citedPage]],
+    );
+    expect(plan.foldTargetById.get(id('1'))).toBe(id('2'));
+    expect(plan.evidenceById.get(id('1'))).toBe(`listing cites official page ${citedPage}`);
   });
 });

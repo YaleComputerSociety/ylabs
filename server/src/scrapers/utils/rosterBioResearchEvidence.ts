@@ -1,4 +1,5 @@
 import type { ObservationInput } from '../types';
+import { slugify } from './scraperHelpers';
 import { deriveBioResearchStatement } from '../../utils/bioResearchStatement';
 import { stripPersonNameCredentialList } from '../../utils/personNameHygiene';
 import { titleResearchOwnership } from './titleResearchOwnership';
@@ -24,6 +25,7 @@ export interface RosterBioCoveredIdentities {
   personKeys: ReadonlySet<string>;
   personNames: ReadonlySet<string>;
   slugs: ReadonlySet<string>;
+  ownRowSlugsByPersonKey?: ReadonlyMap<string, string>;
 }
 
 export type RosterBioSkipReason =
@@ -39,7 +41,10 @@ export type RosterBioSkipReason =
   | 'only_past_research'
   | 'not_useful_after_filtering'
   | 'empty_bio'
-  | 'teaching_appointment';
+  | 'teaching_appointment'
+  | 'credential_only_given_name'
+  | 'clinical_teaching_or_consultation_only'
+  | 'no_stated_research_topic';
 
 export interface RosterBioPlannedRow {
   personKey: string;
@@ -48,6 +53,14 @@ export interface RosterBioPlannedRow {
   profileUrl: string;
   department: string;
   school: string;
+  evidenceSentences: string[];
+}
+
+export interface RosterBioRereadRow {
+  personKey: string;
+  rekeyedFromPersonKey?: string;
+  slug: string;
+  profileUrl: string;
   evidenceSentences: string[];
 }
 
@@ -99,8 +112,14 @@ export function rosterBioProfileUrl(person: RosterBioPerson): string {
 const CREDENTIAL_TOKEN =
   /^(?:ph\.?\s?d\.?|m\.?\s?d\.?|m\.?\s?p\.?\s?h\.?|sc\.?\s?d\.?|d\.?\s?phil\.?|ed\.?\s?d\.?|psy\.?\s?d\.?|d\.?\s?n\.?\s?p\.?|r\.?\s?n\.?|m\.?\s?s\.?\s?n\.?|l\.?\s?c\.?\s?s\.?\s?w\.?|aprn|dr\.?|prof\.?|professor)$/i;
 
-const TRAILING_CREDENTIAL_WORD =
-  /^(?:dvm|vmd|ms|msc|msn|mph|mba|ma|mfa|mdiv|jd|llm|rn|np|pa|famia|facs|facp|faan|fache|lcsw|ladc|cnm|crna|mhs|mhsa|dnp|pharmd|dds|dmd|od|abpp)$/i;
+const FELLOWSHIP_CREDENTIAL_WORDS = 'famia|facs|facp|faan|fache|facep|fawm|faium';
+
+const FELLOWSHIP_CREDENTIAL_WORD = new RegExp(`^(?:${FELLOWSHIP_CREDENTIAL_WORDS})$`, 'i');
+
+const TRAILING_CREDENTIAL_WORD = new RegExp(
+  `^(?:dvm|vmd|ms|msc|msn|mph|mba|ma|mfa|mdiv|jd|llm|rn|np|pa|${FELLOWSHIP_CREDENTIAL_WORDS}|lcsw|ladc|cnm|crna|mhs|mhsa|dnp|pharmd|dds|dmd|od|abpp)$`,
+  'i',
+);
 
 const bareToken = (token: string): string => token.replace(/[.,]/g, '');
 
@@ -121,9 +140,25 @@ function credentialFreeTokens(value: unknown): string[] {
 // A roster name without a comma leaves a trailing credential as the whole surname field
 // ("Jane Doe DVM" gives the surname "DVM"), so the trailing credential is read across both
 // fields, keeping two tokens so a short surname that spells a credential survives.
+// A roster that splits "<given> <family>, MD, MPH, FACEP" on its last space stores the whole
+// name and its credential run as the given name and the last credential, title-cased, as
+// the surname ("Facep"). When the given field is already a whole name followed only by
+// credentials, a surname field spelling a fellowship credential is that split-off
+// credential, not a surname.
+function surnameFieldIsSplitOffCredential(person: RosterBioPerson): boolean {
+  const given = typeof person.fname === 'string' ? person.fname.replace(/[\s,]+$/, '') : '';
+  const family = typeof person.lname === 'string' ? person.lname.trim() : '';
+  const head = given.split(',')[0].trim();
+  if (!given.includes(',') || !FELLOWSHIP_CREDENTIAL_WORD.test(family)) return false;
+  if (head.split(/\s+/).filter(Boolean).length < 2) return false;
+  return stripPersonNameCredentialList(given) === head;
+}
+
 export function rosterBioPersonName(person: RosterBioPerson): string {
   const givenTokens = credentialFreeTokens(person.fname);
-  const familyTokens = credentialFreeTokens(person.lname);
+  const familyTokens = surnameFieldIsSplitOffCredential(person)
+    ? []
+    : credentialFreeTokens(person.lname);
   while (givenTokens.length + familyTokens.length > 2) {
     const tokens = familyTokens.length ? familyTokens : givenTokens;
     if (!isTrailingCredential(tokens[tokens.length - 1])) break;
@@ -149,6 +184,35 @@ export function rosterBioPersonName(person: RosterBioPerson): string {
   return [given, family].filter(Boolean).join(' ');
 }
 
+const DEPT_PERSON_KEY = /^(dept:[^:]+:)(.+)$/;
+
+const writtenAsACredential = (word: string): boolean =>
+  /\./.test(word) || /[a-z][A-Z]/.test(word) || (word.length > 1 && word === word.toUpperCase());
+
+/**
+ * The person key a roster entry should carry. A roster that put a credential where the
+ * given name belongs ("PhD <surname>") minted `dept:<dept>:phd-<surname>`, which joins to
+ * no researcher (#6372), and the roster lane refuses such entries since #5969 without
+ * retiring the user observations it wrote before. The key is rebuilt from the name this
+ * lane already recovers, so the row's lead resolves to the person by name in their
+ * department. An empty string means no person name could be recovered.
+ */
+export function rosterBioPersonKey(person: RosterBioPerson): string {
+  const match = person.key.match(DEPT_PERSON_KEY);
+  const given = typeof person.fname === 'string' ? person.fname.trim() : '';
+  if (!match || !given || !CREDENTIAL_TOKEN.test(given) || !writtenAsACredential(given)) {
+    return person.key;
+  }
+  const credentialSlugs = [slugify(given), given.toLowerCase().replace(/[^a-z]/g, '')];
+  if (!credentialSlugs.some((slug) => match[2].startsWith(`${slug}-`))) return person.key;
+  const name = rosterBioPersonName(person);
+  const nameSlug = slugify(name);
+  if (!nameSlug || name.split(/\s+/).length < 2 || CREDENTIAL_TOKEN.test(name.split(/\s+/)[0])) {
+    return '';
+  }
+  return `${match[1]}${nameSlug}`;
+}
+
 export function rosterBioPersonNameKey(value: unknown): string {
   const tokens = String(value || '')
     .normalize('NFD')
@@ -162,22 +226,97 @@ export function rosterBioPersonNameKey(value: unknown): string {
   return `${tokens[0]} ${tokens[tokens.length - 1]}`;
 }
 
+const STATES_RESEARCH =
+  /\b(?:research(?!-(?:based|informed))(?:ers?|ing)?|stud(?:y|ies|ied|ying)(?!\s+cent(?:er|re))|investigat\w*|examin\w*|explor\w*|analy[sz]\w*|trials?|experiments?\w*|published)\b/i;
+const CLINICAL_OR_TEACHING_PRACTICE =
+  /\b(?:(?:in|beyond) (?:his|her|their) clinical (?:work|practice)|professional interests|trainee education|supervis(?:es|ed|ing) (?:\w+ ){0,3}(?:trainees|interns|residents|fellows|students)|(?:providing|provides|provide) clinical (?:care|consultation|services)|clinical consultation|(?:designing|designs|develops|developing) curricul(?:a|um)|teaching to|as an? instructor|helping (?:children|adolescents|patients|families|clients))\b/i;
+const STATED_INTEREST_WITH_SUBJECT =
+  /\b(?:interested in|(?<!professional )interests (?:include|are|lie in)|focus(?:es|ed)? on|specializ(?:es|ed|ing) in)\s+\w+/i;
+const QI_OR_PROGRAM_WORK =
+  /\b(?:programs?|program development|systems?(?:-level)?|pathways?|quality|evaluat\w*|partnership|model)\b/i;
+const GENERIC_RESEARCH_WORDS = new Set(
+  (
+    'a an and are as at basic be been both clinical collaborators conferences dr has have her his ' +
+    'in international involved is its national of on presented regional research researches science ' +
+    'sciences she that the their they translational was were with actively he also'
+  ).split(' '),
+);
+
+function statesOnlyClinicalOrTeachingPractice(sentence: string): boolean {
+  const anchor = CLINICAL_OR_TEACHING_PRACTICE.exec(sentence);
+  if (!anchor) return false;
+  return !STATED_INTEREST_WITH_SUBJECT.test(sentence.slice(anchor.index + anchor[0].length));
+}
+
+export function rosterBioMintRefusal(
+  evidenceSentences: readonly string[],
+  name: string,
+): RosterBioSkipReason | undefined {
+  const text = evidenceSentences.join(' ');
+  if (
+    !STATES_RESEARCH.test(text) &&
+    evidenceSentences.every(statesOnlyClinicalOrTeachingPractice) &&
+    !QI_OR_PROGRAM_WORK.test(text)
+  ) {
+    return 'clinical_teaching_or_consultation_only';
+  }
+  const nameTokens = new Set(
+    name
+      .toLowerCase()
+      .split(/[^a-z]+/)
+      .filter(Boolean),
+  );
+  const topicWords = text
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(
+      (word) => word.length > 2 && !GENERIC_RESEARCH_WORDS.has(word) && !nameTokens.has(word),
+    );
+  if (topicWords.length === 0) return 'no_stated_research_topic';
+  return undefined;
+}
+
 export function planRosterBioResearchRows(
   people: readonly RosterBioPerson[],
   covered: RosterBioCoveredIdentities,
   resolveDepartment: RosterBioDepartmentResolver,
-): { planned: RosterBioPlannedRow[]; skipped: Record<RosterBioSkipReason, number> } {
+): {
+  planned: RosterBioPlannedRow[];
+  reread: RosterBioRereadRow[];
+  skipped: Record<RosterBioSkipReason, number>;
+} {
   const skipped = {} as Record<RosterBioSkipReason, number>;
   const skip = (reason: RosterBioSkipReason) => {
     skipped[reason] = (skipped[reason] || 0) + 1;
   };
   const planned: RosterBioPlannedRow[] = [];
+  const reread: RosterBioRereadRow[] = [];
   const plannedSlugs = new Set<string>();
   const plannedNames = new Set<string>();
   for (const person of people) {
     const profileUrl = rosterBioProfileUrl(person);
+    const personKey = rosterBioPersonKey(person);
+    const ownSlug =
+      covered.ownRowSlugsByPersonKey?.get(person.key) ??
+      (personKey ? covered.ownRowSlugsByPersonKey?.get(personKey) : undefined);
+    if (ownSlug) {
+      const derived = deriveBioResearchStatement(person.bio, { name: rosterBioPersonName(person) });
+      reread.push({
+        personKey: personKey || person.key,
+        ...(personKey && personKey !== person.key ? { rekeyedFromPersonKey: person.key } : {}),
+        slug: ownSlug,
+        profileUrl,
+        evidenceSentences: derived.rejection ? [] : derived.evidenceSentences,
+      });
+      continue;
+    }
+    if (!personKey) {
+      skip('credential_only_given_name');
+      continue;
+    }
     if (
       covered.personKeys.has(person.key) ||
+      covered.personKeys.has(personKey) ||
       (profileUrl && covered.urls.has(normalizeRosterBioUrl(profileUrl)))
     ) {
       skip('already_covered');
@@ -203,6 +342,11 @@ export function planRosterBioResearchRows(
       skip(derived.rejection);
       continue;
     }
+    const mintRefusal = rosterBioMintRefusal(derived.evidenceSentences, name);
+    if (mintRefusal) {
+      skip(mintRefusal);
+      continue;
+    }
     if (
       mintsNoResearchEntityAsTeachingAppointment(String(person.title), {
         fullDescription: derived.fullDescription,
@@ -211,7 +355,7 @@ export function planRosterBioResearchRows(
       skip('teaching_appointment');
       continue;
     }
-    const department = resolveDepartment(person, name);
+    const department = resolveDepartment({ ...person, key: personKey }, name);
     if (!department) {
       skip('no_department');
       continue;
@@ -223,7 +367,7 @@ export function planRosterBioResearchRows(
     plannedSlugs.add(department.slug);
     plannedNames.add(nameKey);
     planned.push({
-      personKey: person.key,
+      personKey,
       slug: department.slug,
       name,
       profileUrl,
@@ -232,12 +376,36 @@ export function planRosterBioResearchRows(
       evidenceSentences: derived.evidenceSentences,
     });
   }
-  return { planned, skipped };
+  return { planned, reread, skipped };
 }
 
 // A writer evidence field that is not a stored research-entity path, so the bio's own
 // sentences reach the writer but can never be served as the description.
 export const ROSTER_BIO_EVIDENCE_FIELD = 'researchInterestSummary';
+
+export function rosterBioRereadObservation(row: RosterBioRereadRow): ObservationInput {
+  const base = {
+    entityType: 'researchEntity' as const,
+    entityKey: row.slug,
+    sourceUrl: row.profileUrl,
+    field: ROSTER_BIO_EVIDENCE_FIELD,
+  };
+  if (row.evidenceSentences.length === 0) {
+    return { ...base, value: '', assertsNoValueFor: [ROSTER_BIO_EVIDENCE_FIELD] };
+  }
+  return { ...base, value: row.evidenceSentences.join(' ') };
+}
+
+/** The re-read, plus the rebuilt lead key on a row first written under a credential key. */
+export function rosterBioRereadObservations(row: RosterBioRereadRow): ObservationInput[] {
+  const evidence = rosterBioRereadObservation(row);
+  if (!row.rekeyedFromPersonKey) return [evidence];
+  const { assertsNoValueFor: _unused, ...base } = evidence;
+  return [
+    evidence,
+    { ...base, field: 'inferredPiUserKey', value: row.personKey, confidenceOverride: 0.7 },
+  ];
+}
 
 export function rosterBioResearchObservations(row: RosterBioPlannedRow): ObservationInput[] {
   const base = {

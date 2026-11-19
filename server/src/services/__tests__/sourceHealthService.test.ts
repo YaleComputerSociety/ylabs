@@ -54,6 +54,24 @@ describe('sourceHealthService', () => {
     expect(rows[2].risk).toBe('ok');
   });
 
+  it('reports a crashed latest run by what it wrote, not by its false zero (#6291)', () => {
+    const rows = buildSourceHealthRows(
+      [{ name: 'crashed-source', displayName: 'Crashed source', enabled: true }],
+      [
+        {
+          _id: 'latest',
+          sourceName: 'crashed-source',
+          status: 'interrupted',
+          startedAt: '2026-11-13T00:57:00.000Z',
+          observationCount: 0,
+          storedObservationCountAtReconcile: 65237,
+        },
+      ],
+    );
+
+    expect(rows[0].latestRun?.observationCount).toBe(65237);
+  });
+
   it('ignores invalidated runs and flags materialization errors', () => {
     const rows = buildSourceHealthRows(
       [

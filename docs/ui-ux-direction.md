@@ -56,10 +56,14 @@ Primary UX ingredients:
 Research filter behavior:
 
 - Type, school, and department selections are URL-backed (`type`, `school`, `department`) so reload, sharing, and browser navigation preserve them.
-  The type axis accepts only the canonical `researchEntityTypes` enum, so a typo or retired value is ignored rather than rendered as a confidently labelled empty result set; see `docs/decisions.md` 2026-09-22 (#2195).
+  The type axis accepts only the canonical `researchEntityTypes` enum plus Creative practice (#5141), so a typo or retired value is ignored rather than rendered as a confidently labelled empty result set; see `docs/decisions.md` 2026-09-22 (#2195).
 - Active selections appear as individually removable chips, with a clear-all action and an active count on the Filters control.
 - The control opens as a non-modal desktop disclosure and an accessible, focus-contained mobile sheet.
 - Type, school, and department facet choices come from positive counts for the current query, while an active value remains available even if a later distribution omits it.
+  A facet with a single positive value still renders, so a filtered list says which type, school, and department it holds (#5238).
+- All three Undergrads options show once their counts arrive, including at (0); an option at (0) is unavailable rather than hidden, stays keyboard reachable and out of the initial focus target, and dims its own control while its label stays at the `muted` token (#6203, see `docs/decisions.md` 2026-11-12 on #5963).
+  Its tip names what the student can widen: "None match your other filters. Remove a filter to see more." under an active filter or ticked option, "None match this search." under a query alone, and no tip at all when neither is active, which is a served total rather than something to remove.
+- When active filters emptied the results, the zero-result panel offers clearing them rather than a shorter query, and omits the coverage-gap sentence.
 - Missing, loading, or failed facet metadata must not disable base search, invent counts from total results, or expose hidden focusable controls.
 
 Current gap: filters and older labels still contain some "acceptance" and "accepting undergrads" language. Replace it with plain directory language and factual, sourced badges rather than a plausibility framing.
@@ -91,6 +95,7 @@ The page should answer:
 Primary UX ingredients:
 
 - Header with entity type, department/school, short description, and website, carrying no computed verdict or access-summary badge.
+  The one exception is an undergraduate invitation the lab's own page states, shown as "Taking undergrads now, recruiting" or "Taking undergrads now" beside the quote that backs it (#5288, relabelled in #5963).
 - A Ways to approach or planning-context section before or near active opportunities.
 - Evidence section with source-backed snippets.
 - A deduped Sources section that shows each official source once and explains which pathways/evidence/routes it supports.

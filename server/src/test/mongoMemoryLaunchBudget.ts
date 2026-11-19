@@ -1,5 +1,6 @@
 import { MongoMemoryReplSet, MongoMemoryServer } from 'mongodb-memory-server';
 
+import { createWorkerPortAllocator, vitestPoolId } from './mongoMemoryPortRange';
 import { MONGO_MEMORY_LAUNCH_BUDGET_MS } from './testTimeBudgets';
 
 /**
@@ -33,13 +34,14 @@ const LAUNCH_BUDGET_MS = MONGO_MEMORY_LAUNCH_BUDGET_MS;
 /**
  * A launch that lost a port race, and how many times it is worth trying again.
  *
- * `mongodb-memory-server` asks the OS for a free port, then starts `mongod` on it. Between
- * those two steps another process can take the port, and the library surfaces that as a
- * `StdoutInstanceError` reading `Port "57911" already in use`. Several sessions run suites and
- * ad-hoc scripts on this machine at once, so the race is ordinary rather than exotic (#3845).
+ * The wrapper hands each launch a port from this worker's own range (`mongoMemoryPortRange.ts`),
+ * which no other worker of the run uses, but a concurrent run or an ad-hoc script on this machine
+ * can still hold it. The library surfaces that as a `StdoutInstanceError` reading
+ * `Port "20117" already in use`. Several sessions run suites and ad-hoc scripts on this machine
+ * at once, so the race is ordinary rather than exotic (#3845).
  *
- * A retry is the right answer because the condition is transient and a fresh `create` asks for
- * a new port: nothing about the suite or the code changed. The bound matters as much as the
+ * A retry is the right answer because the condition is transient and a fresh `create` draws the
+ * next port in the range: nothing about the suite or the code changed. The bound matters as much as the
  * retry, because a port that is genuinely unavailable every time is a real failure and must
  * still be reported rather than looped over.
  *
@@ -70,9 +72,16 @@ async function retryingPortRace<T>(create: () => Promise<T>): Promise<T> {
 type ServerOptions = NonNullable<Parameters<typeof MongoMemoryServer.create>[0]>;
 type ReplSetOptions = NonNullable<Parameters<typeof MongoMemoryReplSet.create>[0]>;
 
+let workerPortAllocator: (() => number) | undefined;
+
+const nextWorkerPort = (): number => {
+  workerPortAllocator ??= createWorkerPortAllocator(vitestPoolId());
+  return workerPortAllocator();
+};
+
 const withServerLaunchBudget = (options?: ServerOptions): ServerOptions => ({
   ...options,
-  instance: { launchTimeout: LAUNCH_BUDGET_MS, ...options?.instance },
+  instance: { launchTimeout: LAUNCH_BUDGET_MS, port: nextWorkerPort(), ...options?.instance },
 });
 
 /**
@@ -87,6 +96,7 @@ const withReplSetLaunchBudget = (options?: ReplSetOptions): ReplSetOptions => {
     ...options,
     instanceOpts: Array.from({ length: members }, (_unused, index) => ({
       launchTimeout: LAUNCH_BUDGET_MS,
+      port: nextWorkerPort(),
       ...provided[index],
     })),
   };

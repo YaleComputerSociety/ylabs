@@ -7,6 +7,18 @@
 // and a copied gate scorecard presents one environment's promotion verdict as
 // the other's, because a promotion replaces the whole collection. A lane
 // benchmark and its scorecards are the same kind of environment-local history.
+// A research-topics derivation is a paid model reading of this environment's
+// stored page text, so a refresh that cleared it would buy every reading again, and a
+// written-description derivation is the same for the description writer's drafts, and a
+// card-synthesis derivation is the same for its cards.
+// A search rerank cache pairs this environment's student queries with its rows and
+// is seeded per environment, so a copy would serve one corpus's scores on another's ids.
+// A model call usage entry records this environment's own paid calls, so a copy would
+// bill one environment's spend to another. A deleted-account event tally counts this
+// environment's own deletions, so a copy would attribute them to another, and a pending
+// cross-environment deletion request belongs to the environment that recorded it (#4156).
+// A directory removal request is a private request made in this environment, so a
+// promotion must neither carry one away nor overwrite it.
 export const NEVER_COPY_COLLECTIONS = [
   'accounts',
   'research_plans',
@@ -22,6 +34,15 @@ export const NEVER_COPY_COLLECTIONS = [
   'engine_benchmark_snapshots',
   'weekly_sweep_runs',
   'login_signal_tallies',
+  'deleted_account_event_tallies',
+  'account_deletion_requests',
+  'research_topics_derivations',
+  'written_description_derivations',
+  'card_synthesis_derivations',
+  'search_rerank_cache',
+  'model_call_usages',
+  'directory_removal_requests',
+  'dev_write_launches',
 ];
 
 // The Development refresh clears every collection the Beta mirror does not
@@ -42,13 +63,22 @@ export const PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS = [
   'engine_benchmark_snapshots',
   'weekly_sweep_runs',
   'login_signal_tallies',
+  'deleted_account_event_tallies',
+  'account_deletion_requests',
+  'research_topics_derivations',
+  'written_description_derivations',
+  'card_synthesis_derivations',
+  'search_rerank_cache',
+  'model_call_usages',
+  'directory_removal_requests',
+  'scrape_job_locks',
+  'dev_write_launches',
 ];
 
-// A lease is state rather than history: it expires and is taken over, so a
-// refresh may drop it. This is the only environment-local collection a refresh
-// is allowed to clear, and it is named here so that the classification below
-// stays exhaustive.
-export const EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS = ['scrape_job_locks'];
+// scrape_job_locks used to be ephemeral, but it now holds the Development write
+// lease the refresh itself takes (#5756), so clearing it mid-refresh would admit a
+// second apply. Nothing environment-local is cleared by a refresh any more.
+export const EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS: string[] = [];
 
 // Adding a collection to NEVER_COPY_COLLECTIONS without classifying it as
 // preserved or ephemeral fails here rather than silently joining the refresh's

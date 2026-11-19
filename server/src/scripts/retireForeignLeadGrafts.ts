@@ -22,6 +22,7 @@ import {
   type ForeignLeadGraftPlanRow,
   type ForeignLeadGraftSummary,
 } from './retireForeignLeadGraftsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -219,7 +220,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+      writeReportFileSync(safeOutput, JSON.stringify(payload, null, 2));
       console.log(`Saved foreign-lead-graft retirement report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result.summary, null, 2));

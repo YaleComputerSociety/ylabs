@@ -1,3 +1,4 @@
+// Mirrored by YEAR_OF_STUDY_PROGRESSION in client/src/utils/programYearOfStudyChips.ts; change both together.
 export const YEAR_OF_STUDY_PROGRESSION: readonly string[] = [
   'First-Year Student',
   'Sophomore',

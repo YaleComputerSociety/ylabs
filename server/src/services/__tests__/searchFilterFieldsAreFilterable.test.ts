@@ -12,10 +12,14 @@ import {
 const everyFilterSet: Required<ResearchGroupFilterInput> = {
   kind: ['kind-value'],
   entityType: ['entity-type-value'],
+  researchType: ['research-type-value'],
   school: ['school-value'],
   departments: ['department-value'],
   researchAreas: ['topic-value'],
   hostsUndergrads: true,
+  welcomesUndergrads: true,
+  mentorsUndergrads: true,
+  worksWithUndergrads: true,
   studentVisibilityTier: ['tier-value'],
 };
 
@@ -37,10 +41,14 @@ describe('search filter fields against the index settings', () => {
         'archived',
         'kind',
         'entityType',
+        'researchType',
         'schools',
         'departments',
         'researchAreas',
         'hasUndergradHostingEvidence',
+        'welcomesUndergrads',
+        'mentorsUndergrads',
+        'worksWithUndergrads',
         'studentVisibilityTier',
       ]),
     );

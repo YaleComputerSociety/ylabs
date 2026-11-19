@@ -8,6 +8,8 @@ import {
   stuckSearchProblems,
   waitForSearchResultsToSettle,
 } from './e2e-smoke-search-state.mjs';
+import { assertWatchedProgramApplicationStages } from './e2e-smoke-program-application-stages.mjs';
+import { assertDashboardPlanListView } from './e2e-smoke-dashboard-plan-list-view.mjs';
 
 const LOCAL_SMOKE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const DEPLOYED_SMOKE_HOSTS = new Set([
@@ -35,7 +37,12 @@ const SMOKE_WITHHELD_ENTITIES = [
 ];
 const SMOKE_CONTACT_ENTITY_NAME = 'Quokka Burrow Acoustics Lab';
 const SMOKE_CONTACT_ENTITY_SLUG = 'e2e-smoke-quokka-burrow-acoustics-lab';
-const SMOKE_CONTACT_DETAILS = ['quokka.coordinator@example.invalid', '203-555-0147'];
+const SMOKE_DESCRIPTION_CONTACT_DETAILS = ['quokka.coordinator@example.invalid', '203-555-0147'];
+const SMOKE_WITHHELD_CONTACT_DETAILS = [
+  'quokka.fieldcontact@example.invalid',
+  'Quokka Field Contact',
+  'quokka.department@example.invalid',
+];
 const SMOKE_ZERO_RESULT_COPY =
   'No indexed research matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.';
 
@@ -261,54 +268,78 @@ await step('signed-in student reaches the research browse home', async () => {
   await page.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
   await settleResearchPage();
   await page
-    .getByRole('heading', { level: 1, name: 'Find a Yale lab that fits you.' })
+    .getByRole('heading', { level: 1, name: 'Find Yale research that fits you.' })
     .waitFor({ timeout: 20000 });
   await page.getByRole('heading', { name: 'Research to explore' }).waitFor({ timeout: 20000 });
   await assertTextIncludes(SMOKE_ENTITY_NAME);
 });
 await screenshot('01-browse-home');
 
+const assertWideSidebarFits = async (visitorContext, visitor) => {
+  const laptopPage = await visitorContext.newPage();
+  try {
+    const sidebar = laptopPage.locator('header', {
+      has: laptopPage.getByRole('heading', {
+        level: 1,
+        name: 'Find Yale research that fits you.',
+      }),
+    });
+    const assertSidebarFits = async (state) => {
+      const { scrollHeight, clientHeight } = await sidebar.evaluate((element) => ({
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+      }));
+      const { width, height } = laptopPage.viewportSize();
+      assert(
+        scrollHeight <= clientHeight,
+        `The sticky research sidebar overflows for ${visitor} ${state} at ${width}x${height}: ${scrollHeight}px of content in ${clientHeight}px.`,
+      );
+    };
+    for (const height of [800, 720]) {
+      await laptopPage.setViewportSize({ width: 1280, height });
+      await laptopPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+      await settleResearchPage(laptopPage);
+      for (const axis of ['type', 'school', 'department']) {
+        await sidebar.getByLabel(`Filter by ${axis}`).waitFor({ timeout: 20000 });
+      }
+      const hostedToggle = sidebar.getByRole('checkbox', {
+        name: /^Has had undergrads before \([1-9][\d,]*\)$/,
+      });
+      await hostedToggle.waitFor({ timeout: 20000 });
+      await assertSidebarFits('while browsing');
+      await sidebar.getByLabel(SEARCH_INPUT_LABEL).fill(SMOKE_SEARCH_TOKEN);
+      await assertSidebarFits('with a query typed');
+      await sidebar.getByRole('button', { name: 'Search', exact: true }).click();
+      await laptopPage
+        .locator(SEARCH_RESULTS_SELECTOR)
+        .getByRole('status')
+        .filter({ hasText: /results? for '.+'/i })
+        .first()
+        .waitFor({ timeout: 20000 });
+      await settleResearchPage(laptopPage);
+      await assertSidebarFits('after a search');
+      await laptopPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+      await settleResearchPage(laptopPage);
+      await hostedToggle.check();
+      await laptopPage.waitForURL(/[?&]undergrad=1/, { timeout: 20000 });
+      await settleResearchPage(laptopPage);
+      await sidebar.getByRole('button', { name: 'Clear all filters' }).waitFor({ timeout: 20000 });
+      await assertSidebarFits('with a filter active');
+    }
+  } finally {
+    await laptopPage.close();
+  }
+};
+
 await step(
   'the wide-screen research sidebar fits every filter without its own scrollbar',
   async () => {
-    const laptopPage = await context.newPage();
+    await assertWideSidebarFits(context, 'a signed-in student');
+    const guestContext = await browser.newContext({ deviceScaleFactor: 1 });
     try {
-      const sidebar = laptopPage.locator('header', {
-        has: laptopPage.getByRole('heading', { level: 1, name: 'Find a Yale lab that fits you.' }),
-      });
-      const assertSidebarFits = async (state) => {
-        const { scrollHeight, clientHeight } = await sidebar.evaluate((element) => ({
-          scrollHeight: element.scrollHeight,
-          clientHeight: element.clientHeight,
-        }));
-        const { width, height } = laptopPage.viewportSize();
-        assert(
-          scrollHeight <= clientHeight,
-          `The sticky research sidebar overflows ${state} at ${width}x${height}: ${scrollHeight}px of content in ${clientHeight}px.`,
-        );
-      };
-      for (const height of [800, 720]) {
-        await laptopPage.setViewportSize({ width: 1280, height });
-        await laptopPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
-        await settleResearchPage(laptopPage);
-        for (const axis of ['type', 'school', 'department']) {
-          await sidebar.getByLabel(`Filter by ${axis}`).waitFor({ timeout: 20000 });
-        }
-        await assertSidebarFits('while browsing');
-        await sidebar.getByLabel(SEARCH_INPUT_LABEL).fill(SMOKE_SEARCH_TOKEN);
-        await assertSidebarFits('with a query typed');
-        await sidebar.getByRole('button', { name: 'Search', exact: true }).click();
-        await laptopPage
-          .locator(SEARCH_RESULTS_SELECTOR)
-          .getByRole('status')
-          .filter({ hasText: /results? for '.+'/i })
-          .first()
-          .waitFor({ timeout: 20000 });
-        await settleResearchPage(laptopPage);
-        await assertSidebarFits('after a search');
-      }
+      await assertWideSidebarFits(guestContext, 'a guest');
     } finally {
-      await laptopPage.close();
+      await guestContext.close();
     }
   },
 );
@@ -382,24 +413,33 @@ await step('withheld-tier rows never reach browse, search, or detail', async () 
   }
 });
 
-await step('a contact-bearing row renders with its contact details withheld', async () => {
-  await page.goto(`${baseUrl}/research/${SMOKE_CONTACT_ENTITY_SLUG}`, {
-    waitUntil: 'domcontentloaded',
-  });
-  await settleResearchPage();
-  await page
-    .getByRole('heading', { level: 1, name: SMOKE_CONTACT_ENTITY_NAME })
-    .waitFor({ timeout: 20000 });
-  await assertTextIncludes('vocalizations');
-  const text = await bodyText();
-  const html = await page.content();
-  for (const detail of SMOKE_CONTACT_DETAILS) {
-    assert(
-      !text.includes(detail) && !html.includes(detail),
-      `The detail page served a stored contact detail (${detail}) unredacted.`,
-    );
-  }
-});
+await step(
+  'a contact-bearing row shows the contacts its description publishes and withholds its contact fields',
+  async () => {
+    await page.goto(`${baseUrl}/research/${SMOKE_CONTACT_ENTITY_SLUG}`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await settleResearchPage();
+    await page
+      .getByRole('heading', { level: 1, name: SMOKE_CONTACT_ENTITY_NAME })
+      .waitFor({ timeout: 20000 });
+    await assertTextIncludes('vocalizations');
+    const text = await bodyText();
+    const html = await page.content();
+    for (const detail of SMOKE_DESCRIPTION_CONTACT_DETAILS) {
+      assert(
+        text.includes(detail),
+        `The detail page withheld a contact detail (${detail}) its public description states (#5046).`,
+      );
+    }
+    for (const detail of SMOKE_WITHHELD_CONTACT_DETAILS) {
+      assert(
+        !text.includes(detail) && !html.includes(detail),
+        `The detail page served a contact field or non-description contact (${detail}).`,
+      );
+    }
+  },
+);
 
 await step('the student returns to the detail page the journey continues from', async () => {
   await page.goto(`${baseUrl}/research/${SMOKE_ENTITY_SLUG}`, { waitUntil: 'domcontentloaded' });
@@ -501,7 +541,7 @@ await screenshot('04-detail-saved');
 await step('the saved entity appears on the dashboard', async () => {
   await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'domcontentloaded' });
   await settleResearchPage();
-  await page.getByRole('tab', { name: /^Dashboard/ }).click();
+  await page.getByRole('tab', { name: /^Saved research/ }).click();
   await page
     .getByRole('heading', { name: 'Saved research plans', exact: true })
     .waitFor({ timeout: 20000 });
@@ -529,15 +569,15 @@ await screenshot('05-account-saved');
 
 await step('each dashboard surface tab paints a full keyboard focus ring', async () => {
   const tabs = page.getByRole('tablist', { name: 'Dashboard surfaces' });
-  const plansTab = tabs.getByRole('tab', { name: /^Dashboard/ });
-  const programsTab = tabs.getByRole('tab', { name: /^Program Watch/ });
+  const plansTab = tabs.getByRole('tab', { name: /^Saved research/ });
+  const programsTab = tabs.getByRole('tab', { name: /^Watched programs/ });
   await plansTab.scrollIntoViewIfNeeded();
   await plansTab.focus();
   await page.keyboard.press('ArrowRight');
-  await assertFocusRingPaintsEverySide(programsTab, 'The Program Watch tab');
+  await assertFocusRingPaintsEverySide(programsTab, 'The Watched programs tab');
   await programsTab.focus();
   await page.keyboard.press('ArrowLeft');
-  await assertFocusRingPaintsEverySide(plansTab, 'The Dashboard tab');
+  await assertFocusRingPaintsEverySide(plansTab, 'The Saved research tab');
 });
 
 await step('each program view-mode segment paints a full keyboard focus ring', async () => {
@@ -678,6 +718,43 @@ await step(
   },
 );
 
+await step(
+  'the sticky filter bar stays one compact row on a phone with a filter active',
+  async () => {
+    const phonePage = await context.newPage();
+    try {
+      await phonePage.setViewportSize({ width: 390, height: 664 });
+      await phonePage.goto(`${baseUrl}/research?department=Department+of+Fictional+Biology`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await settleResearchPage(phonePage);
+      await phonePage
+        .getByRole('button', { name: /^Remove Department:/ })
+        .waitFor({ timeout: 20000 });
+      const barHeight = await phonePage.evaluate(() => {
+        const bar = document.querySelector('[data-scroll-container] .sticky.top-0');
+        return bar ? Math.round(bar.getBoundingClientRect().height) : null;
+      });
+      assert(
+        barHeight !== null && barHeight <= 84,
+        `The sticky filter bar is ${barHeight}px tall at 390x664 with one filter active; it should stay one control row under the result summary (84px or less) so results keep the screen (#5305, #5166).`,
+      );
+      const chipOverflow = await phonePage.evaluate(() => {
+        const strip = document.querySelector('[aria-label="Active research filters"]');
+        const chip = strip?.querySelector('button[aria-label^="Remove Department:"]');
+        if (!strip || !chip) return null;
+        return Math.round(chip.getBoundingClientRect().right - strip.getBoundingClientRect().right);
+      });
+      assert(
+        chipOverflow !== null && chipOverflow <= 0,
+        `The department chip ends ${chipOverflow}px past the edge of the phone chip strip, so its remove control is cut off (#5305).`,
+      );
+    } finally {
+      await phonePage.close();
+    }
+  },
+);
+
 const LAYOUT_SHIFT_BUDGET = 0.1;
 const syntheticLayoutEntity = (index) => ({
   _id: `e2e-layout-${index}`,
@@ -813,6 +890,177 @@ await step('a session answering late does not shift the browse page', async () =
   ]) {
     await assertLateSessionKeepsBrowseStable(viewport, syntheticAdminSession);
     await assertLateSessionKeepsBrowseStable(viewport, syntheticStudentSession);
+  }
+});
+
+const PHONE_SEARCH_QUERY = 'neural circuits';
+const syntheticWatchedProgram = (index) => ({
+  _id: `e2e-watched-program-${index}`,
+  title: `Watched Program Fixture ${index}`,
+  summary: 'Synthetic watched program for the phone search smoke.',
+  description: 'Synthetic watched program for the phone search smoke.',
+  programCategory: 'FELLOWSHIP',
+  programKind: 'RESEARCH_FUNDING',
+  isAcceptingApplications: true,
+  deadline: new Date(Date.now() + (index + 3) * 86400000).toISOString(),
+});
+
+const withPhoneSearchPage = async (viewport, session, { holdSession = false } = {}, fn) => {
+  const phoneContext = await browser.newContext({ viewport, deviceScaleFactor: 1 });
+  let releaseSession = () => {};
+  const sessionReleased = new Promise((resolve) => {
+    releaseSession = resolve;
+  });
+  try {
+    await phoneContext.route('**/api/check', async (route) => {
+      if (holdSession) await sessionReleased;
+      await route.fulfill({ json: session });
+    });
+    await phoneContext.route('**/api/research/search**', (route) =>
+      route.fulfill({
+        json: {
+          researchEntities: Array.from({ length: 8 }, (_, index) => syntheticLayoutEntity(index)),
+          estimatedTotalHits: 8,
+          page: 1,
+          pageSize: 24,
+          facetDistribution: {},
+        },
+      }),
+    );
+    await phoneContext.route('**/api/users/watchedPrograms**', (route) =>
+      route.fulfill({
+        json: { watchedPrograms: [syntheticWatchedProgram(0), syntheticWatchedProgram(1)] },
+      }),
+    );
+    await phoneContext.route('**/api/users/watchedProgramPlans**', (route) =>
+      route.fulfill({ json: { watchedProgramPlans: {} } }),
+    );
+    await phoneContext.route('**/api/analytics/**', (route) => route.fulfill({ status: 204 }));
+    const phonePage = await phoneContext.newPage();
+    await withFailureContextOf(phonePage, () => fn(phonePage, releaseSession));
+  } finally {
+    releaseSession();
+    await phoneContext.close();
+  }
+};
+
+const firstSearchResultTop = (targetPage) =>
+  targetPage
+    .getByRole('region', { name: 'Search results' })
+    .getByRole('link', { name: 'Layout Fixture 0' })
+    .first()
+    .evaluate((link) => Math.round(link.getBoundingClientRect().top));
+
+const PHONE_SEARCH_PERSONAS = [
+  ['a guest', { auth: false }],
+  ['a signed-in student with a watched deadline', syntheticStudentSession],
+];
+
+await step('a phone search puts the first result title on the first screen', async () => {
+  for (const viewport of [
+    { width: 390, height: 664 },
+    { width: 375, height: 667 },
+  ]) {
+    for (const [persona, session] of PHONE_SEARCH_PERSONAS) {
+      await withPhoneSearchPage(viewport, session, {}, async (phonePage) => {
+        await phonePage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+        await phonePage.getByRole('link', { name: 'Layout Fixture 0' }).first().waitFor({
+          timeout: 20000,
+        });
+        if (session.auth) {
+          await phonePage
+            .getByRole('link', { name: /watched program/ })
+            .first()
+            .waitFor({ timeout: 20000 });
+        }
+        const searchInput = phonePage.getByLabel(SEARCH_INPUT_LABEL);
+        await searchInput.fill(PHONE_SEARCH_QUERY);
+        await searchInput.press('Enter');
+        await phonePage
+          .getByRole('region', { name: 'Search results' })
+          .getByRole('link', { name: 'Layout Fixture 0' })
+          .first()
+          .waitFor({ timeout: 20000 });
+        await phonePage.waitForTimeout(500);
+        const titleTop = await firstSearchResultTop(phonePage);
+        record('phone search first result', {
+          persona,
+          viewport: `${viewport.width}x${viewport.height}`,
+          firstResultTitleTop: titleTop,
+        });
+        assert(
+          titleTop < viewport.height,
+          `After a search at ${viewport.width}x${viewport.height} for ${persona}, the first result title starts at y=${titleTop}, below the first screen (#5166).`,
+        );
+        if (session.auth) {
+          assert(
+            !(await phonePage.getByText(SIGNED_IN_NOTICE).isVisible()),
+            `The signed-in notice still shows after a phone search for ${persona} (#5166).`,
+          );
+        } else {
+          assert(
+            await phonePage.getByRole('link', { name: 'Log in with Yale CAS' }).isVisible(),
+            `The guest log-in prompt is missing after a phone search at ${viewport.width}px (#5166).`,
+          );
+        }
+      });
+    }
+  }
+});
+
+const SEARCH_SESSION_SHIFT_BUDGET = 0.01;
+
+await step('a session answering late does not shift a phone search', async () => {
+  const viewport = { width: 375, height: 667 };
+  for (const [persona, session] of PHONE_SEARCH_PERSONAS) {
+    await withPhoneSearchPage(
+      viewport,
+      session,
+      { holdSession: true },
+      async (phonePage, releaseSession) => {
+        await phonePage.addInitScript(() => {
+          window.__searchShifts = [];
+          new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+              if (entry.hadRecentInput) continue;
+              window.__searchShifts.push({ startTime: entry.startTime, value: entry.value });
+            }
+          }).observe({ type: 'layout-shift', buffered: true });
+        });
+        await phonePage.goto(`${baseUrl}/research?q=${encodeURIComponent(PHONE_SEARCH_QUERY)}`, {
+          waitUntil: 'domcontentloaded',
+        });
+        await phonePage
+          .getByRole('region', { name: 'Search results' })
+          .getByRole('link', { name: 'Layout Fixture 0' })
+          .first()
+          .waitFor({ timeout: 20000 });
+        await phonePage.waitForTimeout(1000);
+        const sessionAnsweredAt = await phonePage.evaluate(() => performance.now());
+        releaseSession();
+        await phonePage
+          .getByRole('link', { name: session.auth ? /watched program/ : 'Log in with Yale CAS' })
+          .first()
+          .waitFor({ state: 'visible', timeout: 20000 });
+        await phonePage.waitForTimeout(1000);
+        const total = await phonePage.evaluate(
+          (since) =>
+            window.__searchShifts
+              .filter((shift) => shift.startTime >= since)
+              .reduce((sum, shift) => sum + shift.value, 0),
+          sessionAnsweredAt,
+        );
+        record('phone search layout shift with a late session', {
+          persona,
+          width: viewport.width,
+          cumulativeLayoutShift: Number(total.toFixed(4)),
+        });
+        assert(
+          total < SEARCH_SESSION_SHIFT_BUDGET,
+          `A phone search at ${viewport.width}px shifted by ${total.toFixed(3)} (budget ${SEARCH_SESSION_SHIFT_BUDGET}) once a late session check answered for ${persona} (#4222, #5166).`,
+        );
+      },
+    );
   }
 });
 
@@ -1043,6 +1291,47 @@ await step('every overlay dims the page with the one navy scrim', async () => {
       `The ${overlay} scrim is untinted black (${color}).`,
     );
   }
+});
+
+await step('the getting-started guide is reachable before a profile (#6095)', async () => {
+  const guideHeading = { level: 1, name: 'How to get started in research' };
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 1440, height: 900 },
+  ]) {
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      await syntheticPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+      const landingLink = syntheticPage.getByRole('link', {
+        name: 'New to research? How to get started',
+      });
+      await landingLink.waitFor({ timeout: 20000 });
+      assert(
+        await landingLink.isVisible(),
+        `The research landing hides the getting-started link at ${viewport.width}px.`,
+      );
+      await landingLink.click();
+      await syntheticPage.getByRole('heading', guideHeading).waitFor({ timeout: 20000 });
+    });
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      await syntheticPage.route('**/api/programs/e2e-program-1', (route) =>
+        route.fulfill({
+          json: { program: { ...syntheticProgram(1), requiresMentorBeforeApply: true } },
+        }),
+      );
+      await syntheticPage.goto(`${baseUrl}/programs?program=e2e-program-1`, {
+        waitUntil: 'domcontentloaded',
+      });
+      const dialog = syntheticPage.getByRole('dialog').first();
+      await dialog.waitFor({ timeout: 20000 });
+      const mentorLink = dialog.getByRole('link', {
+        name: 'Need a mentor? How to reach out to a professor',
+      });
+      await mentorLink.scrollIntoViewIfNeeded();
+      await mentorLink.click();
+      await syntheticPage.getByRole('heading', guideHeading).waitFor({ timeout: 20000 });
+    });
+  }
+  record('getting-started entry points', { landing: 'ok', mentorFirstProgram: 'ok' });
 });
 
 const DIALOG_SHIFT_BUDGET = 0.01;
@@ -1286,6 +1575,12 @@ await step('a successful programs load keeps its layout when the data arrives', 
             programKind: 'FELLOWSHIP_FUNDING',
           })),
           { ...syntheticProgram(6), departmentResearchGuidance: true },
+          {
+            ...syntheticProgram(8),
+            programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+            departmentResearchGuidance: true,
+            departmentGuidanceKind: 'senior_essay',
+          },
           { ...syntheticProgram(7), studentFacingCategory: 'Archive / review' },
         ];
         await route.fulfill({ json: { results, total: results.length } });
@@ -1499,6 +1794,237 @@ await step('a research profile keeps its layout when the profile arrives', async
   }
 });
 
+const FILTER_LAYOUT_DESCRIPTIONS = [
+  'Synthetic research entity for the filter layout smoke.',
+  'Synthetic research entity for the filter layout smoke, with a longer description that wraps onto several lines on a narrow card so that rows in the same grid differ in height.',
+  'Synthetic research entity for the filter layout smoke, with a description long enough to wrap onto two lines.',
+];
+const filterLayoutEntity = (index) => ({
+  ...syntheticLayoutEntity(index),
+  fullDescription: FILTER_LAYOUT_DESCRIPTIONS[index % FILTER_LAYOUT_DESCRIPTIONS.length],
+  departments: [index % 2 === 0 ? 'Computer Science' : 'History'],
+});
+const FILTERED_DEPARTMENT_INDICES = [0, 2, 4, 6, 8, 10];
+
+await step('applying a department filter keeps the result cards in place', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 1280, height: 800 },
+    { width: 1440, height: 900 },
+  ]) {
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      let releaseFiltered;
+      const filteredReleased = new Promise((resolve) => {
+        releaseFiltered = resolve;
+      });
+      await syntheticPage.route('**/api/research/search**', async (route) => {
+        const filtered = Boolean(route.request().postDataJSON()?.filters?.departments?.length);
+        if (filtered) await filteredReleased;
+        const indices = filtered
+          ? FILTERED_DEPARTMENT_INDICES
+          : Array.from({ length: 12 }, (_, index) => index);
+        await route.fulfill({
+          json: {
+            researchEntities: indices.map(filterLayoutEntity),
+            estimatedTotalHits: indices.length,
+            page: 1,
+            pageSize: 24,
+            facetDistribution: {
+              departments: filtered
+                ? { 'Computer Science': 6 }
+                : { 'Computer Science': 6, History: 6 },
+            },
+          },
+        });
+      });
+      await syntheticPage.goto(`${baseUrl}/research?q=layout`, { waitUntil: 'domcontentloaded' });
+      await syntheticPage
+        .getByRole('link', { name: 'Layout Fixture 11' })
+        .waitFor({ state: 'visible', timeout: 20000 });
+      let department = syntheticPage.getByLabel('Filter by department');
+      if (!(await department.isVisible())) {
+        await syntheticPage.getByRole('button', { name: /^Filters/ }).click();
+        department = syntheticPage.getByLabel('Filter by department');
+      }
+      await syntheticPage.evaluate(() => {
+        window.__filterShifts = [];
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (entry.hadRecentInput) continue;
+            window.__filterShifts.push({
+              value: entry.value,
+              sources: entry.sources.map((source) => {
+                const node = source.node;
+                const element = node?.nodeType === 1 ? node : node?.parentElement;
+                return element
+                  ? `${element.tagName.toLowerCase()}.${String(element.className).slice(0, 60)}`
+                  : 'unknown';
+              }),
+            });
+          }
+        }).observe({ type: 'layout-shift' });
+      });
+      await department.selectOption('Computer Science');
+      await syntheticPage.waitForTimeout(500);
+      releaseFiltered();
+      await syntheticPage
+        .getByRole('link', { name: 'Layout Fixture 1', exact: true })
+        .waitFor({ state: 'detached', timeout: 20000 });
+      await syntheticPage.waitForTimeout(1000);
+      const shifts = await syntheticPage.evaluate(() => window.__filterShifts);
+      const total = shifts.reduce((sum, shift) => sum + shift.value, 0);
+      const largest = [...shifts].sort((a, b) => b.value - a.value)[0];
+      record('research department filter layout shift', {
+        width: viewport.width,
+        contentLayoutShift: Number(total.toFixed(4)),
+        largestShiftSources: largest?.sources ?? [],
+      });
+      assert(
+        total < LOADED_CONTENT_SHIFT_BUDGET,
+        `Applying a department filter at ${viewport.width}px shifted the page by ${total.toFixed(3)} when the filtered results arrived (budget ${LOADED_CONTENT_SHIFT_BUDGET}); largest shift ${largest?.value.toFixed(3)}: ${largest?.sources.join(', ')}.`,
+      );
+    });
+  }
+});
+
+const TYPED_DEPARTMENT_FACETS = { 'Computer Science': 4, Neuroscience: 3, Nutrition: 2 };
+
+await step(
+  'typing in the department filter applies nothing until Enter and keeps focus',
+  async () => {
+    for (const viewport of [
+      { width: 375, height: 812 },
+      { width: 1280, height: 800 },
+    ]) {
+      for (const url of ['/research?q=layout', '/research']) {
+        await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+          const departmentRequests = [];
+          await syntheticPage.route('**/api/research/search**', async (route) => {
+            const departments = route.request().postDataJSON()?.filters?.departments ?? [];
+            if (departments.length > 0) departmentRequests.push(departments[0]);
+            await route.fulfill({
+              json: {
+                researchEntities: Array.from({ length: 3 }, (_, index) =>
+                  syntheticLayoutEntity(index),
+                ),
+                estimatedTotalHits: 3,
+                page: 1,
+                pageSize: 24,
+                facetDistribution: { departments: TYPED_DEPARTMENT_FACETS },
+              },
+            });
+          });
+          await syntheticPage.goto(`${baseUrl}${url}`, { waitUntil: 'domcontentloaded' });
+          const department = syntheticPage.getByLabel('Filter by department');
+          const trigger = syntheticPage.getByRole('button', { name: /^Filters/ });
+          await department.or(trigger).first().waitFor({ state: 'visible', timeout: 20000 });
+          if (!(await department.isVisible())) await trigger.click();
+          await department.waitFor({ state: 'visible', timeout: 20000 });
+          await department.focus();
+          await syntheticPage.keyboard.type('nu', { delay: 200 });
+          await syntheticPage.waitForTimeout(600);
+          const appliedWhileTyping = [...departmentRequests];
+          const shownWhileTyping = await department.inputValue();
+          await syntheticPage.keyboard.press('Enter');
+          await syntheticPage.waitForTimeout(800);
+          const focusedLabel = await syntheticPage.evaluate(() =>
+            document.activeElement?.getAttribute('aria-label'),
+          );
+          record('typed department filter', {
+            width: viewport.width,
+            url,
+            appliedWhileTyping,
+            shownWhileTyping,
+            appliedOnEnter: departmentRequests.at(-1),
+            focusedLabel,
+          });
+          assert(
+            appliedWhileTyping.length === 0,
+            `Typing in the department filter on ${url} at ${viewport.width}px applied ${appliedWhileTyping.join(', ')} before Enter.`,
+          );
+          assert(
+            shownWhileTyping === 'Nutrition' && departmentRequests.at(-1) === 'Nutrition',
+            `Typing "nu" then Enter on ${url} at ${viewport.width}px showed ${shownWhileTyping} and applied ${departmentRequests.at(-1)}, not Nutrition.`,
+          );
+          assert(
+            focusedLabel === 'Filter by department',
+            `Applying a typed department on ${url} at ${viewport.width}px left focus on ${focusedLabel ?? 'the page body'}, not the department filter.`,
+          );
+        });
+      }
+    }
+  },
+);
+
+await step('leaving the department filter with a typed choice applies nothing', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 1280, height: 800 },
+  ]) {
+    for (const leave of ['tab', 'close']) {
+      if (leave === 'close' && viewport.width >= 1280) continue;
+      await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+        const departmentRequests = [];
+        await syntheticPage.route('**/api/research/search**', async (route) => {
+          const departments = route.request().postDataJSON()?.filters?.departments ?? [];
+          if (departments.length > 0) departmentRequests.push(departments[0]);
+          await route.fulfill({
+            json: {
+              researchEntities: Array.from({ length: 3 }, (_, index) =>
+                syntheticLayoutEntity(index),
+              ),
+              estimatedTotalHits: 3,
+              page: 1,
+              pageSize: 24,
+              facetDistribution: { departments: TYPED_DEPARTMENT_FACETS },
+            },
+          });
+        });
+        await syntheticPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+        const department = syntheticPage.getByLabel('Filter by department');
+        const trigger = syntheticPage.getByRole('button', { name: /^Filters/ });
+        await department.or(trigger).first().waitFor({ state: 'visible', timeout: 20000 });
+        if (!(await department.isVisible())) await trigger.click();
+        await department.waitFor({ state: 'visible', timeout: 20000 });
+        await department.focus();
+        await syntheticPage.keyboard.type('nu', { delay: 200 });
+        if (leave === 'tab') {
+          await syntheticPage.keyboard.press('Tab');
+        } else {
+          await syntheticPage.getByRole('button', { name: 'Close filters' }).click();
+        }
+        await syntheticPage.waitForTimeout(800);
+        const panelOpen = await syntheticPage
+          .getByRole('dialog', { name: 'Research filters' })
+          .isVisible()
+          .catch(() => false);
+        const shownAfterLeaving = (await department.isVisible())
+          ? await department.inputValue()
+          : '';
+        record('department filter left with a typed choice', {
+          width: viewport.width,
+          leave,
+          applied: departmentRequests,
+          shownAfterLeaving,
+          panelOpen,
+        });
+        assert(
+          departmentRequests.length === 0,
+          `Leaving the department filter by ${leave} at ${viewport.width}px applied ${departmentRequests.join(', ')}.`,
+        );
+        assert(
+          shownAfterLeaving === '',
+          `Leaving the department filter by ${leave} at ${viewport.width}px left it showing ${shownAfterLeaving} instead of the applied value.`,
+        );
+        assert(
+          leave !== 'close' || !panelOpen,
+          `Closing the filter panel at ${viewport.width}px with a typed choice pending left the panel open.`,
+        );
+      });
+    }
+  }
+});
+
 const INTERNAL_PROGRAM_FACET_NAMES = [
   'Journey',
   'Program Kind',
@@ -1553,6 +2079,127 @@ await step('a student sees only student-worded program filter tabs, all in view'
       );
     });
   }
+});
+
+const SYNTHETIC_SHORT_FACET = Array.from({ length: 10 }, (_, index) => `Subject area ${index + 1}`);
+const SYNTHETIC_LONG_FACET = Array.from({ length: 21 }, (_, index) => `Purpose kind ${index + 1}`);
+
+const lastOptionPlacement = (dialog) =>
+  dialog.evaluate((element) => {
+    const list = element.querySelector('fieldset');
+    const options = list.querySelectorAll('label');
+    const last = options[options.length - 1];
+    const box = element.getBoundingClientRect();
+    const rect = last.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const probe = (x, y) => element.contains(document.elementFromPoint(x, y));
+    return {
+      listOverflow: list.scrollHeight - list.clientHeight,
+      insideViewport: rect.top >= 0 && rect.bottom <= window.innerHeight,
+      insideDialog: rect.top >= box.top && rect.bottom <= box.bottom,
+      lastOptionOnTop: probe(centerX, centerY),
+      dialogEdgeOnTop: probe(box.right - 8, box.top + box.height / 2),
+    };
+  });
+
+await step('a short program facet shows in full and the filter popover paints on top', async () => {
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 1366, height: 768 },
+    { width: 390, height: 844 },
+  ]) {
+    await withSyntheticBrowsePage(
+      viewport,
+      async (syntheticPage) => {
+        await syntheticPage.route('**/api/programs/filters', (route) =>
+          route.fulfill({
+            json: { subjects: SYNTHETIC_SHORT_FACET, purpose: SYNTHETIC_LONG_FACET },
+          }),
+        );
+        await syntheticPage.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
+        await syntheticPage.getByText('Program Fixture 0').first().waitFor({ timeout: 20000 });
+        await syntheticPage
+          .getByRole('button', { name: /^Filters/ })
+          .first()
+          .click();
+        const dialog = syntheticPage.getByRole('dialog', { name: 'Program filters' });
+        await dialog.waitFor({ timeout: 20000 });
+        const opened = await dialog.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return { top: box.top, bottom: box.bottom, viewportHeight: window.innerHeight };
+        });
+        record('program filter popover on open', { width: viewport.width, ...opened });
+        assert(
+          opened.top >= 0 && opened.bottom <= opened.viewportHeight + 1,
+          `The program filter popover opens past the window at ${viewport.width}x${viewport.height}: ${Math.round(opened.top)} to ${Math.round(opened.bottom)}px.`,
+        );
+        await dialog.getByRole('button', { name: 'Subject', exact: true }).click();
+        await dialog.getByText(SYNTHETIC_SHORT_FACET.at(-1), { exact: true }).waitFor();
+        const subject = await lastOptionPlacement(dialog);
+        record('program short facet placement', { width: viewport.width, ...subject });
+        const at = `${viewport.width}x${viewport.height}`;
+        assert(
+          subject.listOverflow <= 1,
+          `The Subject options scroll in an inner box at ${at}: ${subject.listOverflow}px hidden.`,
+        );
+        assert(
+          subject.insideViewport && subject.insideDialog,
+          `The last Subject option is cut off at ${at}.`,
+        );
+        assert(
+          subject.lastOptionOnTop && subject.dialogEdgeOnTop,
+          `Something paints over the program filter popover at ${at}.`,
+        );
+
+        if (viewport.width >= 640) return;
+        await dialog.getByText(SYNTHETIC_SHORT_FACET[0], { exact: true }).click();
+        await dialog.getByRole('button', { name: /^Clear all filters/ }).waitFor();
+        await dialog.getByRole('button', { name: /^Purpose/ }).click();
+        const lastPurpose = dialog.getByText(SYNTHETIC_LONG_FACET.at(-1), { exact: true });
+        await lastPurpose.scrollIntoViewIfNeeded();
+        const purpose = await lastOptionPlacement(dialog);
+        record('program long facet placement', { width: viewport.width, ...purpose });
+        assert(
+          purpose.insideViewport && purpose.insideDialog && purpose.lastOptionOnTop,
+          `The last Purpose option cannot be reached in the phone filter sheet at ${at}.`,
+        );
+      },
+      { reducedMotion: 'reduce' },
+    );
+  }
+});
+
+await step('a watched program records each application stage', async () => {
+  await assertWatchedProgramApplicationStages({
+    browser,
+    baseUrl,
+    session: syntheticStudentSession,
+    viewports: [
+      { width: 375, height: 812 },
+      { width: 1280, height: 800 },
+    ],
+    assert,
+    record,
+    screenshot,
+    withFailureContextOf,
+  });
+});
+
+await step('a student sorts and filters dashboard plans', async () => {
+  await assertDashboardPlanListView({
+    browser,
+    baseUrl,
+    session: syntheticStudentSession,
+    viewports: [
+      { width: 375, height: 812 },
+      { width: 1280, height: 800 },
+    ],
+    assert,
+    record,
+    screenshot,
+    withFailureContextOf,
+  });
 });
 
 const summary = {

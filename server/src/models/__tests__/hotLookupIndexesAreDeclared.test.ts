@@ -48,8 +48,18 @@ const observationLookups: readonly HotLookup[] = [
     thenReads: [],
   },
   {
+    name: 'the held-page withdrawal lookup of a stored ORCID or photo URL by value',
+    equalityFields: ['field', 'value', 'superseded'],
+    thenReads: [],
+  },
+  {
     name: 'the observation store host filter, which cannot narrow on sourceUrl',
     equalityFields: ['entityType', 'field', 'superseded'],
+    thenReads: [],
+  },
+  {
+    name: "person keys printing a researcher's address (#5578)",
+    equalityFields: ['field', 'value'],
     thenReads: [],
   },
 ];
@@ -63,6 +73,11 @@ const researcherLookups: readonly HotLookup[] = [
   {
     name: 'identity by the display profile website URL',
     equalityFields: ['profile.websiteUrl'],
+    thenReads: [],
+  },
+  {
+    name: 'the research detail lookup of records folded into a served lead (#5970)',
+    equalityFields: ['dedupedIntoResearcherId'],
     thenReads: [],
   },
 ];
@@ -103,7 +118,7 @@ describe('the hot observation and researcher lookups have a declared index (#393
   });
 
   it('does not accept the pre-existing indexes that bury field behind an identity key', () => {
-    const hostFilter = observationLookups[3];
+    const hostFilter = observationLookups[4];
     expect(
       indexServing(
         [

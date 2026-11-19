@@ -7,6 +7,7 @@ import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
+import { programTextDateLabel } from '../../utils/programDates';
 import {
   STALE_DEADLINE_MESSAGE,
   formatFellowshipDate,
@@ -15,24 +16,41 @@ import {
   programAudienceLabel,
 } from '../../utils/fellowshipStatus';
 import {
-  DEPARTMENT_RESEARCH_GUIDANCE_ACTION,
   DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
-  DEPARTMENT_RESEARCH_GUIDANCE_LABEL,
+  departmentGuidanceCopy,
+  departmentGuidanceKindOf,
   departmentResearchGuidanceHref,
   entryModeLabel,
   isDepartmentResearchGuidance,
   programKindLabel,
 } from '../../utils/programJourney';
-import { buildSafeProgramLinks } from '../../utils/programLinks';
+import {
+  applicationTextNamesProgramContact,
+  programCitizenshipSummary,
+  NOT_STATED_LABEL,
+  PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE,
+} from '../../utils/programBoard';
+import { buildSafeProgramLinks, programSourceLinkLabel } from '../../utils/programLinks';
 import {
   isLikelyUnavailableSourceLink,
   labelizeResearchDetailValue,
 } from '../../utils/researchDetailSources';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
+import { writeProgramSearchUrlState } from '../../utils/programSearchUrlState';
+import {
+  StudentProgramFilters,
+  createEmptyStudentProgramFilters,
+} from '../../reducers/fellowshipSearchReducer';
 import useModalDialog from '../../hooks/useModalDialog';
-import FavoriteButton from '../shared/FavoriteButton';
+import FavoriteButton, { watchControlLabel, watchControlVerb } from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
+import ReachOutGuideLink from '../research/ReachOutGuideLink';
+import { GETTING_STARTED_MENTOR_LINK_LABEL } from '../../utils/gettingStartedGuide';
 import { CloseIcon, ExternalLinkIcon, GlobeIcon, MailIcon } from '../shared/icons';
+import {
+  noMentorFirstAnswer,
+  programLetterRequirement,
+} from '../../utils/programLetterRequirement';
 
 interface FellowshipModalProps {
   fellowship: Fellowship;
@@ -118,6 +136,15 @@ const trackGuidanceClick = (fellowshipId: string, url: string) => {
 
 const PROGRAMS_PATH = '/programs';
 
+const MODAL_FILTER_KEYS = {
+  yearOfStudy: 'selectedYearOfStudy',
+  termOfAward: 'selectedTermOfAward',
+  purpose: 'selectedPurpose',
+  globalRegions: 'selectedRegions',
+} as const satisfies Record<string, keyof StudentProgramFilters>;
+
+type ModalFilterType = keyof typeof MODAL_FILTER_KEYS;
+
 const sectionHeadingClass = 'mb-3 text-xs font-semibold uppercase tracking-wider text-muted';
 
 const FellowshipModal = ({
@@ -129,15 +156,7 @@ const FellowshipModal = ({
 }: FellowshipModalProps) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const {
-    setSelectedYearOfStudy,
-    setSelectedTermOfAward,
-    setSelectedPurpose,
-    setSelectedRegions,
-    setSelectedCitizenship,
-    setQueryString,
-    resetProgramFilters,
-  } = useContext(FellowshipSearchContext);
+  const { sortBy, sortDirection } = useContext(FellowshipSearchContext);
 
   const {
     overlayRef,
@@ -149,58 +168,44 @@ const FellowshipModal = ({
   if (!isOpen || !fellowship) return null;
   const guidance = isDepartmentResearchGuidance(fellowship);
   const guidanceHref = guidance ? departmentResearchGuidanceHref(fellowship) : undefined;
+  const guidanceCopy = departmentGuidanceCopy(fellowship);
+  const seniorEssayGuidance = departmentGuidanceKindOf(fellowship) === 'senior_essay';
   const cycleStatus = getFellowshipCycleStatus(fellowship);
   const statusBadge = guidance
     ? {
-        label: DEPARTMENT_RESEARCH_GUIDANCE_LABEL,
+        label: guidanceCopy.label,
         className: DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
       }
     : cycleStatus;
   const applicationStatus = getFellowshipApplicationStatus(fellowship);
   const deadlineStale = applicationStatus.kind === 'staleDeadline';
+  const deadlineTextConflict = programTextDateLabel(fellowship.deadlineTextConflict);
   const structuredEligibilityDetails = getStructuredEligibilityDetails(fellowship);
   const audienceLabel = programAudienceLabel(fellowship.audience);
   const mentorFirstAnswer = fellowship.requiresMentorBeforeApply
-    ? 'Yes, secure a mentor before applying'
-    : fellowship.mentorMatching
-      ? 'Not first, the program helps match you with a mentor'
-      : 'Not usually';
+    ? 'Yes, line up your own mentor before applying'
+    : noMentorFirstAnswer(programLetterRequirement(fellowship), fellowship.mentorMatching);
 
-  const handleFilterClick = (
-    filterType: 'yearOfStudy' | 'termOfAward' | 'purpose' | 'globalRegions' | 'citizenshipStatus',
-    value: string,
-  ) => {
-    setQueryString('');
-    resetProgramFilters();
-
-    switch (filterType) {
-      case 'yearOfStudy':
-        setSelectedYearOfStudy([value]);
-        break;
-      case 'termOfAward':
-        setSelectedTermOfAward([value]);
-        break;
-      case 'purpose':
-        setSelectedPurpose([value]);
-        break;
-      case 'globalRegions':
-        setSelectedRegions([value]);
-        break;
-      case 'citizenshipStatus':
-        setSelectedCitizenship([value]);
-        break;
-    }
-
+  const handleFilterClick = (filterType: ModalFilterType, value: string) => {
     void trackResearchEvent({
       eventType: 'ways_in_click',
       entityType: 'fellowship',
       entityId: fellowship.id,
       payload: { waysInKind: 'best_next_step', label: filterType },
     });
-    onClose();
-    if (pathname !== PROGRAMS_PATH) {
-      void navigate(PROGRAMS_PATH);
+    const search = writeProgramSearchUrlState(new URLSearchParams(), {
+      ...createEmptyStudentProgramFilters(),
+      [MODAL_FILTER_KEYS[filterType]]: [value],
+      queryString: '',
+      sortBy,
+      sortDirection,
+    }).toString();
+    if (pathname === PROGRAMS_PATH) {
+      void navigate({ search }, { replace: true });
+      return;
     }
+    onClose();
+    void navigate({ pathname: PROGRAMS_PATH, search });
   };
 
   const hasContactInfo =
@@ -291,7 +296,7 @@ const FellowshipModal = ({
                 </h2>
                 <p id="program-detail-description" className="sr-only">
                   {guidance
-                    ? "Department research guidance, which is not an application, and a link to the department's page."
+                    ? `${guidanceCopy.label}, which is not an application, and a link to the department's page.`
                     : 'Program details, eligibility, deadlines, and application actions.'}
                 </p>
               </div>
@@ -307,8 +312,8 @@ const FellowshipModal = ({
                       trackGuidanceClick(fellowship.id, guidanceHref);
                     }}
                     className={iconActionClass}
-                    aria-label={DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
-                    title={DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
+                    aria-label={guidanceCopy.action}
+                    title={guidanceCopy.action}
                   >
                     <ExternalLinkIcon size={18} />
                   </a>
@@ -354,6 +359,8 @@ const FellowshipModal = ({
                     toggleFavorite();
                   }}
                   size={22}
+                  ariaLabel={watchControlLabel(fellowship.title, isFavorite)}
+                  title={watchControlVerb(isFavorite)}
                 />
                 <button
                   onClick={onClose}
@@ -386,12 +393,11 @@ const FellowshipModal = ({
                   <section>
                     <h3 className={sectionHeadingClass}>What this is</h3>
                     <div className="space-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
-                      <p className="text-sm font-medium text-ink">
-                        {DEPARTMENT_RESEARCH_GUIDANCE_LABEL}
-                      </p>
+                      <p className="text-sm font-medium text-ink">{guidanceCopy.label}</p>
                       <p className="text-sm leading-relaxed text-ink-soft">
-                        The department's own advice on finding a faculty mentor and getting started
-                        in research. It is a guide, not an application.
+                        {seniorEssayGuidance
+                          ? "The department's own explanation of how its majors write a senior essay with a faculty adviser. It is a guide, not an application."
+                          : "The department's own advice on finding a faculty mentor and getting started in research. It is a guide, not an application."}
                       </p>
                       {audienceLabel && (
                         <div>
@@ -427,6 +433,9 @@ const FellowshipModal = ({
                       <div>
                         <span className="text-xs text-muted">Do you need a mentor first?</span>
                         <p className="text-sm font-medium text-ink">{mentorFirstAnswer}</p>
+                        {fellowship.requiresMentorBeforeApply && (
+                          <ReachOutGuideLink label={GETTING_STARTED_MENTOR_LINK_LABEL} />
+                        )}
                       </div>
                     </div>
                   </section>
@@ -473,7 +482,9 @@ const FellowshipModal = ({
                             <span className="text-xs text-brand">
                               {fellowship.deadlineProjectedNextCycle
                                 ? 'Estimated next deadline'
-                                : 'Deadline'}
+                                : fellowship.deadlineRollingReview
+                                  ? 'Rolling review closes'
+                                  : 'Deadline'}
                             </span>
                             <p className="text-sm font-medium text-brand-navy">
                               {formatFellowshipDate(fellowship.deadline, 'deadline')}
@@ -481,6 +492,23 @@ const FellowshipModal = ({
                             {fellowship.deadlineProjectedNextCycle && (
                               <p className="text-xs text-brand">
                                 Projected from the last cycle - unconfirmed, verify at source.
+                              </p>
+                            )}
+                            {fellowship.deadlineRollingReview && (
+                              <p className="text-xs text-brand">
+                                Applications are reviewed on a rolling basis until this date.
+                              </p>
+                            )}
+                            {deadlineTextConflict && (
+                              <p className="text-xs text-amber-800">
+                                The program&apos;s own text gives {deadlineTextConflict}. Confirm
+                                the deadline on the official page.
+                              </p>
+                            )}
+                            {fellowship.proseStatesPastCycleDates && (
+                              <p className="mt-1 text-xs text-brand">
+                                Dates in the description are from a past cycle; the deadline above
+                                is current.
                               </p>
                             )}
                           </div>
@@ -572,6 +600,12 @@ const FellowshipModal = ({
                     <h3 className={sectionHeadingClass}>Eligibility filters</h3>
                     <p className="text-xs text-muted mb-3">Click to find similar fellowships</p>
                     <div className="space-y-3">
+                      {fellowship.yearOfStudy.length === 0 && (
+                        <div>
+                          <span className="text-xs text-muted">Year of study</span>
+                          <p className="mt-1 text-sm text-ink-soft">{NOT_STATED_LABEL}</p>
+                        </div>
+                      )}
                       {fellowship.yearOfStudy.length > 0 && (
                         <div>
                           <span className="text-xs text-muted">Year of study</span>
@@ -636,22 +670,17 @@ const FellowshipModal = ({
                           </div>
                         </div>
                       )}
-                      {fellowship.citizenshipStatus.length > 0 && (
-                        <div>
-                          <span className="text-xs text-muted">Citizenship status</span>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {fellowship.citizenshipStatus.map((status) => (
-                              <button
-                                key={status}
-                                onClick={() => handleFilterClick('citizenshipStatus', status)}
-                                className={`${filterChipClass} bg-orange-100 text-orange-800`}
-                              >
-                                {status}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      <div>
+                        <span className="text-xs text-muted">Citizenship</span>
+                        <p className="mt-1 text-sm text-ink-soft">
+                          {programCitizenshipSummary(fellowship)}
+                        </p>
+                        {fellowship.citizenshipCondition && (
+                          <p className="mt-1 text-xs text-amber-800">
+                            {fellowship.citizenshipCondition}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </section>
                 )}
@@ -714,6 +743,12 @@ const FellowshipModal = ({
                             className="text-sm leading-relaxed text-ink-soft"
                           />
                         )}
+                        {fellowship.requiresMentorBeforeApply &&
+                          applicationTextNamesProgramContact(fellowship.applicationInformation) && (
+                            <p className="text-xs leading-relaxed text-muted">
+                              {PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE}
+                            </p>
+                          )}
                         {applicationHref && (
                           <a
                             href={applicationHref}
@@ -825,16 +860,12 @@ const FellowshipModal = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => trackFellowshipApplyClick(fellowship.id)}
-                      className={`inline-flex min-h-[44px] items-center rounded-control px-6 py-2.5 text-sm font-medium text-white transition-colors yr-focus-ring ${
-                        applicationStatus.isApplicationWindowOpen
-                          ? 'bg-brand hover:bg-brand-navy'
-                          : 'bg-muted hover:bg-ink-soft'
-                      }`}
+                      className="yr-pressable inline-flex min-h-[44px] items-center rounded-control bg-brand px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                     >
                       {applicationStatus.isApplicationWindowOpen
                         ? 'Apply now'
                         : applicationStatus.kind === 'notOpenYet'
-                          ? 'Track the opening date'
+                          ? 'See the official program page'
                           : deadlineStale
                             ? 'Open the official page'
                             : 'Open the fellowship source'}
@@ -852,7 +883,7 @@ const FellowshipModal = ({
                       onClick={() => trackGuidanceClick(fellowship.id, guidanceHref)}
                       className="yr-pressable inline-flex min-h-[44px] items-center rounded-control bg-brand px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                     >
-                      {DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
+                      {guidanceCopy.action}
                       <ExternalLinkIcon className="ml-2" size={16} />
                     </a>
                   </div>
@@ -868,7 +899,7 @@ const FellowshipModal = ({
                         rel="noopener noreferrer"
                         className="yr-link yr-focus-ring inline-flex min-h-[44px] items-center rounded-control"
                       >
-                        {sourceLabel || 'Official source'}
+                        {programSourceLinkLabel(fellowship.sourceName, sourceHref, sourceLabel)}
                       </a>
                     ) : (
                       <span className="text-muted">{sourceLabel}</span>

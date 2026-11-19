@@ -486,6 +486,35 @@ export function isPastTraineeResearchSentence(sentence: unknown): boolean {
   return Boolean(text) && PAST_TRAINEE_RESEARCH_SENTENCE.test(text);
 }
 
+const ORGANIZATION_FOCUS_APPOSITIVE =
+  /\b(?:organi[sz]ation|non-?profit|company|start-?up|foundation|firm|coalition|agency|charity|enterprise|campaign)\s+(?:that\s+(?:is\s+)?)?(?:focused|focuses|focusing|dedicated)\s+(?:on|to)\b/gi;
+
+/**
+ * Drops the focus an organization named beside the person carries ("co-founded
+ * <org>, a community organization focused on educational equity"), which states
+ * what that organization does rather than any work of the person.
+ */
+export function withoutOrganizationFocusAppositive(sentence: unknown): string {
+  return textValue(sentence).replace(ORGANIZATION_FOCUS_APPOSITIVE, ' ');
+}
+
+const WORKFORCE_DEVELOPMENT_PRACTICE =
+  /\b(?:develop(?:ment|ing)|train(?:ing)?|supervis(?:ion|ing)|mentor(?:ing|ship)?|coach(?:ing)?)\s+(?:of\s+)?(?:the\s+)?(?:[\p{L}-]+\s+){0,3}(?:workforce|staff|volunteers|entrepreneurs|innovators)\b|\bworkforce\s+development\b|\bhelp(?:ing)?\s+(?:the\s+)?staff\b/iu;
+
+const EXPLICIT_INQUIRY =
+  /\b(?:research(?:es|ed|ing)?|stud(?:y|ies|ied|ying)|investigat\w*|examin\w*|analy[sz]\w*|evaluat\w*|scholarship|inquiry)\b/i;
+
+/**
+ * A focus on developing a workforce, staff or ventures with no inquiry named: "has
+ * long focused on the development of the behavioral health workforce and how to
+ * help staff ...". Like teaching, it is a practice the person runs, so it states no
+ * research; a sentence that studies or evaluates that practice keeps its reading.
+ */
+export function isWorkforceDevelopmentPracticeSentence(sentence: unknown): boolean {
+  const text = textValue(sentence);
+  return WORKFORCE_DEVELOPMENT_PRACTICE.test(text) && !EXPLICIT_INQUIRY.test(text);
+}
+
 export const isTeachingOrPastTraineeSentence = (sentence: unknown): boolean =>
   isTeachingPracticeStatement(sentence) || isPastTraineeResearchSentence(sentence);
 

@@ -9,11 +9,19 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { buildEvidenceCoverageImpactReportForObservations } from '../services/researchEntityEvidenceCoverage';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeErrorForLog, sanitizeLogValue } from '../utils/logSanitizer';
-import { onInterrupt } from './interruptCleanup';
+import { onInterrupt } from '../utils/interruptCleanup';
 import { appendObservations, getSourceByName } from './observationStore';
+import { mergeObservationsHeldByGuard, type ObservationsHeldByGuard } from './observationHolds';
+import { directoryRemovalObservationRun } from './directoryRemovalObservationGuard';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
+import { describeScrapeRunLaunch } from '../db/devWriteLease';
+import { declareDevDryLaneRun } from '../db/devWriteGuard';
+import { registerDevWriteStopCleanup, type DevWriteStopReason } from '../db/devWriteStop';
+import type { ScrapeRunInterruptionReason } from '../models/storedVocabularies';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
+import { reapDeadScrapeRuns } from './staleScrapeRunReaper';
+import { installScraperFetchHooks } from './utils/scraperFetchHooks';
 import {
   installAxiosScrapeRunProgress,
   recordScrapeRunProgress,
@@ -34,6 +42,7 @@ import {
 } from './sourceYieldGuard';
 import { withHttpCacheFetchMetrics, withHttpValidatorCacheScope } from './utils/httpValidatorCache';
 import { withSweepPageReuseFetchMetrics, withSweepPageReuseScope } from './utils/sweepPageReuse';
+import { withKnownDeadUrlFetchMetrics, withKnownDeadUrlScope } from './utils/knownDeadUrls';
 import { withThrottleRetryFetchMetrics, withThrottleRetryScope } from './utils/throttleRetryStats';
 import {
   withDatabaseWriteRetryFetchMetrics,
@@ -111,6 +120,16 @@ export class ScraperOrchestrator {
       throw new Error(`No Source row found with name "${name}". Run "yarn seed:sources" first.`);
     }
 
+    if (options.dryRun) declareDevDryLaneRun();
+    await reapDeadScrapeRuns({
+      detectedBy: 'orchestrator-run-start',
+      callerLockOwnerId: ownership.lockOwnerId,
+    }).catch((error) => {
+      console.warn(
+        `Could not close dead scrape runs before starting ${name}: ${sanitizeLogValue(error)}`,
+      );
+    });
+
     const startedAt = new Date();
     const run = await ScrapeRun.create({
       sourceId: source._id,
@@ -120,6 +139,7 @@ export class ScraperOrchestrator {
       heartbeatAt: startedAt,
       owner: currentScrapeRunOwner(ownership.lockOwnerId),
       codeSha: currentProcessCodeSha(),
+      launch: describeScrapeRunLaunch(),
       status: 'running',
       options: options as any,
       invalidated: options.benchmarkRun === true,
@@ -133,10 +153,13 @@ export class ScraperOrchestrator {
     // What the lane has reported so far, kept outside the try so a throw does not take
     // it with it (#3890).
     const reportedMetrics: ScraperMetrics = {};
+    const heldByGuard: ObservationsHeldByGuard = {};
+    let observationsEmitted = 0;
     const explainLimit = options.explain
       ? (options.explainLimit ?? DEFAULT_EXPLAIN_LIMIT)
       : Infinity;
     const scrapeRunId = serializedDocumentId(run._id) || '';
+    const directoryRemoval = directoryRemovalObservationRun();
 
     const ctx: ScraperContext = {
       scrapeRunId,
@@ -153,12 +176,22 @@ export class ScraperOrchestrator {
           sourceName: source.name,
           sourceWeight: source.defaultWeight,
           dryRun: options.dryRun,
+          directoryRemovalGuard: directoryRemoval.guard,
         });
+        observationsEmitted += inputs.length;
+        mergeObservationsHeldByGuard(heldByGuard, res.heldByGuard);
+        reportedMetrics.observationsEmitted = observationsEmitted;
+        reportedMetrics.observationsHeldByGuard = heldByGuard;
+        const refused = new Set(res.refusedByRequest ?? []);
+        if (refused.size > 0) {
+          reportedMetrics.removedByRequest = directoryRemoval.removedByRequest();
+        }
+        const admitted = refused.size > 0 ? inputs.filter((obs) => !refused.has(obs)) : inputs;
         if (options.dryRun && (options.dbReview || options.explain)) {
           const room = explainLimit - previewObservations.length;
           if (room > 0) {
             previewObservations.push(
-              ...inputs.slice(0, room).map((obs) => ({
+              ...admitted.slice(0, room).map((obs) => ({
                 ...obs,
                 sourceName: source.name,
                 sourceId: source._id,
@@ -168,8 +201,8 @@ export class ScraperOrchestrator {
           }
         }
         recordScrapeRunProgress();
-        observationCount += options.dryRun ? inputs.length : res.inserted;
-        for (const o of inputs) {
+        observationCount += options.dryRun ? admitted.length : res.inserted;
+        for (const o of admitted) {
           const key = `${o.entityType}:${o.entityId || o.entityKey || ''}`;
           observedEntityKeys.add(key);
         }
@@ -188,6 +221,7 @@ export class ScraperOrchestrator {
       },
     };
 
+    installScraperFetchHooks();
     installAxiosScrapeRunProgress();
     recordScrapeRunProgress();
     let stall: ScrapeRunStall | undefined;
@@ -205,8 +239,44 @@ export class ScraperOrchestrator {
         stall = detected;
         reportStall(new ScrapeRunStalledError(detected));
       },
+      writeCounts: options.dryRun ? undefined : () => ({ observationCount, entitiesObserved }),
     });
     let interrupted = false;
+    const detachStopClose = registerDevWriteStopCleanup({
+      description: `scrape run ${scrapeRunId} (${source.name})`,
+      run: async (reason) => {
+        interrupted = true;
+        heartbeat.stop();
+        const at = new Date();
+        const interruptionReason = SCRAPE_RUN_INTERRUPTION_FOR_LEASE_STOP[reason];
+        const result = await ScrapeRun.updateOne(
+          { _id: run._id, status: 'running' },
+          {
+            $set: {
+              finishedAt: at,
+              status: 'interrupted',
+              observationCount,
+              entitiesObserved,
+              interruption: {
+                reason: interruptionReason,
+                detectedAt: at,
+                detectedBy: 'dev-write-lease-stop',
+              },
+              errors: [
+                ...errors,
+                {
+                  message: `Stopped by the Development write lease (${reason}) before the run finished`,
+                  at,
+                },
+              ],
+            },
+          },
+        );
+        return (result.matchedCount ?? 0) > 0
+          ? `closed as interrupted (${interruptionReason})`
+          : 'was no longer running';
+      },
+    });
     const detachInterrupt = onInterrupt(async (signal) => {
       interrupted = true;
       heartbeat.stop();
@@ -245,15 +315,21 @@ export class ScraperOrchestrator {
     const completeRun = async () => {
       const databaseWrites = await withDatabaseWriteRetryScope(() =>
         withThrottleRetryScope(() =>
-          withSweepPageReuseScope(() => withHttpValidatorCacheScope(() => scraper.run(ctx))),
+          withSweepPageReuseScope(() =>
+            withHttpValidatorCacheScope(() => withKnownDeadUrlScope(() => scraper.run(ctx))),
+          ),
         ),
       );
       const throttled = databaseWrites.value;
       const reused = throttled.value;
+      const knownDead = reused.value.value;
       const result = withDatabaseWriteRetryFetchMetrics(
         withThrottleRetryFetchMetrics(
           withSweepPageReuseFetchMetrics(
-            withHttpCacheFetchMetrics(reused.value.value as ScraperResult, reused.value.stats),
+            withHttpCacheFetchMetrics(
+              withKnownDeadUrlFetchMetrics(knownDead.value as ScraperResult, knownDead.stats),
+              reused.value.stats,
+            ),
             reused.stats,
           ),
           throttled.stats,
@@ -360,9 +436,20 @@ export class ScraperOrchestrator {
     } finally {
       heartbeat.stop();
       detachInterrupt();
+      detachStopClose();
     }
   }
 }
+
+const SCRAPE_RUN_INTERRUPTION_FOR_LEASE_STOP: Record<
+  DevWriteStopReason,
+  ScrapeRunInterruptionReason
+> = {
+  lost: 'lease_lost',
+  'renewal-failed': 'lease_renewal_failed',
+  'no-progress': 'lease_no_progress',
+  refused: 'lease_refused',
+};
 
 /**
  * The run's stored metrics: what the lane reported mid-run, then what it returned, then

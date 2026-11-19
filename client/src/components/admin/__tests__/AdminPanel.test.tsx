@@ -27,6 +27,10 @@ vi.mock('../AdminCorrectionReports', () => ({
   default: () => <div data-testid="correction-reports" />,
 }));
 
+vi.mock('../AdminDirectoryRemovalRequests', () => ({
+  default: () => <div data-testid="directory-removal-requests" />,
+}));
+
 afterEach(() => {
   cleanup();
 });
@@ -66,6 +70,7 @@ describe('AdminPanel', () => {
     const reports = screen.getByRole('tab', { name: 'Correction Reports', selected: true });
     expect(document.activeElement).toBe(reports);
     expect(screen.getByTestId('correction-reports')).toBeTruthy();
+    expect(screen.getByTestId('directory-removal-requests')).toBeTruthy();
     expect(screen.queryByTestId('operator-board')).toBeNull();
 
     fireEvent.keyDown(reports, { key: 'End' });

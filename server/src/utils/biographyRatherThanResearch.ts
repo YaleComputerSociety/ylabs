@@ -56,7 +56,28 @@ const WRITES_IN_THE_AREAS_OF =
 const SCHOLAR_OF_A_FIELD =
   /\bis\s+an?\s+(?:(?!(?:board|fellowship|clinical)\b)[\p{L}-]+\s+){0,2}(?:scholar|specialist)\s+(?:in|of|on)\b/iu;
 
-const statesResearch = (sentence: string): boolean =>
+const WRITES_ABOUT_A_SUBJECT = /\bwrites\s+(?:and\s+teaches\s+)?about\b/i;
+
+const BOOK_IN_PROGRESS =
+  /\b(?:is|are)\s+(?:now\s+|currently\s+)?(?:working\s+on|completing|writing|finishing)\s+(?:a|an|her|his|their)\s+(?:new\s+|next\s+|forthcoming\s+)?(?:book|monograph|study)\b/i;
+
+export const statesScholarlySubject = (sentence: string): boolean =>
+  WRITES_ABOUT_A_SUBJECT.test(sentence) || BOOK_IN_PROGRESS.test(sentence);
+
+const RESEARCH_PURPOSE_WITH_ADVERB =
+  /\bto\s+(?:better|further)\s+(?:investigate|study|examine|explore|understand)\b/i;
+
+export interface ResearchStatementReading {
+  /**
+   * Also read "to better understand" and "to further investigate" as a research purpose.
+   * Writer evidence only for now: the served, gated and resolved readings keep the
+   * narrower predicate until that wider change is measured on them (#5537).
+   */
+  purposeAdverbs?: boolean;
+}
+
+const statesResearch = (sentence: string, reading: ResearchStatementReading = {}): boolean =>
+  (reading.purposeAdverbs === true && RESEARCH_PURPOSE_WITH_ADVERB.test(sentence)) ||
   RESEARCH_SUBJECT_STATEMENT.test(sentence.replace(DEGREE_LEVEL_STUDIES_PROGRAM, ' ')) ||
   RESEARCH_VERB.test(sentence) ||
   RESEARCH_PARTICIPLE.test(sentence) ||
@@ -83,13 +104,19 @@ function opensOnCareerFacts(text: string, opening: string): boolean {
 const textOf = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
-export function opensByStatingResearch(value: unknown): boolean {
-  return openingAfterHeading(textOf(value)).some(statesResearch);
+export function opensByStatingResearch(
+  value: unknown,
+  reading: ResearchStatementReading = {},
+): boolean {
+  return openingAfterHeading(textOf(value)).some((sentence) => statesResearch(sentence, reading));
 }
 
-export function isBiographyRatherThanResearch(value: unknown): boolean {
+export function isBiographyRatherThanResearch(
+  value: unknown,
+  reading: ResearchStatementReading = {},
+): boolean {
   const text = textOf(value);
   if (!text) return false;
   if (!opensOnCareerFacts(text, careerBiographyOpening(text).join(' '))) return false;
-  return !opensByStatingResearch(text);
+  return !opensByStatingResearch(text, reading);
 }

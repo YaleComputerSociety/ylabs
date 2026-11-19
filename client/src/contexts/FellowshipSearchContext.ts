@@ -2,16 +2,26 @@
  * React context for fellowship search, filter, and sort state.
  */
 import { createContext } from 'react';
-import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
+import {
+  Fellowship,
+  FellowshipFilterOptions,
+  ProgramCitizenshipCounts,
+  StudentVisibilityTier,
+} from '../types/types';
 import {
   FellowshipQuickFilter,
   ProgramSearchQueryCorrection,
 } from '../reducers/fellowshipSearchReducer';
+import type { ProgramSearchUrlState } from '../utils/programSearchUrlState';
 
 export interface FellowshipSearchContextType {
   queryString: string;
   setQueryString: (query: string) => void;
   queryCorrection: ProgramSearchQueryCorrection | null;
+  resultsRankedByRelevance: boolean;
+  resultsMissOneWord: boolean;
+  resultsCloseMatchesFrom: number | null;
+  citizenshipCounts: ProgramCitizenshipCounts | null;
   searchTypedSpelling: () => void;
 
   selectedYearOfStudy: string[];
@@ -64,6 +74,7 @@ export interface FellowshipSearchContextType {
   quickFilter: string | null;
   setQuickFilter: (filter: FellowshipQuickFilter) => void;
   resetProgramFilters: () => void;
+  applyUrlState: (state: ProgramSearchUrlState) => void;
 
   filterBarHeight: number;
   setFilterBarHeight: (height: number) => void;
@@ -73,6 +84,10 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   queryString: '',
   setQueryString: () => {},
   queryCorrection: null,
+  resultsRankedByRelevance: false,
+  resultsMissOneWord: false,
+  resultsCloseMatchesFrom: null,
+  citizenshipCounts: null,
   searchTypedSpelling: () => {},
   selectedYearOfStudy: [],
   selectedProgramCategory: [],
@@ -128,6 +143,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   quickFilter: null,
   setQuickFilter: () => {},
   resetProgramFilters: () => {},
+  applyUrlState: () => {},
   filterBarHeight: 0,
   setFilterBarHeight: () => {},
 };

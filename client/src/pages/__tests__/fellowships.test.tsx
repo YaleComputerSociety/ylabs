@@ -39,7 +39,9 @@ vi.mock('../../components/shared/BrowseGrid', () => ({
     onToggleFavorite,
     onOpenModal,
     emptyMessage,
+    statusBadgeOverrides = {},
   }: {
+    statusBadgeOverrides?: Record<string, { label: string } | undefined>;
     items: Array<{ type: 'fellowship'; data: Fellowship }>;
     favIds?: string[];
     onToggleFavorite?: (id: string, event: MouseEvent) => void;
@@ -50,6 +52,9 @@ vi.mock('../../components/shared/BrowseGrid', () => ({
       {items.map((item) => (
         <article key={item.data.id}>
           <span>{item.data.title}</span>
+          {statusBadgeOverrides[item.data.id] && (
+            <span>{statusBadgeOverrides[item.data.id]!.label}</span>
+          )}
           {onOpenModal && (
             <button
               type="button"
@@ -204,6 +209,10 @@ const renderPage = (
     queryString: '',
     setQueryString: vi.fn(),
     queryCorrection: null,
+    resultsRankedByRelevance: false,
+    resultsMissOneWord: false,
+    resultsCloseMatchesFrom: null,
+    citizenshipCounts: null,
     searchTypedSpelling: vi.fn(),
     selectedProgramCategory: [],
     setSelectedProgramCategory: vi.fn(),
@@ -256,6 +265,7 @@ const renderPage = (
     quickFilter: null,
     setQuickFilter: vi.fn(),
     resetProgramFilters: vi.fn(),
+    applyUrlState: vi.fn(),
     filterBarHeight: 0,
     setFilterBarHeight: vi.fn(),
     ...overrides,
@@ -311,6 +321,10 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 queryString: '',
                 setQueryString: vi.fn(),
                 queryCorrection: null,
+                resultsRankedByRelevance: false,
+                resultsMissOneWord: false,
+                resultsCloseMatchesFrom: null,
+                citizenshipCounts: null,
                 searchTypedSpelling: vi.fn(),
                 selectedProgramCategory: [],
                 setSelectedProgramCategory: vi.fn(),
@@ -366,6 +380,7 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 quickFilter,
                 setQuickFilter,
                 resetProgramFilters: () => setQuickFilter(null),
+                applyUrlState: vi.fn(),
                 filterBarHeight: 0,
                 setFilterBarHeight: vi.fn(),
               }}
@@ -561,13 +576,71 @@ describe('Programs page', () => {
     });
 
     for (const [title, tile, count] of [
-      ['Due in the next 30 days', 'Due soon', 1],
+      ['Due in the next 2 weeks', 'Due soon', 1],
       ['Accepting applications', 'Open now', 2],
     ] as const) {
       const header = screen.getByRole('heading', { name: title }).parentElement;
       expect(header?.textContent).toContain(String(count));
       expect(screen.getByText(tile).parentElement?.textContent).toContain(String(count));
     }
+  });
+
+  it('counts only the programs the active quick filter keeps in the status tiles', async () => {
+    const firstYear = ['First-Year Student'];
+    const fellowships = [
+      baseFellowship({
+        id: 'closing-first-year',
+        title: 'Closing First-Year Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(10),
+        yearOfStudy: firstYear,
+      }),
+      baseFellowship({
+        id: 'closing-junior',
+        title: 'Closing Junior Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(12),
+      }),
+      baseFellowship({
+        id: 'open-first-year',
+        title: 'Open First-Year Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(60),
+        yearOfStudy: firstYear,
+      }),
+      baseFellowship({
+        id: 'open-junior-a',
+        title: 'Open Junior Program A',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(70),
+      }),
+      baseFellowship({
+        id: 'open-junior-b',
+        title: 'Open Junior Program B',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(80),
+      }),
+      baseFellowship({
+        id: 'next-cycle-junior',
+        title: 'Next Cycle Junior Program',
+        isAcceptingApplications: false,
+        deadline: isoDaysFromNow(-30),
+      }),
+    ];
+    const tileCount = (tile: string) =>
+      screen.getByText(tile, { selector: 'dt' }).parentElement?.querySelector('.yr-num')
+        ?.textContent;
+
+    renderPage(fellowships, { quickFilter: 'firstYear' }, ['/programs?quick=firstYear']);
+
+    await waitFor(() => {
+      expect(screen.getByText('Open First-Year Program')).toBeTruthy();
+    });
+
+    expect(screen.queryByText('Open Junior Program A')).toBeNull();
+    expect(
+      ['Due soon', 'Open now', 'Opening soon', 'Next cycle'].map((tile) => tileCount(tile)),
+    ).toEqual(['1', '1', '0', '0']);
   });
 
   it('puts an open program above every closed record on first paint', async () => {
@@ -650,24 +723,35 @@ describe('Programs page', () => {
     expect(screen.getByRole('status')).toHaveTextContent('1 result');
   });
 
-  it('seeds the search from a handed-off query and then drops it from the URL', async () => {
-    const setQueryString = vi.fn();
-    renderPage([baseFellowship()], { setQueryString }, ['/programs?q=summer+funding&type=x']);
+  it('restores the search, quick filter, and filters a shared programs link carries', async () => {
+    const applyUrlState = vi.fn();
+    renderPage([baseFellowship()], { applyUrlState }, [
+      '/programs?q=summer+funding&quick=firstYear&year=Junior&term=Summer&type=x',
+    ]);
 
-    await waitFor(() =>
-      expect(screen.getByTestId('current-location').textContent).toBe('/programs?type=x'),
+    await waitFor(() => expect(applyUrlState).toHaveBeenCalledTimes(1));
+    expect(applyUrlState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryString: 'summer funding',
+        quickFilter: 'firstYear',
+        selectedYearOfStudy: ['Junior'],
+        selectedTermOfAward: ['Summer'],
+        selectedSubjects: [],
+        sortBy: 'default',
+      }),
     );
-    expect(setQueryString).toHaveBeenCalledTimes(1);
-    expect(setQueryString).toHaveBeenCalledWith('summer funding');
+    expect(screen.getByTestId('current-location').textContent).toBe(
+      '/programs?q=summer+funding&quick=firstYear&year=Junior&term=Summer&type=x',
+    );
   });
 
-  it('starts from an empty search when the URL carries no handed-off query', async () => {
-    const setQueryString = vi.fn();
-    renderPage([baseFellowship()], { setQueryString });
+  it('leaves the search untouched when the URL already matches it', async () => {
+    const applyUrlState = vi.fn();
+    renderPage([baseFellowship()], { applyUrlState });
 
     await screen.findByText('Summer Research Fellowship');
-    expect(setQueryString).toHaveBeenCalledTimes(1);
-    expect(setQueryString).toHaveBeenCalledWith('');
+    expect(applyUrlState).not.toHaveBeenCalled();
+    expect(screen.getByTestId('current-location').textContent).toBe('/programs');
   });
 
   it('keeps keyboard focus on the program search after Enter and Escape', async () => {
@@ -682,6 +766,31 @@ describe('Programs page', () => {
 
     await userEvent.keyboard('{Escape}');
     expect(searchInput).toHaveFocus();
+  });
+
+  it('offers a keyboard-reachable clear button that empties the search and returns focus to it', async () => {
+    const setQueryString = vi.fn();
+    renderPage([baseFellowship({ id: 'open', title: 'Open Fellowship' })], {
+      queryString: 'summer',
+      setQueryString,
+    });
+
+    const searchInput = screen.getByLabelText('Search programs and fellowships');
+    searchInput.focus();
+    await userEvent.tab();
+    const clear = screen.getByRole('button', { name: 'Clear search' });
+    expect(clear).toHaveFocus();
+
+    await userEvent.keyboard('{Enter}');
+
+    expect(setQueryString).toHaveBeenCalledWith('');
+    expect(searchInput).toHaveFocus();
+  });
+
+  it('shows no clear button while the program search is empty', () => {
+    renderPage([baseFellowship({ id: 'open', title: 'Open Fellowship' })]);
+
+    expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
   });
 
   it('clears the subject filter along with every other program filter from Clear all', async () => {
@@ -988,10 +1097,22 @@ describe('Programs page', () => {
     expect(
       screen.getByRole('heading', { name: 'No application windows are closing soon' }),
     ).toBeTruthy();
-    expect(screen.getByText(/due in the next 30 days/i)).toBeTruthy();
+    expect(screen.getByText(/due in the next 2 weeks/i)).toBeTruthy();
   });
 
-  it('shows the first-save callout with a dashboard next step', async () => {
+  it('styles the watched programs link as a plain link and keeps the search placeholder short', async () => {
+    renderPage([]);
+
+    const watched = await screen.findByRole('link', { name: 'Watched programs' });
+    expect(watched).not.toHaveClass('bg-brand-soft');
+    expect(watched).toHaveClass('bg-[var(--yr-panel)]');
+    expect(screen.getByLabelText('Search programs and fellowships')).toHaveAttribute(
+      'placeholder',
+      'Topic, program, or funder',
+    );
+  });
+
+  it('shows the first-watch callout pointing to the Watched programs tab', async () => {
     mockedAxios.put.mockResolvedValue({ data: {} });
     renderPage([
       baseFellowship({
@@ -1004,9 +1125,10 @@ describe('Programs page', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Save program open' }));
 
-    expect(screen.getByText('Program saved')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open Dashboard' }).getAttribute('href')).toBe(
-      '/dashboard',
+    expect(screen.getByText('Watching this program')).toBeTruthy();
+    expect(screen.queryByText('Program saved')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Watched programs' }).getAttribute('href')).toBe(
+      '/dashboard?tab=programs',
     );
     expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedPrograms', {
       withCredentials: true,
@@ -1028,7 +1150,7 @@ describe('Programs page', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Save program open' }));
 
-    expect(screen.queryByText('Program saved')).toBeNull();
+    expect(screen.queryByText('Watching this program')).toBeNull();
   });
 
   it('opens a deep-linked program once and keeps it closed after dismissal', async () => {
@@ -1073,6 +1195,138 @@ describe('Programs page', () => {
     await waitFor(() =>
       expect(mockedAxios.put.mock.calls.map((call) => call[0])).toEqual(['fellowships/f1/addView']),
     );
+  });
+
+  it('shows the stage instead of closing soon on a watched program the student applied to', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ['applied-1', 'pending-1'] } });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({
+          data: { watchedProgramPlans: { 'applied-1': { stage: 'APPLIED' } } },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    renderPage([
+      baseFellowship({
+        id: 'applied-1',
+        title: 'Applied Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(5),
+      }),
+      baseFellowship({
+        id: 'pending-1',
+        title: 'Pending Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(6),
+      }),
+    ]);
+
+    const section = await screen.findByRole('region', { name: 'Due in the next 2 weeks' });
+    await waitFor(() => expect(within(section).getByText('Applied')).toBeTruthy());
+    const pending = within(section).getByText('Pending Program').closest('article')!;
+    expect(within(pending).queryByText('Applied')).toBeNull();
+  });
+
+  it('shows the restored stage again after undoing an unwatch', async () => {
+    let storedIds = ['applied-1'];
+    let storedPlans: Record<string, { stage: string }> = { 'applied-1': { stage: 'APPLIED' } };
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: storedIds } });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({ data: { watchedProgramPlans: { ...storedPlans } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.delete.mockImplementation(() => {
+      storedIds = [];
+      storedPlans = {};
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.put.mockImplementation(
+      (url: string, body?: { data?: { plan?: { stage: string } } }) => {
+        if (url === '/users/watchedPrograms') storedIds = ['applied-1'];
+        const plan = body?.data?.plan;
+        if (url === '/users/watchedProgramPlans/applied-1' && plan) {
+          return new Promise((resolve) =>
+            setTimeout(() => {
+              storedPlans = { 'applied-1': { stage: plan.stage } };
+              resolve({ data: {} });
+            }, 20),
+          );
+        }
+        return Promise.resolve({ data: {} });
+      },
+    );
+
+    renderPage([
+      baseFellowship({
+        id: 'applied-1',
+        title: 'Applied Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(5),
+      }),
+    ]);
+
+    const section = await screen.findByRole('region', { name: 'Due in the next 2 weeks' });
+    await waitFor(() => expect(within(section).getByText('Applied')).toBeTruthy());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Saved program applied-1' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
+    await waitFor(() => expect(within(section).getByText('Applied')).toBeTruthy());
+  });
+
+  describe('a direct link that opens no program', () => {
+    const failDetail = (status?: number) =>
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === '/programs/missing') {
+          return Promise.reject(status ? { response: { status } } : new Error('Network Error'));
+        }
+        return Promise.resolve({ data: { watchedProgramIds: [] } });
+      });
+
+    it.each([404, 400])(
+      'says a %s link matches no program and drops it from the URL',
+      async (status) => {
+        failDetail(status);
+
+        renderPage([], {}, ['/programs?program=missing']);
+
+        const notice = await screen.findByRole('alert');
+        expect(within(notice).getByText('That program link does not match a program')).toBeTruthy();
+        await waitFor(() =>
+          expect(screen.getByTestId('current-location').textContent).toBe('/programs'),
+        );
+        expect(screen.queryByRole('dialog')).toBeNull();
+      },
+    );
+
+    it('calls a failed load a loading problem rather than a missing program', async () => {
+      failDetail();
+
+      renderPage([], {}, ['/programs?program=missing']);
+
+      const notice = await screen.findByRole('alert');
+      expect(within(notice).getByText('We could not open that program')).toBeTruthy();
+    });
+
+    it('hides the notice when the student dismisses it', async () => {
+      failDetail(404);
+
+      renderPage([], {}, ['/programs?program=missing']);
+
+      const notice = await screen.findByRole('alert');
+      await userEvent.click(within(notice).getByRole('button', { name: 'Dismiss' }));
+
+      expect(screen.queryByText('That program link does not match a program')).toBeNull();
+    });
   });
 
   describe('watching programs', () => {

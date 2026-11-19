@@ -1,0 +1,660 @@
+{
+  "meshYear": 2026,
+  "source": "MeSH is produced by the U.S. National Library of Medicine. Data courtesy of the U.S. National Library of Medicine; see https://www.nlm.nih.gov/databases/download/terms_and_conditions.html",
+  "headings": {
+    "Abortion, Habitual": {
+      "natural": "Habitual Abortion",
+      "descriptorUI": "D000026"
+    },
+    "Abortion, Spontaneous": {
+      "natural": "Spontaneous Abortion",
+      "descriptorUI": "D000022"
+    },
+    "Acidosis, Renal Tubular": {
+      "natural": "Renal Tubular Acidosis",
+      "descriptorUI": "D000141"
+    },
+    "Adaptation, Psychological": {
+      "natural": "Psychological Adaptation",
+      "descriptorUI": "D000223"
+    },
+    "Affective Disorders, Psychotic": {
+      "natural": "Psychotic Affective Disorders",
+      "descriptorUI": "D000341"
+    },
+    "Amyloid Neuropathies, Familial": {
+      "natural": "Familial Amyloid Neuropathies",
+      "descriptorUI": "D028227"
+    },
+    "Analgesia, Epidural": {
+      "natural": "Epidural Analgesia",
+      "descriptorUI": "D015360"
+    },
+    "Analgesics, Opioid": {
+      "natural": "Opioid Analgesics",
+      "descriptorUI": "D000701"
+    },
+    "Anemia, Sickle Cell": {
+      "natural": "Sickle Cell Anemia",
+      "descriptorUI": "D000755"
+    },
+    "Aneurysm, Ruptured": {
+      "natural": "Ruptured Aneurysm",
+      "descriptorUI": "D017542"
+    },
+    "Angina, Stable": {
+      "natural": "Stable Angina",
+      "descriptorUI": "D060050"
+    },
+    "Antibodies, Antiphospholipid": {
+      "natural": "Antiphospholipid Antibodies",
+      "descriptorUI": "D017152"
+    },
+    "Aortic Aneurysm, Thoracic": {
+      "natural": "Thoracic Aortic Aneurysm",
+      "descriptorUI": "D017545"
+    },
+    "Arrhythmias, Cardiac": {
+      "natural": "Cardiac Arrhythmias",
+      "descriptorUI": "D001145"
+    },
+    "Bile Ducts, Extrahepatic": {
+      "natural": "Extrahepatic Bile Ducts",
+      "descriptorUI": "D017734"
+    },
+    "Bile Ducts, Intrahepatic": {
+      "natural": "Intrahepatic Bile Ducts",
+      "descriptorUI": "D001653"
+    },
+    "Biomarkers, Pharmacological": {
+      "natural": "Pharmacological Biomarkers",
+      "descriptorUI": "D054316"
+    },
+    "Biomarkers, Tumor": {
+      "natural": "Tumor Biomarkers",
+      "descriptorUI": "D014408"
+    },
+    "Biopsy, Needle": {
+      "natural": "Needle Biopsy",
+      "descriptorUI": "D001707"
+    },
+    "Bone Diseases, Infectious": {
+      "natural": "Infectious Bone Diseases",
+      "descriptorUI": "D001850"
+    },
+    "Burnout, Professional": {
+      "natural": "Professional Burnout",
+      "descriptorUI": "D002055"
+    },
+    "Carcinoma, Hepatocellular": {
+      "natural": "Hepatocellular Carcinoma",
+      "descriptorUI": "D006528"
+    },
+    "Carcinoma, Non-Small-Cell Lung": {
+      "natural": "Non-Small-Cell Lung Carcinoma",
+      "descriptorUI": "D002289"
+    },
+    "Carcinoma, Papillary": {
+      "natural": "Papillary Carcinoma",
+      "descriptorUI": "D002291"
+    },
+    "Carcinoma, Renal Cell": {
+      "natural": "Renal Cell Carcinoma",
+      "descriptorUI": "D002292"
+    },
+    "Carcinoma, Squamous Cell": {
+      "natural": "Squamous Cell Carcinoma",
+      "descriptorUI": "D002294"
+    },
+    "Carcinoma, Transitional Cell": {
+      "natural": "Transitional Cell Carcinoma",
+      "descriptorUI": "D002295"
+    },
+    "Cardiac Output, Low": {
+      "natural": "Low Cardiac Output",
+      "descriptorUI": "D002303"
+    },
+    "Cell Transformation, Neoplastic": {
+      "natural": "Neoplastic Cell Transformation",
+      "descriptorUI": "D002471"
+    },
+    "Chemoembolization, Therapeutic": {
+      "natural": "Therapeutic Chemoembolization",
+      "descriptorUI": "D016461"
+    },
+    "Child Development Disorders, Pervasive": {
+      "natural": "Pervasive Child Development Disorders",
+      "descriptorUI": "D002659"
+    },
+    "Cholangiopancreatography, Endoscopic Retrograde": {
+      "natural": "Endoscopic Retrograde Cholangiopancreatography",
+      "descriptorUI": "D002760"
+    },
+    "Cholangitis, Sclerosing": {
+      "natural": "Sclerosing Cholangitis",
+      "descriptorUI": "D015209"
+    },
+    "Cholestasis, Extrahepatic": {
+      "natural": "Extrahepatic Cholestasis",
+      "descriptorUI": "D001651"
+    },
+    "Cholestasis, Intrahepatic": {
+      "natural": "Intrahepatic Cholestasis",
+      "descriptorUI": "D002780"
+    },
+    "Cholesteatoma, Middle Ear": {
+      "natural": "Middle Ear Cholesteatoma",
+      "descriptorUI": "D018424"
+    },
+    "Communicable Diseases, Emerging": {
+      "natural": "Emerging Communicable Diseases",
+      "descriptorUI": "D021821"
+    },
+    "Conflict, Psychological": {
+      "natural": "Psychological Conflict",
+      "descriptorUI": "D003220"
+    },
+    "Cystitis, Interstitial": {
+      "natural": "Interstitial Cystitis",
+      "descriptorUI": "D018856"
+    },
+    "Decision Making, Shared": {
+      "natural": "Shared Decision Making",
+      "descriptorUI": "D000080536"
+    },
+    "Decision Support Systems, Clinical": {
+      "natural": "Clinical Decision Support Systems",
+      "descriptorUI": "D020000"
+    },
+    "Defibrillators, Implantable": {
+      "natural": "Implantable Defibrillators",
+      "descriptorUI": "D017147"
+    },
+    "Dendritic Cells, Follicular": {
+      "natural": "Follicular Dendritic Cells",
+      "descriptorUI": "D020566"
+    },
+    "Depressive Disorder, Major": {
+      "natural": "Major Depressive Disorder",
+      "descriptorUI": "D003865"
+    },
+    "Depressive Disorder, Treatment-Resistant": {
+      "natural": "Treatment-Resistant Depressive Disorder",
+      "descriptorUI": "D061218"
+    },
+    "Diabetes Mellitus, Type 1": {
+      "natural": "Type 1 Diabetes Mellitus",
+      "descriptorUI": "D003922"
+    },
+    "Diabetes Mellitus, Type 2": {
+      "natural": "Type 2 Diabetes Mellitus",
+      "descriptorUI": "D003924"
+    },
+    "Discrimination, Psychological": {
+      "natural": "Psychological Discrimination",
+      "descriptorUI": "D004192"
+    },
+    "Disease Models, Animal": {
+      "natural": "Animal Disease Models",
+      "descriptorUI": "D004195"
+    },
+    "Dose-Response Relationship, Radiation": {
+      "natural": "Radiation Dose-Response Relationship",
+      "descriptorUI": "D004307"
+    },
+    "Education, Graduate": {
+      "natural": "Graduate Education",
+      "descriptorUI": "D004500"
+    },
+    "Education, Medical": {
+      "natural": "Medical Education",
+      "descriptorUI": "D004501"
+    },
+    "Education, Medical, Graduate": {
+      "natural": "Graduate Medical Education",
+      "descriptorUI": "D004503"
+    },
+    "Education, Medical, Undergraduate": {
+      "natural": "Undergraduate Medical Education",
+      "descriptorUI": "D004504"
+    },
+    "Education, Professional": {
+      "natural": "Professional Education",
+      "descriptorUI": "D004517"
+    },
+    "Embolization, Therapeutic": {
+      "natural": "Therapeutic Embolization",
+      "descriptorUI": "D004621"
+    },
+    "Emergency Services, Psychiatric": {
+      "natural": "Psychiatric Emergency Services",
+      "descriptorUI": "D004637"
+    },
+    "Endothelium, Vascular": {
+      "natural": "Vascular Endothelium",
+      "descriptorUI": "D004730"
+    },
+    "Ethics, Medical": {
+      "natural": "Medical Ethics",
+      "descriptorUI": "D004992"
+    },
+    "Ethics, Research": {
+      "natural": "Research Ethics",
+      "descriptorUI": "D032984"
+    },
+    "Faculty, Medical": {
+      "natural": "Medical Faculty",
+      "descriptorUI": "D005180"
+    },
+    "Fatty Liver, Alcoholic": {
+      "natural": "Alcoholic Fatty Liver",
+      "descriptorUI": "D005235"
+    },
+    "Genetics, Behavioral": {
+      "natural": "Behavioral Genetics",
+      "descriptorUI": "D005824"
+    },
+    "Genetics, Medical": {
+      "natural": "Medical Genetics",
+      "descriptorUI": "D005826"
+    },
+    "Genetics, Microbial": {
+      "natural": "Microbial Genetics",
+      "descriptorUI": "D005827"
+    },
+    "Genital Diseases, Female": {
+      "natural": "Female Genital Diseases",
+      "descriptorUI": "D005831"
+    },
+    "Genital Diseases, Male": {
+      "natural": "Male Genital Diseases",
+      "descriptorUI": "D005832"
+    },
+    "Health Services, Indigenous": {
+      "natural": "Indigenous Health Services",
+      "descriptorUI": "D006303"
+    },
+    "Heart Defects, Congenital": {
+      "natural": "Congenital Heart Defects",
+      "descriptorUI": "D006330"
+    },
+    "Hemodialysis Units, Hospital": {
+      "natural": "Hospital Hemodialysis Units",
+      "descriptorUI": "D006436"
+    },
+    "Hernia, Hiatal": {
+      "natural": "Hiatal Hernia",
+      "descriptorUI": "D006551"
+    },
+    "Hernia, Inguinal": {
+      "natural": "Inguinal Hernia",
+      "descriptorUI": "D006552"
+    },
+    "Hernia, Ventral": {
+      "natural": "Ventral Hernia",
+      "descriptorUI": "D006555"
+    },
+    "Hyperbilirubinemia, Neonatal": {
+      "natural": "Neonatal Hyperbilirubinemia",
+      "descriptorUI": "D051556"
+    },
+    "Hypertension, Portal": {
+      "natural": "Portal Hypertension",
+      "descriptorUI": "D006975"
+    },
+    "Hypertension, Pregnancy-Induced": {
+      "natural": "Pregnancy-Induced Hypertension",
+      "descriptorUI": "D046110"
+    },
+    "Hypertension, Pulmonary": {
+      "natural": "Pulmonary Hypertension",
+      "descriptorUI": "D006976"
+    },
+    "Hypoxia, Brain": {
+      "natural": "Brain Hypoxia",
+      "descriptorUI": "D002534"
+    },
+    "Image Processing, Computer-Assisted": {
+      "natural": "Computer-Assisted Image Processing",
+      "descriptorUI": "D007091"
+    },
+    "Imaging, Three-Dimensional": {
+      "natural": "Three-Dimensional Imaging",
+      "descriptorUI": "D021621"
+    },
+    "Immunity, Cellular": {
+      "natural": "Cellular Immunity",
+      "descriptorUI": "D007111"
+    },
+    "Immunity, Humoral": {
+      "natural": "Humoral Immunity",
+      "descriptorUI": "D056724"
+    },
+    "Immunity, Innate": {
+      "natural": "Innate Immunity",
+      "descriptorUI": "D007113"
+    },
+    "Immunity, Mucosal": {
+      "natural": "Mucosal Immunity",
+      "descriptorUI": "D018928"
+    },
+    "Infant, Premature": {
+      "natural": "Premature Infant",
+      "descriptorUI": "D007234"
+    },
+    "Infertility, Female": {
+      "natural": "Female Infertility",
+      "descriptorUI": "D007247"
+    },
+    "Influenza, Human": {
+      "natural": "Human Influenza",
+      "descriptorUI": "D007251"
+    },
+    "Intracranial Hemorrhage, Hypertensive": {
+      "natural": "Hypertensive Intracranial Hemorrhage",
+      "descriptorUI": "D020299"
+    },
+    "Kidney Failure, Chronic": {
+      "natural": "Chronic Kidney Failure",
+      "descriptorUI": "D007676"
+    },
+    "Kidney Tubules, Proximal": {
+      "natural": "Proximal Kidney Tubules",
+      "descriptorUI": "D007687"
+    },
+    "Labor, Obstetric": {
+      "natural": "Obstetric Labor",
+      "descriptorUI": "D007743"
+    },
+    "Limb Deformities, Congenital": {
+      "natural": "Congenital Limb Deformities",
+      "descriptorUI": "D017880"
+    },
+    "Liver Diseases, Alcoholic": {
+      "natural": "Alcoholic Liver Diseases",
+      "descriptorUI": "D008108"
+    },
+    "Lung Diseases, Interstitial": {
+      "natural": "Interstitial Lung Diseases",
+      "descriptorUI": "D017563"
+    },
+    "Lupus Erythematosus, Systemic": {
+      "natural": "Systemic Lupus Erythematosus",
+      "descriptorUI": "D008180"
+    },
+    "Malaria, Vivax": {
+      "natural": "Vivax Malaria",
+      "descriptorUI": "D016780"
+    },
+    "Mechanotransduction, Cellular": {
+      "natural": "Cellular Mechanotransduction",
+      "descriptorUI": "D040542"
+    },
+    "Melanoma, Experimental": {
+      "natural": "Experimental Melanoma",
+      "descriptorUI": "D008546"
+    },
+    "Microscopy, Confocal": {
+      "natural": "Confocal Microscopy",
+      "descriptorUI": "D018613"
+    },
+    "Microscopy, Electron": {
+      "natural": "Electron Microscopy",
+      "descriptorUI": "D008854"
+    },
+    "Microscopy, Fluorescence": {
+      "natural": "Fluorescence Microscopy",
+      "descriptorUI": "D008856"
+    },
+    "Neoplasms, Adnexal and Skin Appendage": {
+      "natural": "Adnexal and Skin Appendage Neoplasms",
+      "descriptorUI": "D018294"
+    },
+    "Nephritis, Interstitial": {
+      "natural": "Interstitial Nephritis",
+      "descriptorUI": "D009395"
+    },
+    "Nephrostomy, Percutaneous": {
+      "natural": "Percutaneous Nephrostomy",
+      "descriptorUI": "D009403"
+    },
+    "Neural Networks, Computer": {
+      "natural": "Computer Neural Networks",
+      "descriptorUI": "D016571"
+    },
+    "Neuroma, Acoustic": {
+      "natural": "Acoustic Neuroma",
+      "descriptorUI": "D009464"
+    },
+    "Nuclear Magnetic Resonance, Biomolecular": {
+      "natural": "Biomolecular Nuclear Magnetic Resonance",
+      "descriptorUI": "D019906"
+    },
+    "Osteoarthritis, Spine": {
+      "natural": "Spine Osteoarthritis",
+      "descriptorUI": "D055013"
+    },
+    "Osteogenesis, Distraction": {
+      "natural": "Distraction Osteogenesis",
+      "descriptorUI": "D019857"
+    },
+    "Osteoporosis, Postmenopausal": {
+      "natural": "Postmenopausal Osteoporosis",
+      "descriptorUI": "D015663"
+    },
+    "Pain, Intractable": {
+      "natural": "Intractable Pain",
+      "descriptorUI": "D010148"
+    },
+    "Papilloma, Inverted": {
+      "natural": "Inverted Papilloma",
+      "descriptorUI": "D018308"
+    },
+    "Pathological Conditions, Anatomical": {
+      "natural": "Anatomical Pathological Conditions",
+      "descriptorUI": "D020763"
+    },
+    "Pathology, Surgical": {
+      "natural": "Surgical Pathology",
+      "descriptorUI": "D010340"
+    },
+    "Physicians, Family": {
+      "natural": "Family Physicians",
+      "descriptorUI": "D010821"
+    },
+    "Physicians, Primary Care": {
+      "natural": "Primary Care Physicians",
+      "descriptorUI": "D058007"
+    },
+    "Pneumonia, Bacterial": {
+      "natural": "Bacterial Pneumonia",
+      "descriptorUI": "D018410"
+    },
+    "Polyradiculoneuropathy, Chronic Inflammatory Demyelinating": {
+      "natural": "Chronic Inflammatory Demyelinating Polyradiculoneuropathy",
+      "descriptorUI": "D020277"
+    },
+    "Posttraumatic Growth, Psychological": {
+      "natural": "Psychological Posttraumatic Growth",
+      "descriptorUI": "D000078002"
+    },
+    "Potassium Channels, Voltage-Gated": {
+      "natural": "Voltage-Gated Potassium Channels",
+      "descriptorUI": "D024642"
+    },
+    "Pregnancy Complications, Infectious": {
+      "natural": "Infectious Pregnancy Complications",
+      "descriptorUI": "D011251"
+    },
+    "Printing, Three-Dimensional": {
+      "natural": "Three-Dimensional Printing",
+      "descriptorUI": "D066330"
+    },
+    "Psychology, Adolescent": {
+      "natural": "Adolescent Psychology",
+      "descriptorUI": "D000297"
+    },
+    "Psychology, Child": {
+      "natural": "Child Psychology",
+      "descriptorUI": "D002666"
+    },
+    "Psychology, Social": {
+      "natural": "Social Psychology",
+      "descriptorUI": "D011593"
+    },
+    "Pulmonary Disease, Chronic Obstructive": {
+      "natural": "Chronic Obstructive Pulmonary Disease",
+      "descriptorUI": "D029424"
+    },
+    "Quality Assurance, Health Care": {
+      "natural": "Health Care Quality Assurance",
+      "descriptorUI": "D011785"
+    },
+    "RNA, Untranslated": {
+      "natural": "Untranslated RNA",
+      "descriptorUI": "D022661"
+    },
+    "Radiographic Image Interpretation, Computer-Assisted": {
+      "natural": "Computer-Assisted Radiographic Image Interpretation",
+      "descriptorUI": "D011857"
+    },
+    "Radiology, Interventional": {
+      "natural": "Interventional Radiology",
+      "descriptorUI": "D015642"
+    },
+    "Radiotherapy, Adjuvant": {
+      "natural": "Adjuvant Radiotherapy",
+      "descriptorUI": "D018714"
+    },
+    "Radiotherapy, Computer-Assisted": {
+      "natural": "Computer-Assisted Radiotherapy",
+      "descriptorUI": "D011881"
+    },
+    "Radiotherapy, Image-Guided": {
+      "natural": "Image-Guided Radiotherapy",
+      "descriptorUI": "D061089"
+    },
+    "Radiotherapy, Intensity-Modulated": {
+      "natural": "Intensity-Modulated Radiotherapy",
+      "descriptorUI": "D050397"
+    },
+    "Receptors, Chimeric Antigen": {
+      "natural": "Chimeric Antigen Receptors",
+      "descriptorUI": "D000076962"
+    },
+    "Receptors, Neurotransmitter": {
+      "natural": "Neurotransmitter Receptors",
+      "descriptorUI": "D017981"
+    },
+    "Receptors, Oxytocin": {
+      "natural": "Oxytocin Receptors",
+      "descriptorUI": "D018045"
+    },
+    "Receptors, Pattern Recognition": {
+      "natural": "Pattern Recognition Receptors",
+      "descriptorUI": "D051192"
+    },
+    "Reinforcement, Psychology": {
+      "natural": "Psychology Reinforcement",
+      "descriptorUI": "D012054"
+    },
+    "Resilience, Psychological": {
+      "natural": "Psychological Resilience",
+      "descriptorUI": "D055500"
+    },
+    "Rhinitis, Allergic": {
+      "natural": "Allergic Rhinitis",
+      "descriptorUI": "D065631"
+    },
+    "Rhinitis, Vasomotor": {
+      "natural": "Vasomotor Rhinitis",
+      "descriptorUI": "D012223"
+    },
+    "Schizophrenia, Childhood": {
+      "natural": "Childhood Schizophrenia",
+      "descriptorUI": "D012561"
+    },
+    "Shock, Septic": {
+      "natural": "Septic Shock",
+      "descriptorUI": "D012772"
+    },
+    "Sleep Apnea, Central": {
+      "natural": "Central Sleep Apnea",
+      "descriptorUI": "D020182"
+    },
+    "Stress Disorders, Post-Traumatic": {
+      "natural": "Post-Traumatic Stress Disorders",
+      "descriptorUI": "D013313"
+    },
+    "Stress, Physiological": {
+      "natural": "Physiological Stress",
+      "descriptorUI": "D013312"
+    },
+    "Stress, Psychological": {
+      "natural": "Psychological Stress",
+      "descriptorUI": "D013315"
+    },
+    "Students, Medical": {
+      "natural": "Medical Students",
+      "descriptorUI": "D013337"
+    },
+    "Technology, Radiologic": {
+      "natural": "Radiologic Technology",
+      "descriptorUI": "D013679"
+    },
+    "Tomography, Emission-Computed, Single-Photon": {
+      "natural": "Single-Photon Emission-Computed Tomography",
+      "descriptorUI": "D015899"
+    },
+    "Tomography, Optical Coherence": {
+      "natural": "Optical Coherence Tomography",
+      "descriptorUI": "D041623"
+    },
+    "Tomography, X-Ray Computed": {
+      "natural": "X-Ray Computed Tomography",
+      "descriptorUI": "D014057"
+    },
+    "Translational Research, Biomedical": {
+      "natural": "Biomedical Translational Research",
+      "descriptorUI": "D057170"
+    },
+    "Ventilators, Mechanical": {
+      "natural": "Mechanical Ventilators",
+      "descriptorUI": "D012122"
+    },
+    "Ventricular Function, Left": {
+      "natural": "Left Ventricular Function",
+      "descriptorUI": "D016277"
+    },
+    "Vision, Ocular": {
+      "natural": "Ocular Vision",
+      "descriptorUI": "D014785"
+    },
+    "Wounds, Gunshot": {
+      "natural": "Gunshot Wounds",
+      "descriptorUI": "D014948"
+    },
+    "Wounds, Penetrating": {
+      "natural": "Penetrating Wounds",
+      "descriptorUI": "D014950"
+    }
+  },
+  "unmappedHeadings": [
+    "Anthropology, Education, Sociology and Social Phenomena",
+    "Carcinoma, Ductal, Breast",
+    "Chemical and Drug Induced Liver Injury, Chronic",
+    "Clinical Trial, Phase I",
+    "Clinical Trial, Phase II",
+    "Clinical Trial, Phase III",
+    "Clinical Trials, Phase I as Topic",
+    "Diagnosis, Dual (Psychiatry)",
+    "Disruptive, Impulse Control, and Conduct Disorders",
+    "Diversity, Equity, Inclusion",
+    "Fetal Membranes, Premature Rupture",
+    "Health Care Quality, Access, and Evaluation",
+    "Malaria, Falciparum",
+    "Outcome Assessment, Health Care",
+    "Outcome and Process Assessment, Health Care",
+    "Quality Indicators, Health Care"
+  ]
+}

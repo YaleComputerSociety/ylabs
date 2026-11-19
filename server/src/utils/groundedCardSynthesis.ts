@@ -1,6 +1,5 @@
 import type { ResearchEntityType } from '../models/researchAccessTypes';
-import axios from 'axios';
-import { redactDirectContactInfo } from './contactRedaction';
+import { redactContactsAbsentFrom, redactDirectContactInfo } from './contactRedaction';
 import { openAiChatSampling } from './openAiChatSampling';
 import {
   buildResearchAreasCardSummary,
@@ -23,7 +22,12 @@ import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import { isBiographyRatherThanResearch } from './biographyRatherThanResearch';
 import { CARD_SYNTHESIS_PROMPT, CARD_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 import { withoutUnsupportedMethodClauses } from './methodClauseSupport';
-import { browseCardIsCutMidSentence, browseCardSummary } from './browseCardSummary';
+import {
+  browseCardIsCutMidSentence,
+  browseCardSummary,
+  endsOnNonTerminalAbbreviation,
+} from './browseCardSummary';
+import { postChatCompletion } from './modelClient';
 
 export const CARD_SYNTHESIS_MODEL = 'gpt-5-mini';
 export const MIN_CARD_GROUNDING = 0.9;
@@ -649,7 +653,8 @@ export interface CardSynthesisLLMInput {
  * Development cards on 2026-10-04 (#4809).
  */
 export function cardLineFitsBrowseCard(card: unknown): boolean {
-  return !browseCardIsCutMidSentence(browseCardSummary(textValue(card)));
+  const summary = browseCardSummary(textValue(card));
+  return !browseCardIsCutMidSentence(summary) && !endsOnNonTerminalAbbreviation(summary);
 }
 
 const comparableCardWords = (value: unknown): string[] =>
@@ -687,6 +692,18 @@ export function isWeakCardLine(card: unknown, context: { researchAreas?: unknown
 // Under the 200-character render, so a line that runs a little long still fits.
 export const CARD_SYNTHESIS_MAX_CHARACTERS = 170;
 
+/**
+ * A body short enough to be its own card: within the length a synthesized card is held
+ * to and shown whole on the browse card. A written body of this length satisfies the
+ * card requirement by itself (owner decision 2026-11-12, #5537).
+ */
+export function bodyFitsAsItsOwnCard(body: unknown): boolean {
+  const text = textValue(body);
+  return (
+    Boolean(text) && text.length <= CARD_SYNTHESIS_MAX_CHARACTERS && cardLineFitsBrowseCard(text)
+  );
+}
+
 // A character limit alone loses to the system prompt's "under 30 words": the model
 // returned the same 206-character line on both attempts. A word budget plus what to
 // leave out fit 12 of 12 cut Development cards on 2026-10-04 (#4834).
@@ -713,9 +730,11 @@ export { CARD_SYNTHESIS_PROMPT_HASH };
 export const defaultCardSynthesisLLM: CardSynthesisLLMFn = async (input) => {
   const safeName = redactDirectContactInfo(input.entityName).slice(0, MAX_CARD_NAME_CHARS);
   const safeSource = redactDirectContactInfo(input.fullDescription).slice(0, MAX_CARD_SOURCE_CHARS);
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'card-synthesis',
+    apiKey: input.apiKey,
+    timeoutMs: 30_000,
+    body: {
       model: input.model,
       response_format: { type: 'json_object' },
       ...openAiChatSampling(input.model),
@@ -733,11 +752,7 @@ export const defaultCardSynthesisLLM: CardSynthesisLLMFn = async (input) => {
         },
       ],
     },
-    {
-      headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 30_000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== 'string') return '';
   const parsed = JSON.parse(content) as { shortDescription?: unknown };
@@ -786,7 +801,7 @@ export async function synthesizeGroundedCardDescription(
   const methodEvidence = [full, ...(input.evidenceTexts ?? [])];
   const attempt = async (previousAttempt?: string): Promise<string> => {
     try {
-      const card = normalizeCardText(
+      const drafted = normalizeCardText(
         await input.callLLM({
           fullDescription: full,
           entityName: input.entityName || '',
@@ -794,6 +809,7 @@ export async function synthesizeGroundedCardDescription(
           previousAttempt,
         }),
       );
+      const card = redactContactsAbsentFrom(drafted, [full]);
       return card ? (withoutUnsupportedMethodClauses(card, methodEvidence).text ?? '') : '';
     } catch {
       return '';

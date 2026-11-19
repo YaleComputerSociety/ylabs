@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  applyLeadNetidPlans,
   identityFromObservationKey,
   indexNetidByEmail,
   planLeadNetidResolution,
   summarizeRefusals,
   type DirectoryPerson,
+  type LeadNetidPlan,
   type NetidlessLead,
 } from '../resolveLeadNetidsFromDirectoryCore';
 
@@ -297,5 +299,52 @@ describe('summarizeRefusals', () => {
     ]);
     expect(counts['email-not-in-directory']).toBe(2);
     expect(counts['netid-already-held']).toBe(0);
+  });
+});
+
+describe('applyLeadNetidPlans', () => {
+  const plans: LeadNetidPlan[] = [
+    { researcherId: 'r1', netid: 'abc12', tier: 'email-and-restated-email-key' },
+    { researcherId: 'r2', netid: 'def34', tier: 'email-and-restated-email-key' },
+    { researcherId: 'r3', netid: 'ghi56', tier: 'email-and-restated-email-key' },
+  ];
+
+  it('re-syncs the search rows of exactly the researchers whose netid it stored', async () => {
+    const storeNetid = vi.fn(async (plan: LeadNetidPlan) => plan.researcherId !== 'r2');
+    const resyncLinkedRows = vi.fn(async () => ['row-failed']);
+
+    const result = await applyLeadNetidPlans(plans, { storeNetid, resyncLinkedRows });
+
+    expect(storeNetid).toHaveBeenCalledTimes(3);
+    expect(resyncLinkedRows).toHaveBeenCalledExactlyOnceWith(['r1', 'r3']);
+    expect(result).toEqual({ written: 2, searchResyncFailedEntityIds: ['row-failed'] });
+  });
+
+  it('re-syncs nothing when no netid was stored', async () => {
+    const resyncLinkedRows = vi.fn(async () => []);
+
+    const result = await applyLeadNetidPlans(plans, {
+      storeNetid: async () => false,
+      resyncLinkedRows,
+    });
+
+    expect(resyncLinkedRows).not.toHaveBeenCalled();
+    expect(result).toEqual({ written: 0, searchResyncFailedEntityIds: [] });
+  });
+
+  it('re-syncs the netids already stored when a later store fails, then rethrows', async () => {
+    const failure = new Error('store failed');
+    const storeNetid = vi
+      .fn<(plan: LeadNetidPlan) => Promise<boolean>>()
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(failure);
+    const resyncLinkedRows = vi.fn(async () => []);
+
+    await expect(applyLeadNetidPlans(plans, { storeNetid, resyncLinkedRows })).rejects.toBe(
+      failure,
+    );
+
+    expect(storeNetid).toHaveBeenCalledTimes(2);
+    expect(resyncLinkedRows).toHaveBeenCalledExactlyOnceWith(['r1']);
   });
 });

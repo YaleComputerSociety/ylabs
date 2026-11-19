@@ -20,6 +20,18 @@
  */
 import axios, { type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import crypto from 'crypto';
+import { FROZEN_MODEL_RESPONSE_HEADER, isModelEndpointUrl } from '../utils/modelClient';
+import {
+  type CaptureMode,
+  isBenchmarkModeActive,
+  isBenchmarkReplayActive,
+  isLiveModelReplayActive,
+  mode,
+  type ReplayMode,
+  setBenchmarkMode,
+} from './benchmarkModeState';
+
+export { isBenchmarkModeActive, isBenchmarkReplayActive, isLiveModelReplayActive };
 
 export interface CapturedPage {
   sourceName: string;
@@ -45,28 +57,6 @@ export class BenchmarkReplayNetworkError extends Error {
 
 export const MODEL_RESPONSE_NAMESPACE = 'model-chat-completion';
 
-const MODEL_ENDPOINT_PREFIX = 'https://api.openai.com/';
-
-interface CaptureMode {
-  kind: 'capture';
-  pages: Map<string, CapturedPage>;
-  requested: Set<string>;
-  requestInterceptorId: number;
-  responseInterceptorId: number;
-}
-
-interface ReplayMode {
-  kind: 'replay';
-  pages: Map<string, unknown>;
-  served: Set<string>;
-  missed: Set<string>;
-  networkBlocks: number;
-  interceptorId: number;
-  liveModel: boolean;
-}
-
-let mode: CaptureMode | ReplayMode | null = null;
-
 export const benchmarkPageKey = (sourceName: string, requestKey: string): string =>
   `${sourceName}\u0000${requestKey}`;
 
@@ -86,7 +76,7 @@ const canonicalJson = (value: unknown): string =>
 const isModelRequest = (config: InternalAxiosRequestConfig): boolean =>
   (config.method ?? 'get').toLowerCase() === 'post' &&
   typeof config.url === 'string' &&
-  config.url.startsWith(MODEL_ENDPOINT_PREFIX);
+  isModelEndpointUrl(config.url);
 
 export function modelRequestKey(url: string, body: unknown): string {
   const parsed = typeof body === 'string' ? JSON.parse(body) : body;
@@ -96,6 +86,9 @@ export function modelRequestKey(url: string, body: unknown): string {
     .digest('hex');
   return `model-request:v1:${digest}`;
 }
+
+const configModelRequestKey = (config: InternalAxiosRequestConfig): string =>
+  modelRequestKey(config.url as string, config.benchmarkKeyBody ?? config.data);
 
 const modelRequestKeyByConfig = new WeakMap<object, string>();
 
@@ -110,7 +103,7 @@ export function beginBenchmarkCapture(): void {
   };
   capture.requestInterceptorId = axios.interceptors.request.use((config) => {
     if (isModelRequest(config)) {
-      const requestKey = modelRequestKey(config.url as string, config.data);
+      const requestKey = configModelRequestKey(config);
       modelRequestKeyByConfig.set(config, requestKey);
       capture.requested.add(benchmarkPageKey(MODEL_RESPONSE_NAMESPACE, requestKey));
     }
@@ -128,7 +121,7 @@ export function beginBenchmarkCapture(): void {
     }
     return response;
   });
-  mode = capture;
+  setBenchmarkMode(capture);
 }
 
 export function finishBenchmarkCapture(): CapturedPage[] {
@@ -151,15 +144,9 @@ export function finishBenchmarkCaptureWithCoverage(): {
   const pages = [...mode.pages.values()];
   const frozen = new Set(mode.pages.keys());
   const unfrozenRequestCount = [...mode.requested].filter((key) => !frozen.has(key)).length;
-  mode = null;
+  setBenchmarkMode(null);
   return { pages, unfrozenRequestCount };
 }
-
-export const isBenchmarkReplayActive = (): boolean => mode?.kind === 'replay';
-
-export const isBenchmarkModeActive = (): boolean => mode !== null;
-
-export const isLiveModelReplayActive = (): boolean => mode?.kind === 'replay' && mode.liveModel;
 
 export function refuseBenchmarkReplayNetwork(config?: InternalAxiosRequestConfig): never {
   if (mode?.kind === 'replay') mode.networkBlocks += 1;
@@ -174,7 +161,7 @@ function serveFrozenModelResponse(
     data: payload,
     status: 200,
     statusText: 'OK',
-    headers: {},
+    headers: { [FROZEN_MODEL_RESPONSE_HEADER]: 'true' },
     config,
   });
   return config;
@@ -199,10 +186,7 @@ export function beginBenchmarkReplay(
   replay.interceptorId = axios.interceptors.request.use((config) => {
     if (isModelRequest(config)) {
       if (replay.liveModel) return config;
-      const key = benchmarkPageKey(
-        MODEL_RESPONSE_NAMESPACE,
-        modelRequestKey(config.url as string, config.data),
-      );
+      const key = benchmarkPageKey(MODEL_RESPONSE_NAMESPACE, configModelRequestKey(config));
       if (replay.pages.has(key)) {
         replay.served.add(key);
         return serveFrozenModelResponse(config, replay.pages.get(key));
@@ -211,7 +195,7 @@ export function beginBenchmarkReplay(
     }
     return refuseBenchmarkReplayNetwork(config);
   });
-  mode = replay;
+  setBenchmarkMode(replay);
 }
 
 export function finishBenchmarkReplay(): {
@@ -233,7 +217,7 @@ export function finishBenchmarkReplay(): {
     networkBlocks: mode.networkBlocks,
     servedByNamespace,
   };
-  mode = null;
+  setBenchmarkMode(null);
   return outcome;
 }
 

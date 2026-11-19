@@ -595,14 +595,74 @@ describe('descriptionPageNamesRowLead (#4809)', () => {
     ).toBe(true);
   });
 
-  it("exempts the row's own website, which may name its lead only in an image", () => {
+  it("exempts the row's own Yale-hosted website, which may name its lead only in an image", () => {
     expect(
       descriptionPageNamesRowLead({
         ...base,
-        pageUrl: 'https://medicine.example.edu/lab/fixturely/research/',
+        websiteUrl: 'https://medicine.yale.edu/lab/fixturely/',
+        pageUrl: 'https://medicine.yale.edu/lab/fixturely/research/',
         pageText: 'We study cellular signaling with live imaging.',
       }),
     ).toBe(true);
+  });
+
+  describe('a non-Yale page must confirm the lead even when it is the row website (#5777)', () => {
+    const outsideSite = 'https://coastal-foundation.example.org/';
+    const outsideRow = { ...base, websiteUrl: outsideSite };
+    const unnamedText = 'The foundation funds coastal restoration projects across the region.';
+
+    it("refuses the row's own non-Yale website when the page never names the lead", () => {
+      expect(
+        descriptionPageNamesRowLead({ ...outsideRow, pageUrl: outsideSite, pageText: unnamedText }),
+      ).toBe(false);
+      expect(
+        descriptionPageNamesRowLead({
+          ...outsideRow,
+          pageUrl: `${outsideSite}programs/`,
+          pageText: unnamedText,
+        }),
+      ).toBe(false);
+    });
+
+    it('admits a non-Yale page whose text names the lead', () => {
+      expect(
+        descriptionPageNamesRowLead({
+          ...outsideRow,
+          pageUrl: outsideSite,
+          pageText: 'Robin Fixturely directs our sediment program.',
+        }),
+      ).toBe(true);
+    });
+
+    it('admits a personal-name domain that its text never names', () => {
+      expect(
+        descriptionPageNamesRowLead({
+          ...base,
+          personName: 'Robin Ma',
+          rowName: 'Ma Lab',
+          websiteUrl: 'https://robinma.example/',
+          pageUrl: 'https://robinma.example/',
+          pageText: 'We study cellular signaling with live imaging.',
+        }),
+      ).toBe(true);
+    });
+
+    it('admits a non-Yale page whose address carries the lead surname', () => {
+      expect(
+        descriptionPageNamesRowLead({
+          ...base,
+          websiteUrl: 'https://fixturelylab.github.io/',
+          pageUrl: 'https://fixturelylab.github.io/research/',
+          pageText: 'We study cellular signaling with live imaging.',
+        }),
+      ).toBe(true);
+    });
+
+    it('gives the same refusal when the same evidence is read twice', () => {
+      const read = () =>
+        descriptionPageNamesRowLead({ ...outsideRow, pageUrl: outsideSite, pageText: unnamedText });
+      expect([read(), read()]).toEqual([false, false]);
+    });
   });
 
   it('leaves a unit named for its work to its own page', () => {

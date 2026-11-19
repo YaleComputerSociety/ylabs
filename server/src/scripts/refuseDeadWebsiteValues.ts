@@ -49,6 +49,8 @@ import {
 } from './deadWebsiteValueRefusalCore';
 import { resolveFieldLockReleases } from './releaseRevisitableFieldLocksCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -305,6 +307,7 @@ export async function runRefuseDeadWebsiteValues(args: RefuseDeadWebsiteValuesAr
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseRefuseDeadWebsiteValuesArgs(process.argv.slice(2));
   assertScriptApplyAllowed({
     apply: args.apply,
@@ -319,7 +322,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(summary, null, 2));
     if (args.output) {
       fs.mkdirSync(path.dirname(args.output), { recursive: true });
-      fs.writeFileSync(args.output, `${JSON.stringify(result, null, 2)}\n`);
+      writeReportFileSync(args.output, `${JSON.stringify(result, null, 2)}\n`);
     }
   } finally {
     await mongoose.disconnect();

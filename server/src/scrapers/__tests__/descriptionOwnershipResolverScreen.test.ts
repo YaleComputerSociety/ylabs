@@ -88,4 +88,83 @@ describe('screenDescriptionsOnSharedPages', () => {
     );
     expect(result.dropped).toHaveLength(1);
   });
+  describe('a row owns the page that is its own website', () => {
+    const LAB_SITE = 'https://tidepool-lab.example.org/';
+    const LAB_PAGE = 'https://tidepool-lab.example.org/research/';
+    const memberCiters = citers({ 'https://tidepool-lab.example.org/research': ['m-1', 'm-2'] });
+    const lab = { websiteUrl: LAB_SITE, entityType: 'LAB', kind: 'lab' };
+
+    it('keeps a lab description citing its own website that two member rows cite', () => {
+      const result = screenDescriptionsOnSharedPages(
+        [obs({ sourceUrl: LAB_PAGE })],
+        memberCiters,
+        new Set(['me']),
+        undefined,
+        lab,
+      );
+      expect(result.kept).toHaveLength(1);
+      expect(result.dropped).toHaveLength(0);
+    });
+
+    it('matches the website across scheme, www and trailing slash', () => {
+      const result = screenDescriptionsOnSharedPages(
+        [obs({ sourceUrl: 'http://www.tidepool-lab.example.org/research/' })],
+        citers({ 'http://tidepool-lab.example.org/research': ['m-1', 'm-2'] }),
+        new Set(['me']),
+        undefined,
+        { ...lab, websiteUrl: 'https://tidepool-lab.example.org' },
+      );
+      expect(result.kept).toHaveLength(1);
+    });
+
+    it('still screens a person row whose stored website is its lab site', () => {
+      const result = screenDescriptionsOnSharedPages(
+        [obs({ sourceUrl: LAB_PAGE })],
+        memberCiters,
+        new Set(['me']),
+        undefined,
+        { websiteUrl: LAB_SITE, entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' },
+      );
+      expect(result.kept).toHaveLength(0);
+    });
+
+    it('still screens a row with no stated type', () => {
+      const result = screenDescriptionsOnSharedPages(
+        [obs({ sourceUrl: LAB_PAGE })],
+        memberCiters,
+        new Set(['me']),
+        undefined,
+        { websiteUrl: LAB_SITE },
+      );
+      expect(result.kept).toHaveLength(0);
+    });
+
+    it('does not own a page outside its website or on a sibling path', () => {
+      const result = screenDescriptionsOnSharedPages(
+        [
+          obs({ sourceUrl: 'https://medicine.yale.edu/lab/tidepoolother/about' }),
+          obs({ sourceUrl: DIRECTORY }),
+        ],
+        citers({
+          'https://medicine.yale.edu/lab/tidepoolother/about': ['a', 'b'],
+          [DIRECTORY]: ['a', 'b'],
+        }),
+        new Set(['me']),
+        undefined,
+        { ...lab, websiteUrl: 'https://medicine.yale.edu/lab/tidepool' },
+      );
+      expect(result.kept).toHaveLength(0);
+    });
+
+    it('never owns a whole school site through a website that is its root', () => {
+      const result = screenDescriptionsOnSharedPages(
+        [obs({ sourceUrl: 'https://medicine.yale.edu/lab/someone-else' })],
+        citers({ 'https://medicine.yale.edu/lab/someone-else': ['a', 'b'] }),
+        new Set(['me']),
+        undefined,
+        { ...lab, websiteUrl: 'https://medicine.yale.edu/' },
+      );
+      expect(result.kept).toHaveLength(0);
+    });
+  });
 });

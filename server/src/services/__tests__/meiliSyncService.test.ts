@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { buildSearchRerankTextHash } from '../searchRerankCandidateText';
 import mongoose from 'mongoose';
 import { researchEntityBrowseTiebreakKey } from '../../utils/researchEntityBrowseTiebreakKey';
 
@@ -69,7 +70,10 @@ beforeEach(() => {
   mocks.accountFind.mockReset();
   mocks.userFind.mockReset();
   mocks.getMeiliIndex.mockClear();
-  mocks.roleAssignmentFind.mockReturnValue({ lean: async () => [] });
+  mocks.roleAssignmentFind.mockReturnValue({
+    lean: async () => [],
+    select: () => ({ lean: async () => [] }),
+  });
   mocks.personFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   mocks.accountFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   mocks.userFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
@@ -136,6 +140,10 @@ describe('syncEntity transform', () => {
       sortTitle: 'smith lab',
       sortTitleQualifier: 'bio)',
       browseTiebreakKey: researchEntityBrowseTiebreakKey('rg-id-42'),
+      hasUndergradHostingEvidence: false,
+      welcomesUndergrads: false,
+      undergradInvitationRank: 0,
+      rerankTextHash: buildSearchRerankTextHash(docs[0]),
     });
     expect(docs[0]).not.toHaveProperty('_id');
     expect(docs[0]).not.toHaveProperty('__v');
@@ -233,6 +241,10 @@ describe('syncEntities', () => {
         sortTitle: 'a',
         sortTitleQualifier: '',
         browseTiebreakKey: researchEntityBrowseTiebreakKey('a'),
+        hasUndergradHostingEvidence: false,
+        welcomesUndergrads: false,
+        undergradInvitationRank: 0,
+        rerankTextHash: buildSearchRerankTextHash({ name: 'A' }),
       },
       {
         id: 'b',
@@ -240,6 +252,10 @@ describe('syncEntities', () => {
         sortTitle: 'b',
         sortTitleQualifier: '',
         browseTiebreakKey: researchEntityBrowseTiebreakKey('b'),
+        hasUndergradHostingEvidence: false,
+        welcomesUndergrads: false,
+        undergradInvitationRank: 0,
+        rerankTextHash: buildSearchRerankTextHash({ name: 'B' }),
       },
     ]);
   });
@@ -319,6 +335,20 @@ describe('an archived row leaves the index (#3449)', () => {
     expect(mocks.addDocuments).not.toHaveBeenCalled();
   });
 
+  it('deletes rather than indexes a row suppressed because every lead asked to be removed (#4160)', async () => {
+    const id = new mongoose.Types.ObjectId();
+    await expect(
+      syncEntity('researchEntity', {
+        _id: id,
+        slug: 'a-row',
+        archived: false,
+        studentVisibilityReasons: ['researcher_removed'],
+      }),
+    ).resolves.toBe(true);
+    expect(mocks.deleteDocument).toHaveBeenCalledWith(String(id));
+    expect(mocks.addDocuments).not.toHaveBeenCalled();
+  });
+
   it('keeps indexing a row that is not archived', async () => {
     const id = new mongoose.Types.ObjectId();
     await syncEntity('researchEntity', { _id: id, slug: 'a-row', archived: false });
@@ -334,7 +364,7 @@ describe('an archived row leaves the index (#3449)', () => {
       { _id: archivedId, slug: 'archived-row', archived: true },
     ]);
     expect(mocks.deleteDocuments).toHaveBeenCalledWith([String(archivedId)]);
-    expect(written).toBe(1);
+    expect(written).toBe(2);
   });
 
   it('still deletes when every row in the batch is archived', async () => {
@@ -344,11 +374,11 @@ describe('an archived row leaves the index (#3449)', () => {
       { _id: a, slug: 'x', archived: true },
       { _id: b, slug: 'y', archived: true },
     ]);
-    // Returns 0 because nothing was indexed, but the deletes must still have happened:
-    // an all-archived batch is exactly the shape a dedupe pass produces.
+    // An all-archived batch is exactly the shape a dedupe pass produces, and a caller
+    // must be able to tell its confirmed deletes apart from a refused batch.
     expect(mocks.deleteDocuments).toHaveBeenCalledWith([String(a), String(b)]);
     expect(mocks.addDocuments).not.toHaveBeenCalled();
-    expect(written).toBe(0);
+    expect(written).toBe(2);
   });
 });
 

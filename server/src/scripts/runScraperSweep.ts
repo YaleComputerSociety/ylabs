@@ -1,4 +1,8 @@
 import { spawn, spawnSync } from 'child_process';
+import {
+  probeSplitHorizonNetwork,
+  splitHorizonNetworkWarning,
+} from '../scrapers/utils/splitHorizonRefusals';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -18,6 +22,7 @@ import {
   type ScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
 import { c4LosslessIngestEnabled } from '../scrapers/observationStore';
+import { CENTER_ROSTER_HEALTH_SOURCE_NAMES } from '../scrapers/centerPlanGuard';
 import { readCodeSha } from '../scrapers/scrapeRunCodeIdentity';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import {
@@ -90,7 +95,7 @@ import { WeeklySweepRun } from '../models/weeklySweepRun';
 import type { WeeklySweepStageFailureKind } from '../models/storedVocabularies';
 import { PRUNE_DEAD_OBSERVATIONS_CONFIRM_FLAG } from './pruneDeadObservationsCore';
 import { formatSweepPreflightReport, runSweepPreflight } from './scraperSweepPreflight';
-import { connectScriptMongo } from '../db/connections';
+import { connectScriptMongo, holdDevApplyLeaseForRun } from '../db/connections';
 import {
   decideSweepSourceRetry,
   remainingSweepBudgetMs,
@@ -169,9 +174,14 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'official-profile-pi-backfill', phase: 'relationships' },
   { name: 'lab-site-lead-verification', phase: 'relationships' },
   { name: 'official-research-home-roster', phase: 'relationships' },
-  { name: 'center-affiliation-llm', phase: 'relationships' },
-  { name: 'center-director-llm', phase: 'relationships' },
-  { name: 'lab-microsite-description-llm', phase: 'content-access' },
+  { name: 'center-affiliation-roster', phase: 'relationships' },
+  { name: 'center-director', phase: 'relationships' },
+  {
+    name: 'center-member-profile-research',
+    phase: 'relationships',
+    readsRowsWrittenBy: ['centers-institutes-index'],
+  },
+  { name: 'lab-site-undergrad-invitation', phase: 'content-access' },
   { name: 'research-area-source-extractor', phase: 'content-access' },
   { name: 'ysm-mesh-keyword', phase: 'content-access' },
 ];
@@ -289,6 +299,8 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
     | 'borrowed-lab-website-retire'
     | 'refusal-lane-attribution'
     | 'pi-attributed-researcher-mint'
+    | 'researcher-email-support'
+    | 'lead-department-inheritance'
     | 'inferred-pi-lead-reclaim'
     | 'profile-honors'
     | 'staff-minted-retirement'
@@ -301,6 +313,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
     | 'data-quality'
     | 'integrity-gate'
     | 'trust-contract'
+    | 'survivor-alias-derivation'
     | 'archived-cleanup'
     | 'dead-data-prune';
   status: 'succeeded' | 'failed';
@@ -436,6 +449,34 @@ export interface ScraperSweepSummary {
     stages: Array<DevelopmentPostRunStage | FellowshipPostRunStage>;
   } & SweepStepTiming;
   searchIndex?: SweepSearchIndexOutcome;
+  /**
+   * Center roster runs the sweep wrote observations for but did not materialize, because a
+   * Development apply of one must be held to an approved plan (#6348). Each needs a manual
+   * dry run, then `scrape materialize --run <runId> --expect-center-plan <plan.json>`.
+   */
+  centerPlanOwed?: SweepCenterPlanOwed[];
+}
+
+export interface SweepCenterPlanOwed {
+  sourceName: string;
+  runId?: string;
+}
+
+/**
+ * A center roster source in an auto-materializing mode runs observations-only, so the sweep
+ * stays green while the run's apply waits for an approved center plan (#6348).
+ */
+export function sweepOwesCenterPlan(mode: ScraperSweepMode, sourceName: string): boolean {
+  return MODE_CONFIG[mode].autoMaterialize && CENTER_ROSTER_HEALTH_SOURCE_NAMES.has(sourceName);
+}
+
+export function sweepCenterPlanOwed(
+  mode: ScraperSweepMode,
+  rows: readonly ScraperSweepRunRow[],
+): SweepCenterPlanOwed[] {
+  return rows
+    .filter((row) => row.status === 'succeeded' && sweepOwesCenterPlan(mode, row.sourceName))
+    .map((row) => ({ sourceName: row.sourceName, ...(row.runId ? { runId: row.runId } : {}) }));
 }
 
 export const SEARCH_INDEX_CHECK_JOURNEY_CASES = [
@@ -911,7 +952,10 @@ export function buildScraperSweepChildArgs(
     'run',
     '--source',
     sourceName,
-    ...MODE_CONFIG[mode].scraperFlags,
+    ...(MODE_CONFIG[mode].writes ? ['--apply'] : []),
+    ...MODE_CONFIG[mode].scraperFlags.filter(
+      (flag) => flag !== '--auto-materialize' || !sweepOwesCenterPlan(mode, sourceName),
+    ),
     ...(options.forceLlm ? ['--force-llm'] : []),
     '--output',
     artifactPath,
@@ -1321,6 +1365,7 @@ export function parseResearcherDedupeResult(artifact: unknown): PostRunStageDelt
       shellsMerged: Number(record.shellsMerged ?? 0),
       roleAssignmentsRepointed: Number(record.roleAssignmentsRepointed ?? 0),
       roleAssignmentsArchivedRedundant: Number(record.roleAssignmentsArchivedRedundant ?? 0),
+      roleAssignmentsHealed: Number(record.roleAssignmentsHealed ?? 0),
       rosterChangedEntities: Number(record.rosterChangedEntities ?? 0),
       regatedEntities: Number(record.regatedEntities ?? 0),
       profileLinksAppended: Number(attributeUnion.profileLinksAppended ?? 0),
@@ -1651,7 +1696,8 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     // Relational like the stage above: whether a roster website is a group site depends on
     // which other people the lane gave it to. Ordered before `refusal-lane-attribution` so
     // the refusals it records are attributed the same sweep, and it plans nothing once the
-    // lane's shared claims are retired (#3615).
+    // lane's shared claims are retired (#3615). It re-derives its own refusals each run and
+    // withdraws one the evidence no longer supports, never an operator's (#5838).
     name: 'shared-roster-website-retire',
     command: 'observations:retire-shared-roster-websites',
     artifactName: 'development-shared-roster-website-retire.json',
@@ -1724,6 +1770,28 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'research-entity:retire-staff-minted-entities',
     artifactName: 'development-staff-minted-retirement.json',
     buildArgs: () => ['--apply', '--confirm-staff-minted-entity-retirement'],
+    isEnabled: () => true,
+  },
+  {
+    // After every stage that can link a lead or change a lead's department, and before the
+    // gate, so a department a person-side lane changed reaches the rows that person leads the
+    // same sweep. The materializer inherits only for a row a run re-materializes; this pass
+    // covers the rest and plans nothing once every reachable row holds both fields (#6033).
+    name: 'lead-department-inheritance',
+    command: 'research-homes:inherit-lead-department',
+    artifactName: 'development-lead-department-inheritance.json',
+    buildArgs: () => ['--apply', '--confirm-lead-department'],
+    isEnabled: () => true,
+  },
+  {
+    // After every stage that can mint a researcher or change an address, so each live
+    // researcher holding an email carries a current support marker before the corpus is
+    // promoted. The user materializer refreshes it only for a researcher a key reaches; this
+    // pass covers the rest and plans nothing once the corpus is settled (#5627).
+    name: 'researcher-email-support',
+    command: 'researchers:compute-email-support',
+    artifactName: 'development-researcher-email-support.json',
+    buildArgs: () => ['--apply', '--confirm-compute-email-support'],
     isEnabled: () => true,
   },
   {
@@ -1809,6 +1877,13 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     buildArgs: () => ['--collection=all', '--mode=student-ready-only', '--strict'],
     isEnabled: () => true,
     judgeResult: judgeTrustContractResult,
+  },
+  {
+    name: 'survivor-alias-derivation',
+    command: 'research-entity:derive-survivor-aliases',
+    artifactName: 'development-survivor-alias-derivation.json',
+    buildArgs: () => ['--apply', '--confirm-derive-survivor-aliases'],
+    isEnabled: () => true,
   },
   {
     name: 'archived-cleanup',
@@ -1918,6 +1993,15 @@ function judgementDiagnostics(judgement: StageJudgement): PostRunStageDiagnostic
   };
 }
 
+export function recordedSucceededStage<T extends { name: string; status: string }>(
+  recorded: unknown,
+  name: string,
+): T | undefined {
+  const stage = recorded as T | undefined;
+  if (!stage || typeof stage !== 'object') return undefined;
+  return stage.name === name && stage.status === 'succeeded' ? stage : undefined;
+}
+
 function reconstructDevelopmentStage(
   planned: PlannedPostRunStage,
   baseline: Record<string, number> | undefined,
@@ -1988,6 +2072,15 @@ async function runDevelopmentPostRunStages(
         exitCode: 0,
         ...resumed,
       });
+      continue;
+    }
+    const recordedStage = recordedSucceededStage<DevelopmentPostRunStage>(
+      ctx?.store.recordedResult(stepId),
+      planned.name,
+    );
+    if (recordedStage) {
+      console.log(`\n[post-run] ${planned.name} (resume: already done, from the run record)`);
+      stages.push(recordedStage);
       continue;
     }
     if (ctx?.store.isDone(stepId)) {
@@ -2065,16 +2158,7 @@ async function runDevelopmentPostRunStages(
       if (failureTail) diagnostics.failureTail = failureTail;
     }
     reportPostRunStageOutcome('post-run', planned.name, error, diagnostics);
-    if (ctx) {
-      if (error) {
-        ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
-        ctx.logger.logFailed(stepId, exitCode, logPath);
-      } else {
-        ctx.store.markDone(stepId, 'stage', exitCode, ctx.now());
-        ctx.logger.logDone(stepId, exitCode);
-      }
-    }
-    stages.push({
+    const stage: DevelopmentPostRunStage = {
       name: planned.name,
       status: error ? 'failed' : 'succeeded',
       artifactPath: planned.artifactPath,
@@ -2083,7 +2167,17 @@ async function runDevelopmentPostRunStages(
       ...(error ? { error } : {}),
       ...diagnostics,
       ...delta,
-    });
+    };
+    if (ctx) {
+      if (error) {
+        ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
+        ctx.logger.logFailed(stepId, exitCode, logPath);
+      } else {
+        ctx.store.markDone(stepId, 'stage', exitCode, ctx.now(), undefined, stage);
+        ctx.logger.logDone(stepId, exitCode);
+      }
+    }
+    stages.push(stage);
   }
   return {
     status: stages.some((stage) => stage.status === 'failed') ? 'failed' : 'succeeded',
@@ -2272,6 +2366,17 @@ async function runFellowshipPostRunStages(
         });
         continue;
       }
+      const recordedStage = recordedSucceededStage<FellowshipPostRunStage>(
+        ctx.store.recordedResult(stepId),
+        planned.name,
+      );
+      if (recordedStage) {
+        console.log(
+          `\n[fellowship-post-run] ${planned.name} (resume: already done, from the run record)`,
+        );
+        stages.push(recordedStage);
+        continue;
+      }
       console.warn(
         `[fellowship-post-run] ${planned.name} was marked done but its report artifact is missing or invalid; re-running`,
       );
@@ -2307,16 +2412,7 @@ async function runFellowshipPostRunStages(
       if (failureTail) diagnostics.failureTail = failureTail;
     }
     reportPostRunStageOutcome('fellowship-post-run', planned.name, error, diagnostics);
-    if (ctx) {
-      if (error) {
-        ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
-        ctx.logger.logFailed(stepId, exitCode, logPath);
-      } else {
-        ctx.store.markDone(stepId, 'stage', exitCode, ctx.now());
-        ctx.logger.logDone(stepId, exitCode);
-      }
-    }
-    stages.push({
+    const stage: FellowshipPostRunStage = {
       name: planned.name,
       status: error ? 'failed' : 'succeeded',
       ...(planned.artifactPath ? { artifactPath: planned.artifactPath } : {}),
@@ -2324,7 +2420,17 @@ async function runFellowshipPostRunStages(
       ...sweepStepTiming(stageStartedAt, clock()),
       ...(error ? { error } : {}),
       ...diagnostics,
-    });
+    };
+    if (ctx) {
+      if (error) {
+        ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
+        ctx.logger.logFailed(stepId, exitCode, logPath);
+      } else {
+        ctx.store.markDone(stepId, 'stage', exitCode, ctx.now(), undefined, stage);
+        ctx.logger.logDone(stepId, exitCode);
+      }
+    }
+    stages.push(stage);
   }
   return {
     status: stages.some((stage) => stage.status === 'failed') ? 'failed' : 'succeeded',
@@ -2426,6 +2532,8 @@ export async function runScraperSweep(
   );
 
   if (isSweepPreflightEnabled(options)) {
+    const splitHorizonNetwork = splitHorizonNetworkWarning(await probeSplitHorizonNetwork());
+    if (splitHorizonNetwork) console.warn(`WARNING: ${splitHorizonNetwork}`);
     const pendingSources = sweepSources
       .map((source) => source.name)
       .filter((name) => !store.isDone(sourceStepId(name)));
@@ -2484,6 +2592,16 @@ export async function runScraperSweep(
     };
   };
 
+  const succeededRowFromRecordedResult = (
+    source: ScraperSweepSource,
+    recorded: unknown,
+  ): ScraperSweepRunRow | undefined => {
+    const row = recorded as ScraperSweepRunRow | undefined;
+    if (!row || typeof row !== 'object') return undefined;
+    if (row.sourceName !== source.name || row.status !== 'succeeded') return undefined;
+    return row;
+  };
+
   const runSource = async (
     source: ScraperSweepSource,
     index: number,
@@ -2492,10 +2610,9 @@ export async function runScraperSweep(
     const artifactPath = artifactPathFor(source, index);
     const stepId = sourceStepId(source.name);
     if (store.isDone(stepId)) {
-      const resumedRow = succeededRowFromArtifact(
-        source,
-        store.recordedArtifactPath(stepId) || artifactPath,
-      );
+      const resumedRow =
+        succeededRowFromArtifact(source, store.recordedArtifactPath(stepId) || artifactPath) ??
+        succeededRowFromRecordedResult(source, store.recordedResult(stepId));
       if (resumedRow) {
         console.log(
           `\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} (resume: already done)`,
@@ -2534,7 +2651,7 @@ export async function runScraperSweep(
           ...outcome.artifact,
           ...attemptRecord,
         };
-        store.markDone(stepId, 'source', outcome.exitCode, now(), artifactPath);
+        store.markDone(stepId, 'source', outcome.exitCode, now(), artifactPath, rows[index]);
         logger.logDone(stepId, outcome.exitCode);
         if (attempt > 1) {
           console.log(
@@ -2732,6 +2849,7 @@ export async function runScraperSweep(
     );
   }
   const producedNothingSources = sourcesThatProducedNothing(rows);
+  const centerPlanOwed = sweepCenterPlanOwed(options.mode, rows);
   const summary: ScraperSweepSummary = {
     mode: options.mode,
     environment: config.environment,
@@ -2753,6 +2871,7 @@ export async function runScraperSweep(
     ...(pageReuseSummary ? { pageReuse: pageReuseSummary } : {}),
     ...(postRun ? { postRun } : {}),
     searchIndex: sweepSearchIndexOutcome(),
+    ...(centerPlanOwed.length > 0 ? { centerPlanOwed } : {}),
   };
   const summaryPath = path.join(outputDirectory, 'summary.json');
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
@@ -2773,11 +2892,17 @@ export async function runScraperSweep(
           ? { producedNothingSources: summary.producedNothingSources }
           : {}),
         postRun: summary.postRun?.status,
+        ...(centerPlanOwed.length > 0 ? { centerPlanOwed } : {}),
       },
       null,
       2,
     ),
   );
+  for (const owed of centerPlanOwed) {
+    console.log(
+      `[center-plan] owed: ${owed.sourceName} run ${owed.runId ?? '(no run id)'} was not materialized; dry-run it, then "scrape materialize --run <runId> --apply --confirm-materialize --expect-center-plan <plan.json>" (#6348)`,
+    );
+  }
   return summary;
 }
 
@@ -2786,7 +2911,18 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  void (async () => runScraperSweep(parseScraperSweepArgs(process.argv.slice(2))))()
+  void (async () => {
+    const options = parseScraperSweepArgs(process.argv.slice(2));
+    const releaseLease =
+      options.mode === 'development-plan'
+        ? async () => undefined
+        : await holdDevApplyLeaseForRun('scrape:sweep');
+    try {
+      return await runScraperSweep(options);
+    } finally {
+      await releaseLease();
+    }
+  })()
     .then((summary) => {
       if (summary.failed > 0 || summary.notRun > 0 || summary.postRun?.status === 'failed') {
         process.exitCode = 1;

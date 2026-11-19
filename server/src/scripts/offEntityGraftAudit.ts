@@ -20,7 +20,6 @@
  *   yarn research-entity:audit-off-entity-graft --student-ready 300 --other 150 \
  *     --output tmp/off-entity-graft.json
  */
-import axios from 'axios';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import mongoose from 'mongoose';
@@ -50,6 +49,8 @@ import {
 } from './offEntityGraftAuditCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { connectScriptMongo } from '../db/connections';
+import { postChatCompletion } from '../utils/modelClient';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -117,9 +118,11 @@ async function callJudge(
   apiKey: string,
   usage: Usage,
 ): Promise<OffEntityGraftRunResult> {
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'off-entity-graft-audit',
+    apiKey: apiKey,
+    timeoutMs: 90_000,
+    body: {
       model: OFF_ENTITY_GRAFT_MODEL,
       reasoning_effort: OFF_ENTITY_GRAFT_REASONING_EFFORT,
       response_format: { type: 'json_object' },
@@ -139,11 +142,7 @@ async function callJudge(
         },
       ],
     },
-    {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 90_000,
-    },
-  );
+  });
   usage.calls += 1;
   usage.inputTokens += Number(response.data?.usage?.prompt_tokens ?? 0);
   usage.outputTokens += Number(response.data?.usage?.completion_tokens ?? 0);
@@ -302,7 +301,7 @@ async function main(): Promise<void> {
   );
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`report written: ${options.output}`);
   }
   await mongoose.disconnect();

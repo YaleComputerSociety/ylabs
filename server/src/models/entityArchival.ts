@@ -102,6 +102,8 @@ export const PROGRAM_LIVES_ON_PROGRAMS_ARCHIVE_REASON = 'materialize:program-liv
 export const PI_DEDUPE_ARCHIVE_REASON = 'research-entity:dedupe-by-pi';
 export const SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON =
   'Merged into the corroborated survivor of its duplicate-url group: same lead person plus a corroborating name or shell asymmetry (#3326).';
+export const SUBJECT_TWIN_MERGE_ARCHIVE_REASON =
+  'Merged into the anchor of its duplicate-url group: a same-name twin with no lead or led only by people who lead or belong to the anchor (#6206).';
 
 export const SAME_PERSON_ARCHIVE_TOMBSTONE_REASON =
   'research-entity:tombstone-same-person-archives: a person-scoped row archived with no survivor pointer, pointed at the one live row its lead key reaches (#4696).';
@@ -130,6 +132,7 @@ export const AUTOMATED_MERGE_ARCHIVE_REASONS: readonly string[] = [
   PI_DEDUPE_ARCHIVE_REASON,
   DEPT_ROSTER_SHELL_FOLD_ARCHIVE_REASON,
   SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+  SUBJECT_TWIN_MERGE_ARCHIVE_REASON,
   GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON,
 ];
 

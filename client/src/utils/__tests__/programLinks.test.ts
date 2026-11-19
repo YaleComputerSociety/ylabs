@@ -6,6 +6,7 @@ import {
   isGenericAdmissionsApplyLink,
   isSameHostShallowChromeUrl,
   MAX_RENDERED_PROGRAM_LINKS,
+  programSourceLinkLabel,
 } from '../programLinks';
 
 describe('isChromeLinkLabel', () => {
@@ -165,5 +166,27 @@ describe('buildSafeProgramLinks', () => {
     expect(
       buildSafeProgramLinks([{ label: 'Unsafe', url: 'data:text/html,<script>alert(1)</script>' }]),
     ).toEqual([]);
+  });
+});
+
+describe('programSourceLinkLabel', () => {
+  it('keeps the office name on a link to that office own site', () => {
+    expect(
+      programSourceLinkLabel(
+        'student-grants-database',
+        'https://yale.communityforce.com/Funds/Fixture',
+        'Student Grants Database',
+      ),
+    ).toBe('Student Grants Database');
+  });
+
+  it('labels a link elsewhere by the host it opens, without www', () => {
+    expect(
+      programSourceLinkLabel(
+        'yale-college-fellowships-office',
+        'https://www.economics.example.edu/fixture-program',
+        'Yale College Fellowships Office',
+      ),
+    ).toBe('economics.example.edu');
   });
 });

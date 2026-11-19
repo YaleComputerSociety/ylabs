@@ -19,6 +19,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
@@ -35,6 +36,7 @@ import { MAX_PEOPLE_SUBPAGES, peopleSubpageUrls } from '../scrapers/utils/labSit
 import { HostRateLimiter, fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { loadDirectoryRemovalMintGuard } from '../services/directoryRemovalMintGuard';
 import { leadWouldUnblock } from './attachFraNamedLeadsCore';
 import {
   corroboratedResearchHome,
@@ -46,13 +48,13 @@ import {
   type LabSiteNamedLeadRefusal,
   type OfficialProfileOwner,
 } from './attachLabSiteNamedLeadsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:attach-lab-site-named-leads';
-const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';
 const FETCH_SPACING_MS = 1100;
 const FETCH_TIMEOUT_MS = 25000;
 const LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
@@ -99,7 +101,7 @@ const researchHomeLimiter = new HostRateLimiter({
 async function readPage(url: string): Promise<LabSitePage | null> {
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+      headers: { Accept: 'text/html,application/xhtml+xml' },
       timeoutMs: FETCH_TIMEOUT_MS,
       limiter: researchHomeLimiter,
     });
@@ -135,11 +137,14 @@ export async function runLabSiteNamedLeadAttachment(options: {
   readPages?: (researchHomeUrl: string) => Promise<LabSitePage[]>;
 }): Promise<Record<string, unknown>> {
   const readPages = options.readPages ?? readResearchHome;
+  const removalGuard = await loadDirectoryRemovalMintGuard();
   const entities = (await ResearchEntity.find({
     archived: { $ne: true },
     studentVisibilityReasons: 'missing_lead',
   })
-    .select('_id slug name entityType website websiteUrl sourceUrls studentVisibilityReasons')
+    .select(
+      '_id slug name displayName entityType website websiteUrl sourceUrls studentVisibilityReasons',
+    )
     .lean()) as any[];
 
   const eponymous = entities.filter((entity) => corroboratedResearchHome(entity));
@@ -167,11 +172,13 @@ export async function runLabSiteNamedLeadAttachment(options: {
   }
 
   const officialProfileOwners: OfficialProfileOwner[] = [];
+  const researchersById = new Map<string, any>();
   for (const researcher of (await Researcher.find({ archived: { $ne: true } })
-    .select('_id displayName profileLinks')
+    .select('_id displayName identifiers profileLinks')
     .lean()) as any[]) {
     const personId = serializedDocumentId(researcher._id);
     if (!personId) continue;
+    researchersById.set(personId, researcher);
     for (const link of researcher.profileLinks || []) {
       if (link?.kind !== 'YALE_OFFICIAL' || typeof link?.url !== 'string') continue;
       officialProfileOwners.push({
@@ -217,6 +224,11 @@ export async function runLabSiteNamedLeadAttachment(options: {
     });
     if ('refusal' in outcome) {
       refusals.push(outcome.refusal);
+      continue;
+    }
+    if (removalGuard.refusesPerson(researchersById.get(outcome.plan.personId))) {
+      removalGuard.recordRefusal();
+      refusals.push({ reason: 'removed_by_request', researchHomeUrl: home.researchHomeUrl });
       continue;
     }
     planned.push({ ...outcome.plan, entityId, slug: String(entity.slug || '') });
@@ -290,6 +302,7 @@ export async function runLabSiteNamedLeadAttachment(options: {
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
     apply: args.apply,
@@ -309,7 +322,7 @@ async function main() {
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`Report written to ${outputPath}`);
   }
   await mongoose.disconnect();

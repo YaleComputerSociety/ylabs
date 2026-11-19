@@ -4,7 +4,7 @@ export const SCRAPE_RUN_STALL_WINDOW_MS = 20 * 60 * 1000;
 
 export const SCRAPE_RUN_STALL_WINDOW_ENV = 'SCRAPER_RUN_STALL_WINDOW_MS';
 
-// Scripts otherwise connect with no socket timeout, and the driver interrupts an in-use
+// Scripts once connected with no socket timeout, and the driver interrupts an in-use
 // connection only when a monitor check *times out*. A lost network fails the monitor with
 // ENOTFOUND instead, so an operation in flight on the dead socket can wait forever, the
 // likeliest hang in #5086.

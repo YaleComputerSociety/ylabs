@@ -378,15 +378,79 @@ describe('LabMembersList lead email line', () => {
     },
   };
 
-  it('shows the lead email as a side link beside the card', () => {
+  it('shows the lead email inside the lead card as a mailto link', () => {
     render(
       <ConfigContext.Provider value={defaultConfigContext}>
         <LabMembersList members={[leadMember]} />
       </ConfigContext.Provider>,
     );
-    const link = screen.getByRole('link', { name: 'Email Ada Fixture' });
+    const link = screen.getByRole('link', { name: /^Email Ada Fixture at / });
     expect(link.textContent).toBe('ada.fixture@example.test');
     expect(link.getAttribute('href')).toBe('mailto:ada.fixture@example.test');
+    const card = link.closest('[data-member-card]');
+    expect(card).not.toBeNull();
+    expect(card?.textContent).toContain('Ada Fixture');
+  });
+
+  it('keeps the address on one line and names it in full for assistive technology', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList members={[leadMember]} singleColumn />
+      </ConfigContext.Provider>,
+    );
+    const link = screen.getByRole('link', {
+      name: 'Email Ada Fixture at ada.fixture@example.test',
+    });
+    expect(link.getAttribute('title')).toBe('ada.fixture@example.test');
+    expect(link.querySelector('wbr')).toBeNull();
+    const address = link.querySelector('span');
+    expect(address?.className).toContain('truncate');
+    expect(address?.textContent).toBe('ada.fixture@example.test');
+  });
+
+  it('keeps the email inside the card beside the official profile link', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList
+          members={[leadMember]}
+          resolveMemberProfileUrl={() => 'https://example.test/profile/ada-fixture'}
+        />
+      </ConfigContext.Provider>,
+    );
+    const profile = screen.getByRole('link', { name: "Open Ada Fixture's official profile" });
+    const email = screen.getByRole('link', { name: /^Email Ada Fixture at / });
+    expect(profile.contains(email)).toBe(false);
+    expect(email.closest('[data-member-card]')).toBe(profile.closest('[data-member-card]'));
+  });
+
+  it('shows the same normalized address the mail link opens', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList
+          members={[
+            {
+              ...leadMember,
+              user: { ...leadMember.user, email: 'mailto:Ada.Fixture@Example.test' },
+            },
+          ]}
+        />
+      </ConfigContext.Provider>,
+    );
+    const link = screen.getByRole('link', { name: /^Email Ada Fixture at / });
+    expect(link.textContent).toBe('ada.fixture@example.test');
+    expect(link.getAttribute('href')).toBe('mailto:ada.fixture@example.test');
+  });
+
+  it('renders no email for a redacted address', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList
+          members={[{ ...leadMember, user: { ...leadMember.user, email: '[email redacted]' } }]}
+        />
+      </ConfigContext.Provider>,
+    );
+    expect(screen.queryByRole('link', { name: /^Email Ada Fixture at / })).toBeNull();
+    expect(screen.queryByText('[email redacted]')).toBeNull();
   });
 
   it('renders no email line when the member has no email', () => {
@@ -397,7 +461,7 @@ describe('LabMembersList lead email line', () => {
         />
       </ConfigContext.Provider>,
     );
-    expect(screen.queryByRole('link', { name: 'Email Ada Fixture' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^Email Ada Fixture at / })).toBeNull();
   });
 });
 
@@ -429,5 +493,13 @@ describe('LabMembersList text size floor', () => {
 
     expect(screen.getByText('Professor of Synthetic Studies')).toBeTruthy();
     expect(undersizedRenderedTextClasses(container)).toEqual([]);
+  });
+
+  it('builds the avatar initials from the first and last name, not a middle initial', () => {
+    renderMembers([
+      member('', { fname: 'Ada', lname: 'R. Fixture', displayName: 'Ada R. Fixture' }),
+    ]);
+    expect(screen.getByText('AF')).toBeTruthy();
+    expect(screen.queryByText('AR')).toBeNull();
   });
 });

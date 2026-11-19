@@ -2,6 +2,8 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
+import { PERSONAL_RESEARCH_ROW_TYPES } from '../utils/centerMemberProfileResearch';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
   DEFAULT_DEPT_CONFIGS,
@@ -16,6 +18,7 @@ import {
   planRosterBioResearchRows,
   rosterBioPersonNameKey,
   rosterBioProfileUrl,
+  rosterBioRereadObservations,
   rosterBioResearchObservations,
   type RosterBioCoveredIdentities,
   type RosterBioDepartment,
@@ -60,11 +63,9 @@ export async function loadRosterBioPeople(): Promise<RosterBioPerson[]> {
   }
   const people: RosterBioPerson[] = [];
   for (const [key, fields] of latest) {
-    const bio = fields.get('bio')?.value;
-    if (typeof bio !== 'string' || !bio.trim()) continue;
     people.push({
       key,
-      bio,
+      bio: fields.get('bio')?.value,
       title: fields.get('title')?.value,
       fname: fields.get('fname')?.value,
       lname: fields.get('lname')?.value,
@@ -81,21 +82,27 @@ export async function loadRosterBioPeople(): Promise<RosterBioPerson[]> {
 // (a merge, a retirement, a wrong-person refusal) that a new mint must not undo.
 export async function loadRosterBioCoveredIdentities(): Promise<RosterBioCoveredIdentities> {
   const entities = (await ResearchEntity.find({})
-    .select('_id slug name websiteUrl sourceUrls archived')
+    .select('_id slug name websiteUrl sourceUrls archived entityType')
     .lean()) as Array<Record<string, any>>;
   const urls = new Set<string>();
   const slugs = new Set<string>();
   const personNames = new Set<string>();
-  const liveIds = new Set<string>();
+  const personalRowIds = new Set<string>();
+  const liveSlugs = new Set<string>();
   for (const entity of entities) {
     slugs.add(entity.slug);
+    if (entity.archived !== true) liveSlugs.add(entity.slug);
+    if (PERSONAL_RESEARCH_ROW_TYPES.includes(entity.entityType)) {
+      personalRowIds.add(String(entity._id));
+    }
     for (const url of [entity.websiteUrl, ...(entity.sourceUrls || [])]) {
       if (url) urls.add(normalizeRosterBioUrl(url));
     }
-    if (entity.archived === true) continue;
-    liveIds.add(String(entity._id));
     const nameKey = rosterBioPersonNameKey(entity.name);
-    if (nameKey) personNames.add(nameKey);
+    if (!nameKey) continue;
+    if (entity.archived !== true || PERSONAL_RESEARCH_ROW_TYPES.includes(entity.entityType)) {
+      personNames.add(nameKey);
+    }
   }
   const piKeys = (await Observation.find({ field: 'inferredPiUserKey', superseded: false })
     .select('entityKey value')
@@ -106,12 +113,28 @@ export async function loadRosterBioCoveredIdentities(): Promise<RosterBioCovered
       personKeys.add(row.value);
     }
   }
-  const leadEdges = (await RoleAssignment.find({ state: { $ne: 'HISTORICAL' } })
+  const ownPiKeys = (await Observation.find({
+    sourceName: ROSTER_BIO_RESEARCH_EVIDENCE_SOURCE,
+    field: 'inferredPiUserKey',
+    superseded: false,
+  })
+    .select('entityKey value')
+    .lean()) as Array<{ entityKey?: string; value?: unknown }>;
+  const ownRowSlugsByPersonKey = new Map<string, string>();
+  for (const row of ownPiKeys) {
+    if (row.entityKey && liveSlugs.has(row.entityKey) && typeof row.value === 'string') {
+      ownRowSlugsByPersonKey.set(row.value, row.entityKey);
+    }
+  }
+  // A person's research is already listed only through a row they lead. A membership of a
+  // center, institute or someone else's lab is an affiliation rather than their own row,
+  // and an ended lead of an archived row is a past decision about them (#5407).
+  const leadEdges = (await RoleAssignment.find({ role: { $in: [...LEAD_ROLE_CANONICAL_VALUES] } })
     .select('personId target')
     .lean()) as Array<{ personId?: unknown; target?: { id?: unknown } }>;
   const leading = new Set(
     leadEdges
-      .filter((edge) => liveIds.has(String(edge.target?.id)))
+      .filter((edge) => personalRowIds.has(String(edge.target?.id)))
       .map((edge) => String(edge.personId)),
   );
   const researchers = (await Researcher.find({ archived: { $ne: true } })
@@ -123,7 +146,7 @@ export async function loadRosterBioCoveredIdentities(): Promise<RosterBioCovered
     if (nameKey) personNames.add(nameKey);
     for (const link of researcher.profileLinks || []) urls.add(normalizeRosterBioUrl(link.url));
   }
-  return { urls, personKeys, personNames, slugs };
+  return { urls, personKeys, personNames, slugs, ownRowSlugsByPersonKey };
 }
 
 const configMintsPersonalRows = (config: DeptConfig): boolean =>
@@ -170,7 +193,8 @@ export function rosterBioDepartmentResolver(
 /**
  * Mints a faculty-research row for a roster person whose stored profile biography states
  * research they do now, which the roster lane alone does not, because it mints only
- * from a dedicated research section. Manual-only: the owner reviews a sample of the rows
+ * from a dedicated research section. It also re-reads the rows it minted, so a change to
+ * what counts as research evidence reaches them (#6107). Manual-only: the owner reviews a sample of the rows
  * a run produces before the lane joins the sweep.
  */
 export class RosterBioResearchEvidenceScraper implements IScraper {
@@ -182,7 +206,7 @@ export class RosterBioResearchEvidenceScraper implements IScraper {
       loadRosterBioPeople(),
       loadRosterBioCoveredIdentities(),
     ]);
-    const { planned, skipped } = planRosterBioResearchRows(
+    const { planned, reread, skipped } = planRosterBioResearchRows(
       people,
       covered,
       rosterBioDepartmentResolver(),
@@ -191,15 +215,21 @@ export class RosterBioResearchEvidenceScraper implements IScraper {
     const scoped = planned
       .filter((row) => !only || only.has(row.slug))
       .slice(0, ctx.options.limit ?? undefined);
-    ctx.log(`roster bios ${people.length}; planned ${planned.length}; emitting ${scoped.length}`, {
-      skipped,
-    });
-    const observations: ObservationInput[] = scoped.flatMap(rosterBioResearchObservations);
+    const rereadScoped = reread.filter((row) => !only || only.has(row.slug));
+    const withdrawn = rereadScoped.filter((row) => row.evidenceSentences.length === 0).length;
+    ctx.log(
+      `roster people ${people.length}; planned ${planned.length}; emitting ${scoped.length}; re-read ${rereadScoped.length} own rows (${withdrawn} with no research statement)`,
+      { skipped },
+    );
+    const observations: ObservationInput[] = [
+      ...scoped.flatMap(rosterBioResearchObservations),
+      ...rereadScoped.flatMap(rosterBioRereadObservations),
+    ];
     if (observations.length) await ctx.emit(observations);
     return {
       observationCount: observations.length,
-      entitiesObserved: scoped.length,
-      notes: `planned ${planned.length} of ${people.length} roster bios; skipped ${JSON.stringify(skipped)}`,
+      entitiesObserved: scoped.length + rereadScoped.length,
+      notes: `planned ${planned.length} of ${people.length} roster people; re-read ${rereadScoped.length} own rows, ${withdrawn} with no research statement; skipped ${JSON.stringify(skipped)}`,
     };
   }
 }

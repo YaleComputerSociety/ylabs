@@ -469,3 +469,40 @@ describe('a contentless umbrella label is refused for every job a topic does', (
     },
   );
 });
+
+describe('a bare verb or adjective is not a method (#5109)', () => {
+  it.each([
+    'Analyzes',
+    'Examines',
+    'Evaluates',
+    'Projecting',
+    'Designing',
+    'Maintaining',
+    'develop, evaluate and disseminate',
+    'develops strategies',
+    'regularly writes',
+    'Highly-Controllable',
+    'Scalable',
+    'innovative',
+  ])('refuses %s', (chip) => {
+    expect(sanitizeMethodChipLabel(chip)).toBe('');
+  });
+
+  it.each([
+    'design',
+    'modeling',
+    'sequencing',
+    'screening',
+    'mapping',
+    'monitoring',
+    'analyses',
+    'qualitative',
+    'computational',
+    'data-driven',
+    'developing a suite of digital instruments',
+    'remote sensing',
+    'machine learning',
+  ])('keeps the technique %s', (chip) => {
+    expect(sanitizeMethodChipLabel(chip)).toBe(chip);
+  });
+});

@@ -1,11 +1,23 @@
 import http from 'node:http';
 import net from 'node:net';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   resolvePublicForwardTarget,
   startSsrfGuardedForwardProxy,
   type SsrfGuardedForwardProxy,
+  type SsrfGuardedForwardProxyOptions,
 } from '../ssrfGuardedForwardProxy';
+import { HostPausedError } from '../hostPause';
+import type { HostSlotLimiter } from '../hostConcurrencyLimiter';
+import { HostSlotWaitTimeoutError } from '../hostThrottlePolicy';
+import { isNotObserved } from '../notObserved';
+
+// No robots.txt is read in this suite: every host allows everything, so these tests keep
+// exercising what they were written for. robotsFetchHookRendered.test.ts covers the robots path.
+vi.mock('../robotsPolicyCache', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../robotsPolicyCache')>()),
+  robotsPolicyFor: async () => ({ rules: [] }),
+}));
 
 const UPSTREAM_NAME = 'upstream.test';
 
@@ -36,8 +48,12 @@ describe('startSsrfGuardedForwardProxy', () => {
     await new Promise<void>((resolve) => upstream.close(() => resolve()));
   });
 
-  const startProxy = async (resolveUpstreamName: boolean) => {
+  const startProxy = async (
+    resolveUpstreamName: boolean,
+    pacing: Omit<SsrfGuardedForwardProxyOptions, 'forwardablePorts' | 'resolveTarget'> = {},
+  ) => {
     proxy = await startSsrfGuardedForwardProxy({
+      ...pacing,
       forwardablePorts: new Set([upstreamPort]),
       resolveTarget: async (hostname) =>
         resolveUpstreamName && hostname === UPSTREAM_NAME
@@ -164,5 +180,109 @@ describe('startSsrfGuardedForwardProxy', () => {
 
     expect(second.status).toBe(403);
     expect(hits.map((hit) => hit.url)).toEqual(['/bounce']);
+  });
+
+  describe('pacing every proxied request (#6255)', () => {
+    const countingSlots = () => {
+      const acquired: string[] = [];
+      const released: string[] = [];
+      const slots: HostSlotLimiter = {
+        acquire: async (host) => {
+          acquired.push(host);
+          return () => released.push(host);
+        },
+      };
+      return { slots, acquired, released };
+    };
+    const pausedHost = (host: string) => (candidate: string) =>
+      candidate === host ? { host, until: new Date('2099-01-01T00:00:00Z') } : undefined;
+
+    it('charges a plain request and a tunnel to the host that receives them, then releases', async () => {
+      const { slots, acquired, released } = countingSlots();
+      await startProxy(true, { hostSlots: slots, requestLog: null });
+
+      await getThroughProxy(`http://${UPSTREAM_NAME}:${upstreamPort}/page`);
+      await tunnelThroughProxy(`${UPSTREAM_NAME}:${upstreamPort}`);
+
+      expect(acquired).toEqual([UPSTREAM_NAME, UPSTREAM_NAME]);
+      expect(released).toEqual([UPSTREAM_NAME, UPSTREAM_NAME]);
+      expect(hits.map((hit) => hit.url)).toEqual(['/page', '/tunnelled']);
+    });
+
+    it('charges the held seed host to the slot its render holds, never a second one', async () => {
+      const { slots, acquired } = countingSlots();
+      await startProxy(true, { hostSlots: slots, heldHost: UPSTREAM_NAME, requestLog: null });
+
+      await getThroughProxy(`http://${UPSTREAM_NAME}:${upstreamPort}/page`);
+      await tunnelThroughProxy(`${UPSTREAM_NAME}:${upstreamPort}`);
+
+      expect(acquired).toEqual([]);
+      expect(hits).toHaveLength(2);
+    });
+
+    it('refuses a paused host before anything is sent, the held host included', async () => {
+      const { slots, acquired } = countingSlots();
+      await startProxy(true, {
+        hostSlots: slots,
+        heldHost: UPSTREAM_NAME,
+        hostPause: pausedHost(UPSTREAM_NAME),
+        requestLog: null,
+      });
+
+      const plain = await getThroughProxy(`http://${UPSTREAM_NAME}:${upstreamPort}/page`);
+      const tunnel = await tunnelThroughProxy(`${UPSTREAM_NAME}:${upstreamPort}`);
+
+      expect(plain.status).toBe(503);
+      expect(tunnel.status).toContain(' 503 ');
+      expect(hits).toEqual([]);
+      expect(acquired).toEqual([]);
+      const refusals = proxy!.pacingRefusals();
+      expect(refusals.map((refusal) => refusal.host)).toEqual([UPSTREAM_NAME, UPSTREAM_NAME]);
+      expect(refusals.every((refusal) => refusal.error instanceof HostPausedError)).toBe(true);
+      expect(refusals.every((refusal) => isNotObserved(refusal.error))).toBe(true);
+    });
+
+    it('refuses, as not observed, a request whose slot never came free', async () => {
+      const slots: HostSlotLimiter = {
+        acquire: async (host) => {
+          throw new HostSlotWaitTimeoutError(host, 10);
+        },
+      };
+      await startProxy(true, { hostSlots: slots, requestLog: null });
+
+      const plain = await getThroughProxy(`http://${UPSTREAM_NAME}:${upstreamPort}/page`);
+
+      expect(plain.status).toBe(503);
+      expect(hits).toEqual([]);
+      expect(isNotObserved(proxy!.pacingRefusals()[0]?.error)).toBe(true);
+    });
+
+    it('writes each sent request to the request log, a tunnel marked as one', async () => {
+      const { slots } = countingSlots();
+      const record = vi.fn();
+      await startProxy(true, { hostSlots: slots, requestLog: { record } });
+
+      await getThroughProxy(`http://${UPSTREAM_NAME}:${upstreamPort}/page`);
+      await tunnelThroughProxy(`${UPSTREAM_NAME}:${upstreamPort}`);
+
+      expect(record).toHaveBeenCalledTimes(2);
+      expect(record.mock.calls[0][0]).toBe(`http://${UPSTREAM_NAME}:${upstreamPort}/page`);
+      expect(record.mock.calls[0][3]).toEqual({ status: 200 });
+      expect(record.mock.calls[1][0]).toBe(`https://${UPSTREAM_NAME}:${upstreamPort}/`);
+      expect(record.mock.calls[1][3]).toEqual({ tunnel: true });
+    });
+
+    it('logs nothing for a refused request, because nothing was sent', async () => {
+      const record = vi.fn();
+      await startProxy(true, {
+        hostSlots: countingSlots().slots,
+        hostPause: pausedHost(UPSTREAM_NAME),
+        requestLog: { record },
+      });
+
+      await getThroughProxy(`http://${UPSTREAM_NAME}:${upstreamPort}/page`);
+
+      expect(record).not.toHaveBeenCalled();
+    });
   });
 });

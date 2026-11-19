@@ -32,11 +32,11 @@ describe('sanitizeProjectedField parity with materializedFieldValue', () => {
 });
 
 describe('sanitizeProjectedField cleans values that bypassed ingest', () => {
-  it('redacts a raw email that reached the projection uncleaned', () => {
+  it('keeps a public email that reached the projection uncleaned (#5046)', () => {
     const dirty =
       'Reach the team at contact@synthetic-lab.test for details. The lab studies protein folding.';
     const cleaned = sanitizeProjectedField(RESEARCH_ENTITY, 'fullDescription', dirty);
-    expect(String(cleaned)).not.toContain('contact@synthetic-lab.test');
+    expect(String(cleaned)).toContain('contact@synthetic-lab.test');
   });
 });
 

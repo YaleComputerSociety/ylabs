@@ -15,7 +15,7 @@ import {
   stripLeadingPageChrome,
   neutralizeFirstPersonResearchCopy,
   sanitizeResearchEntityCopy,
-  isKnownResearchEntityType,
+  isKnownResearchTypeFilterValue,
   researchEntityTypeFilterLabel,
   summarySectionLabel,
   leadRoleLabelForEntity,
@@ -31,7 +31,7 @@ describe('researchEntityCopy', () => {
     };
 
     expect(isFacultyResearchEntity(entity)).toBe(true);
-    expect(entityKindLabel(entity)).toBe('Faculty Research');
+    expect(entityKindLabel(entity)).toBe('Faculty research');
     expect(researchWebsiteLabel(entity)).toBe('research website');
   });
 
@@ -71,7 +71,7 @@ describe('researchEntityCopy', () => {
     };
 
     expect(isFacultyResearchEntity(entity)).toBe(true);
-    expect(entityKindLabel(entity)).toBe('Faculty Research');
+    expect(entityKindLabel(entity)).toBe('Faculty research');
     expect(researchWebsiteLabel(entity)).toBe('research website');
     expect(researchWebsiteCtaLabel(entity)).toBe('Visit research website');
   });
@@ -204,7 +204,7 @@ describe('researchEntityCopy', () => {
     };
 
     expect(isFacultyResearchEntity(staleFacultyResearch)).toBe(true);
-    expect(entityKindLabel(staleFacultyResearch)).toBe('Faculty Research');
+    expect(entityKindLabel(staleFacultyResearch)).toBe('Faculty research');
     expect(researchWebsiteLabel(staleFacultyResearch)).toBe('research website');
     expect(researchWebsiteCtaLabel(staleFacultyResearch)).toBe('Visit research website');
   });
@@ -235,7 +235,7 @@ describe('researchEntityCopy', () => {
       entityType: 'CORE_FACILITY',
     };
 
-    expect(entityKindLabel(coreFacility)).toBe('Core Facility');
+    expect(entityKindLabel(coreFacility)).toBe('Core facility');
     expect(researchWebsiteLabel(coreFacility)).toBe('core facility website');
     expect(researchWebsiteCtaLabel(coreFacility)).toBe('Visit core facility website');
   });
@@ -282,6 +282,59 @@ describe('researchEntityCopy', () => {
         facultyResearch,
       ),
     ).toBe('This research includes genomic screening. This research addresses cilia.');
+  });
+
+  describe('a possessive that is the object of "Research at" keeps its lab (#6393)', () => {
+    const facultyResearch = {
+      name: 'Fixture Exemplar Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    };
+
+    it.each([
+      "Research at Fixture Exemplar's lab studies tidal sediment transport.",
+      "Research at Professor Exemplar's lab focuses on tidal sediment transport.",
+      "Research at Dr. Exemplar's lab uses tidal sediment cores.",
+      "Undergraduate research at Exemplar's lab develops tidal sensors.",
+      "Research at Exemplars' lab investigates tidal sediment transport.",
+      'Research at her lab studies tidal sediment transport.',
+      'Research at their lab is interested in tidal sediment transport.',
+    ])('leaves %j reading "lab"', (copy) => {
+      expect(sanitizeFacultyResearchCopy(copy, facultyResearch)).toBe(copy);
+    });
+
+    it('still swaps a possessive lab that is the sentence subject', () => {
+      expect(
+        sanitizeFacultyResearchCopy(
+          "Fixture Exemplar's lab studies tidal sediment transport. Her lab uses sediment cores.",
+          facultyResearch,
+        ),
+      ).toBe(
+        "Fixture Exemplar's research studies tidal sediment transport. Her research uses sediment cores.",
+      );
+    });
+
+    it('swaps a subject possessive after a sentence ending in "research at <Name>."', () => {
+      expect(
+        sanitizeFacultyResearchCopy(
+          "Fixture Exemplar conducts research at Coastal. Exemplar's lab studies tidal sediment transport.",
+          facultyResearch,
+        ),
+      ).toBe(
+        "Fixture Exemplar conducts research at Coastal. Exemplar's research studies tidal sediment transport.",
+      );
+    });
+
+    it('swaps a later subject possessive after an earlier "research at" sentence', () => {
+      expect(
+        sanitizeFacultyResearchCopy(
+          "Fixture Exemplar's research at her field station is ongoing. Her lab studies tidal sediment transport.",
+          facultyResearch,
+        ),
+      ).toBe(
+        "Fixture Exemplar's research at her field station is ongoing. Her research studies tidal sediment transport.",
+      );
+    });
   });
 
   it('strips a trailing "Research" suffix (with or without a dash separator) from the possessive name', () => {
@@ -463,7 +516,7 @@ describe('sanitizeResearchEntityCopy', () => {
 
 describe('relationshipTypeLabel', () => {
   it('maps known relationship types', () => {
-    expect(relationshipTypeLabel('AFFILIATED_LAB')).toBe('Affiliated lab');
+    expect(relationshipTypeLabel('AFFILIATED_LAB')).toBe('Affiliated');
     expect(relationshipTypeLabel('MEMBER_RESEARCH_AREA')).toBe('Member');
   });
 
@@ -483,23 +536,33 @@ describe('relationshipTypeLabel', () => {
 // value through this accept-list, so drift from the canonical enum shows up as a
 // silently smaller type universe rather than an error (#2195).
 describe('research entity type filter axis', () => {
-  it('accepts exactly the canonical entity-type enum', () => {
-    expect(researchEntityTypes.filter((value) => !isKnownResearchEntityType(value))).toEqual([]);
+  it('accepts exactly the canonical entity-type enum plus creative practice', () => {
+    expect(researchEntityTypes.filter((value) => !isKnownResearchTypeFilterValue(value))).toEqual(
+      [],
+    );
+    expect(isKnownResearchTypeFilterValue('CREATIVE_PRACTICE')).toBe(true);
+  });
+
+  it('labels the creative practice bucket with the label its cards carry (#5141)', () => {
+    expect(researchEntityTypeFilterLabel('CREATIVE_PRACTICE')).toBe(
+      entityKindLabel({ entityType: 'FACULTY_RESEARCH_AREA', creativePractice: true }),
+    );
   });
 
   it('rejects a retired type, a typo, and an absent value', () => {
-    expect(isKnownResearchEntityType('FACULTY_RESEARCH')).toBe(false);
-    expect(isKnownResearchEntityType('INDIVIDUAL_RESEARCH')).toBe(false);
-    expect(isKnownResearchEntityType('CORE_FACILTY')).toBe(false);
-    expect(isKnownResearchEntityType('')).toBe(false);
-    expect(isKnownResearchEntityType(undefined)).toBe(false);
-    expect(isKnownResearchEntityType(null)).toBe(false);
+    expect(isKnownResearchTypeFilterValue('FACULTY_RESEARCH')).toBe(false);
+    expect(isKnownResearchTypeFilterValue('INDIVIDUAL_RESEARCH')).toBe(false);
+    expect(isKnownResearchTypeFilterValue('CORE_FACILTY')).toBe(false);
+    expect(isKnownResearchTypeFilterValue('')).toBe(false);
+    expect(isKnownResearchTypeFilterValue(undefined)).toBe(false);
+    expect(isKnownResearchTypeFilterValue(null)).toBe(false);
   });
 
   it('gives every accepted type one distinct label', () => {
-    const labels = researchEntityTypes.map((value) => researchEntityTypeFilterLabel(value));
+    const values = [...researchEntityTypes, 'CREATIVE_PRACTICE'];
+    const labels = values.map((value) => researchEntityTypeFilterLabel(value));
     expect(labels.some((label) => label.trim() === '')).toBe(false);
-    expect(new Set(labels).size).toBe(researchEntityTypes.length);
+    expect(new Set(labels).size).toBe(values.length);
   });
 
   it('falls back to the raw value rather than a generic label it cannot justify', () => {

@@ -34,16 +34,28 @@
  * page, keyed by their own profile email/netid, exactly as `yseFacultyDirectoryScraper`
  * already does for YSE.
  */
+import {
+  loadLaneTitledPersonKeys,
+  type TitledPersonKeysLoader,
+} from '../utils/laneTitledPersonKeys';
 import axios from 'axios';
+import {
+  catalogDepartment,
+  catalogSchoolForDepartment,
+} from '../directoryExportDepartmentEvidence';
+import { SCHOOL_OF_MEDICINE_NAME } from '../orgUnitCanonicalization';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import type { CanonicalDepartment } from '../utils/directoryExportDepartment';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
 import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
 import { fetchFailureStatusCode } from '../utils/fetchFailure';
 import { flattenHtmlToText } from '../utils/htmlText';
-import { normalizeOrcid } from '../../utils/orcid';
+import { singleStatedOrcid } from '../utils/rosterMemberIdentityEvidence';
 import {
   classifyHarvestedResearchHomeName,
+  isLabShapedResearchHome,
   personSurnamesFromDisplayNames,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -56,6 +68,9 @@ import {
   netidFromEmail,
   splitName,
 } from '../utils/scraperHelpers';
+import { personNameKey } from '../rekeyedPersonKeyPlan';
+import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKeyRetirement';
+import { asYaleNetid } from '../../utils/yaleNetid';
 import {
   classifyUserType,
   isResearchSupportStaffTitle,
@@ -77,11 +92,16 @@ import {
   type LabUrlEvidenceLoader,
   type LabUrlIsUnusable,
 } from '../utils/labUrlEvidence';
+import {
+  coLedGroupSiteFor,
+  loadCoLedSiteIndex,
+  type CoLedSiteIndexLoader,
+  type LabUrlIsCoLedGroupSite,
+} from '../utils/coLedGroupSites';
 
 const DIRECTORY_URL = 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/';
 const SOURCE_KEY = 'ysm-faculty-directory';
 const SCHOOL_NAME = 'Yale School of Medicine';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PROFILE_FETCH_LOOKAHEAD = 4;
 export const REFUSED_PROFILE_RETRY_PAUSE_MS = 60_000;
@@ -113,9 +133,25 @@ export interface YsmFacultyProfile {
   profileUrl: string;
   slug: string;
   title?: string;
+  /**
+   * What the mint screens and `userType` read: the HR title when the page carries one. A
+   * hospital staff affiliate can display a clinical rank, and the screens were measured
+   * against the HR title (#5578).
+   */
+  screeningTitle?: string;
   email?: string;
   orcid?: string;
   departments: string[];
+  /**
+   * The profile's stated appointments, primary first, without the `organizations` list the
+   * `departments` label carries (centers, houses, labs, societies). Only these can be a home
+   * department (#6070).
+   */
+  appointmentDepartments: string[];
+  /** The units of the appointments the page marks `Primary`; a secondary is never one (#6160). */
+  primaryAppointmentUnits?: string[];
+  /** The one catalog school those primary units belong to, when they name exactly one (#6160). */
+  primaryAppointmentSchool?: string;
   researchAreas: string[];
   description?: string;
   bio?: string;
@@ -157,7 +193,10 @@ function decodeEmbeddedJson(raw: string): unknown | null {
 
 function parsePageData(html: string): Record<string, unknown> | null {
   if (!html) return null;
-  const $ = cheerio.load(html);
+  return ysmPageDataFrom(cheerio.load(html));
+}
+
+export function ysmPageDataFrom($: cheerio.CheerioAPI): Record<string, unknown> | null {
   const targeted = $('script#page-data').first().html();
   if (targeted) {
     const parsed = decodeEmbeddedJson(targeted);
@@ -174,7 +213,9 @@ function parsePageData(html: string): Record<string, unknown> | null {
   return found;
 }
 
-function mainComponentsOf(pageData: Record<string, unknown> | null): Record<string, unknown>[] {
+export function mainComponentsOf(
+  pageData: Record<string, unknown> | null,
+): Record<string, unknown>[] {
   const components = pageData?.mainComponents;
   return Array.isArray(components) ? (components as Record<string, unknown>[]) : [];
 }
@@ -240,12 +281,9 @@ export function parseYsmFacultyDirectory(html: string): RawYsmFaculty[] {
   return Array.from(bySlug.values());
 }
 
-function departmentsFromAboutSection(about: Record<string, unknown>): string[] {
+function appointmentDepartmentsFromAboutSection(about: Record<string, unknown>): string[] {
   const appointments = Array.isArray(about.appointments)
     ? (about.appointments as Record<string, unknown>[])
-    : [];
-  const organizations = Array.isArray(about.organizations)
-    ? (about.organizations as Record<string, unknown>[])
     : [];
   const primary = appointments
     .filter((a) => textValue(a.type) === 'Primary')
@@ -253,8 +291,66 @@ function departmentsFromAboutSection(about: Record<string, unknown>): string[] {
   const secondary = appointments
     .filter((a) => textValue(a.type) !== 'Primary')
     .map((a) => textValue(a.organizationName));
+  return uniqueStrings([...primary, ...secondary]).slice(0, MAX_DEPARTMENTS);
+}
+
+function primaryAppointmentUnitsFromAboutSection(about: Record<string, unknown>): string[] {
+  const appointments = Array.isArray(about.appointments)
+    ? (about.appointments as Record<string, unknown>[])
+    : [];
+  return uniqueStrings(
+    appointments
+      .filter((a) => textValue(a.type) === 'Primary')
+      .map((a) => textValue(a.organizationName)),
+  );
+}
+
+export type SchoolForDepartment = (department: string) => string | undefined;
+
+export function ysmPrimaryAppointmentSchool(
+  profile: Pick<YsmFacultyProfile, 'primaryAppointmentUnits'>,
+  schoolForDepartment: SchoolForDepartment | null,
+): string | undefined {
+  const units = profile.primaryAppointmentUnits ?? [];
+  if (!schoolForDepartment || units.length === 0) return undefined;
+  const schools = units.map((unit) => schoolForDepartment(unit));
+  if (schools.some((school) => !school)) return undefined;
+  const distinct = uniqueStrings(schools);
+  return distinct.length === 1 ? distinct[0] : undefined;
+}
+
+function ysmResearchEntitySchool(profile: Pick<YsmFacultyProfile, 'primaryAppointmentSchool'>) {
+  const stated = profile.primaryAppointmentSchool;
+  return stated && stated !== SCHOOL_OF_MEDICINE_NAME ? stated : SCHOOL_NAME;
+}
+
+function departmentsFromAboutSection(about: Record<string, unknown>): string[] {
+  const organizations = Array.isArray(about.organizations)
+    ? (about.organizations as Record<string, unknown>[])
+    : [];
   const orgNames = organizations.map((o) => textValue(o.name));
-  return uniqueStrings([...primary, ...secondary, ...orgNames]).slice(0, MAX_DEPARTMENTS);
+  return uniqueStrings([...appointmentDepartmentsFromAboutSection(about), ...orgNames]).slice(
+    0,
+    MAX_DEPARTMENTS,
+  );
+}
+
+/**
+ * The home department a profile states: the catalog's name for its first appointment, when
+ * the department catalog names it (#6070), so an alias spelling is stored as the catalog name
+ * the way the official-profile backfill stores it (#6099). A later appointment is never
+ * promoted in its place (`docs/decisions.md`, 2026-11-13), an organization is never one, and
+ * an appointment the catalog does not name (a program, a center, a lab) is no department claim.
+ * With no catalog the lane emits none, failing closed like the official-profile backfill (#6099),
+ * because it cannot tell a department from a center then.
+ */
+export function ysmHomeDepartment(
+  profile: Pick<YsmFacultyProfile, 'appointmentDepartments'>,
+  canonicalDepartment: CanonicalDepartment | null,
+): string | undefined {
+  if (!canonicalDepartment) return undefined;
+  const [first] = profile.appointmentDepartments;
+  return first ? canonicalDepartment(first) : undefined;
 }
 
 function extractPersonEmail(rawEmail: unknown, name: string): string | undefined {
@@ -263,15 +359,15 @@ function extractPersonEmail(rawEmail: unknown, name: string): string | undefined
   return email;
 }
 
+/**
+ * The profile's own ORCID list names its subject's iD only when it holds exactly one: a list of
+ * several does not say which is the subject's, so its first entry is no evidence (#5932).
+ */
 function extractOrcid(research: Record<string, unknown>): string | undefined {
   const entries = Array.isArray(research.orcids)
     ? (research.orcids as Record<string, unknown>[])
     : [];
-  for (const entry of entries) {
-    const normalized = normalizeOrcid(textValue(entry.url) || textValue(entry.text));
-    if (normalized) return normalized;
-  }
-  return undefined;
+  return singleStatedOrcid(entries.map((entry) => textValue(entry.url) || textValue(entry.text)));
 }
 
 function extractLabWebsite(
@@ -292,6 +388,19 @@ function extractLabWebsite(
     name: url ? textValue(raw?.name) || undefined : undefined,
     description: url ? htmlToText(raw?.description) || undefined : undefined,
   };
+}
+
+/**
+ * The leading title of the page's header title block, which the page renders and its
+ * JSON-LD `jobTitle` repeats. `about.workdayTitle` is the HR record instead, and it can
+ * be a recruiting placeholder or a job code ("Medical School Recruit - ...") while the
+ * page displays the person's appointment (#5578), so it is read only when the header
+ * states no title.
+ */
+function displayedProfileTitle(model: Record<string, unknown>): string {
+  const header = (model.header || {}) as Record<string, unknown>;
+  const titles = Array.isArray(header.titles) ? header.titles : [];
+  return titles.map((title) => textValue(title)).find(Boolean) || '';
 }
 
 /**
@@ -332,10 +441,13 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
     name,
     profileUrl: faculty.profileUrl,
     slug: faculty.slug,
-    title: textValue(about.workdayTitle) || undefined,
+    title: displayedProfileTitle(model) || textValue(about.workdayTitle) || undefined,
+    screeningTitle: textValue(about.workdayTitle) || undefined,
     email: extractPersonEmail(getInTouch.email, name),
     orcid: extractOrcid(research),
     departments: departmentsFromAboutSection(about),
+    appointmentDepartments: appointmentDepartmentsFromAboutSection(about),
+    primaryAppointmentUnits: primaryAppointmentUnitsFromAboutSection(about),
     researchAreas,
     description: clippedText(htmlToText(research.researchDescription)),
     bio: clippedText(htmlToText(about.bio)),
@@ -352,7 +464,26 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
  * Every observation is sourced to the individual profile page, never the
  * directory root.
  */
-export function facultyToUserObservations(profile: YsmFacultyProfile): {
+/**
+ * A profile screened out of person enrichment (a trainee, a non-research title, no research
+ * section) still states the person's own title first-hand. When this lane has titled that
+ * person before, the title alone is re-emitted so the read stays fresh and the stored title
+ * settles to the page (#5801). A person the lane never titled gains nothing.
+ */
+export function screenedProfileTitleObservations(
+  profile: YsmFacultyProfile,
+  titledPersonKeys: ReadonlySet<string>,
+): ObservationInput[] {
+  if (!profile.title) return [];
+  const { observations, entityKey } = facultyToUserObservations(profile);
+  if (!titledPersonKeys.has(entityKey)) return [];
+  return observations.filter((observation) => observation.field === 'title');
+}
+
+export function facultyToUserObservations(
+  profile: YsmFacultyProfile,
+  canonicalDepartment: CanonicalDepartment | null = null,
+): {
   observations: ObservationInput[];
   entityKey: string;
 } {
@@ -362,12 +493,14 @@ export function facultyToUserObservations(profile: YsmFacultyProfile): {
   const base = { entityType: 'user' as const, entityKey, sourceUrl: profile.profileUrl };
   const obs: ObservationInput[] = [];
 
-  if (netid) obs.push({ ...base, field: 'netid', value: netid });
+  const statedNetid = asYaleNetid(netid);
+  if (statedNetid) obs.push({ ...base, field: 'netid', value: statedNetid });
   if (first) obs.push({ ...base, field: 'fname', value: first });
   if (last) obs.push({ ...base, field: 'lname', value: last });
-  obs.push({ ...base, field: 'userType', value: classifyUserType(profile.title) });
+  obs.push({ ...base, field: 'userType', value: classifyUserType(profile.screeningTitle) });
+  const homeDepartment = ysmHomeDepartment(profile, canonicalDepartment);
+  if (homeDepartment) obs.push({ ...base, field: 'primaryDepartment', value: homeDepartment });
   if (profile.departments.length > 0) {
-    obs.push({ ...base, field: 'primaryDepartment', value: profile.departments[0] });
     obs.push({ ...base, field: 'departments', value: profile.departments });
   }
   if (profile.email) obs.push({ ...base, field: 'email', value: profile.email });
@@ -480,6 +613,7 @@ export function facultyToResearchEntityObservations(
   fallbackUserKey: string,
   knownPersonSurnames: ReadonlySet<string>,
   labUrlIsUnusable: LabUrlIsUnusable = () => false,
+  labUrlIsCoLedGroupSite: LabUrlIsCoLedGroupSite = () => false,
 ): ObservationInput[] {
   const linkedSite = classifyProfileLabWebsite(profile, knownPersonSurnames);
   if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) return [];
@@ -499,7 +633,14 @@ export function facultyToResearchEntityObservations(
     linkIsOwnSite &&
     !linkedSite.adoptableName &&
     isPersonalNameDomainWebsite(profile.labUrl, profile.name);
-  const hasLab = linkIsOwnSite && !linksPersonalWebsite;
+  // A slot naming an organization the person leads keeps the site as their website, but the
+  // organization's name and type stay on the organization's own row (#5283).
+  const linksAnOrganization =
+    Boolean(linkedSite.adoptableName) &&
+    !isLabShapedResearchHome(linkedSite.adoptableName, profile.labUrl);
+  const linksCoLedGroupSite = linkIsOwnSite && labUrlIsCoLedGroupSite(profile.labUrl!);
+  const hasLab =
+    linkIsOwnSite && !linksPersonalWebsite && !linksAnOrganization && !linksCoLedGroupSite;
 
   const slug = researchEntityKeyOf(profile);
   const entityName = hasLab
@@ -531,7 +672,7 @@ export function facultyToResearchEntityObservations(
     { ...base, field: 'name', value: entityName },
     { ...base, field: 'kind', value: hasLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: hasLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
-    { ...base, field: 'school', value: SCHOOL_NAME },
+    { ...base, field: 'school', value: ysmResearchEntitySchool(profile) },
     { ...base, field: 'sourceUrls', value: sourceUrls },
     {
       ...base,
@@ -563,6 +704,15 @@ export function facultyToResearchEntityObservations(
   return obs;
 }
 
+function directoryNameCensus(
+  roster: readonly RawYsmFaculty[],
+): Array<{ nameKey: string; identity: string }> {
+  return roster.map((entry) => {
+    const { first, last } = splitName(entry.name);
+    return { nameKey: personNameKey(first, last), identity: entry.slug };
+  });
+}
+
 function matchesOnlyFilter(faculty: RawYsmFaculty, only: string[]): boolean {
   const normalized = new Set(
     [faculty.slug, faculty.name, faculty.profileUrl].map((value) => value.toLowerCase().trim()),
@@ -586,7 +736,6 @@ async function fetchHtml(
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -608,6 +757,12 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     private readonly pause: (ms: number) => Promise<void> = (ms) =>
       new Promise((resolve) => setTimeout(resolve, ms)),
     private readonly probePage?: LanePageProbe,
+    private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
+    private readonly titledPersonKeysLoader: TitledPersonKeysLoader = loadLaneTitledPersonKeys,
+    private readonly catalogDepartmentLoader: () => Promise<CanonicalDepartment | null> = () =>
+      mongooseConnectionWasOpened() ? catalogDepartment() : Promise.resolve(null),
+    private readonly catalogSchoolLoader: () => Promise<SchoolForDepartment | null> = () =>
+      mongooseConnectionWasOpened() ? catalogSchoolForDepartment() : Promise.resolve(null),
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -644,9 +799,15 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     // cannot be narrowed to research roles here - a role needs the person's own
     // profile, and this run only fetches the limited slice (#2368/#2369).
     const directorySurnames = personSurnamesFromDisplayNames(roster.map((entry) => entry.name));
+    const canonicalDepartment = await this.catalogDepartmentLoader();
+    const schoolForDepartment = await this.catalogSchoolLoader();
+    const rekeyReads = new RekeyedPersonReads(SOURCE_KEY);
+    rekeyReads.recordLaneNames(directoryNameCensus(roster));
     const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
       limited.map((faculty) => `ysm-faculty-${faculty.slug}`),
     );
+    const coLedSites = await this.coLedSiteIndexLoader();
+    const titledPersonKeys = await this.titledPersonKeysLoader(SOURCE_KEY);
 
     let totalObs = 0;
     let profilesScanned = 0;
@@ -658,6 +819,15 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     let labCount = 0;
     let withdrawnLabCount = 0;
     let areaCount = 0;
+
+    let screenedTitlesRefreshed = 0;
+    const emitScreenedProfileTitle = async (profile: YsmFacultyProfile): Promise<number> => {
+      const refresh = screenedProfileTitleObservations(profile, titledPersonKeys);
+      if (refresh.length === 0) return 0;
+      await ctx.emit(refresh);
+      screenedTitlesRefreshed += 1;
+      return refresh.length;
+    };
 
     const emitSkippedProfileRefusal = async (profile: YsmFacultyProfile): Promise<number> => {
       const refusal = skippedProfileRefusedWebsiteObservations(profile);
@@ -689,7 +859,9 @@ export class YsmFacultyDirectoryScraper implements IScraper {
 
         const profile = extractProfile(profileHtml, faculty);
         if (!profile) return;
-        if (looksLikeNonResearchTitle(profile.title)) {
+        rekeyReads.recordListingRead(profile.profileUrl, { complete: true });
+        if (looksLikeNonResearchTitle(profile.screeningTitle)) {
+          totalObs += await emitScreenedProfileTitle(profile);
           totalObs += await emitSkippedProfileRefusal(profile);
           return;
         }
@@ -698,16 +870,24 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         // (#2304, the mint-side cause of the #2285 grafts). A lab technician,
         // instrument technologist or research librarian works in somebody else's
         // lab for the same reason, and matched neither screen before #3410.
-        if (isSubordinateResearchRank(profile.title)) {
+        if (isSubordinateResearchRank(profile.screeningTitle)) {
           subordinateRankSkipped += 1;
+          totalObs += await emitScreenedProfileTitle(profile);
           totalObs += await emitSkippedProfileRefusal(profile);
           return;
         }
-        if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) return;
+        if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) {
+          totalObs += await emitScreenedProfileTitle(profile);
+          return;
+        }
 
         researchersEnriched += 1;
-        const { observations: userObs, entityKey } = facultyToUserObservations(profile);
+        const { observations: userObs, entityKey } = facultyToUserObservations(
+          profile,
+          canonicalDepartment,
+        );
         await ctx.emit(userObs);
+        rekeyReads.recordPerson(userObs);
         totalObs += userObs.length;
 
         // After the person observations, not before them, because a support-staff
@@ -715,14 +895,14 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         // retirement pass keys on, so screening ahead of the emit would stop
         // refreshing the very claim that judges the row (#3410). The two screens above
         // still skip person enrichment, which predates this change.
-        if (isResearchSupportStaffTitle(profile.title)) {
+        if (isResearchSupportStaffTitle(profile.screeningTitle)) {
           supportStaffSkipped += 1;
           totalObs += await emitSkippedProfileRefusal(profile);
           return;
         }
 
         if (
-          mintsNoResearchEntityAsTeachingAppointment(profile.title, {
+          mintsNoResearchEntityAsTeachingAppointment(profile.screeningTitle, {
             fullDescription: profile.description,
           })
         ) {
@@ -732,10 +912,18 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         }
 
         const entityObs = facultyToResearchEntityObservations(
-          profile,
+          {
+            ...profile,
+            primaryAppointmentSchool: ysmPrimaryAppointmentSchool(profile, schoolForDepartment),
+          },
           entityKey,
           directorySurnames,
           labUrlUnusabilityFor(labUrlEvidenceBySlug, `ysm-faculty-${profile.slug}`),
+          coLedGroupSiteFor(coLedSites, `ysm-faculty-${profile.slug}`, {
+            email: profile.email,
+            netid: netidFromEmail(profile.email) ?? undefined,
+            profileUrl: profile.profileUrl,
+          }),
         );
         if (entityObs.length > 0) {
           await ctx.emit(entityObs);
@@ -773,6 +961,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       only.length ? { entityKeys: selected.map(researchEntityKeyOf) } : undefined,
     );
     totalObs += pageHealth.gone + pageHealth.restored;
+    const rekeyed = await settleRekeyedPersonReads(rekeyReads, ctx);
 
     ctx.log(
       `Emitted ${totalObs} observations across ${researchersEnriched} researchers / ${entityCount} entities ` +
@@ -780,7 +969,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         `${areaCount} with research areas) of ${profilesScanned} profiles scanned; ` +
         `${subordinateRankSkipped} skipped as subordinate research ranks, ` +
         `${supportStaffSkipped} skipped as research-support staff, ` +
-        `${teachingAppointmentSkipped} skipped as teaching appointments; ` +
+        `${teachingAppointmentSkipped} skipped as teaching appointments, ` +
+        `${screenedTitlesRefreshed} screened profiles' titles refreshed; ` +
         `${refusedProfiles.length} refused on the first pass, ${refusedProfilesRecovered} recovered on the retry, ${refusedProfilesLost} lost`,
     );
 
@@ -793,7 +983,10 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         `${subordinateRankSkipped} subordinate ranks skipped, ` +
         `${supportStaffSkipped} research-support staff skipped, ` +
         `${teachingAppointmentSkipped} teaching appointments skipped, ` +
-        `${refusedProfiles.length} profiles refused then ${refusedProfilesRecovered} recovered on a second pass`,
+        `${screenedTitlesRefreshed} screened profiles' titles refreshed, ` +
+        `${refusedProfiles.length} profiles refused then ${refusedProfilesRecovered} recovered on a second pass` +
+        (rekeyed.note ? `; ${rekeyed.note}` : ''),
+      ...(rekeyed.partialFailure ? { partialFailures: [rekeyed.partialFailure] } : {}),
     };
   }
 }

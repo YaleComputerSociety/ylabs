@@ -3,6 +3,7 @@ import { RESEARCH_AREA_ALIASES } from '../../scrapers/researchAreaCanonicalizati
 import {
   buildResearchEntityMeiliSynonyms,
   DEPARTMENT_SHORTHAND_ALIASES,
+  QUERY_ACRONYM_PHRASES,
   QUERY_TOPIC_ALIASES,
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
   RESEARCH_ENTITY_MEILI_SYNONYMS,
@@ -86,6 +87,16 @@ describe('searchTopicAliases source of truth', () => {
     expect(RESEARCH_ENTITY_MEILI_SYNONYMS['mental health']).toEqual(['psychiatry']);
     expect(RESEARCH_ENTITY_MEILI_SYNONYMS.pediatrics ?? []).not.toContain('kids');
     expect(RESEARCH_ENTITY_MEILI_SYNONYMS.ir).toBeUndefined();
+  });
+
+  it('widens an aerospace word one way to the fields the corpus uses for that work (#5512)', () => {
+    for (const studentWord of ['supersonic', 'hypersonic', 'aerospace', 'sonic boom', 'rockets']) {
+      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[studentWord]).toEqual(
+        expect.arrayContaining(['fluid dynamics', 'combustion', 'propulsion']),
+      );
+    }
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS['fluid dynamics'] ?? []).not.toContain('supersonic');
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.combustion ?? []).not.toContain('rockets');
   });
 
   it('makes a free-text-guarded shorthand a one-way synonym, so no topic expands to "cv" (#3797)', () => {
@@ -272,5 +283,38 @@ describe('working-style vernacular (wet lab / dry lab)', () => {
       expect(RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS).not.toContain(phrase);
     }
     expect(RESEARCH_ENTITY_MEILI_SYNONYMS['wet lab']).toBeUndefined();
+  });
+});
+
+describe('acronyms searched as their phrase (#5169)', () => {
+  it('maps each acronym typed alone to the phrase it stands for', () => {
+    expect(QUERY_ACRONYM_PHRASES).toMatchObject({
+      ai: 'artificial intelligence',
+      ml: 'machine learning',
+      nlp: 'natural language processing',
+      cv: 'computer vision',
+      ir: 'international relations',
+      llm: 'large language models',
+      un: 'united nations',
+    });
+  });
+
+  it('leaves acronyms the corpus carries as themselves alone', () => {
+    for (const acronym of ['rna', 'dna', 'vlsi', 'pcos', 'cpg', 'cos']) {
+      expect(QUERY_ACRONYM_PHRASES[acronym]).toBeUndefined();
+    }
+  });
+
+  it('changes no index setting, so it needs no settings push', () => {
+    const clustersWithoutAcronymPhrases = RESEARCH_TOPIC_ALIAS_CLUSTERS.map(
+      ({ acronymPhrases: _acronymPhrases, ...cluster }) => cluster,
+    );
+    expect(
+      buildResearchEntityMeiliSynonyms(clustersWithoutAcronymPhrases, RESEARCH_AREA_ALIASES),
+    ).toEqual(RESEARCH_ENTITY_MEILI_SYNONYMS);
+    for (const acronym of ['llm', 'llms', 'un']) {
+      expect(RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS).not.toContain(acronym);
+      expect(QUERY_TOPIC_ALIASES[acronym]).toBeUndefined();
+    }
   });
 });

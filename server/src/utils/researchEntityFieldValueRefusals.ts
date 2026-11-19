@@ -31,6 +31,7 @@
  * be retired is the permanent veto this exists to avoid.
  */
 import { normalizeWebsiteUrlIdentityKey } from '../scripts/researchEntityPiDedupeCore';
+import { foldDefaultDocumentLeaf } from './websiteUrlIdentityKey';
 import { type ResearchHomeWebsiteUrlRefusal } from './researchHomeWebsiteUrl';
 
 /**
@@ -40,6 +41,11 @@ import { type ResearchHomeWebsiteUrlRefusal } from './researchHomeWebsiteUrl';
  */
 export const perRowFieldValueRefusalRules = [
   'wrong_owner',
+  // A person value live evidence asserts for so many subjects that it is nobody's own
+  // (#5645), on a person record no resolve reaches (#5641).
+  'over_shared_value',
+  // A person value read from another person's page (#5606, #5641).
+  'other_persons_page',
   'not_this_rows_research',
   'superseded_by_better_source',
   'operator_judgement',
@@ -62,6 +68,7 @@ export interface FieldValueRefusal {
   sourceName?: string;
   attributedSourceNames?: string[];
   refusedBy: string;
+  derivedBy?: string;
   refusedAt: Date;
   note: string;
   evidenceUrl?: string;
@@ -78,25 +85,24 @@ export const FIELD_VALUE_REFUSALS_PATH = 'fieldValueRefusals';
  */
 const URL_VALUED_FIELDS: ReadonlySet<string> = new Set(['websiteUrl', 'website']);
 
-/**
- * A default document is the directory it sits in, so `/lab/x/index.aspx` and `/lab/x/`
- * are one page and must be one refusal (#3191).
- *
- * Folded here rather than in `normalizeWebsiteUrlIdentityKey`, which is deliberate:
- * that key is load bearing for entity dedupe, and widening what counts as the same URL
- * there would change which rows merge. The refusal key is this module's to define.
- *
- * Measured honestly, this is prevention rather than repair. The shape occurred once in
- * 105 lock instances, and none of the 16 currently reachable values is a variant
- * spelling of an existing refusal. It is folded because a default document IS the
- * directory, not because the corpus is full of them: without it, that one row needed a
- * second refusal recorded by hand.
- */
-const DEFAULT_DOCUMENT_LEAF = /\/(?:index|default)\.(?:aspx?|html?|php|cfm)$/i;
+// The person-record URL fields (#5641) and citation entries (#6012) keep the query, because a
+// query names the page there: every Google Scholar profile is `scholar.google.com/citations?user=<id>`.
+const QUERY_IDENTIFIED_URL_FIELDS: ReadonlySet<string> = new Set([
+  'profileLink',
+  'imageUrl',
+  'sourceUrls',
+]);
 
-export function foldDefaultDocumentLeaf(key: string): string {
-  return key.replace(DEFAULT_DOCUMENT_LEAF, '');
+function queryIdentifiedUrlKey(text: string): string {
+  const pageKey = foldDefaultDocumentLeaf(normalizeWebsiteUrlIdentityKey(text));
+  if (!pageKey) return text.toLowerCase();
+  const params = new URL(text).searchParams;
+  params.sort();
+  const query = params.toString();
+  return query ? `${pageKey}?${query}` : pageKey;
 }
+
+export { foldDefaultDocumentLeaf };
 
 /**
  * Internal whitespace is collapsed for the same reason a trailing space is trimmed: one
@@ -111,16 +117,51 @@ export function foldDefaultDocumentLeaf(key: string): string {
  */
 const collapseRefusalWhitespace = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
+/**
+ * A list of records, such as a past-advisee list, keys each record by its own fields in a
+ * fixed order: read as text every record is "[object Object]", so a refusal of one list
+ * would match any other list of the same length on that row.
+ */
+const stableRecordKey = (entry: object): string =>
+  JSON.stringify(
+    Object.entries(entry)
+      .filter(
+        ([key, fieldValue]) => key !== '_id' && fieldValue !== null && fieldValue !== undefined,
+      )
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+  );
+
 export function fieldValueRefusalKey(field: string, value: unknown): string {
   if (Array.isArray(value)) {
-    return JSON.stringify(value.map((entry) => collapseRefusalWhitespace(String(entry))));
+    return JSON.stringify(
+      value.map((entry) =>
+        entry !== null && typeof entry === 'object'
+          ? stableRecordKey(entry)
+          : collapseRefusalWhitespace(String(entry)),
+      ),
+    );
   }
   if (value === null || value === undefined) return '';
   if (typeof value !== 'string') return JSON.stringify(value);
   const text = collapseRefusalWhitespace(value);
   if (!text) return '';
+  if (QUERY_IDENTIFIED_URL_FIELDS.has(field)) return queryIdentifiedUrlKey(text);
   if (!URL_VALUED_FIELDS.has(field)) return text.toLowerCase();
   return foldDefaultDocumentLeaf(normalizeWebsiteUrlIdentityKey(text) || text.toLowerCase());
+}
+
+export const ENTRY_REFUSABLE_LIST_FIELDS: ReadonlySet<string> = new Set(['sourceUrls']);
+
+function listEntryKeys(field: string, entry: string): string[] {
+  const textKey = collapseRefusalWhitespace(entry).toLowerCase();
+  return [...new Set([fieldValueRefusalKey(field, entry), textKey].filter(Boolean))];
+}
+
+function refusalKeyMatches(field: string, value: unknown, valueKey: string): boolean {
+  if (ENTRY_REFUSABLE_LIST_FIELDS.has(field) && typeof value === 'string') {
+    return listEntryKeys(field, value).includes(valueKey);
+  }
+  return fieldValueRefusalKey(field, value) === valueKey;
 }
 
 function assertRefusableFieldName(field: string): void {
@@ -179,6 +220,7 @@ export interface FieldValueRefusalDeclaration {
   rule: FieldValueRefusalRule;
   sourceName?: string;
   refusedBy: string;
+  derivedBy?: string;
   note?: string;
   evidenceUrl?: string;
   refusedAt?: Date;
@@ -214,15 +256,21 @@ export function planFieldValueRefusal(
     );
   }
   const existing = refusalList(currentFieldValueRefusals, field);
-  if (existing.some((refusal) => refusal.valueKey === valueKey && !refusal.withdrawnAt)) {
+  if (
+    existing.some(
+      (refusal) => !refusal.withdrawnAt && refusalKeyMatches(field, value, refusal.valueKey),
+    )
+  ) {
     return { [fieldValueRefusalsPath(field)]: existing };
   }
   const sourceName = declaration.sourceName?.trim();
+  const derivedBy = declaration.derivedBy?.trim();
   const refusal: FieldValueRefusal = {
     valueKey,
     rule,
     ...(sourceName ? { sourceName } : {}),
     refusedBy: refusedBy.trim(),
+    ...(derivedBy ? { derivedBy } : {}),
     refusedAt: declaration.refusedAt ?? new Date(),
     note: declaration.note ?? '',
     ...(declaration.evidenceUrl ? { evidenceUrl: declaration.evidenceUrl } : {}),
@@ -246,10 +294,34 @@ export function planFieldValueRefusalWithdrawal(
   if (!withdrawnReason.trim()) {
     throw new Error(`Withdrawing a refusal at ${field} requires a reason.`);
   }
-  const key = fieldValueRefusalKey(field, value);
   return {
     [fieldValueRefusalsPath(field)]: refusalList(currentFieldValueRefusals, field).map((refusal) =>
-      refusal.valueKey === key && !refusal.withdrawnAt
+      !refusal.withdrawnAt && refusalKeyMatches(field, value, refusal.valueKey)
+        ? { ...refusal, withdrawnAt, withdrawnReason: withdrawnReason.trim() }
+        : refusal,
+    ),
+  };
+}
+
+/**
+ * Withdraws only the live refusals of one value that `isOwn` claims, so a stage
+ * re-deriving its own refusals can never retire an operator's refusal of the same value.
+ */
+export function planOwnFieldValueRefusalWithdrawal(
+  currentFieldValueRefusals: unknown,
+  field: string,
+  valueKey: string,
+  isOwn: (refusal: FieldValueRefusal) => boolean,
+  withdrawnReason: string,
+  withdrawnAt: Date = new Date(),
+): Record<string, unknown> {
+  assertRefusableFieldName(field);
+  if (!withdrawnReason.trim()) {
+    throw new Error(`Withdrawing a refusal at ${field} requires a reason.`);
+  }
+  return {
+    [fieldValueRefusalsPath(field)]: refusalList(currentFieldValueRefusals, field).map((refusal) =>
+      refusal.valueKey === valueKey && !refusal.withdrawnAt && isOwn(refusal)
         ? { ...refusal, withdrawnAt, withdrawnReason: withdrawnReason.trim() }
         : refusal,
     ),
@@ -277,10 +349,89 @@ export function refusedResolverObservations<T extends RefusableResolverObservati
   const refused: Array<{ field: string; rule: FieldValueRefusalRule }> = [];
   for (const observation of observations) {
     const rule = refusedValueRule(fieldValueRefusals, observation.field, observation.value);
-    if (rule) refused.push({ field: observation.field, rule });
-    else kept.push(observation);
+    if (rule) {
+      refused.push({ field: observation.field, rule });
+      continue;
+    }
+    const screened = withoutRefusedListEntries(fieldValueRefusals, observation);
+    refused.push(...screened.refused);
+    if (screened.kept) kept.push(screened.kept);
   }
   return { kept, refused };
+}
+
+function refusedListEntryRule(
+  fieldValueRefusals: unknown,
+  field: string,
+  entry: unknown,
+): FieldValueRefusalRule | undefined {
+  if (!ENTRY_REFUSABLE_LIST_FIELDS.has(field) || typeof entry !== 'string') return undefined;
+  return liveFieldValueRefusals(fieldValueRefusals, field).find((refusal) =>
+    refusalKeyMatches(field, entry, refusal.valueKey),
+  )?.rule;
+}
+
+export function entryIsRefused(
+  fieldValueRefusals: unknown,
+  field: string,
+  entry: unknown,
+): boolean {
+  return refusedListEntryRule(fieldValueRefusals, field, entry) !== undefined;
+}
+
+function withoutRefusedListEntries<T extends RefusableResolverObservation>(
+  fieldValueRefusals: unknown,
+  observation: T,
+): { kept?: T; refused: Array<{ field: string; rule: FieldValueRefusalRule }> } {
+  if (!ENTRY_REFUSABLE_LIST_FIELDS.has(observation.field) || !Array.isArray(observation.value)) {
+    return { kept: observation, refused: [] };
+  }
+  const refused: Array<{ field: string; rule: FieldValueRefusalRule }> = [];
+  const remaining = observation.value.filter((entry) => {
+    const rule = refusedListEntryRule(fieldValueRefusals, observation.field, entry);
+    if (rule) refused.push({ field: observation.field, rule });
+    return !rule;
+  });
+  if (refused.length === 0) return { kept: observation, refused };
+  return remaining.length > 0
+    ? { kept: { ...observation, value: remaining }, refused }
+    : { refused };
+}
+
+export interface ListEntryRefusalRemoval {
+  observations: number;
+  entries: number;
+  storedListCarriesEntry: boolean;
+}
+
+export function planListEntryRefusalRemoval(input: {
+  field: string;
+  value: unknown;
+  observationValues: readonly unknown[];
+  storedValue: unknown;
+}): ListEntryRefusalRemoval | undefined {
+  if (!ENTRY_REFUSABLE_LIST_FIELDS.has(input.field) || typeof input.value !== 'string') {
+    return undefined;
+  }
+  const key = fieldValueRefusalKey(input.field, input.value);
+  if (!key) return undefined;
+  const matches = (entry: unknown) =>
+    typeof entry === 'string' && fieldValueRefusalKey(input.field, entry) === key;
+  let observations = 0;
+  let entries = 0;
+  for (const value of input.observationValues) {
+    if (!Array.isArray(value)) continue;
+    const hits = value.filter(matches).length;
+    if (hits > 0) {
+      observations += 1;
+      entries += hits;
+    }
+  }
+  return {
+    observations,
+    entries,
+    storedListCarriesEntry: Array.isArray(input.storedValue) && input.storedValue.some(matches),
+  };
 }
 
 const URL_EVIDENCE_FIELDS = ['websiteUrl', 'website', 'sourceUrls'];
@@ -319,10 +470,10 @@ export function observationAssertsRefusedValue(
   observation: { value?: unknown },
 ): boolean {
   return (
-    fieldValueRefusalKey(field, observation.value) === valueKey ||
+    refusalKeyMatches(field, observation.value, valueKey) ||
     (Array.isArray(observation.value) &&
-      observedEntries(observation.value).some(
-        (entry) => fieldValueRefusalKey(field, entryValue(entry)) === valueKey,
+      observedEntries(observation.value).some((entry) =>
+        refusalKeyMatches(field, entryValue(entry), valueKey),
       ))
   );
 }

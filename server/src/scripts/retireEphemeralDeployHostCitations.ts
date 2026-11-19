@@ -35,6 +35,7 @@ import {
   type DeployHostEntityUrlRow,
   planDeployHostCitationRetirement,
 } from './retireEphemeralDeployHostCitationsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -99,7 +100,9 @@ export interface RetireDeployHostCitationsResult {
  * different rules.
  */
 function deployHostRegex(): { $regex: string; $options: string } {
-  const escaped = EPHEMERAL_DEPLOY_HOST_DOMAINS.map((domain) => domain.replace(/\./g, '\\.'));
+  const escaped = EPHEMERAL_DEPLOY_HOST_DOMAINS.map((domain) =>
+    domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  );
   return { $regex: `(${escaped.join('|')})`, $options: 'i' };
 }
 
@@ -233,7 +236,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         safeOutput,
         JSON.stringify(
           { generatedAt: new Date().toISOString(), environment: guard.environment, result },

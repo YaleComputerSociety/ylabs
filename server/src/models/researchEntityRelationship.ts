@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import { archiveAttributionFields, enforceArchiveAttribution } from './entityArchival';
 
 /**

@@ -34,6 +34,8 @@ import { ScrapeRun } from '../../models/scrapeRun';
 import { dedupeAccountlessResearcherShells } from '../../scripts/dedupeAccountlessResearcherShells';
 import { getResearchGroupDetail } from '../../services/researchGroupService';
 import { materializeFromRun } from '../entityMaterializer';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
+import { resetDirectoryNetidsByAddressCache } from '../directoryContradictedProfileNetid';
 import { appendObservations } from '../observationStore';
 import {
   CentersInstitutesScraper,
@@ -63,6 +65,9 @@ const member = (first: string, role: CenterMember['role'] = 'core-faculty'): Cen
 });
 
 const ROSTER = ['Avery', 'Blair', 'Casey', 'Devon'].map((first) => member(first));
+const ROSTER_WITH_SECOND_DIRECTOR = ROSTER.map((entry) =>
+  entry.name === 'Blair Synthetic' ? member('Blair', 'director') : entry,
+);
 
 const config: CenterConfig = {
   centerKey: 'fixture-identity',
@@ -91,7 +96,14 @@ const fetcherFor =
   };
 
 const profilePage = (
-  options: { canonical?: string; email?: string; netid?: string; links?: string[] } = {},
+  options: {
+    canonical?: string;
+    email?: string;
+    assistantEmail?: string;
+    netid?: string;
+    links?: string[];
+    title?: string;
+  } = {},
 ) => {
   const head = options.canonical ? `<link rel="canonical" href="${options.canonical}">` : '';
   const jsonLd = options.netid
@@ -100,14 +112,22 @@ const profilePage = (
         identifier: { propertyID: 'NetID', value: options.netid },
       })}</script>`
     : '';
-  const mail = options.email ? `<a href="mailto:${options.email}">Email</a>` : '';
+  const mail = [options.email, options.assistantEmail]
+    .filter(Boolean)
+    .map((address) => `<a href="mailto:${address}">Email</a>`)
+    .join('');
   const links = (options.links ?? []).map((href) => `<a href="${href}">Related</a>`).join('');
-  return `<html><head>${head}${jsonLd}</head><body><h1>Profile</h1>${mail}${links}</body></html>`;
+  const title = options.title ? `<p class="profile-title">${options.title}</p>` : '';
+  return `<html><head>${head}${jsonLd}</head><body><h1>Profile</h1>${title}${mail}${links}</body></html>`;
 };
 
 const afterAMoment = () => new Promise((resolve) => setTimeout(resolve, 5));
 
-async function runLane(profiles: ProfilePages, roster: CenterMember[] = ROSTER): Promise<void> {
+async function runLane(
+  profiles: ProfilePages,
+  roster: CenterMember[] = ROSTER,
+  materializeOptions: Parameters<typeof materializeFromRun>[1] = {},
+): Promise<void> {
   await afterAMoment();
   const scrapeRunId = new mongoose.Types.ObjectId();
   await ScrapeRun.create({
@@ -139,7 +159,7 @@ async function runLane(profiles: ProfilePages, roster: CenterMember[] = ROSTER):
     sourceWeight: 0.8,
     dryRun: false,
   });
-  await materializeFromRun(String(scrapeRunId));
+  await materializeFromRun(String(scrapeRunId), materializeOptions);
 }
 
 const centerId = async () => {
@@ -229,6 +249,20 @@ const servedNames = async (): Promise<string[]> => {
     .filter(Boolean);
 };
 
+const directoryPairs = (netid: string, email: string) =>
+  Observation.create({
+    entityType: 'user',
+    entityKey: `netid:${netid}`,
+    sourceId: new mongoose.Types.ObjectId(),
+    sourceName: 'yale-directory',
+    sourceUrl: 'https://directory.example.test/',
+    confidence: 0.95,
+    observedAt: LONG_AGO,
+    superseded: false,
+    field: 'email',
+    value: email,
+  });
+
 const seedCenter = () => runLane({}, []);
 
 describe(
@@ -250,6 +284,7 @@ describe(
 
     beforeEach(async () => {
       clearC4Flags();
+      resetDirectoryNetidsByAddressCache();
       const db = mongoose.connection.db;
       if (!db) throw new Error('no db');
       for (const name of [
@@ -355,6 +390,40 @@ describe(
       expect(served.filter((name) => name === 'Devon Synthetic')).toHaveLength(1);
     });
 
+    it('mints no twin of an identified person listed under a middle initial or nickname (#5923)', async () => {
+      await accountHolder('Avery', { displayName: 'Avery Q Synthetic' });
+      await accountHolder('Katherine', { displayName: 'Katherine Synthetic' });
+
+      await runLane({}, [
+        member('Avery'),
+        { name: 'Kate Synthetic', role: 'core-faculty', profileUrl: centerProfileUrl('Kate') },
+      ]);
+
+      expect(await Researcher.countDocuments({ displayName: 'Avery Synthetic' })).toBe(0);
+      expect(await Researcher.countDocuments({ displayName: 'Kate Synthetic' })).toBe(0);
+    });
+
+    it('finds an identified holder written with accents or a hyphen the listing omits (#5923)', async () => {
+      await accountHolder('Avery', { displayName: 'Avery Q Synthétic' });
+      await accountHolder('Blair', { displayName: 'Blair Syn-Thetic' });
+
+      await runLane({}, [
+        member('Avery'),
+        { name: 'Blair Synthetic', role: 'core-faculty', profileUrl: centerProfileUrl('Blair') },
+      ]);
+
+      expect(await Researcher.countDocuments({ displayName: 'Avery Synthetic' })).toBe(0);
+      expect(await Researcher.countDocuments({ displayName: 'Blair Synthetic' })).toBe(0);
+    });
+
+    it('still mints a person who only shares an identified researcher surname (#5923)', async () => {
+      await accountHolder('Blair', { displayName: 'Blair Synthetic' });
+
+      await runLane({}, [member('Casey')]);
+
+      expect(await Researcher.countDocuments({ displayName: 'Casey Synthetic' })).toBe(1);
+    });
+
     it('does not join a namesake the evidence does not reach, nor a person it names under another name', async () => {
       const avery = await accountHolder('Avery');
       const averyEdge = await edgeOn(avery, 'CORE_FACULTY');
@@ -369,6 +438,296 @@ describe(
       expect(await researchersNamed('Avery')).toBe(1);
       expect((await edgeById(averyEdge))?.rosterProvenance).toBeUndefined();
       expect(await liveEdgesOf(otherPerson)).toHaveLength(0);
+    });
+
+    it('does not join a same-name holder of a linked page when the member page address names another netid (#5751)', async () => {
+      const namesake = await accountHolder('Avery', {
+        officialUrl: officialProfileUrl('Avery'),
+        netid: 'nm77',
+      });
+      await directoryPairs('nm77', 'nm77@fixture.example.edu');
+      await directoryPairs('as77', 'avery.synthetic@yale.edu');
+
+      await runLane({
+        [centerProfileUrl('Avery')]: profilePage({
+          email: 'avery.synthetic@yale.edu',
+          links: [officialProfileUrl('Avery')],
+        }),
+      });
+
+      expect(await liveEdgesOf(namesake)).toHaveLength(0);
+    });
+
+    it("still joins the member when their page also carries another person's netid-shaped address (#5751)", async () => {
+      const member = await accountHolder('Avery', {
+        officialUrl: officialProfileUrl('Avery'),
+        netid: 'av77',
+      });
+      await directoryPairs('av77', 'av77@yale.edu');
+      await directoryPairs('xy45', 'xy45@yale.edu');
+
+      await runLane({
+        [centerProfileUrl('Avery')]: profilePage({
+          email: 'av77@yale.edu',
+          assistantEmail: 'xy45@yale.edu',
+          links: [officialProfileUrl('Avery')],
+        }),
+      });
+
+      expect(await liveEdgesOf(member)).toHaveLength(1);
+    });
+
+    it('still joins a holder whose stored netid the directory does not hold (#5751)', async () => {
+      const holder = await accountHolder('Devon', {
+        officialUrl: officialProfileUrl('Devon'),
+        netid: 'dv44',
+      });
+      await directoryPairs('ds77', 'devon.synthetic4@yale.edu');
+
+      await runLane({
+        [centerProfileUrl('Devon')]: profilePage({
+          canonical: officialProfileUrl('Devon'),
+          email: 'devon.synthetic4@yale.edu',
+        }),
+      });
+
+      expect(await liveEdgesOf(holder)).toHaveLength(1);
+    });
+
+    it('does not join the holder of a linked page whose own stated address names another netid (#5751)', async () => {
+      const holder = await accountHolder('Blair', {
+        officialUrl: officialProfileUrl('Blair'),
+        netid: 'bh77',
+      });
+      await directoryPairs('bh77', 'bh77@fixture.example.edu');
+      await directoryPairs('ot77', 'blair.synthetic3@yale.edu');
+      await Observation.create({
+        entityType: 'user',
+        entityKey: 'netid:ot77',
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'official-profile-pi-backfill',
+        sourceUrl: officialProfileUrl('Blair'),
+        confidence: 0.9,
+        observedAt: LONG_AGO,
+        superseded: false,
+        field: 'email',
+        value: 'blair.synthetic3@yale.edu',
+      });
+
+      await runLane({
+        [centerProfileUrl('Blair')]: profilePage({ canonical: officialProfileUrl('Blair') }),
+      });
+
+      expect(await liveEdgesOf(holder)).toHaveLength(0);
+    });
+
+    it('does not join a holder through a profile link the holder refuses (#5751)', async () => {
+      const holder = await accountHolder('Casey', { officialUrl: officialProfileUrl('Casey') });
+      await Researcher.updateOne(
+        { _id: holder },
+        {
+          $set: {
+            'fieldValueRefusals.profileLink': [
+              {
+                valueKey: fieldValueRefusalKey('profileLink', officialProfileUrl('Casey')),
+                rule: 'other_persons_page',
+                refusedBy: 'test',
+                refusedAt: LONG_AGO,
+                note: 'another person page',
+              },
+            ],
+          },
+        },
+      );
+
+      await runLane({
+        [centerProfileUrl('Casey')]: profilePage({ canonical: officialProfileUrl('Casey') }),
+      });
+
+      expect(await liveEdgesOf(holder)).toHaveLength(0);
+    });
+
+    it('serves a listing whose profile title names only a staff role as staff, not faculty (#5746)', async () => {
+      const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
+      const page = profilePage({
+        canonical: officialProfileUrl('Avery'),
+        title: 'Senior Administrative Assistant',
+      });
+
+      await runLane({ [centerProfileUrl('Avery')]: page });
+      const afterFirst = await liveEdgesOf(avery);
+      await runLane({ [centerProfileUrl('Avery')]: page });
+      const afterSecond = await liveEdgesOf(avery);
+
+      expect(afterFirst.map((edge) => edge.role)).toEqual(['STAFF']);
+      expect(afterSecond.map((edge) => String(edge._id))).toEqual(
+        afterFirst.map((edge) => String(edge._id)),
+      );
+      expect((await researcherById(avery))?.profile?.title).toBeUndefined();
+    });
+
+    it('ends the faculty edge of a listing the profile title shows is staff (#5746)', async () => {
+      const blair = await accountHolder('Blair', { officialUrl: officialProfileUrl('Blair') });
+      await runLane({
+        [centerProfileUrl('Blair')]: profilePage({ canonical: officialProfileUrl('Blair') }),
+      });
+      expect((await liveEdgesOf(blair)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+
+      await runLane({
+        [centerProfileUrl('Blair')]: profilePage({
+          canonical: officialProfileUrl('Blair'),
+          title: 'Grants and Finance Manager',
+        }),
+      });
+
+      expect((await liveEdgesOf(blair)).map((edge) => edge.role)).toEqual(['STAFF']);
+    });
+
+    it('keeps the faculty role for postdoc and research scientist titles (#5746)', async () => {
+      const casey = await accountHolder('Casey', { officialUrl: officialProfileUrl('Casey') });
+      const devon = await accountHolder('Devon', { officialUrl: officialProfileUrl('Devon') });
+
+      await runLane({
+        [centerProfileUrl('Casey')]: profilePage({
+          canonical: officialProfileUrl('Casey'),
+          title: 'Postdoctoral Associate',
+        }),
+        [centerProfileUrl('Devon')]: profilePage({
+          canonical: officialProfileUrl('Devon'),
+          title: 'Associate Research Scientist',
+        }),
+      });
+
+      expect((await liveEdgesOf(casey)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+      expect((await liveEdgesOf(devon)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+    });
+
+    it('leaves a skipped entity type byte-identical while listings still materialize (#5890)', async () => {
+      const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
+      const centerBefore = await ResearchEntity.findOne({ slug: CENTER_SLUG }).lean();
+      await ResearchEntity.updateOne(
+        { slug: CENTER_SLUG },
+        { $set: { name: 'A stale center name the lane would overwrite' } },
+      );
+      const staleCenter = await ResearchEntity.findOne({ slug: CENTER_SLUG }).lean();
+
+      await runLane(
+        { [centerProfileUrl('Avery')]: profilePage({ canonical: officialProfileUrl('Avery') }) },
+        ROSTER,
+        { skipEntityTypes: ['researchEntity'] },
+      );
+
+      const centerAfter = await ResearchEntity.findOne({ slug: CENTER_SLUG }).lean();
+      expect(JSON.parse(JSON.stringify(centerAfter))).toEqual(
+        JSON.parse(JSON.stringify(staleCenter)),
+      );
+      expect(centerBefore?.name).not.toBe('A stale center name the lane would overwrite');
+      expect((await liveEdgesOf(avery)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+    });
+
+    it('plans but never applies center roster retirement when it is skipped (#5890)', async () => {
+      const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
+      const staleLead = await edgeOn(avery, 'DIRECTOR');
+      const pages = {
+        [centerProfileUrl('Avery')]: profilePage({ canonical: officialProfileUrl('Avery') }),
+      };
+      const skip = { skipEntityTypes: ['researchEntity'], skipCenterRosterRetirement: true };
+      const rolledBackBefore = await Observation.countDocuments({
+        'rollback.rolledBackAt': { $exists: true },
+      });
+
+      await runLane(pages, ROSTER, skip);
+      await runLane(pages, ROSTER, skip);
+
+      expect((await edgeById(staleLead))?.state).not.toBe('HISTORICAL');
+      expect(await Observation.countDocuments({ 'rollback.rolledBackAt': { $exists: true } })).toBe(
+        rolledBackBefore,
+      );
+      expect((await liveEdgesOf(avery)).map((row) => row.role).sort()).toEqual([
+        'CORE_FACULTY',
+        'DIRECTOR',
+      ]);
+    });
+
+    it('still applies a staff remap when center roster retirement is skipped (#5890)', async () => {
+      const blair = await accountHolder('Blair', { officialUrl: officialProfileUrl('Blair') });
+      await runLane({
+        [centerProfileUrl('Blair')]: profilePage({ canonical: officialProfileUrl('Blair') }),
+      });
+      expect((await liveEdgesOf(blair)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+
+      await runLane(
+        {
+          [centerProfileUrl('Blair')]: profilePage({
+            canonical: officialProfileUrl('Blair'),
+            title: 'Grants and Finance Manager',
+          }),
+        },
+        ROSTER,
+        { skipEntityTypes: ['researchEntity'], skipCenterRosterRetirement: true },
+      );
+
+      expect((await liveEdgesOf(blair)).map((edge) => edge.role)).toEqual(['STAFF']);
+    });
+
+    it('rewrites a listing that moved to an aliased profile path without a second edge (#5890)', async () => {
+      const casey = await accountHolder('Casey', { officialUrl: officialProfileUrl('Casey') });
+      await runLane({
+        [centerProfileUrl('Casey')]: profilePage({ canonical: officialProfileUrl('Casey') }),
+      });
+      const before = await liveEdgesOf(casey);
+      const movedRoster = ROSTER.map((entry) =>
+        entry.name === 'Casey Synthetic'
+          ? {
+              ...entry,
+              profileUrl: `https://fixture-center.yale.edu/program/center/profile/casey-synthetic/`,
+            }
+          : entry,
+      );
+
+      await runLane(
+        {
+          'https://fixture-center.yale.edu/program/center/profile/casey-synthetic/': profilePage({
+            canonical: officialProfileUrl('Casey'),
+          }),
+        },
+        movedRoster,
+        { skipEntityTypes: ['researchEntity'], skipCenterRosterRetirement: true },
+      );
+
+      const after = await liveEdgesOf(casey);
+      expect(after).toHaveLength(1);
+      expect(after.map((edge) => edge.role)).toEqual(before.map((edge) => edge.role));
+    });
+
+    // Blair is a second director, so Avery's stale lead may end; a center's last lead
+    // survives a role change instead (#6308 decision).
+    it('still runs center roster retirement when center rows are skipped (#5890)', async () => {
+      const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
+      const staleLead = await edgeOn(avery, 'DIRECTOR');
+      const pages = {
+        [centerProfileUrl('Avery')]: profilePage({ canonical: officialProfileUrl('Avery') }),
+      };
+      const skip = { skipEntityTypes: ['researchEntity'] };
+
+      await runLane(pages, ROSTER_WITH_SECOND_DIRECTOR, skip);
+      await runLane(pages, ROSTER_WITH_SECOND_DIRECTOR, skip);
+
+      expect((await edgeById(staleLead))?.state).toBe('HISTORICAL');
+      expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['CORE_FACULTY']);
+    });
+
+    it('still projects the center row when no type is skipped (#5890)', async () => {
+      await ResearchEntity.updateOne(
+        { slug: CENTER_SLUG },
+        { $set: { name: 'A stale center name the lane would overwrite' } },
+      );
+
+      await runLane({}, ROSTER);
+
+      expect((await ResearchEntity.findOne({ slug: CENTER_SLUG }).lean())?.name).not.toBe(
+        'A stale center name the lane would overwrite',
+      );
     });
 
     it('resolves to nobody when the evidence reaches two agreeing people', async () => {
@@ -457,6 +816,71 @@ describe(
       expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['DIRECTOR']);
     });
 
+    it('mints no twin when the member page email names one identified researcher under another name (#5677)', async () => {
+      const holder = await accountHolder('Avery', { email: 'avery.synthetic@yale.edu' });
+      const listing = {
+        name: 'Avery Synthetic Quillon',
+        role: 'core-faculty' as const,
+        profileUrl: centerProfileUrl('Avery'),
+      };
+
+      await runLane(
+        { [centerProfileUrl('Avery')]: profilePage({ email: 'avery.synthetic@yale.edu' }) },
+        [listing],
+      );
+
+      expect(await Researcher.countDocuments({ displayName: 'Avery Synthetic Quillon' })).toBe(0);
+      expect(await liveEdgesOf(holder)).toHaveLength(0);
+    });
+
+    it('still mints the listed person when the member page email names no identified researcher (#5677)', async () => {
+      await accountHolder('Blair', { email: 'blair.synthetic5@yale.edu' });
+      const listing = {
+        name: 'Avery Synthetic Quillon',
+        role: 'core-faculty' as const,
+        profileUrl: centerProfileUrl('Avery'),
+      };
+
+      await runLane(
+        { [centerProfileUrl('Avery')]: profilePage({ email: 'avery.synthetic@yale.edu' }) },
+        [listing],
+      );
+
+      const minted = (await Researcher.findOne({
+        displayName: 'Avery Synthetic Quillon',
+      }).lean()) as any;
+      expect(minted).toBeTruthy();
+      expect(await liveEdgesOf(minted._id)).toHaveLength(1);
+    });
+
+    it('still mints the listed person when the member page names two identified researchers under other names (#5677)', async () => {
+      const first = await accountHolder('Blair', { netid: 'bq71', email: 'bq71@yale.edu' });
+      const second = await accountHolder('Casey', { netid: 'cq72', email: 'cq72@yale.edu' });
+      const listing = {
+        name: 'Avery Synthetic Quillon',
+        role: 'core-faculty' as const,
+        profileUrl: centerProfileUrl('Avery'),
+      };
+
+      await runLane(
+        {
+          [centerProfileUrl('Avery')]: profilePage({
+            email: 'bq71@yale.edu',
+            assistantEmail: 'cq72@yale.edu',
+          }),
+        },
+        [listing],
+      );
+
+      const minted = (await Researcher.findOne({
+        displayName: 'Avery Synthetic Quillon',
+      }).lean()) as any;
+      expect(minted).toBeTruthy();
+      expect(await liveEdgesOf(minted._id)).toHaveLength(1);
+      expect(await liveEdgesOf(first)).toHaveLength(0);
+      expect(await liveEdgesOf(second)).toHaveLength(0);
+    });
+
     it('still records a listing no identified researcher shares a name with', async () => {
       await runLane({ [centerProfileUrl('Casey')]: profilePage() });
 
@@ -499,6 +923,8 @@ describe(
       expect(await liveEdgesOf(labShell)).toHaveLength(0);
     });
 
+    // Blair is a second director, so Avery's stale lead may end; a center's last lead
+    // survives a role change instead (#6308 decision).
     it('adopts the holder edge of an unlisted role and retires it after two complete reads', async () => {
       const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
       const staleLead = await edgeOn(avery, 'DIRECTOR');
@@ -506,13 +932,13 @@ describe(
         [centerProfileUrl('Avery')]: profilePage({ canonical: officialProfileUrl('Avery') }),
       };
 
-      await runLane(pages);
+      await runLane(pages, ROSTER_WITH_SECOND_DIRECTOR);
       expect((await edgeById(staleLead))?.rosterProvenance).toMatchObject({
         sourceName: SOURCE_NAME,
         membershipKey: `official-profile:${centerProfileUrl('Avery')}|director`,
       });
 
-      await runLane(pages);
+      await runLane(pages, ROSTER_WITH_SECOND_DIRECTOR);
       expect((await edgeById(staleLead))?.state).toBe('HISTORICAL');
       expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['CORE_FACULTY']);
     });
@@ -555,7 +981,14 @@ describe(
     it('archives a folded twin edge rather than handing a detached holder a live copy', async () => {
       const devon = await accountHolder('Devon');
       await edgeOn(devon, 'CORE_FACULTY', { archived: true, reviewStatus: 'DISPUTED' });
-      const twin = await nameOnlyShell('Devon');
+      const twin = (
+        await Researcher.create({
+          displayName: 'Devon Synthetic',
+          identifiers: { netid: 'devon9' },
+          profileLinks: [],
+          archived: false,
+        })
+      )._id as mongoose.Types.ObjectId;
       const twinEdge = await edgeOn(twin, 'CORE_FACULTY');
 
       await dedupeAccountlessResearcherShells({ apply: true });

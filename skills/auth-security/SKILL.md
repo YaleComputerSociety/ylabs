@@ -24,7 +24,8 @@ User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
 ```
 
 Authentication runs on the canonical `Account` (the private login principal); the legacy `User` model has been retired (#2014).
-Classification (undergraduate, graduate, professor, staff) is derived at login and carried in the signed session for authorization decisions; a descriptive copy of the Yalies profile (name and `userType`, plus title/department for faculty and staff) is persisted onto `Account.profile` at login via `recordAccountLogin`, refreshed on each sign-in that resolves a record.
+Classification (undergraduate, graduate, professor, staff) is derived at login and carried in the signed session for authorization decisions; a descriptive copy of the Yalies profile (name and `userType`, plus title for faculty and staff) is persisted onto `Account.profile` at login via `recordAccountLogin`, refreshed on each sign-in that resolves a record.
+A login stores no department: accounts are login-only (#5000) and nothing read it, so `recordAccountLogin` drops one even if a caller passes it, and the `profile.department` schema field stays only for old rows (#5741).
 A student's residential college, class year and major were persisted here until #4162 and are not any more: nothing read them, so every signed-in student carried three extra personal attributes against their netid for no product purpose.
 A login that resolves a record replaces `profile` wholesale and so sheds them; a login whose Yalies lookup was unavailable writes no profile and unsets those three paths instead, so an account stops carrying them either way.
 Accounts stored before the fix that never sign in again keep the values until a one-off cleanup runs, which is an operator decision rather than something a login may do for them.
@@ -52,7 +53,7 @@ The raw-driver copies in promotion and sync bypass the hooks on purpose, since t
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
 The classification cascade runs only at login time.
 `unknown` means Yalies has no record of the person, or could not answer and no earlier login stored a type; a request failure is never read as "not in Yalies", because that typed returning students `unknown` (#4234).
-Yalies lists faculty and staff with a `title` and an organization or unit (`unit_name`, `organization_name`) but no `year` or `school_code`, so the lookup reads such a record as an employee rather than discarding it.
+Yalies lists faculty and staff with a `title` and an organization or unit (`unit`, `organization`) but no `year` or `school_code`, so the lookup reads such a record as an employee rather than discarding it.
 There is no Yale Directory fallback: `directory.yale.edu` is behind a per-person CAS sign-in with no server-callable API, so the old `directory.yale.edu/api/people` call resolved nobody and was removed (#4287); Yalies employee records type faculty and staff instead.
 Per-request session restore in `deserializeUser` re-validates that the backing `Account` exists and is not archived, then recomputes `isAdmin` from the admin-grant check.
 The admin-grant check is cached in memory for 60 seconds in `adminGrantService` and invalidated on grant or revoke.
@@ -72,7 +73,10 @@ The Passport `regenerate` shim stays a no-op because there is no stored session 
 A missing `sessionVersion` on an older `Account` reads as `0`; the field needs no index because it is read only through the `netid` lookup.
 Cookies issued before this change carry no claim, so the deploy that shipped it signed everyone out once.
 `server/src/__tests__/sessionRevocation.integration.test.ts` drives sign-in, sign-out, replay, expiry, and id rotation through the mounted app against a stub CAS and an in-memory Mongo.
-Key rotation with an overlap window is not implemented: one `SESSION_SECRET` signs every cookie, so changing it still signs everyone out.
+An admin can end one account's sessions on every device from "End Sessions" on `/analytics`, which calls `POST /api/admin/accounts/:netid/sessions/revoke`; that route calls `revokeAccountSessions`, answers `404` when no account holds the netid, and is audited as `account.sessions_revoke` (#4484).
+The signing secret rotates with an overlap window (#4484): `SESSION_SECRET_PREVIOUS`, when set, is a verify-only second key (`server/src/utils/sessionSigningKeys.ts`), so cookie-session signs with `SESSION_SECRET`, still accepts a cookie signed with the previous secret, and re-signs it with the current one on its next response.
+The overlap is bounded by the 30-day server-side lifetime, after which no older cookie can pass `deserializeUser`; `docs/incident-runbook.md` has the steps, and a leaked secret is rotated with no overlap.
+`server/src/__tests__/sessionSecretRotation.integration.test.ts` drives sign-in under a rotating configuration and pins the acceptance, the re-signing and the refusal of an unrelated secret.
 
 ### The two legs of `GET /api/cas`
 
@@ -121,6 +125,52 @@ This creates a test session as `test123` with user type `undergraduate`.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for a different local account.
 `?userType=admin` mints an idempotent local bootstrap `AdminGrant` (via `ensureBootstrapAdminGrant`), so dev admin authority comes from a real grant, not a `userType` shortcut.
 
+### Testing locally as a non-admin student
+
+The copied `server/.env` that `scripts/new-agent-worktree.sh` writes sets `LOCAL_AUTH_BYPASS=true`, `LOCAL_AUTH_BYPASS_NETID=devadmin` and `LOCAL_AUTH_BYPASS_USER_TYPE=admin`, so every cookieless loopback request is the bootstrap admin by default.
+That is the owner's decision for local development, worktrees included, so worktree env files keep the bypass on and `WORKTREE_SWITCHED_OFF_SERVER_FLAGS` in `scripts/prepare-worktree-env.mjs` deliberately leaves it out (#5886).
+Admin authority comes from an active `AdminGrant` on the netid (`hasAdminAuthorityForUser`), never from `userType`.
+So an `x-dev-user-type: undergraduate` header alone does not make a student: the netid stays `devadmin`, which holds the grant, and the request keeps operator authority, including `operatorPreview` on withheld research rows (#5695).
+A served check, meaning "what does a student see on this route", is read-only, so run it with `yarn served-check /api/<path> [/api/<path> ...]` (`scripts/served-check.mjs`, #5886):
+
+1. It starts its own short-lived API on a free port with `LOCAL_AUTH_BYPASS=false`, `CORPUS_SNAPSHOT_DISABLED=true`, no gate-refresh interval and no scraper write flag, set for that one process only, so your dev server and every `.env` file keep the bypass.
+It takes the rest of its env from the same data profile as `yarn dev:server` (`profileChildEnvironment` in `scripts/run-data-profile.mjs`); a bare `yarn dev:server` cannot be the check server beside your own, because `server/.env` wins for `PORT`.
+2. Before any served read it requires a cookieless `GET /api/check` to answer `200 {"auth":false}`, and fails closed otherwise, reading nothing.
+3. It reads each path with no cookie, prints one JSON line per path, and stops the process group it started, including when the run is interrupted with Ctrl-C or `SIGTERM`.
+
+`--api <loopback origin>` reads an API you already run instead, under the same fail-closed `/api/check` guard, so it refuses a dev server that has the bypass on; that first `/api/check` is still a bypass login on such a server, which is why the default starts its own.
+`scripts/served-check.test.mjs` pins the forced-off bypass and own port over a synthetic `server/.env` that turns it on, the refusal before any served path is read, and a real spawned check server seeing `LOCAL_AUTH_BYPASS=false`.
+The manual equivalent is `LOCAL_AUTH_BYPASS=false yarn dev:server` and the same `/api/check` precondition before reading.
+
+`yarn served-check --as student <path>...` reads routes behind `isAuthenticated`, such as `/api/programs/search`, as a signed-in undergraduate (#6079).
+The identity is synthetic and held only in memory: `mintSyntheticStudent` in `server/src/utils/servedCheckStudentSession.ts` makes a random `zzsvck` netid typed `undergraduate` with `isAdmin: false`, and nothing ever writes it.
+It does not start `src/index.ts`; it runs `server/src/scripts/servedCheckStudent.ts`, which installs `installMongoWriteRefusal` before connecting, mounts the real `app` behind `studentSessionHook`, listens on `127.0.0.1` only, and reads each path through the full middleware and route stack.
+The hook sets `req.user` only for a loopback request carrying a 32-byte nonce the process minted in memory, so no secret, cookie or token exists outside that process, and nothing is printed or written to disk.
+It cannot be enabled in a deployed server: no environment variable turns it on, only the student entry imports the module, and the hook refuses to install where `requiresDeployedRuntimeSecurity` holds.
+Before the first read the run refuses, reading nothing, if the session is not a plain undergraduate, if an account already holds the netid, or if the netid holds an admin grant; it then requires `GET /api/check` through the real stack to resolve that same plain student.
+Admin routes still answer `403`, because `isAdmin` re-checks the grant by netid.
+The run ends with a `{"refusedWrites": [...]}` line naming every write the stack attempted and the refusal stopped; a first signed-in request normally attempts one, the daily visitor event in `passport.ts`.
+The check keeps the session cookie the stack issues in memory between its own requests, as a browser would, so that visitor event is attempted once per run rather than once per path.
+`server/src/__tests__/servedCheckStudentMode.integration.test.ts` pins the student read where an anonymous read gets `401`, the admin refusal, every elevated-session refusal, that a normally started `app` ignores the nonce header and the hook refuses a deployed runtime, and that the student path's writes are refused.
+`server/src/__tests__/servedCheckStudentHookNotBundled.test.ts` builds the production server bundle and pins that it carries none of the student check modules.
+A cookieless request with the bypass off resolves no user, so the auth path writes no account, no admin grant and no analytics event, and the route serves the anonymous student view, which withholds every row outside `student_ready`.
+`server/src/__tests__/localStudentServedCheckWritesNothing.integration.test.ts` pins that against a real store, with the bypass-on run of the same requests as the control that proves the count can see a write.
+The test exercises `GET /api/check` and `GET /api/research/:slug`; `POST /api/research/search` records a site-search row only for a signed-in netid (`shouldRecordSiteSearch`), so an anonymous search records none either.
+When the API starts with the bypass on, it prints a `[auth] LOCAL_AUTH_BYPASS is on` warning (`localAuthBypassStartupNotice`); when `MONGODBURL` names the Development database or any non-local host, it wraps that warning in a `LOCAL_AUTH_BYPASS IS ON AGAINST ...` banner naming the target class, never the URL, so a dev server on the shared database cannot be mistaken for an anonymous one.
+
+To read what a signed-in student is served without writing anything, use `yarn served-check --as student <path>` above.
+To test a signed-in student flow that records a login, use one of these:
+
+- Run the API with the grant-less undergraduate dev-login netid as the bypass identity: `LOCAL_AUTH_BYPASS_NETID=test123 LOCAL_AUTH_BYPASS_USER_TYPE=undergraduate yarn dev:server`.
+- Turn the bypass off and sign in as the undergraduate: `LOCAL_AUTH_BYPASS=false yarn dev:server`, then open `/api/dev-login?userType=undergraduate`, which signs in `test123`.
+- Leave the server alone and send both `x-dev-netid: test123` and `x-dev-user-type: undergraduate` from a loopback client.
+
+`scripts/run-data-profile.mjs` gives an explicitly set shell value for the three `LOCAL_AUTH_BYPASS*` keys precedence over `server/.env`; every other key still comes from `server/.env` first (#5695).
+Before #5695 a shell `LOCAL_AUTH_BYPASS=false` was silently overridden by the file, so a "student" probe ran as the admin.
+Check the identity before trusting a result: `GET /api/check` reports `user.netId` and `user.isAdmin`, and the netid must hold no active `AdminGrant`.
+Every bypass or dev-login request records a login for its netid on the database the profile targets, and creates that account on first use, so reuse `test123` rather than inventing a new netid.
+The API server never takes the Development write lease (#5772), so these login writes run without it; that is one more reason a served check uses the write-free path above.
+
 ### Development affordances are scoped to the developer's own machine
 
 The runtime label alone never licenses a development affordance, because "this process is a local development process" and "this request came from the developer" are different facts.
@@ -130,6 +180,7 @@ It reads the socket peer rather than `req.ip`, because `req.ip` can be resolved 
 - `/api/dev-login` is registered only in a local development runtime (`isDevLoginAllowed`) and additionally answers `404 {"error":"Not found"}` to any caller that is not loopback (`isDevLoginRequestAllowed`).
 The refusal reuses the ordinary not-found shape rather than announcing a disabled route.
 - The `LOCAL_AUTH_BYPASS` user and its `x-dev-netid` / `x-dev-user-type` selection apply only to a loopback caller (`isLocalAuthBypassRequestAllowed`), so a request from elsewhere is simply unauthenticated.
+- `scripts/security-preflight.test.mjs` runs the real `isLocalAuthBypassRequestAllowed` and the bypass middleware with a copied `.env` that enables the bypass, and pins a refusal for every non-development `NODE_ENV`, a non-loopback socket peer, a non-localhost `Host` header, and a non-localhost `SERVER_BASE_URL`.
 - `serverListenHost` in `server/src/utils/environment.ts` binds a local run to `127.0.0.1` and a deployed run to `0.0.0.0`, keyed off `requiresDeployedRuntimeSecurity`, because the hosting platform reaches the process from outside its network namespace and a local run needs no interface beyond loopback.
 
 ## Auth middleware
@@ -151,6 +202,8 @@ A denylist leaks every field added to the model later, and a raw document leaks 
 The correction-report routes are the worked example (#4011): `POST /api/research/:slug/report` and `GET /api/research/:slug/reports/mine` return `toReporterCorrectionReport` from `entityCorrectionReportService.ts`, which keeps only `_id`, `category`, `status`, `note`, `reviewerNote`, and `createdAt`.
 The reviewer's netid (`reviewedBy`, `reviewHistory`), the reporter snapshot, and entity bookkeeping stay on the admin queue alone.
 Adding a field to the reporter panel means adding it to that allowlist, and `server/src/__tests__/correctionReportReporterProjection.integration.test.ts` pins the exact key set through the mounted routes.
+The directory removal request routes follow the same rule (#4160): `GET` and `POST /api/users/directoryRemovalRequest` return only `eligible` and the caller's own `{ status, createdAt }`, never the deciding admin or the matched researcher, and a caller y/labs does not list learns nothing about anyone else.
+`server/src/__tests__/directoryRemovalRequests.integration.test.ts` pins this; the channel is described in `docs/directory-removal-requests.md`.
 
 ## Admin audit log
 
@@ -192,7 +245,7 @@ Client route guards:
 |-------|---------|
 | `PrivateRoute` | Auth required. |
 | `AdminRoute` | Admin only, keyed off the server-provided `user.isAdmin`. |
-| `PublicRoute` | Renders for logged-out and authenticated users alike, without waiting for the `/api/check` session check, so a public page's first request starts at once. Auth-dependent UI on these pages reads `isLoading` itself and holds its slot invisible until the check resolves. |
+| `PublicRoute` | Renders for logged-out and authenticated users alike, without waiting for the `/api/check` session check, so a public page's first request starts at once. Auth-dependent UI on these pages reads `isLoading` itself and holds its slot invisible until the check resolves. The one exception is the `Navbar`, which shows the signed-in navigation while the check is pending when `client/src/utils/lastKnownSession.ts` records that the last answer was signed in, and still holds the account and sign-out controls invisible until it resolves. |
 | `UnprivateRoute` | No auth required. |
 
 Because a public page now runs before the check answers, client research analytics has three states rather than two.
@@ -204,6 +257,63 @@ Treating unknown as enabled would post a guest's first browse impression to `/an
 `normalizeReturnPath` in `client/src/utils/returnPath.ts` reduces `state.from` to a same-origin path or an empty string.
 `SignInButton` applies it before building the CAS `redirect` parameter, and the server's `safeRedirectTarget` in `passport.ts` validates it again, so the return path can never become an open redirect.
 `/login` applies it too, and once a session check succeeds (for example after Retry connection) it sends the user to that path, falling back to the role default only when the path is empty.
+Any `401` dispatches `HTTP_AUTH_REQUIRED_EVENT` (`client/src/utils/httpStatusEvents.ts`), and `UserContextProvider` answers it by signing the client out, so a login link raised by an expired session reaches the CAS sign-in instead of bouncing off `/login` back to the page that failed.
+
+## Account data export and deletion (#4156)
+
+A signed-in account can download, and delete, everything y/labs holds keyed to it.
+`server/src/services/accountDataService.ts` is the one service for both, used by the self-serve routes and by `yarn --cwd server accounts:delete-account-data`, so an emailed request and a signed-in one remove exactly the same rows.
+Both routes sit behind the `accountDataControls` release flag (`FEATURE_ACCOUNT_DATA_CONTROLS`) and answer `404` while it is off.
+
+- `GET /api/users/me/export` streams one JSON attachment from a cursor: the account, every research plan with `privateNotes`, `checklist` and `deadlines` explicitly selected, the account's correction reports, its admin grants, the admin audit rows it acted in or was the subject of, the grant-history entries it made on other accounts, and every analytics event, plus `scopeVersion` and `generatedAt`.
+A field added to an exported collection is not exported until an allowlist in the service names it, and a scope change bumps `ACCOUNT_DATA_EXPORT_SCOPE_VERSION`.
+- `DELETE /api/users/me` requires three things beyond the session cookie, so a cookie alone can never erase an account.
+The body must be `{ "confirm": "delete my data" }`.
+The `X-CSRF-Token` header must equal the synchronizer token `GET /api/users/me/deletion-csrf-token` stored in this cookie session (`server/src/middleware/sessionCsrfToken.ts`), on top of the global `csrfOriginGuard`; another site can neither read the token through CORS nor forge it, and a missing or foreign token answers `403` with `CSRF_TOKEN_REQUIRED`.
+The token is one per session, held in `req.session.csrfToken`, and is not specific to deletion: `GET /api/users/me/csrf-token` issues the same token to any signed-in caller, and `requireSessionCsrfToken` also guards `POST /api/users/directoryRemovalRequest` and `PUT /api/admin/directory-removal-requests/:id` (#4160).
+A new state-changing route that CodeQL flags as `js/missing-token-validation` takes `requireSessionCsrfToken` rather than a dismissal, and its client fetches the header through `sessionCsrfHeaders` in `client/src/utils/sessionCsrf.ts`.
+`server/src/__tests__/directoryRemovalRequestCsrf.integration.test.ts` drives the origin guard, a missing token, another session's token, and the right token through the mounted app.
+The session must hold a fresh password confirmation: a CAS sign-in started with `?reauth=1` sends `renew=true` to CAS both at `/login` and at `/validate` (`requestsCasReauthentication` in `server/src/utils/casStrategy.ts`), so CAS asks for the password and refuses a ticket issued from single sign-on, and only that sign-in stamps `credentialsConfirmedAt` on the signed session claim.
+A confirmation older than 10 minutes (`ACCOUNT_DELETION_RECENT_SIGN_IN_MS`), or a session that never had one, answers `403` with `RECENT_SIGN_IN_REQUIRED`, and the client sends the student through CAS with `reauth=1`.
+`reauth=1` rides inside our own URL, so it is part of the `service` both legs send and a callback cannot claim it for a ticket CAS issued without it.
+It runs under `writeLimit`, and on success it ends the cookie session and returns per-collection counts.
+
+The deletion order is the contract, and every step is safe to repeat:
+
+0. Refuse with `503` (`DELETION_UNAVAILABLE`), before reading or deleting anything, while the serving environment lacks a setting a later step needs (#5624, `server/src/services/accountDeletionReadiness.ts`): `ACCOUNT_DELETION_AUDIT_HMAC_KEY` always, a `MONGODBURL` database name that identifies the environment, and `POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID` wherever PostHog captures, which is Production and any environment the server cannot identify.
+The refusal tells the student to email the privacy mailbox, the dashboard hides the delete action and shows `PRIVACY_CONTACT_EMAIL` instead (served as `selfServeAccountDeletion: false` in `GET /api/config`), and `/privacy` stops describing the dashboard deletion.
+Export needs none of these settings, so it keeps working.
+`/api/ready` reports `accountDeletion` as `off`, `available` or `unavailable` with the missing settings by name only, the boot log says the same, and `yarn security:smoke:production` fails on `unavailable` and on a readiness body that reports no recognised `accountDeletion.status`.
+1. Refuse with `409` (`DELETION_BLOCKED`) if a corpus field in `CORPUS_ACCOUNT_ID_REFERENCE_FIELDS` holds the account `_id`, rather than leave a dangling id.
+2. `revokeAccountSessions`, so another tab stops writing events.
+3. Delete every `research_plans` row for the account, bypassing the restore window.
+4. Fold the netid's `analytics_events` into `deleted_account_event_tallies` (UTC month, event type and count, nothing else) and delete them, one transaction per batch, so raw search text is gone and a retry never double-counts.
+5. Keep each correction report and replace its `reporter` with a tombstone whose `netId` is `deleted-<reportId>`, with empty email and name; the report is evidence about a public row.
+6. Revoke the netid's active `admin_grants`, appending a `revoked` history entry, so a maintainer who deletes their account loses the grant with it while the grant row and its history stay.
+`admin_audit_events`, the earlier history on the netid's own grant, and the `grantedBy`, `revokedBy` and history entries on other accounts' grants are left exactly as they are, because the audit log is append-only; the export includes the rows that name the netid, but a deletion never rewrites them.
+7. Ask PostHog to delete the person keyed on `productAnalyticsId`, with events and recordings.
+Where PostHog does not capture, Development and Beta, an unconfigured PostHog is skipped and reported as `skipped_not_configured`; elsewhere step 0 has already refused.
+Configured and failing, the deletion stops here, because the account row holds the only copy of that id.
+8. Record the deletion for every other environment, below, before the account goes, so a failure there is retried rather than lost.
+9. Delete the account last, so any failure above leaves an account the holder can sign in to and retry from.
+10. Append one `admin_audit_events` row, `account.self_delete` or `account.operator_delete`, whose `targetId` is an HMAC-SHA256 of the netid under `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, never the netid.
+Step 0 guarantees the key, so the row always carries a subject.
+
+Analytics events and correction reports store the session netId as it arrived, so the service matches them case-insensitively; an exact lowercase match would leave a differently cased row behind while the residue read zero.
+Deleting the account row resets `sessionVersion`, so deserialization also refuses a claim whose `issuedAt` is earlier than the account's `createdAt`: a session left open before the deletion never authenticates against an account created again by a later sign-in.
+
+Every collection it touches is environment-local and never promoted or synced, so a deletion is durable in its environment and no copy brings it back; `server/src/scripts/__tests__/accountDataCollectionsAreEnvironmentLocal.test.ts` pins that.
+A deletion still covers every environment, but the web service holds no other environment's credentials, so it deletes locally and records an `account_deletion_requests` row naming the person only by the HMAC of the netid under its own `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, with the other environments pending (`server/src/services/accountDeletionRequestService.ts`).
+The serving environment is read from the `MONGODBURL` database name; without the key, or in an environment that name does not identify, step 0 refuses the deletion rather than skip this request.
+An operator then runs `accounts:delete-account-data --environment <target> --process-pending-from <source>` once per other environment: it hashes every netid the target holds under the source key, deletes each match there through the same service without recording a new request, and moves the target from pending to completed on the source row, `matched: false` when the person never used the target.
+A match the target refuses (`DELETION_BLOCKED`) or a PostHog failure there stays pending and is counted in `failed`, and the run carries on with the rest, so one stuck request never holds back later ones.
+A second deletion for a person whose earlier request is still pending re-adds every other environment to it, so an environment completed in between is deleted again.
+`/privacy` names the request channel for someone who cannot sign in: `PRIVACY_CONTACT_EMAIL` in `client/src/utils/privacyContact.ts`, answered within 30 days, which is the one place the address lives (#4160 shares it); a request about someone's own data never goes to a public GitHub issue, and the page describes the dashboard path only while `accountDataControls` is on.
+An emailed request goes the same way: `--netid` deletes in one environment and records the request for the others.
+The operator script is dry-run by default; for one netid it prints the per-collection residue, which is also the verification after a deletion, since every count must read zero, and for pending requests it prints only counts.
+It reads the deletion keys for the environment it targets, `BETA_` or `PRODUCTION_` prefixed like its connection variable and unprefixed for Development, so a Production run never borrows the Development keys from a copied `server/.env`.
+`--apply` refuses before connecting while the target lacks one of the step 0 settings, naming the prefixed variable, and every run prints `missingDeletionSettings`.
+`server/src/__tests__/accountDataControls.integration.test.ts` drives export, the refusals, the deletion, the PostHog call and the retry through the mounted app with synthetic accounts.
 
 ## Validation middleware
 
@@ -257,6 +367,8 @@ The SPA fallback writes per-page share metadata into the shell, because link pre
 `/`, `/research`, `/programs` and `/about` get a page title and a query-free canonical URL on `https://yalelabs.io` whatever the request host.
 `/research/:slug` reads the row through `getResearchGroupDetail` with no operator authority, so it can only show what the anonymous detail endpoint serves, which is `student_ready` rows: the served title, the served short description, and the canonical page.
 A description carrying an email address or phone number is dropped rather than shared, and no member, roster or contact field is ever read.
+The SPA fallback is a path-less `GET`/`HEAD` handler rather than a named wildcard route, because Express decodes a route parameter and answers a malformed percent sequence such as `%zz` with a JSON `400` before the resolver runs.
+An undecodable path therefore gets the same shell as any other unknown path, and an undecodable `/research/:slug` answers `404` (#5219).
 A slug the endpoint withholds or does not know answers `404` with the generic shell, a merged shell answers `301` to its canonical page, and a lookup that throws or outlasts `PAGE_SHELL_LOOKUP_TIMEOUT_MS` serves the unmodified shell with `200`.
 Each normalized slug's `200`, `404` or `301` resolution is cached in memory for `PAGE_SHELL_CACHE_TTL_MS` (five minutes), at most `PAGE_SHELL_CACHE_MAX_ENTRIES` slugs with the oldest evicted first, and concurrent requests for one slug share a single in-flight detail read.
 A lookup that throws or times out is never cached, so the next request reads again.
@@ -276,6 +388,8 @@ Playwright forces loopback through a configured proxy unless `PLAYWRIGHT_DISABLE
 `scripts/security-preflight.test.mjs` scans all of `server/src` with `scripts/unguardedOutboundFetchScan.mjs` and fails on a global `fetch`, an `axios` call without both agents, or a Node `http.get`/`request` without an `agent`, whenever the URL is not a constant; agents count only in a file that calls `ssrfSafeAgents()`.
 A reviewed exemption, such as a constant host or the forward proxy's connection to the address it vetted, lists its file, its reason, and the exact number of calls it covers, so a further call in that file fails the scan, and the exemption is removed once it stops matching.
 A guard refusal is inconclusive rather than evidence that a page is gone: on a machine inside Yale's split-horizon DNS a Yale host can resolve to `10.x` and be refused, so a script that clears data on a failed probe must treat a guard refusal, `isSsrfGuardRefusal` in `server/src/utils/ssrfGuard.ts`, as its own outcome, as `clearDeadLabResearchHomes` does with `address-refused`.
+The guard also counts each private-address refusal by host, record-only and after the refusal is decided (`privateAddressRefusalCounts`), so `scrape run` re-asks the refused hosts over public DNS, eight at a time inside a 60 s budget that leaves unanswered hosts `unclassifiedHosts` and never split-horizon, and prints a WARNING, plus `addressRefusals` in its report, for every host this network answers privately while public DNS answers it publicly; the full-sweep preflight checks three such Yale hosts by DNS only (`server/src/scrapers/utils/splitHorizonRefusals.ts`, #6111).
+The count never relaxes a refusal: a split-horizon host stays refused, and it is covered by a run from a network with public DNS, such as the hosted sweep.
 
 The guard refuses first and reports second, so its refusal is the only signal a caller ever sees for a host it never reached.
 `classifyHostnameResolution` returns which of `public`, `private-address`, `unresolvable`, or `resolver-failure` applies, and `assertPublicHttpUrl` carries the same value on `SsrfBlockedError.reason`.
@@ -397,6 +511,7 @@ Custom errors in `server/src/utils/errors.ts`:
 | `NotFoundError` | 404 |
 | `ObjectIdError` | 404 |
 | `IncorrectPermissionsError` | 403 |
+| `ConflictError` | 409 |
 | `SearchUnavailableError` | 503, with `Retry-After` |
 
 The error handler maps Mongoose `ValidationError` to 400, `CastError` to 400, MongoDB duplicate key 11000 to 409, an unavailable MongoDB (lost topology, server selection or socket timeout) to 503 with `Retry-After`, and everything else to 500.
@@ -416,6 +531,12 @@ Route any value that is not a literal through `sanitizeLogValue` in `server/src/
 A pin on a guard's own spelling fails on behaviour-preserving rewrites and passes when a new code path leaks, so a new guarantee is written as an input and its expected output.
 - Error reports to Sentry carry no user identity, cookie, header beyond the client `User-Agent`, body, query value, or local variable.
 The posture, including why every `dataCollection` category is set off explicitly and why Express's automatic capture is disabled, is owned by the Error Reporting section of `docs/research-journey-analytics.md`.
+- PostHog runs only in Production, for a signed-in session without an active admin grant, and is off by default everywhere else.
+`isProductAnalyticsAllowedForSession` in `server/src/utils/posthogConfig.ts` decides it from positive Production evidence (the `Prod` database, the `prod` search index prefix, a deployed runtime, `SCRAPER_ENV` not `beta`), and the same gate is the only thing that adds the two PostHog origins to `connect-src`.
+`GET /api/check` reports the decision as `productAnalytics` and, when it is true, returns `productAnalyticsId`.
+- `accounts.productAnalyticsId` is a random UUID and the only identity PostHog may receive; it may go to PostHog and to the admin-only lookup on `/analytics`, and nowhere else, so never add it to a log, an error report, an `analytics_events` row or a corpus record.
+A netid, email or name never goes to PostHog in any property.
+The client posture, its masking and its guards are owned by the Third-Party Measurement section of `docs/research-journey-analytics.md`.
 - `server/src/passport.ts` controls CAS auth and `Account` login (via `accountService`).
 - `server/src/db/connections.ts` controls database connections and migration mode.
 - `server/src/app.ts` controls CORS, rate limits, session settings, route mounting, and security middleware.
@@ -432,6 +553,8 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 |----------|----------|---------|
 | `MONGODBURL` | Yes | MongoDB connection string. |
 | `SESSION_SECRET` | Yes | Cookie session signing key. |
+| `SESSION_SECRET_PREVIOUS` | No | Verify-only previous signing key during a routine rotation; unset otherwise (#4484). |
+| `DIRECTORY_REMOVAL_KEY` / `DIRECTORY_REMOVAL_KEY_FILE` | No | HMAC key for directory removal entries, inline or from a file outside the repository, shared by every environment; `docs/deployment-inventory.md` owns the keyless behaviour (#4160). |
 | `AUTH_DEBUG` | No | Enables verbose auth tracing when `true`. |
 | `SSOBASEURL` | Yes | Yale CAS URL. |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks. |
@@ -449,7 +572,7 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 | `MEILISEARCH_INDEX_PREFIX` | Deployed | Environment index prefix (`beta`, `prod`); unset locally, and the server refuses to start without it when deployed. |
 | `PORT` | No | Server port, default 4000. |
 | `SCRAPER_ENV` | No | Scraper write guards. |
-| `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Enables scraper writes to non-prod DBs. |
+| `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Environment permission for scraper writes to non-prod DBs; `scrape run` and `scrape materialize` also need `--apply` (#5842). |
 | `CONFIRM_PROD_SCRAPE` | No | Confirms guarded Production writes such as the promotion and reindex; scraper writes against Production are refused regardless. |
 | `SCRAPER_DEVELOPMENT_DB_NAME` | No | Overrides the exact Development database name expected by scraper guards. |
 | `SCRAPER_BETA_DB_NAME` | No | Overrides the exact Beta database name expected by scraper guards. |
@@ -457,9 +580,13 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 | `GATE_SCORECARD_MAX_AGE_HOURS` | No | Max age before a gate scorecard is stale. |
 | `GATE_REFRESH_INTERVAL_MINUTES` | No | Positive value enables in-process gate refresh. |
 | `GATE_REFRESH_SKIP_HEAVY` | No | Skips heavy gate refresh work when `true`. |
+| `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` | Production, with deletion on | A `phx_` personal key with `person:write` and the digits-only project id; an account deletion asks PostHog to delete the person (#4156). Unset in Production, self-serve deletion is refused and the student is sent to the privacy mailbox (#5624); Development and Beta skip PostHog, which does not capture there. |
+| `ACCOUNT_DELETION_AUDIT_HMAC_KEY` | With deletion on | At least 32 characters; keys the netid hash on an account-deletion audit row and its cross-environment request (#4156). Unset, self-serve deletion is refused (#5624). |
+| `BETA_` and `PRODUCTION_` prefixed `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `ACCOUNT_DELETION_AUDIT_HMAC_KEY` | For `--apply` there | Operator machine only: the keys `accounts:delete-account-data` uses for that environment; `--apply` refuses while one that environment needs is missing (#4156, #5624). |
 
 ### Client
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `VITE_APP_SERVER` | Yes | Backend API URL. |
+| `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` | Production only | PostHog project key and the US ingest host; unset means PostHog is fully off. |

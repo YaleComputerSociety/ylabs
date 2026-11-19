@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import type { ReferenceEdge } from './referenceEdgeAudit';
-import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { resolveSafeJsonReportOutputPath, resolveSafeJsonReportPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 export type BetaDataQualitySeverity = 'ok' | 'warn' | 'error';
 export type DataQualityWarningClassification =
@@ -1280,10 +1281,7 @@ export function buildSamePiDedupeReviewSummary(
     nextAction:
       'Review the same-PI dedupe decision template and validate accepted decisions before considering a bounded guarded apply.',
   };
-  const safeReviewArtifactPath = resolveSafeJsonReportOutputPath(
-    reviewArtifactPath,
-    '--review-artifact',
-  );
+  const safeReviewArtifactPath = resolveSafeJsonReportPath(reviewArtifactPath, '--review-artifact');
 
   if (!fs.existsSync(safeReviewArtifactPath)) {
     return {
@@ -1408,7 +1406,7 @@ export function writeScorecardOutput(
   }
   const safeOutput = resolveSafeJsonReportOutputPath(outputPath);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(scorecard, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(scorecard, null, 2)}\n`);
 }
 
 export function buildBetaDataQualityOutput<T extends object>(

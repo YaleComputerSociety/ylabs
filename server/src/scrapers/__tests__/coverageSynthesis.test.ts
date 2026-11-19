@@ -137,7 +137,7 @@ describe('synthesizeCoverageDescription', () => {
     expect(result).toBeNull();
   });
 
-  it('redacts contact info from the output and never leaks an email', async () => {
+  it('redacts a contact the snippets do not publish, so a body never invents an email', async () => {
     const result = await synthesizeCoverageDescription({
       snippets: SNIPPETS,
       entityName: 'Immunology Lab',
@@ -276,7 +276,7 @@ describe('synthesizeCoverageDescription', () => {
 });
 
 describe('gatherCoverageSnippets', () => {
-  it('keeps description-like fields, redacts contact, drops rejected sources, and dedupes', () => {
+  it('keeps description-like fields with their public contacts, drops rejected sources, and dedupes', () => {
     const snippets = gatherCoverageSnippets([
       {
         field: 'fullDescription',
@@ -299,6 +299,6 @@ describe('gatherCoverageSnippets', () => {
       { field: 'websiteUrl', value: 'https://example.edu', sourceUrl: 'https://example.edu' },
     ]);
     expect(snippets.length).toBe(2);
-    expect(snippets.some((s) => s.text.includes('reef@example.edu'))).toBe(false);
+    expect(snippets.some((s) => s.text.includes('reef@example.edu'))).toBe(true);
   });
 });

@@ -3,7 +3,7 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { connectScriptMongo } from '../db/connections';
+import { connectScriptMongo, holdDevApplyLeaseForRun } from '../db/connections';
 import { ScrapeRun } from '../models/scrapeRun';
 import { WeeklySweepRun } from '../models/weeklySweepRun';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -115,7 +115,14 @@ export async function runSweepSourceRerun(argv: string[]): Promise<number> {
 }
 
 if (isDirectScriptInvocation(import.meta.url, 'sweepSourceRerun')) {
-  runSweepSourceRerun(process.argv.slice(2))
+  holdDevApplyLeaseForRun('scrape:sweep:rerun-source')
+    .then(async (releaseLease) => {
+      try {
+        return await runSweepSourceRerun(process.argv.slice(2));
+      } finally {
+        await releaseLease();
+      }
+    })
     .then((code) => {
       process.exitCode = code;
     })

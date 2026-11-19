@@ -1,4 +1,5 @@
 import type { PathwaySearchHit } from '../types/pathway';
+import { undergradInvitationFromEntity, WELCOMES_UNDERGRADS_LABEL } from './undergradInvitation';
 import type { ResearchEntity } from '../types/researchEntity';
 import {
   isGenericResearchHomeDescription,
@@ -6,7 +7,7 @@ import {
   normalizeResearchMetadataLabels,
 } from './researchTextNormalization';
 import { getUniqueDepartmentLabels } from './departmentNames';
-import { researchEntityTitle } from './researchEntityCopy';
+import { MENTORS_UNDERGRADUATES_LABEL, researchEntityTitle } from './researchEntityCopy';
 import { safeHttpUrl } from './url';
 
 export interface EvidenceSourceRowData {
@@ -386,21 +387,78 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   if (!entity) return [];
 
   const badges: string[] = [];
+  const invitation = undergradInvitationFromEntity(entity);
+  if (invitation) badges.push(invitation.label);
+  else if (entity.welcomesUndergrads === true) badges.push(WELCOMES_UNDERGRADS_LABEL);
   // The badge reads the served flag rather than re-deriving it here, so it
   // cannot disagree with the `hostsUndergrads` browse filter or saved plans,
-  // which read the same server predicate (#3593). A quote never sets it: a quote
-  // is shown as its own cited evidence by `undergradQuoteEvidenceFromEntity`,
-  // because only half of served quotes show past hosting (#3569).
+  // which read the same server predicate (#3593).
   if (entity.hasUndergradHostingEvidence === true) badges.push('Undergrad evidence');
+  if (entity.undergradListEvidence?.some((entry) => entry?.signal === 'mentors')) {
+    badges.push(MENTORS_UNDERGRADUATES_LABEL);
+  }
 
   return badges;
 };
 
+const CONTEXT_LINE_PART_LIMIT = 3;
+const CONTEXT_LINE_SEPARATOR = ' · ';
+
 export const buildResearchHomeContextLine = (entity: ResearchEntity | undefined): string => {
   if (!entity) return '';
   return uniq([...getUniqueDepartmentLabels(entity.departments), resolveEntitySchool(entity)])
-    .slice(0, 3)
-    .join(' · ');
+    .slice(0, CONTEXT_LINE_PART_LIMIT)
+    .join(CONTEXT_LINE_SEPARATOR);
+};
+
+const schoolLabelKey = (value?: string | null): string =>
+  (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+const contextLineNamesSchool = (contextLine: string, schoolKey: string): boolean =>
+  contextLine.split('·').some((part) => schoolLabelKey(part) === schoolKey);
+
+const contextLineKeepingSchool = (entity: ResearchEntity, school: string): string => {
+  const departments = getUniqueDepartmentLabels(entity.departments).filter(
+    (department) => schoolLabelKey(department) !== schoolLabelKey(school),
+  );
+  return [...departments.slice(0, CONTEXT_LINE_PART_LIMIT - 1), school].join(
+    CONTEXT_LINE_SEPARATOR,
+  );
+};
+
+export const alsoInSchoolLabel = (school: string): string => `Also in ${school}`;
+
+export interface SchoolFilterCardContext {
+  contextLine: string;
+  alsoInSchool: string;
+}
+
+/**
+ * Under an active School filter a row matches through any value of `schools`, so a
+ * card whose primary school differs must still say how it belongs to the selected
+ * one (#5179).
+ */
+export const schoolFilterCardContext = (
+  entity: ResearchEntity | undefined,
+  filteredSchool: string | undefined,
+  contextLine: string,
+): SchoolFilterCardContext => {
+  const unchanged = { contextLine, alsoInSchool: '' };
+  const school = (filteredSchool || '').trim();
+  const schoolKey = schoolLabelKey(school);
+  if (!entity || !schoolKey || contextLineNamesSchool(contextLine, schoolKey)) return unchanged;
+
+  const primarySchool = resolveEntitySchool(entity);
+  if (schoolLabelKey(primarySchool) === schoolKey) {
+    return { contextLine: contextLineKeepingSchool(entity, primarySchool), alsoInSchool: '' };
+  }
+
+  const holdsSecondaryAppointment = (entity.schools || []).some(
+    (value) => schoolLabelKey(value) === schoolKey,
+  );
+  return holdsSecondaryAppointment
+    ? { contextLine, alsoInSchool: alsoInSchoolLabel(school) }
+    : unchanged;
 };
 
 const normalizeDisplayKeyPart = (value?: string): string =>

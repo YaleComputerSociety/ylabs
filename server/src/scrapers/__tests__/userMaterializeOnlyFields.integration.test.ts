@@ -1,0 +1,619 @@
+import mongoose from 'mongoose';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../services/meiliSyncService', async () => {
+  const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
+    '../../services/meiliSyncService',
+  );
+  return {
+    ...actual,
+    syncEntity: vi.fn().mockResolvedValue(undefined),
+    deleteFromIndex: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
+vi.mock('../../services/researchEntityBrowseRankService', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../services/researchEntityBrowseRankService')
+  >('../../services/researchEntityBrowseRankService');
+  return { ...actual, recomputeBrowseRankForEntities: vi.fn().mockResolvedValue(undefined) };
+});
+
+import { Account } from '../../models/account';
+import { Observation } from '../../models/observation';
+import { Researcher } from '../../models/researcher';
+import { ResearchEntity } from '../../models/researchEntity';
+import { RoleAssignment } from '../../models/roleAssignment';
+import { materializeEntity, materializeFromRun } from '../entityMaterializer';
+import { resetDirectoryNetidsByAddressCache } from '../directoryContradictedProfileNetid';
+import { resetInvalidatedScrapeRunCache } from '../invalidatedScrapeRuns';
+import { resetOverSharedPersonWebsiteKeysCache } from '../overSharedPersonWebsite';
+import { recordFullCoverageRun } from './fullCoverageRunFixture';
+
+const NETID = 'zz5816a';
+const KEY = `netid:${NETID}`;
+const EMAIL_NETID = 'zz5816b';
+const EMAIL_KEY = `netid:${EMAIL_NETID}`;
+const PAGE_EMAIL = 'avery.synthetic5816@yale.edu';
+const OWN_PAGE = 'https://medicine.yale.edu/profile/avery-synthetic5816/';
+const PROFILE_PAGE = 'https://medicine.yale.edu/profile/avery-synthetic5816a/';
+const FIRST_HAND_TITLE = 'Associate Professor of Fixture Medicine';
+const ROSTER_TITLE = 'Professor of Fixture Studies';
+const STORED_TITLE = 'Lecturer in Fixtures';
+const NOW = new Date('2026-11-10T00:00:00Z');
+const MINT_KEY = 'dept:fixture5816:avery-synthetic';
+const NAMING_SLUG = 'fixture-5816-lab';
+
+describe('a user materialize scoped to named fields writes only that scope (#5816)', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+    await Observation.syncIndexes();
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet?.stop();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    for (const name of [
+      'observations',
+      'researchers',
+      'accounts',
+      'research_entities',
+      'role_assignments',
+      'scrape_runs',
+    ]) {
+      await db.collection(name).deleteMany({});
+    }
+    resetDirectoryNetidsByAddressCache();
+    resetInvalidatedScrapeRunCache();
+    resetOverSharedPersonWebsiteKeysCache();
+  });
+
+  const observation = (fields: Record<string, unknown>) =>
+    Observation.create({
+      entityType: 'user',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: 'https://fixture5816.example.edu/faculty/',
+      confidence: 0.9,
+      observedAt: new Date('2026-11-01T00:00:00Z'),
+      superseded: false,
+      ...fields,
+    });
+
+  const seedProfileEvidence = async (entityKey: string) => {
+    for (const [field, value] of [
+      ['fname', 'Avery'],
+      ['lname', 'Synthetic'],
+      ['title', ROSTER_TITLE],
+      ['primaryDepartment', 'Fixture Studies'],
+      ['imageUrl', 'https://fixture5816.example.edu/photos/avery.jpg'],
+      ['websiteUrl', 'https://avery-synthetic5816.example.edu/'],
+    ] as const) {
+      await observation({ entityKey, field, value });
+    }
+  };
+
+  const seedResearcher = (extra: Record<string, unknown> = {}) =>
+    Researcher.create({
+      displayName: 'A. Synthetic',
+      identifiers: { netid: NETID },
+      profile: {},
+      profileLinks: [],
+      status: 'UNKNOWN',
+      archived: false,
+      ...extra,
+    });
+
+  const stored = async (id: unknown) => Researcher.findById(id).lean<any>();
+
+  const withoutPaths = (document: any, paths: readonly string[]) => {
+    const copy = structuredClone(document);
+    delete copy.updatedAt;
+    for (const path of paths) {
+      const segments = path.split('.');
+      let parent = copy;
+      for (const segment of segments.slice(0, -1)) parent = parent?.[segment];
+      if (parent) delete parent[segments.at(-1) as string];
+      const [root] = segments;
+      if (segments.length > 1 && Object.keys(copy[root] ?? {}).length === 0) delete copy[root];
+    }
+    return copy;
+  };
+
+  const resolve = (entityKey: string, onlyFields?: string[], dryRun = false) =>
+    materializeEntity(
+      'user',
+      { entityKey },
+      { dryRun, ...(onlyFields ? { userWriteOnlyFields: onlyFields } : {}) },
+    );
+
+  it('reports every planned path outside the scope as out of scope on a dry run', async () => {
+    const researcher = await seedResearcher();
+    await seedProfileEvidence(KEY);
+    const before = await stored(researcher._id);
+
+    const result = await resolve(KEY, ['primaryDepartment'], true);
+
+    expect(result.plannedPaths).toEqual([
+      'profile.primaryDepartment',
+      'profileFieldWriters.primaryDepartment',
+    ]);
+    expect(result.outOfScopePaths).toEqual(
+      expect.arrayContaining(['displayName', 'profile.title']),
+    );
+    expect(result.fieldsWritten).toBe(2);
+    expect(await stored(researcher._id)).toEqual(before);
+  });
+
+  it('writes the scope on apply, leaves every other field byte-identical, and settles', async () => {
+    const researcher = await seedResearcher();
+    await seedProfileEvidence(KEY);
+    const before = await stored(researcher._id);
+
+    const applied = await resolve(KEY, ['primaryDepartment']);
+    const after = await stored(researcher._id);
+
+    expect(applied.plannedPaths).toEqual([
+      'profile.primaryDepartment',
+      'profileFieldWriters.primaryDepartment',
+    ]);
+    expect(after.profile.primaryDepartment).toBe('Fixture Studies');
+    expect(after.profileFieldWriters.primaryDepartment.userKey).toBe(KEY);
+    expect(withoutPaths(after, applied.plannedPaths ?? [])).toEqual(
+      withoutPaths(before, applied.plannedPaths ?? []),
+    );
+    expect(after.profile.title).toBeUndefined();
+    expect(after.displayName).toBe('A. Synthetic');
+
+    const second = await resolve(KEY, ['primaryDepartment']);
+    expect(second.plannedPaths).toEqual([]);
+    expect(second.fieldsWritten).toBe(0);
+  });
+
+  it('keeps out-of-scope writer records on apply and reports them as out of scope (#6276)', async () => {
+    const otherWriter = { userKey: 'user:fixture6276-other', joinRank: 2, confidence: 0.4 };
+    const researcher = await seedResearcher({
+      profile: {
+        imageUrl: 'https://fixture6276.example.edu/photos/stored.jpg',
+        primaryDepartment: 'Stored Studies',
+      },
+      profileFieldWriters: { imageUrl: otherWriter, primaryDepartment: otherWriter },
+    });
+    await seedProfileEvidence(KEY);
+    const before = await stored(researcher._id);
+    const scope = ['displayName', 'profile.title'];
+
+    const planned = await resolve(KEY, scope, true);
+    expect(planned.outOfScopePaths).toEqual(
+      expect.arrayContaining([
+        'profileFieldWriters.imageUrl',
+        'profileFieldWriters.primaryDepartment',
+      ]),
+    );
+    expect(planned).not.toHaveProperty('droppedPaths');
+
+    const applied = await resolve(KEY, scope);
+    const after = await stored(researcher._id);
+
+    expect(applied.outOfScopePaths).toEqual(planned.outOfScopePaths);
+    expect(after.profileFieldWriters.imageUrl).toEqual(before.profileFieldWriters.imageUrl);
+    expect(after.profileFieldWriters.primaryDepartment).toEqual(
+      before.profileFieldWriters.primaryDepartment,
+    );
+    expect(after.profile.imageUrl).toBe(before.profile.imageUrl);
+    expect(after.profile.primaryDepartment).toBe(before.profile.primaryDepartment);
+    expect(withoutPaths(after, applied.plannedPaths ?? [])).toEqual(
+      withoutPaths(before, applied.plannedPaths ?? []),
+    );
+  });
+
+  it('plans exactly the display values and their writer records for a display-field scope', async () => {
+    const researcher = await seedResearcher();
+    await seedProfileEvidence(KEY);
+    const scope = ['displayName', 'primaryDepartment', 'imageUrl', 'websiteUrl'];
+    const expected = [
+      'displayName',
+      'profile.imageUrl',
+      'profile.primaryDepartment',
+      'profile.websiteUrl',
+      'profileFieldWriters.displayName',
+      'profileFieldWriters.imageUrl',
+      'profileFieldWriters.primaryDepartment',
+      'profileFieldWriters.websiteUrl',
+    ];
+    const before = await stored(researcher._id);
+
+    const planned = await resolve(KEY, scope, true);
+    expect(planned.plannedPaths).toEqual(expected);
+    expect(planned.outOfScopePaths).toEqual(['profile.title']);
+
+    const applied = await resolve(KEY, scope);
+    expect(applied.plannedPaths).toEqual(expected);
+    const after = await stored(researcher._id);
+    expect(withoutPaths(after, expected)).toEqual(withoutPaths(before, expected));
+    expect(after.profile.title).toBeUndefined();
+    expect(after.profileFieldWriters.title).toBeUndefined();
+
+    const second = await resolve(KEY, scope);
+    expect(second.plannedPaths).toEqual([]);
+    expect(second.fieldsWritten).toBe(0);
+  });
+
+  it('re-records only writer entries under profileFieldWriters and keeps every value', async () => {
+    const researcher = await seedResearcher({
+      profileFieldWriters: { title: { userKey: KEY, joinRank: 4, confidence: 0.01 } },
+    });
+    await seedProfileEvidence(KEY);
+    const before = await stored(researcher._id);
+
+    const unscopedPlan = await resolve(KEY, undefined, true);
+    expect(unscopedPlan.plannedPaths).toEqual(expect.arrayContaining(['profile']));
+
+    const planned = await resolve(KEY, ['profileFieldWriters'], true);
+    expect(planned.plannedPaths?.length).toBeGreaterThan(0);
+    expect(planned.plannedPaths?.every((path) => path.startsWith('profileFieldWriters.'))).toBe(
+      true,
+    );
+    expect(planned.plannedPaths).toContain('profileFieldWriters.title');
+    expect(planned.outOfScopePaths).toEqual(
+      expect.arrayContaining(['profile.title', 'displayName']),
+    );
+
+    await resolve(KEY, ['profileFieldWriters']);
+    const after = await stored(researcher._id);
+    expect(after.profileFieldWriters.title).toBeUndefined();
+    expect(after.profile).toEqual(before.profile);
+    expect(after.displayName).toBe(before.displayName);
+    expect(after.identifiers).toEqual(before.identifiers);
+    expect(after.profileLinks).toEqual(before.profileLinks);
+    expect(withoutPaths(after, ['profileFieldWriters'])).toEqual(
+      withoutPaths(before, ['profileFieldWriters']),
+    );
+
+    const second = await resolve(KEY, ['profileFieldWriters']);
+    expect(second.plannedPaths).toEqual([]);
+    expect(second.fieldsWritten).toBe(0);
+  });
+
+  it('still derives the email inside an email scope and leaves the profile around it out of scope', async () => {
+    const researcher = await Researcher.create({
+      displayName: 'Avery Synthetic',
+      identifiers: { netid: EMAIL_NETID },
+      profile: {},
+      profileLinks: [
+        {
+          kind: 'YALE_OFFICIAL',
+          purpose: 'PRIMARY_IDENTITY',
+          url: OWN_PAGE,
+          verifiedAt: new Date('2026-01-01T00:00:00Z'),
+          healthStatus: 'UNKNOWN',
+        },
+      ],
+      status: 'UNKNOWN',
+      archived: false,
+    });
+    await observation({
+      entityKey: EMAIL_KEY,
+      sourceName: 'official-profile-pi-backfill',
+      sourceUrl: OWN_PAGE,
+      field: 'email',
+      value: PAGE_EMAIL,
+    });
+    await observation({
+      entityKey: EMAIL_KEY,
+      sourceUrl: OWN_PAGE,
+      field: 'title',
+      value: 'Professor of Fixture Studies',
+    });
+    const before = await stored(researcher._id);
+
+    const planned = await resolve(EMAIL_KEY, ['email'], true);
+    expect(planned.plannedPaths).toEqual(['identifiers.email', 'identifiers.emailSupport']);
+    expect(planned.outOfScopePaths).toEqual(expect.arrayContaining(['profile.title']));
+
+    await resolve(EMAIL_KEY, ['identifiers.email']);
+    const after = await stored(researcher._id);
+    expect(after.identifiers.email).toBe(PAGE_EMAIL);
+    expect(after.identifiers.emailSupport).toEqual({
+      supported: true,
+      sources: ['official-profile-pi-backfill'],
+      computedForEmail: PAGE_EMAIL,
+    });
+    expect(withoutPaths(after, ['identifiers.email', 'identifiers.emailSupport'])).toEqual(
+      withoutPaths(before, ['identifiers.email', 'identifiers.emailSupport']),
+    );
+
+    const second = await resolve(EMAIL_KEY, ['identifiers.email']);
+    expect(second.plannedPaths).toEqual([]);
+  });
+
+  it('writes the email support marker only inside a scope that names the email pair (#5627)', async () => {
+    const researcher = await seedResearcher({
+      identifiers: { netid: NETID, email: PAGE_EMAIL },
+    });
+    await seedProfileEvidence(KEY);
+    await observation({ entityKey: KEY, field: 'email', value: PAGE_EMAIL });
+
+    const outsideScope = await resolve(KEY, ['title']);
+    expect(outsideScope.outOfScopePaths).toEqual(
+      expect.arrayContaining(['identifiers.emailSupport']),
+    );
+    expect((await stored(researcher._id)).identifiers.emailSupport).toBeUndefined();
+
+    const before = await stored(researcher._id);
+    const inScope = await resolve(KEY, ['identifiers.email', 'identifiers.emailSupport']);
+    expect(inScope.plannedPaths).toEqual(['identifiers.emailSupport']);
+    const after = await stored(researcher._id);
+    expect(after.identifiers.emailSupport).toEqual({
+      supported: true,
+      sources: ['dept-faculty-roster'],
+      computedForEmail: PAGE_EMAIL,
+    });
+    expect(withoutPaths(after, ['identifiers.emailSupport'])).toEqual(
+      withoutPaths(before, ['identifiers.emailSupport']),
+    );
+    expect((await resolve(KEY, ['email'])).plannedPaths).toEqual([]);
+  });
+
+  it('mints no researcher and writes no edge on a field-scoped run materialize', async () => {
+    const scrapeRunId = new mongoose.Types.ObjectId();
+    await ResearchEntity.create({
+      slug: NAMING_SLUG,
+      name: 'Fixture 5816 Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: NAMING_SLUG,
+      field: 'inferredPiUserKey',
+      value: MINT_KEY,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: 'https://fixture5816.example.edu/faculty/',
+      confidence: 0.7,
+      observedAt: new Date('2026-11-01T00:00:00Z'),
+      superseded: false,
+      scrapeRunId,
+    });
+    for (const [field, value] of [
+      ['fname', 'Avery'],
+      ['lname', 'Synthetic'],
+      ['title', 'Professor of Fixture Studies'],
+    ] as const) {
+      await observation({ entityKey: MINT_KEY, field, value, scrapeRunId });
+    }
+    const entityBefore = await ResearchEntity.findOne({ slug: NAMING_SLUG }).lean();
+
+    const result = await materializeFromRun(String(scrapeRunId), {
+      userWriteOnlyFields: ['displayName', 'title'],
+    });
+
+    expect(await Researcher.countDocuments({})).toBe(0);
+    expect(await RoleAssignment.countDocuments({})).toBe(0);
+    expect(await ResearchEntity.findOne({ slug: NAMING_SLUG }).lean()).toEqual(entityBefore);
+    expect(result.userFieldScope).toMatchObject({
+      keys: 1,
+      keysWriting: 0,
+      plannedPathSet: [],
+      rowsOutsideUserSkipped: { researchEntity: 1 },
+      runReconciliationsSkipped: true,
+      skipped: { 'field-scoped-run-mints-no-researcher': 1 },
+    });
+    expect(result.userFieldScope?.rows).toEqual([
+      expect.objectContaining({
+        entityKey: MINT_KEY,
+        skipped: 'field-scoped-run-mints-no-researcher',
+        plannedPaths: [],
+      }),
+    ]);
+
+    const unscoped = await materializeEntity('user', { entityKey: MINT_KEY }, {});
+    expect(unscoped.created).toBe(true);
+    expect(await Researcher.countDocuments({})).toBe(1);
+  });
+
+  const seedLeadAttributedMintKey = async (attributed: boolean) => {
+    const scrapeRunId = new mongoose.Types.ObjectId();
+    if (attributed) {
+      await ResearchEntity.create({
+        slug: NAMING_SLUG,
+        name: 'Fixture 5816 Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        archived: false,
+      });
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: NAMING_SLUG,
+        field: 'inferredPiUserKey',
+        value: MINT_KEY,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://fixture5816.example.edu/faculty/',
+        confidence: 0.7,
+        observedAt: new Date('2026-11-01T00:00:00Z'),
+        superseded: false,
+        scrapeRunId,
+      });
+    }
+    for (const [field, value] of [
+      ['fname', 'Avery'],
+      ['lname', 'Synthetic'],
+      ['title', 'Professor of Fixture Studies'],
+    ] as const) {
+      await observation({ entityKey: MINT_KEY, field, value, scrapeRunId });
+    }
+  };
+
+  it('mints a researcher on a field-scoped resolve only for a listed key (#5875)', async () => {
+    await seedLeadAttributedMintKey(true);
+
+    const unlisted = await materializeEntity(
+      'user',
+      { entityKey: MINT_KEY },
+      {
+        userWriteOnlyFields: ['displayName'],
+        mintListedUserKeys: new Set(['dept:fixture5816:someone-else']),
+      },
+    );
+    expect(unlisted.skipped).toBe('field-scoped-run-mints-no-researcher');
+    const fieldOnly = await materializeEntity(
+      'user',
+      { entityKey: MINT_KEY },
+      { userWriteOnlyFields: ['displayName'] },
+    );
+    expect(fieldOnly.skipped).toBe('field-scoped-run-mints-no-researcher');
+    expect(await Researcher.countDocuments({})).toBe(0);
+
+    const listed = await materializeEntity(
+      'user',
+      { entityKey: MINT_KEY },
+      { userWriteOnlyFields: ['displayName'], mintListedUserKeys: new Set([MINT_KEY]) },
+    );
+    expect(listed.created).toBe(true);
+    expect(await Researcher.countDocuments({})).toBe(1);
+    expect((await Researcher.findOne({}).lean<any>())?.displayName).toBe('Avery Synthetic');
+  });
+
+  it('writes nothing to existing records when a listed key mints (#5875)', async () => {
+    await seedLeadAttributedMintKey(true);
+    const existing = await seedResearcher({ displayName: 'Blake Unrelated' });
+    const account = await Account.create({
+      netid: NETID,
+      email: PAGE_EMAIL,
+      status: 'UNKNOWN',
+      archived: false,
+    });
+    const researcherBefore = await Researcher.findById(existing._id).lean();
+    const accountBefore = await Account.findById(account._id).lean();
+    const entityBefore = await ResearchEntity.findOne({ slug: NAMING_SLUG }).lean();
+    const edgesBefore = await RoleAssignment.countDocuments({});
+
+    const listed = await materializeEntity(
+      'user',
+      { entityKey: MINT_KEY },
+      { userWriteOnlyFields: ['displayName'], mintListedUserKeys: new Set([MINT_KEY]) },
+    );
+
+    expect(listed.created).toBe(true);
+    expect(await Researcher.countDocuments({})).toBe(2);
+    expect(await Researcher.findById(existing._id).lean()).toEqual(researcherBefore);
+    expect(await Account.findById(account._id).lean()).toEqual(accountBefore);
+    expect(await ResearchEntity.findOne({ slug: NAMING_SLUG }).lean()).toEqual(entityBefore);
+    expect(await RoleAssignment.countDocuments({})).toBe(edgesBefore);
+  });
+
+  it('keeps the full-run mint refusal for a listed key the corpus never names as a lead (#5875)', async () => {
+    await seedLeadAttributedMintKey(false);
+
+    const listed = await materializeEntity(
+      'user',
+      { entityKey: MINT_KEY },
+      { userWriteOnlyFields: ['displayName'], mintListedUserKeys: new Set([MINT_KEY]) },
+    );
+    const unscoped = await materializeEntity('user', { entityKey: MINT_KEY }, { dryRun: true });
+
+    expect(unscoped.skipped).toBeTruthy();
+    expect(unscoped.skipped).not.toBe('field-scoped-run-mints-no-researcher');
+    expect(listed.skipped).toBe(unscoped.skipped);
+    expect(await Researcher.countDocuments({})).toBe(0);
+  });
+
+  const seedFirstHandTitleResearcher = async () => {
+    const researcher = await seedResearcher({
+      profile: { title: STORED_TITLE },
+      profileLinks: [
+        {
+          kind: 'YALE_OFFICIAL',
+          purpose: 'PRIMARY_IDENTITY',
+          url: PROFILE_PAGE,
+          verifiedAt: new Date('2026-01-01T00:00:00Z'),
+          healthStatus: 'UNKNOWN',
+        },
+      ],
+    });
+    const scrapeRunId = new mongoose.Types.ObjectId();
+    const observedAt = new Date('2026-10-01T00:00:00Z');
+    await recordFullCoverageRun('ysm-faculty-directory', scrapeRunId, observedAt);
+    await observation({
+      entityKey: KEY,
+      scrapeRunId,
+      sourceName: 'ysm-faculty-directory',
+      sourceUrl: PROFILE_PAGE,
+      observedAt,
+      field: 'title',
+      value: FIRST_HAND_TITLE,
+    });
+    await seedProfileEvidence(KEY);
+    return researcher;
+  };
+
+  const resolveAt = (onlyFields: string[] | undefined, dryRun = false) =>
+    materializeEntity(
+      'user',
+      { entityKey: KEY },
+      { dryRun, now: NOW, ...(onlyFields ? { userWriteOnlyFields: onlyFields } : {}) },
+    );
+
+  it('leaves a stored title byte-identical under a non-title scope that plans a title change', async () => {
+    const researcher = await seedFirstHandTitleResearcher();
+    const unscopedPlan = await resolveAt(undefined, true);
+    expect(unscopedPlan.plannedPaths).toEqual(expect.arrayContaining(['profile']));
+    const before = await stored(researcher._id);
+
+    const applied = await resolveAt(['websiteUrl']);
+
+    expect(applied.outOfScopePaths).toContain('profile.title');
+    expect(applied.plannedPaths).not.toContain('profile.title');
+    const after = await stored(researcher._id);
+    expect(after.profile.title).toBe(STORED_TITLE);
+    expect(withoutPaths(after, applied.plannedPaths ?? [])).toEqual(
+      withoutPaths(before, applied.plannedPaths ?? []),
+    );
+  });
+
+  it("writes the first-hand title rule's title under a title-only scope and nothing else", async () => {
+    const researcher = await seedFirstHandTitleResearcher();
+    const before = await stored(researcher._id);
+
+    const planned = await resolveAt(['profile.title'], true);
+    expect(planned.plannedPaths).toEqual(['profile.title']);
+    expect(planned.outOfScopePaths).toEqual(
+      expect.arrayContaining(['displayName', 'profile.primaryDepartment']),
+    );
+
+    const applied = await resolveAt(['profile.title']);
+    expect(applied.plannedPaths).toEqual(['profile.title']);
+    const after = await stored(researcher._id);
+    expect(after.profile.title).toBe(FIRST_HAND_TITLE);
+    expect(after.profile.title).not.toBe(ROSTER_TITLE);
+    expect(withoutPaths(after, ['profile.title'])).toEqual(withoutPaths(before, ['profile.title']));
+
+    const second = await resolveAt(['profile.title']);
+    expect(second.plannedPaths).toEqual([]);
+    expect(second.fieldsWritten).toBe(0);
+  });
+
+  it('changes nothing about an unscoped resolve', async () => {
+    const researcher = await seedResearcher();
+    await seedProfileEvidence(KEY);
+
+    const result = await resolve(KEY);
+
+    expect(result.outOfScopePaths).toBeUndefined();
+    const after = await stored(researcher._id);
+    expect(after.profile.title).toBe('Professor of Fixture Studies');
+    expect(after.profile.primaryDepartment).toBe('Fixture Studies');
+  });
+});

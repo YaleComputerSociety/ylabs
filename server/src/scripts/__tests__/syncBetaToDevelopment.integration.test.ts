@@ -194,6 +194,33 @@ async function seedTarget(targetDb: Db): Promise<void> {
   await targetDb
     .collection('login_signal_tallies')
     .insertOne({ date: '2026-10-04', undergrad_usable_major: 1 });
+  await targetDb
+    .collection('deleted_account_event_tallies')
+    .insertOne({ month: '2026-10', eventType: 'search', count: 2 });
+  await targetDb
+    .collection('account_deletion_requests')
+    .insertOne({ subjectHash: 'a'.repeat(64), sourceEnvironment: 'development' });
+  await targetDb
+    .collection('research_topics_derivations')
+    .insertOne({ inputHash: 'example-input-hash', topics: ['Kelp forests'] });
+  await targetDb
+    .collection('card_synthesis_derivations')
+    .insertOne({ inputHash: 'example-card-input-hash', writer: 'openai:gpt-5-mini' });
+  await targetDb
+    .collection('written_description_derivations')
+    .insertOne({ inputHash: 'example-writer-input-hash', writer: 'openai:gpt-5-mini' });
+  await targetDb
+    .collection('search_rerank_cache')
+    .insertOne({ queryKey: 'example-query-key', scores: [{ entityId: 'example', score: 3 }] });
+  await targetDb
+    .collection('model_call_usages')
+    .insertOne({ caller: 'card-synthesis', model: 'gpt-5-mini', promptTokens: 10 });
+  await targetDb
+    .collection('directory_removal_requests')
+    .insertOne({ requesterNetid: 'zz9xxx', researcherId: new ObjectId(), status: 'pending' });
+  await targetDb
+    .collection('dev_write_launches')
+    .insertOne({ kind: 'apply', scriptName: 'repair:thing' });
   await targetDb.collection('scrape_snapshots').insertOne({ runId: 'stale-development-run' });
   await targetDb
     .collection('scrape_job_locks')
@@ -253,11 +280,18 @@ describe('Beta to Development mirror against MongoDB', () => {
     );
     expect(summary.includesObservations).toBe(false);
 
-    await applySync(sourceDb, targetDb, collections, clearedCollectionNames, async () => {
-      const after = await buildPlan(sourceDb, targetDb, collections);
-      const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
-      expect(mismatches).toEqual([]);
-    });
+    await applySync(
+      sourceDb,
+      targetDb,
+      collections,
+      clearedCollectionNames,
+      async () => undefined,
+      async () => {
+        const after = await buildPlan(sourceDb, targetDb, collections);
+        const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
+        expect(mismatches).toEqual([]);
+      },
+    );
   });
 
   afterAll(async () => {
@@ -309,13 +343,17 @@ describe('Beta to Development mirror against MongoDB', () => {
     expect(await targetDb.collection('analytics_events').findOne({})).toMatchObject({
       event: 'development_student_search',
     });
-    expect(await targetDb.listCollections({ name: 'scrape_job_locks' }).hasNext()).toBe(false);
+    expect(
+      await targetDb
+        .collection('scrape_job_locks')
+        .countDocuments({ sourceName: 'example-directory' }),
+    ).toBe(1);
     expect(await targetDb.listCollections({ name: 'student_profiles' }).hasNext()).toBe(false);
     expect(await targetDb.listCollections({ name: 'evidence_claims' }).hasNext()).toBe(false);
   });
 
   it('keeps the frozen benchmarks and measurement history a refresh cannot re-derive', async () => {
-    expect(clearedCollectionNames).toEqual(['scrape_job_locks', 'scrape_snapshots']);
+    expect(clearedCollectionNames).toEqual(['scrape_snapshots']);
     expect(preservedCollectionNames).toEqual([...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS].sort());
 
     const benchmark = await targetDb

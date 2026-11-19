@@ -1,4 +1,4 @@
-import { publicStudentVisibilityTiers } from '../models/studentVisibility';
+import { servesStudentVisibilityTier } from '../models/studentVisibility';
 import { getMeiliSearchIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -41,18 +41,27 @@ let currentVocabulary: SearchSpellingVocabulary | null = null;
 let inFlightWarm: Promise<SearchSpellingVocabulary | null> | null = null;
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-const SERVED_TIERS = new Set<unknown>(publicStudentVisibilityTiers);
+// `memberNames` only guards a typed name against respelling: a student's name
+// never becomes a correction target, so it is not in the name fields (#5442).
+const RESEARCH_SEARCH_SPELLING_PERSON_NAME_FIELDS = [
+  'leadProfessorNames',
+  'professorNames',
+  'memberNames',
+] as const;
 
 const toVocabularyDocument = (hit: Record<string, unknown>): SearchVocabularyDocument => ({
   nameText: RESEARCH_SEARCH_SPELLING_NAME_FIELDS.map((field) => hit[field]),
+  personNameText: RESEARCH_SEARCH_SPELLING_PERSON_NAME_FIELDS.map((field) => hit[field]),
   bodyText: RESEARCH_SEARCH_SPELLING_BODY_FIELDS.map((field) => hit[field]),
-  served: SERVED_TIERS.has(hit.studentVisibilityTier),
+  served: servesStudentVisibilityTier(hit),
 });
 
-export const loadResearchSearchSpellingVocabulary = async (
-  getIndex: () => Promise<VocabularySearchIndex> = () =>
-    getMeiliSearchIndex('researchentities') as Promise<VocabularySearchIndex>,
-): Promise<SearchSpellingVocabulary> => {
+const getResearchEntitiesIndex = () =>
+  getMeiliSearchIndex('researchentities') as Promise<VocabularySearchIndex>;
+
+export const loadResearchSearchVocabularyDocuments = async (
+  getIndex: () => Promise<VocabularySearchIndex> = getResearchEntitiesIndex,
+): Promise<SearchVocabularyDocument[]> => {
   const index = await getIndex();
   const documents: SearchVocabularyDocument[] = [];
   for (let offset = 0; offset < MAX_DOCUMENTS; offset += PAGE_SIZE) {
@@ -62,15 +71,22 @@ export const loadResearchSearchSpellingVocabulary = async (
       offset,
       attributesToRetrieve: [
         ...RESEARCH_SEARCH_SPELLING_NAME_FIELDS,
+        'memberNames',
         ...RESEARCH_SEARCH_SPELLING_BODY_FIELDS,
         'studentVisibilityTier',
+        'studentVisibilityOverrideTier',
       ],
     });
     documents.push(...page.hits.map(toVocabularyDocument));
     if (page.hits.length < PAGE_SIZE) break;
   }
-  return buildSearchSpellingVocabulary(documents);
+  return documents;
 };
+
+export const loadResearchSearchSpellingVocabulary = async (
+  getIndex: () => Promise<VocabularySearchIndex> = getResearchEntitiesIndex,
+): Promise<SearchSpellingVocabulary> =>
+  buildSearchSpellingVocabulary(await loadResearchSearchVocabularyDocuments(getIndex));
 
 export const getResearchSearchSpellingVocabulary = (): SearchSpellingVocabulary | null =>
   currentVocabulary;

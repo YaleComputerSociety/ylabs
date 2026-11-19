@@ -5,12 +5,14 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import type { LoginSignalBucket } from '../models/storedVocabularies';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 
 dotenv.config({ quiet: true });
 
 const YALIES_API_URL = 'https://api.yalies.io/v2/people';
 const YALIES_API_TIMEOUT_MS = 10_000;
 const YALIES_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
+export const FIRST_YALIES_PAGE = 0;
 
 const yaliesApiKey = () => String(process.env.YALIES_API_KEY || '').trim();
 
@@ -44,6 +46,11 @@ export interface YaliesPerson {
   image?: string;
   orcid?: string;
   url?: string;
+  unit?: string;
+  unit_code?: string;
+  unit_class?: string;
+  organization?: string;
+  organization_code?: string;
   unit_name?: string;
   organization_name?: string;
   primary_organization_name?: string;
@@ -54,7 +61,6 @@ export interface ListYaliesOptions {
   page?: number;
   pageSize?: number;
   filters?: Record<string, unknown>;
-  userAgent?: string;
 }
 
 export async function listYalies(options: ListYaliesOptions = {}): Promise<YaliesPerson[]> {
@@ -74,7 +80,7 @@ export async function listYalies(options: ListYaliesOptions = {}): Promise<Yalie
       {
         headers: {
           Authorization: `Bearer ${apiKey}`,
-          ...(options.userAgent ? { 'User-Agent': options.userAgent } : {}),
+          'User-Agent': SCRAPER_USER_AGENT,
         },
         timeout: YALIES_API_TIMEOUT_MS,
       },
@@ -101,7 +107,6 @@ export interface YaliesEmployee {
   lname: string;
   email: string;
   title: string;
-  department: string;
 }
 
 export type StudentLoginSignal = Extract<
@@ -164,11 +169,6 @@ function employeeRecord(record: YaliesRecord, netid: string): YaliesEmployee {
     lname: text(record.last_name),
     email: text(record.email),
     title: text(record.title),
-    department:
-      text(record.unit_name) ||
-      text(record.primary_division_name) ||
-      text(record.organization_name) ||
-      text(record.primary_organization_name),
   };
 }
 

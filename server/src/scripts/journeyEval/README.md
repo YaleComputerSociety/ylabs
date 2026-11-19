@@ -91,13 +91,17 @@ A card that serves the label where the decision does not, or drops it where the 
 The share of cards labelled is a rate and never gates.
 Change the label inside `decideCreativePractice` in `server/src/utils/creativePracticeDescription.ts`, never at one surface, or this case reports the surfaces as disagreeing.
 
+The `creative-practice-type-facet-split` case walks every page of a browse filtered to Type = Creative practice and of one filtered to Faculty research, and asserts that every Creative practice row serves `creativePractice: true`, that no Faculty research row does, and that each filtered total equals its count in the unfiltered Type facet (#5141).
+A mislabelled row is attributed to a stale index document when its indexed `researchType` is not the one `researchEntitySearchResearchType` derives from the stored row now; only an unattributed one fails, and an attributed one makes the case inconclusive with a re-sync as the remedy.
+Both invariants are inconclusive when the live index does not yet declare `researchType` filterable, which the route reports through `appliedFilters.entityType` on the Creative practice browse, and when the corpus moved during a walk that disagreed.
+
 ## The default browse order is repeatable
 
 The `default-browse-order-is-repeatable` case walks the no-query browse twice and fails when the second walk serves a different order over an unchanged corpus (#4547).
 Default browse breaks `browseRankScore` ties on the indexed `browseTiebreakKey`, a fixed hash of the row id, because the `lastObservedAt` tiebreak served the sweep's write order and reshuffled pages while a sweep ran.
 A reordering while the corpus fingerprint moved is inconclusive, since a rescored row legitimately moves.
 The case also fails when either walk is degraded, which is what an index that has not had `browseTiebreakKey` pushed to its sortable attributes returns.
-The school, leading department, and entity type split of the first page are notes, never a gate: they show which part of the corpus the ranking favours; the grant term is weighted 0 while grant coverage is uneven, and `skills/search-data/SKILL.md` records when it returns.
+The school, leading department, and entity type split of the first page are notes, never a gate: they show which part of the corpus the ranking favours; the grant term is weighted 0, and `skills/search-data/SKILL.md` records why.
 
 ## A sorted browse sorts on a fresh index
 
@@ -109,6 +113,44 @@ A row whose stored `updatedAt` falls within a minute of the read is counted unde
 A failure names a stale index, and the remedy is a rebuild per `docs/meilisearch-reindex-runbook.md`, not a change to the sort.
 The usual cause on Development is a writer whose index syncs reach a different Meilisearch, or a hosted weekly run, which defers its index writes until `yarn development:search:sync` re-syncs it (`docs/data-refresh-runbook.md`).
 The two sorted cases are also the sample check that command and a laptop sweep's `search-index-check` stage run after a rebuild, as `yarn development:search:check`, with `--fail-on-inconclusive` so a window in which no served row settled before the read fails the check rather than passing over an empty population.
+
+## The welcomes filter serves the badge
+
+The `welcomes-filter-serves-the-badge` case walks every page of a browse filtered to "Taking undergrads now" (`welcomesUndergrads`) and asserts that every row it returns serves `welcomesUndergrads: true` on its card (#5620).
+The `hosted-filter-serves-the-badge` case does the same for "Has had undergrads before" (`hostsUndergrads`) against `hasUndergradHostingEvidence: true`, and `advises-filter-serves-a-mentors-entry` does it for "Advises undergrad research" (`mentorsUndergrads`) against an `undergradListEvidence` entry whose signal is `mentors`; the difference that one finds is attributable to the emeritus way-in guard, which withholds an advising-now entry from the card (#5620, #5963).
+The three replaced the `works-with-filter-serves-a-signal` case when the "Works with undergrads" option was retired (#5963).
+The `undergrad-option-count-agreement` case reads each option's count with none, then each one, of the three ticked, and asserts it equals the total the route returns with that option added, because the options combine with `AND` and the count is what ticking it would leave (#5963).
+The filter reads the index and the badge is decided at serve time, so a row the index counts and the card withholds, such as an emeritus-led row whose way in is withheld, is the disagreement this catches.
+A row without the badge while the corpus fingerprint moved is inconclusive, since it may have been written after its index document, and a filter that serves no row is inconclusive rather than a pass.
+Both cases also fail on a degraded filtered page, because a degraded card cannot apply the withheld decision and would agree with a stale index.
+Measured on Development on 2026-11-10, the filter returned 117 rows and all 117 served the badge.
+
+## A service core ranks below research rows
+
+The `service-cores-rank-below-research` case searches eight topic queries, reads the stored row behind each of the top 30 results, and classifies it through `serviceCoreDemotionReason`, the guard search itself calls (#5748).
+It fails when a row the guard demotes (a `CORE_FACILITY` row, or a faculty row whose research text is a core's service offer) outranks a row it classifies as research, and reports each row the guard exempts because the query names it, with its rank and reason.
+A run in which no query serves a core is inconclusive rather than a pass, and a violation while the corpus fingerprint moved is inconclusive too.
+Measured on Development on 2026-11-11 with the rerank cache on, it failed with the demotion at strength zero (35 demoted rows outranking a research row across 6 of 8 queries) and passed with it (none).
+
+## A service core ranks below research rows in the default browse
+
+The `service-cores-rank-below-research-in-browse` case walks every page of the default browse, reads the stored row behind each result, and classifies it through `serviceCoreDemotionReason` with no query, the predicate the browse score's `SERVICE_CORE_BROWSE_RANK_ADJUSTMENT` applies (#5748).
+It fails when a demoted row outranks a research row, and splits each such row by cause: its stored score predates `SERVICE_CORE_BROWSE_DEMOTION_SCORER_VERSION` (the browse-rank backfill has not run), its indexed score differs from the stored one (the index sync has not run), or neither.
+A walk that stops short of the browse total, a browse that serves no core, and a violation while the corpus fingerprint moved are inconclusive.
+Measured on Development on 2026-11-11 before the backfill, it failed with all 63 demoted rows outranking a research row and all 63 attributed to a score not yet rescored; computed through the new scorer in memory, every demoted row sits below every research row.
+
+## The live-miss rerank flag is refused on Development
+
+`journey:eval` and `research-search:relevance` refuse up front on Development while `SEARCH_RERANK_LIVE_MISS_ENABLED=true`, right after connecting and before any search runs, so nothing is written and no model call is paid (`server/src/scripts/liveMissRerankScriptGuard.ts`).
+Without that refusal each missed query would queue an in-process live-miss job that makes its model call and only then tries to write `search_rerank_cache`, which a script holding no Development write lease may not write (#5871), so every eligible miss would pay for a call and cache nothing.
+Neither script takes `--apply` or records an apply intent, so neither can take the lease itself.
+Measure with the flag unset, which is the default.
+To write the rerank cache on purpose, use the committed writer with the lease: `DEV_WRITE_OWNER=<your session name> yarn --cwd server research-search:seed-rerank-cache --apply`, whose apply guard takes the lease, or run the write from a process that already holds or joined the lease (`holdDevApplyLeaseForRun`, or a child launched by a lease holder that records its own apply intent).
+
+## A section row is filed under its department
+
+The `section-rows-reach-their-department` case browses each of the most frequent department facet values that the catalog places under a parent department, and asserts that every served row also carries each of those parent departments, so a filter on the parent reaches a row whose only stated department is the section (#6202).
+It reads the catalog through `getOrgUnitCanonicalizer`, and reports inconclusive when the facet holds no section.
 
 ## What this harness does not cover
 
@@ -151,6 +193,7 @@ A served card counts as relevant when any supplied matcher hits, compared case-i
 The case reports `precisionAtK` and the rank of the first relevant result, and asserts `relevant >= minRelevant`.
 
 Set `expectNoResults` instead of a matcher to judge the zero-result path, which keeps a legitimately empty search distinguishable from a broken one.
+Its evidence records the words the query normalizes to (`searchedWords`), so a failure shows whether filler stripping left the wrong words as the whole search (#5532).
 
 Two rules the format enforces, both rejected at parse time rather than producing a misleading score: a judgement must assert something, so one with neither `expectNoResults` nor a matcher is an error; and `minRelevant` must lie within `0..topK`, so a floor that can never be met is an error.
 A query that returns nothing to judge is inconclusive rather than passing, and a missing judgements file makes the whole case inconclusive, because a retrieval score over an empty query set is a green signal that means nothing.
@@ -162,57 +205,11 @@ Keep a private or experimental set outside the repository and point at it with `
 Write the matchers as tightly as the judgement really is.
 Permissive substring lists inflate `precisionAtK`, so a high score against a loose judgement measures the judgement rather than the retrieval.
 
-## Measuring undergraduate evidence quote precision
+## Retired: undergraduate evidence quote precision
 
-The detail page shows `undergradEvidenceQuote` beside its "Mentions undergraduate research" label, and whether a quote is right can only be judged by reading the page it cites.
-The `undergrad-evidence-quote-precision` case turns that reading into a repeatable measurement without putting any judged row in the repository.
-
-It walks the whole reachable browse, keeps the served rows carrying a non-empty quote, and reads each row's stored `fieldProvenance.undergradEvidenceQuote` to find the rows whose quote came from the judged lane, `lab-microsite-undergrad-llm` by default.
-That set is the population, and a sample is drawn from it by ranking each row key on a SHA-256 of `seed:rowKey`, so the same seed over the same population draws the same rows and a row joining the population displaces at most one drawn row.
-
-Drawing and judging are two runs:
-
-```bash
-yarn journey:eval --case=undergrad-evidence-quote-precision \
-  --undergrad-sample-out="$TMPDIR/undergrad-judgements.json" \
-  --undergrad-sample-seed=3569 --undergrad-sample-size=50
-yarn journey:eval --case=undergrad-evidence-quote-precision \
-  --undergrad-judgements="$TMPDIR/undergrad-judgements.json" --output="$TMPDIR/journey.json"
-```
-
-The first writes a template, which is itself a valid judgements file: one entry per drawn row carrying `rowKey`, `quoteFingerprint`, the served `quote`, and the cited `sourceUrl`, with no verdict.
-Fill in `verdict`, and optionally `backsHostedBadgeWording` and `note`, then pass the file back.
-The template names rows and carries their quotes, so it is person-bearing and must stay outside the repository; `--undergrad-sample-out` accepts only a path under `$TMPDIR` or `./tmp`.
-The draw refuses a `--undergrad-sample-out` path that already exists, so re-running it can never replace a file that already carries verdicts.
-A served row whose quote differs from its stored row is left out of the population and the provenance rates and counted as `skippedStaleIndex`, because its stored provenance describes a different quote than the one served.
-
-The flag is separate from `--judgements`, which feeds the topic relevance case a differently shaped file.
-
-A verdict is exactly one of the following, applied in this order so that each row gets one answer:
-
-1. `stale_or_unreachable` when the cited page cannot be read, so grounding cannot be checked.
-2. `not_grounded` when the quote is neither verbatim nor near-verbatim on the cited page or a same-site page it links to. Model commentary such as "no explicit mention of undergraduates on the provided pages" is the common case.
-3. `not_an_undergrad_access_claim` when the quote is on the page but states no fact about undergraduates: generic "students" or "trainees", medical or graduate students only, a job title, a course taught, or a degree program name.
-4. `about_another_entity` when the quote is on the page but describes a different program, center, or department than the row.
-5. `correct` otherwise: grounded, about this row, and stating an undergraduate access fact such as undergraduate members, mentoring, openings, or how to ask.
-
-`backsHostedBadgeWording` answers the narrower question of whether the quote shows the row has hosted undergraduates, as opposed to only saying it is open to them, which is why the detail page labels a quote "Mentions undergraduate research" rather than "Has hosted undergraduate researchers" (`docs/decisions.md`, 2026-10-11).
-
-Every run reports three population rates: the share of served rows carrying a quote, the share of quotes from the judged lane, and the share citing a source page.
-With judgements supplied it adds three precision rates, and none of the six gates.
-
-- `undergrad-evidence-badge-precision` is `correct` over every verdict except `stale_or_unreachable`. It answers whether the browse badge's input is right, so it is the number to read against the badge decision on #3569.
-- `undergrad-evidence-lane-grounding-precision` is every verdict except `not_grounded` and `stale_or_unreachable`, over every verdict except `stale_or_unreachable`. Grounding is checked before any other judgement of a readable quote, so every verdict after it names a quote found on its page, and the rate isolates whether the lane quotes its page at all, which is the lane's own scorecard number.
-- `undergrad-evidence-backs-hosted-badge-wording` is the share of readable judged quotes that show the row has hosted undergraduates.
-
-`stale_or_unreachable` is excluded from every denominator and reported separately in `notes.score.verdicts` as a link-health count.
-All three are precision against the cited source, which makes them a floor on how often the served claim is true rather than a recall figure, and they judge the served output rather than replaying the model.
-The report's `notes.score` carries the verdict counts and a 95% Wilson interval for each, because a precision over 50 rows is a range rather than a point.
-A judgement records the fingerprint of the quote it judged, and a drawn row whose served quote has since changed is counted as `judgementForAChangedQuote` rather than scored, so a verdict never silently transfers to a different quote.
-
-Its invariant is attribution, not equality: every served quote whose stored row describes the same version names a source in its provenance.
-It reports inconclusive when nothing could be compared or when the corpus moved during the walk, on the same one-directional reasoning as the topic case.
-A missing judgements file, or a draw in which no row carries a verdict on its current quote, is inconclusive rather than passing.
+The `undergrad-evidence-quote-precision` case measured the "Mentions undergraduate research" quote on the detail page.
+That quote is no longer served (#5309), so the case was removed rather than left passing over an empty population.
+Its last measurement, 42 of 50 = 0.84, is recorded in `docs/decisions.md`.
 
 ## Why the survivor website case reads the route for one population only
 
@@ -230,10 +227,16 @@ The `fellowships` surface is therefore the same route scoped to `programCategory
 Each surface runs the same seven cases, with ids prefixed by the surface:
 
 - `<surface>-cold-browse-card-contract` asserts that a cold browse fills the page, reports page arithmetic its total implies, and serves an id on every card, and reports the share of cards serving a deadline, a projected deadline, an open application, an apply link, eligibility, and a card summary.
-- `<surface>-full-walk-serves-every-row-once` loads every page at the client's page size of 100 and stops where the client stops, then asserts no row repeats, the distinct rows equal the reported total, and the total is the same on every page.
+- `<surface>-full-walk-serves-every-row-once` loads every page at the client's page size (`CLIENT_PROGRAM_PAGE_SIZE`, 250) and stops where the client stops, then asserts no row repeats, the distinct rows equal the reported total, and the total is the same on every page.
   The client loads the whole result set before it sorts and groups locally, so a missing or repeated row is a card the student never sees or sees twice.
 - `<surface>-text-query-total-is-stable` walks `--pages` pages of a text query and asserts the same total and no repeats.
 - `<surface>-filter-options-agree-with-filtered-browse` reads the options `getProgramFilterOptions` offers, which is what `GET /api/programs/filters` returns, and asserts that every row a filtered browse serves carries the chosen value, checking the `--facet-values` highest-total options of each field.
+  A row that states no value for the field also passes under year, term, purpose and citizenship, because those filters keep a program that states none (#5235); under region it fails, because the region filter returns only programs that name the region (owner decision 2026-11-10, #5533).
+  Both sides read `PROGRAM_STATED_ONLY_FACET_FIELDS` in `server/src/utils/programFacetFilters.ts`, the set `searchFellowships` filters with, so the case never restates which facets keep not-stated rows; a row stating a different value fails under every filter.
+  A citizenship row "carries" an option when it satisfies it by `programSatisfiesCitizenshipOption` in `server/src/utils/programCitizenshipOptions.ts`, the definition the filter uses, so a program stated open to both U.S. and non-U.S. citizens carries the permanent-resident option and a non-U.S.-only one does not (#6092).
+  Before #5533 the case counted the not-stated rows #5235 keeps as mismatches, 609 on `programs` and 418 on `fellowships`, and none of them stated a different value.
+  The case also walks the cold browse and reports, per facet, the share of served rows that state no value, as rates that never gate.
+  On 2026-11-10 that share on `programs` was 142 of 173 for region and 21 to 39 of 173 for the rest.
   On `programs` it also asserts that every offered option returns a row, because the options and the search share one visibility filter.
   On `fellowships` that is only a rate, because the options are computed over every program and an option can be legitimately empty inside one category.
 - `<surface>-sorted-browse-keeps-order` asserts that the default browse is ordered by the stored deadline, undated rows first, and that `sortBy=title` is ordered by the served title.
@@ -249,6 +252,11 @@ Each surface runs the same seven cases, with ids prefixed by the surface:
   The guard counts and the share of stored values withheld are reported, never gated.
 
 `programs` also runs `programs-student-year-words-reach-sourced-year`, which is not a surface case: it asserts that a query for `freshmen` or `freshman` serves every row a query for `first-year` serves.
+It also runs `programs-year-words-serve-the-stated-year`, which walks the whole programs surface for each row's stated `yearOfStudy`, then asserts that each year query (`first-year`, `freshman`, `sophomores`, `juniors`, `seniors`) serves every row stating that year and no row whose stated years exclude it (#6397); a row stating no year is neither required nor refused.
+It also asserts that each typed year serves the same set of rows as picking that year in the filter.
+It also runs `programs-pay-and-thesis-words-serve-the-stated-field`, which asserts that `paid`, `stipend` and `paid research` serve every row with a stated `awardAmount` or a dollar figure in its `compensationSummary` and no row whose compensation names no pay (no digit and no pay noun such as stipend, paid or wages) unless its title carries the typed word, that `funded` and `grant` serve every fellowship, travel-grant, senior-thesis funding or `FUNDS_RESEARCH` row and nothing else except a row naming pay or whose title carries the typed word, and that `senior thesis` and `senior essay` serve every `SENIOR_THESIS_FUNDING` row (#6398).
+It also runs `programs-an-added-word-narrows-the-results`, which asserts that every program a two-word search serves (`economics summer`) is served by its first word alone (`economics`), because program search requires every typed word (#5118).
+The pair holds only because the two-word query is neither a subject's name, abbreviation, or alias nor three words long, since those queries can also serve programs missing a typed word (`skills/search-data/SKILL.md`, #5118).
 
 The programs corpus is small enough that three cases walk all of it, so their rates are over the whole served surface rather than the top of a ranking, and `--window` changes only the cold-browse rates.
 A stored row whose `updatedAt` is later than the walk's start describes a different version than the one served, so it is counted as `skippedStaleIndex` and left out, and the corpus fingerprint over the program collection makes a failure inconclusive when the collection moved during the case, on the same one-directional reasoning as the research cases.

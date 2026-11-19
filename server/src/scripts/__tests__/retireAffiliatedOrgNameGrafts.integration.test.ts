@@ -101,6 +101,30 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
     expect(entity?.name).toBe(OWN_NAME);
   });
 
+  it('clears the displayName but keeps its stamp when it is the served row only citation (#6320)', async () => {
+    await seedEntity({
+      displayName: AFFILIATION_GRAFT,
+      fieldProvenance: {
+        displayName: {
+          sourceName: 'lab-microsite-description-llm',
+          sourceUrl: MICROSITE_URL,
+          observationId: new mongoose.Types.ObjectId(),
+        },
+      },
+    });
+    await seedGraftObservation();
+
+    const applied = await applyRows(await loadOrgNameGrafts());
+    expect(applied.lastCitationStampsKept).toBe(1);
+
+    const entity = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<{
+      displayName?: string;
+      fieldProvenance?: Record<string, { sourceUrl?: string }>;
+    }>();
+    expect(entity?.displayName).toBeUndefined();
+    expect(entity?.fieldProvenance?.displayName?.sourceUrl).toBe(MICROSITE_URL);
+  });
+
   it('reports the corrected row the index refused as a sync failure (#3726)', async () => {
     await seedEntity({ displayName: AFFILIATION_GRAFT });
     await seedGraftObservation();

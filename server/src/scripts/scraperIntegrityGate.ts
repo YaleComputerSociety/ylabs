@@ -11,9 +11,10 @@ import { loadResearchAccessArtifacts } from './claimGate';
 import { buildClaimGateReport } from '../services/claimValidation/accessClaims';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { writeFileSync, mkdirSync } from 'fs';
+import { mkdirSync } from 'fs';
 import { connectScriptMongo } from '../db/connections';
 import { resolveScraperEnvironment } from '../scrapers/scraperEnvironment';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -107,7 +108,7 @@ export function writeIntegrityGateOutput(value: unknown, output?: string): void 
   if (!output) return;
   const resolvedOutput = resolveSafeJsonReportOutputPath(output);
   mkdirSync(path.dirname(resolvedOutput), { recursive: true });
-  writeFileSync(resolvedOutput, `${JSON.stringify(value, null, 2)}\n`);
+  writeReportFileSync(resolvedOutput, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export function buildScraperIntegrityGateOutput<

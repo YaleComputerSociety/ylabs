@@ -1,3 +1,8 @@
+import {
+  normalizeWebsiteUrlIdentityKey,
+  websiteUrlIdentityKeyThroughRedirect,
+  websiteUrlIdentityKeyVariants,
+} from '../utils/websiteUrlIdentityKey';
 import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
 import {
   isAreaShellSlug,
@@ -18,6 +23,8 @@ import {
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../utils/researchHomeWebsiteUrl';
 import { personPagePrefixesForHost } from '../utils/yalePersonPagePrefix';
+import { DEGREE_TOKENS, GENERATIONAL_SUFFIX_TOKENS } from '../utils/degreeTokens';
+import { groupNamesStateConflictingMiddleInitials } from '../scrapers/utils/personNameAgreement';
 
 export interface ResearchEntityPiDedupeRow {
   userId: string;
@@ -25,6 +32,8 @@ export interface ResearchEntityPiDedupeRow {
   piFirstName?: string;
   piLastName?: string;
   primaryAppointmentProfileUrl?: string;
+  personLedEntityIds?: string[];
+  grantCoPiListedEntityIds?: string[];
   entities: Array<{
     id: string;
     slug?: string;
@@ -104,7 +113,34 @@ export interface OfficialLabUrlDedupeRow {
 
 export interface WebsiteUrlDedupeRow {
   websiteUrl: string;
+  identityKey?: string;
   entities: ResearchEntityPiDedupeRow['entities'];
+}
+
+/**
+ * Groups entities by the page their `websiteUrl` names, following a redirect the
+ * site's own host recorded in link health, so a lab that moved from a path on a shared
+ * host to its own domain is one page rather than two (`landings` is built by
+ * `redirectLandingIdentityKeys`). Only groups of two or more are returned.
+ */
+export function groupEntitiesByWebsiteUrlIdentity(
+  entities: ResearchEntityPiDedupeRow['entities'],
+  landings: ReadonlyMap<string, string>,
+): WebsiteUrlDedupeRow[] {
+  const byKey = new Map<string, WebsiteUrlDedupeRow>();
+  for (const entity of entities) {
+    const identityKey = websiteUrlIdentityKeyThroughRedirect(entity.websiteUrl, landings);
+    if (!identityKey) continue;
+    const existing = byKey.get(identityKey);
+    if (existing) existing.entities.push(entity);
+    else
+      byKey.set(identityKey, {
+        websiteUrl: entity.websiteUrl || '',
+        identityKey,
+        entities: [entity],
+      });
+  }
+  return Array.from(byKey.values()).filter((row) => row.entities.length > 1);
 }
 
 export interface CurrentMemberDedupeRow {
@@ -270,6 +306,19 @@ function primaryAppointmentRank(
   entity: ResearchEntityPiDedupeRow['entities'][number],
 ): number {
   return entityMintedByPrimaryAppointmentRoster(row, entity) ? 1 : 0;
+}
+
+/**
+ * A row its person leads outranks one nobody leads. A name-only group joins a lab its
+ * PI leads to a lead-less row carrying the same name, typically a lab member's profile
+ * row that adopted the host lab's card, and the lead-less row can never serve, so
+ * picking it as canonical would hold the only servable card as its duplicate.
+ */
+function personLedRank(
+  row: Pick<ResearchEntityPiDedupeRow, 'personLedEntityIds'>,
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+): number {
+  return row.personLedEntityIds?.includes(entity.id) ? 1 : 0;
 }
 
 function withoutPrimaryAppointmentPreference(
@@ -640,6 +689,8 @@ function buildGroupFromCluster(
   if (entities.length <= 1) return null;
 
   const canonical = [...entities].sort((a, b) => {
+    const byPersonLed = personLedRank(row, b) - personLedRank(row, a);
+    if (byPersonLed !== 0) return byPersonLed;
     const byAppointment = primaryAppointmentRank(row, b) - primaryAppointmentRank(row, a);
     if (byAppointment !== 0) return byAppointment;
     const byScore = scoreEntity(b) - scoreEntity(a);
@@ -680,6 +731,23 @@ function buildGroupFromCluster(
       ? { mergedFundingAgencies: grantEvidenceCarry.mergedFundingAgencies }
       : {}),
   };
+}
+
+/**
+ * A merge group for a canonical a witness already chose, so the group carries the same
+ * merged departments, topics, sources and description as every other lane's group.
+ */
+export function buildPinnedCanonicalMergeGroup(
+  row: ResearchEntityPiDedupeRow,
+  canonicalEntityId: string,
+  duplicateEntityIds: readonly string[],
+): ResearchEntityPiDedupeGroup | null {
+  const wanted = new Set([canonicalEntityId, ...duplicateEntityIds]);
+  const entities = row.entities.filter((entity) => wanted.has(entity.id));
+  if (entities.length !== wanted.size) return null;
+  return buildGroupFromCluster(withoutPrimaryAppointmentPreference(row), entities, (entity) =>
+    entity.id === canonicalEntityId ? Number.MAX_SAFE_INTEGER : canonicalScore(entity),
+  );
 }
 
 function carriedCanonicalIdentity(
@@ -761,13 +829,18 @@ function buildProfileAreaShellDuplicateGroup(
   if (duplicateShells.length === 0 || concreteHomes.length === 0) return null;
 
   const canonical = [...concreteHomes].sort((a, b) => {
+    const byPersonLed = personLedRank(row, b) - personLedRank(row, a);
+    if (byPersonLed !== 0) return byPersonLed;
     const byAppointment = primaryAppointmentRank(row, b) - primaryAppointmentRank(row, a);
     if (byAppointment !== 0) return byAppointment;
     const byScore = canonicalScore(b) - canonicalScore(a);
     if (byScore !== 0) return byScore;
     return (a.slug || a.id).localeCompare(b.slug || b.id);
   })[0];
-  const duplicates = duplicateShells.filter((entity) => entity.id !== canonical.id);
+  const duplicates = duplicateShells.filter(
+    (entity) =>
+      entity.id !== canonical.id && personLedRank(row, entity) <= personLedRank(row, canonical),
+  );
   if (duplicates.length === 0) return null;
 
   const group = buildGroupFromCluster(
@@ -889,11 +962,15 @@ function bestDescriptionCarryFromEntities(
 function entityPersonIdSets(rows: ResearchEntityPiDedupeRow[]): Map<string, Set<string>> {
   const byEntity = new Map<string, Set<string>>();
   for (const row of rows) {
-    for (const entity of row.entities) {
-      if (!entity.id) continue;
-      const persons = byEntity.get(entity.id) || new Set<string>();
+    const entityIds = [
+      ...row.entities.map((entity) => entity.id),
+      ...(row.grantCoPiListedEntityIds || []),
+    ];
+    for (const entityId of entityIds) {
+      if (!entityId) continue;
+      const persons = byEntity.get(entityId) || new Set<string>();
       persons.add(row.userId);
-      byEntity.set(entity.id, persons);
+      byEntity.set(entityId, persons);
     }
   }
   return byEntity;
@@ -922,8 +999,9 @@ function sharedPersonEligibleEntities(
 function sharedPersonGroup(
   row: ResearchEntityPiDedupeRow,
   entities: ResearchEntityPiDedupeRow['entities'],
+  scoreEntity: (entity: ResearchEntityPiDedupeRow['entities'][number]) => number = canonicalScore,
 ): ResearchEntityPiDedupeGroup[] {
-  const group = buildGroupFromCluster(row, entities);
+  const group = buildGroupFromCluster(row, entities, scoreEntity);
   return group ? [{ ...group, dedupeCategory: 'shared_person_id' as const }] : [];
 }
 
@@ -949,6 +1027,55 @@ export function nameAgreementKey(value: string | undefined): string {
     .join(' ');
 }
 
+const EPONYMOUS_LAB_KIND_WORDS: ReadonlySet<string> = new Set([
+  'lab',
+  'labs',
+  'laboratory',
+  'laboratories',
+  'group',
+  'research',
+  'faculty',
+]);
+
+const foldedNameWords = (value: string | undefined): string[] =>
+  normalizedWords((value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+
+/**
+ * The agreement key of a lab named for its lead: the words before its first kind noun, or
+ * its whole strict name key, are the lead's surname, optionally preceded by the lead's given
+ * names or initials, so "Ortolan Lab", "Wren Ortolan Research Group", a bare "Ortolan" and a
+ * site title such as "ORTOLAN LAB Coastal Sediment @ Yale" all name one lab. A lab website's
+ * title carries a tagline after the kind noun, and the name lanes copy it, which left the
+ * same lead's lab served twice under two names (#5308). Every name whose strict key is the
+ * lead's name takes this key too, so no pair the strict key agreed on is split. Anything
+ * else in the head, such as a topic word, is not the eponymous form and keeps the strict key.
+ */
+export function eponymousLabAgreementKey(
+  value: string | undefined,
+  lead: { piFirstName?: string; piLastName?: string },
+): string {
+  const surname = foldedNameWords(lead.piLastName);
+  if (surname.length === 0) return '';
+  const givenNames = new Set(foldedNameWords(lead.piFirstName));
+  const namesLead = (head: string[]): boolean => {
+    if (head.length < surname.length) return false;
+    const prefixLength = head.length - surname.length;
+    return (
+      head.slice(prefixLength).every((word, index) => word === surname[index]) &&
+      head.slice(0, prefixLength).every((word) => word.length === 1 || givenNames.has(word))
+    );
+  };
+  const words = foldedNameWords(value);
+  const start = words[0] === 'the' ? 1 : 0;
+  const kindIndex = words.findIndex(
+    (word, index) => index >= start && EPONYMOUS_LAB_KIND_WORDS.has(word),
+  );
+  const head = kindIndex > start ? words.slice(start, kindIndex) : [];
+  const strictWords = nameAgreementKey(value).split(' ').filter(Boolean);
+  if (!namesLead(head) && !namesLead(strictWords)) return '';
+  return `eponymous-lab:${surname.join(' ')}`;
+}
+
 /**
  * The unattended form of the shared-person lane: one group per lead, entity type and
  * name. One person can lead a lab and run an unrelated project under another name, and
@@ -962,14 +1089,81 @@ export function buildNameAgreedSharedPersonResearchEntityDedupePlan(
   return rows.flatMap((row) => {
     const clusters = new Map<string, ResearchEntityPiDedupeRow['entities']>();
     for (const entity of sharedPersonEligibleEntities(row, sharedEntityIds)) {
-      const name = nameAgreementKey(entity.name);
-      const entityType = (entity.entityType || '').toUpperCase();
+      const name = eponymousLabAgreementKey(entity.name, row) || nameAgreementKey(entity.name);
+      const entityType = nameAgreementEntityType(entity);
       if (!name || !entityType) continue;
       const key = `${entityType}::${name}`;
       clusters.set(key, [...(clusters.get(key) || []), entity]);
     }
-    return [...clusters.values()].flatMap((entities) => sharedPersonGroup(row, entities));
+    return [...clusters.values()]
+      .filter(
+        (entities) =>
+          !groupNamesStateConflictingMiddleInitials(
+            entities.map((e) => entityNameWordsWithoutKindNouns(e.name).join(' ')),
+          ),
+      )
+      .flatMap((entities) =>
+        joinsFacultyResearchRowToLab(entities)
+          ? sharedPersonGroup(
+              withoutPrimaryAppointmentPreference(row),
+              entities,
+              labTypedRowFirstScore,
+            )
+          : sharedPersonGroup(row, entities),
+      );
   });
+}
+
+/**
+ * The name-agreed plan over lead rows plus rows grouped by the roster mailbox they were
+ * read under (#5969). One person on two rosters can end up with two lead researchers, and
+ * every lead-keyed group is then blind to the pair. The mailbox rows run through the same
+ * name-agreement builder, and a mailbox group touching a row a lead group already plans, or a
+ * row more than one lead researcher leads, is dropped so no row is planned twice and a
+ * multi-lead row stays out of the lane.
+ */
+export function buildNameAgreedSharedPersonAndRosterMailboxDedupePlan(
+  leadRows: ResearchEntityPiDedupeRow[],
+  rosterMailboxRows: ResearchEntityPiDedupeRow[],
+): ResearchEntityPiDedupeGroup[] {
+  const leadPlan = buildNameAgreedSharedPersonResearchEntityDedupePlan(leadRows);
+  const excluded = new Set([
+    ...multiPersonEntityIds(leadRows),
+    ...leadPlan.flatMap((group) => [group.canonicalEntityId, ...group.duplicateEntityIds]),
+  ]);
+  const mailboxPlan = buildNameAgreedSharedPersonResearchEntityDedupePlan(rosterMailboxRows).filter(
+    (group) =>
+      ![group.canonicalEntityId, ...group.duplicateEntityIds].some((id) => excluded.has(id)),
+  );
+  return [...leadPlan, ...mailboxPlan];
+}
+
+const LAB_NAME_WORDS: ReadonlySet<string> = new Set(['lab', 'labs', 'laboratory', 'laboratories']);
+
+/**
+ * A faculty research row its roster titled as a lab ("Avery Lab") is the same kind of
+ * thing as that lead's `LAB` row of the same name: one department roster mints the
+ * person a faculty research row and another school's lab index mints the lab, so the
+ * type alone kept one lab two cards under one lead.
+ */
+function nameAgreementEntityType(entity: ResearchEntityPiDedupeRow['entities'][number]): string {
+  const entityType = (entity.entityType || '').toUpperCase();
+  if (!FACULTY_RESEARCH_AREA_TYPES.has(entityType)) return entityType;
+  return foldedNameWords(entity.name).some((word) => LAB_NAME_WORDS.has(word)) ? 'LAB' : entityType;
+}
+
+const FACULTY_RESEARCH_AREA_TYPES: ReadonlySet<string> = new Set([
+  'FACULTY_RESEARCH_AREA',
+  'INDIVIDUAL_RESEARCH',
+]);
+
+function joinsFacultyResearchRowToLab(entities: ResearchEntityPiDedupeRow['entities']): boolean {
+  const types = new Set(entities.map((entity) => (entity.entityType || '').toUpperCase()));
+  return types.has('LAB') && [...FACULTY_RESEARCH_AREA_TYPES].some((type) => types.has(type));
+}
+
+function labTypedRowFirstScore(entity: ResearchEntityPiDedupeRow['entities'][number]): number {
+  return canonicalScore(entity) + ((entity.entityType || '').toUpperCase() === 'LAB' ? 1000 : 0);
 }
 
 export function buildMultiPersonEntityQuarantine(
@@ -1105,54 +1299,7 @@ const PERSON_LEAD_NAME_STOPWORDS = new Set([
   'yale',
 ]);
 
-/**
- * Normalizes a websiteUrl into a scheme-agnostic identity key: the same lab home
- * reached over `http://` and `https://`, with or without a trailing slash or a
- * leading `www.`, must collapse to one key so a URL-identity lane clusters them.
- * Query strings and fragments are dropped; an unparseable value yields ''.
- */
-export function normalizeWebsiteUrlIdentityKey(value: string | undefined): string {
-  const trimmed = (value || '').trim();
-  if (!trimmed) return '';
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    return '';
-  }
-  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-  if (!host) return '';
-  const pathname = parsed.pathname.replace(/\/+$/, '');
-  return `${host}${pathname}`;
-}
-
-const WEBSITE_URL_IDENTITY_KEY_SCHEMES = ['https://', 'http://'];
-const WEBSITE_URL_IDENTITY_KEY_HOST_PREFIXES = ['', 'www.'];
-
-/**
- * Every stored `websiteUrl` spelling that `normalizeWebsiteUrlIdentityKey` folds into
- * `key`, so a caller can look the key up with an equality query rather than storing a
- * second normalized copy of the URL on the row (#3036).
- *
- * Changing `normalizeWebsiteUrlIdentityKey` requires changing this with it: they are an
- * encoder and its inverse, and the inverse only recovers what the encoder drops
- * reversibly - the scheme, a leading `www.`, and a trailing slash. A URL carrying a
- * query string or a fragment cannot be recovered, because the encoder discards those
- * without recording them; measured on Development, 7 of 1,763 live `websiteUrl` values
- * are in that residue and none of them is a resolver target.
- */
-export function websiteUrlIdentityKeyVariants(key: string): string[] {
-  const trimmed = key.trim();
-  if (!trimmed) return [];
-  const variants: string[] = [];
-  for (const scheme of WEBSITE_URL_IDENTITY_KEY_SCHEMES) {
-    for (const hostPrefix of WEBSITE_URL_IDENTITY_KEY_HOST_PREFIXES) {
-      variants.push(`${scheme}${hostPrefix}${trimmed}`);
-      variants.push(`${scheme}${hostPrefix}${trimmed}/`);
-    }
-  }
-  return variants;
-}
+export { normalizeWebsiteUrlIdentityKey, websiteUrlIdentityKeyVariants };
 
 const PERSON_PROFILE_URL_PATH = /\/(?:profile|people|person)\/([a-z0-9._-]+)$/i;
 
@@ -1193,8 +1340,15 @@ function hostMappedPersonPageSlug(parsed: URL): string {
   return mapped ? leaf : '';
 }
 
-const PERSON_PROFILE_CREDENTIAL_SUFFIX =
-  /-(?:phd|md|mph|ms|msc|mba|ma|dvm|rn|do|dds|scd|edd|jd|jr|sr|ii|iii|iv)$/;
+// The trailing credential a profile slug carries, as one or two `-` segments ("phd",
+// "fnp-c"), from the shared list in `degreeTokens.ts` (#5969).
+function trailingCredentialSegments(slug: string): number {
+  const segments = slug.split('-');
+  const last = segments[segments.length - 1] || '';
+  if (GENERATIONAL_SUFFIX_TOKENS.has(last) || DEGREE_TOKENS.has(last)) return 1;
+  const lastTwo = segments.slice(-2).join('');
+  return segments.length >= 2 && DEGREE_TOKENS.has(lastTwo) ? 2 : 0;
+}
 
 // A collection page, not a person. `/people/<x>` is a person on some directories and
 // a listing subpage on others, and a lab-microsite crawl puts both into `sourceUrls`.
@@ -1284,8 +1438,9 @@ export function personProfileIdentityFromUrl(value: string | undefined): string 
   if (!rawSlug) return '';
   let slug = rawSlug.toLowerCase();
   for (;;) {
-    if (!PERSON_PROFILE_CREDENTIAL_SUFFIX.test(slug)) break;
-    const stripped = slug.replace(PERSON_PROFILE_CREDENTIAL_SUFFIX, '');
+    const credentialSegments = trailingCredentialSegments(slug);
+    if (credentialSegments === 0) break;
+    const stripped = slug.split('-').slice(0, -credentialSegments).join('-');
     if (personNameTokens(stripped).length < 2) break;
     slug = stripped;
   }
@@ -1295,11 +1450,34 @@ export function personProfileIdentityFromUrl(value: string | undefined): string 
   return tokens.join('-');
 }
 
-export function distinctPersonProfileIdentities(urls: readonly string[] | undefined): string[] {
+const departmentSlug = (value: unknown): string =>
+  typeof value === 'string'
+    ? value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/&/g, ' and ')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+    : '';
+
+/**
+ * The people a set of cited pages names. A one-word page whose slug is one of the row's own
+ * departments is that department's listing on a faculty directory that files people and
+ * subject filters under one path, not a second person (#5969). Any other one-word page,
+ * a surname-only or netid slug, stays a person, so a mononym cannot switch the refusal off.
+ */
+export function distinctPersonProfileIdentities(
+  urls: readonly string[] | undefined,
+  options: { departments?: readonly unknown[] } = {},
+): string[] {
+  const ownDepartments = new Set((options.departments || []).map(departmentSlug).filter(Boolean));
   const identities = new Set<string>();
   for (const url of urls || []) {
     const identity = personProfileIdentityFromUrl(url);
-    if (identity) identities.add(identity);
+    if (!identity) continue;
+    if (!identity.includes('-') && ownDepartments.has(identity)) continue;
+    identities.add(identity);
   }
   return Array.from(identities).sort();
 }
@@ -1324,9 +1502,14 @@ export function distinctPersonProfileIdentities(urls: readonly string[] | undefi
  * cannot see it because it keys on RoleAssignment links, which these rows do not carry.
  */
 export function groupConflatesDistinctPersonProfiles(
-  group: Pick<ResearchEntityPiDedupeGroup, 'mergedSourceUrls'>,
+  group: Pick<ResearchEntityPiDedupeGroup, 'mergedSourceUrls'> &
+    Partial<Pick<ResearchEntityPiDedupeGroup, 'mergedDepartments'>>,
 ): boolean {
-  return distinctPersonProfileIdentities(group.mergedSourceUrls).length > 1;
+  return (
+    distinctPersonProfileIdentities(group.mergedSourceUrls, {
+      departments: group.mergedDepartments,
+    }).length > 1
+  );
 }
 
 export function partitionPlanByPersonProfileConflation<
@@ -1343,7 +1526,9 @@ export function partitionPlanByPersonProfileConflation<
         canonicalEntityId: group.canonicalEntityId,
         canonicalSlug: group.canonicalSlug,
         duplicateSlugs: group.duplicateSlugs,
-        personProfileIdentities: distinctPersonProfileIdentities(group.mergedSourceUrls),
+        personProfileIdentities: distinctPersonProfileIdentities(group.mergedSourceUrls, {
+          departments: (group as Partial<ResearchEntityPiDedupeGroup>).mergedDepartments,
+        }),
       });
       continue;
     }
@@ -1504,6 +1689,8 @@ function planSpecificProfileLabUrlRow(row: OfficialLabUrlDedupeRow): {
 // The lane runs unattended, and a loser's lead the survivor does not hold is moved onto
 // the survivor by the merge, so an accountless shell of the survivor's own lead would be
 // served as a second lead. A survivor with no lead edge yet takes the loser's leads.
+// The website-url lane applies it too: two rows led by different researcher ids are two
+// people until researcher-dedupe folds the ids into one (#5638).
 function mergeHandsSurvivorAnotherLead(
   group: ResearchEntityPiDedupeGroup,
   byId: ReadonlyMap<string, ResearchEntityPiDedupeRow['entities'][number]>,
@@ -1513,6 +1700,18 @@ function mergeHandsSurvivorAnotherLead(
   return group.duplicateEntityIds.some((id) =>
     (byId.get(id)?.leadPersonIds || []).some((lead) => !survivorLeads.has(lead)),
   );
+}
+
+function mergeJoinsDistinctLeads(
+  group: ResearchEntityPiDedupeGroup,
+  byId: ReadonlyMap<string, ResearchEntityPiDedupeRow['entities'][number]>,
+): boolean {
+  if (mergeHandsSurvivorAnotherLead(group, byId)) return true;
+  const duplicateLeadSets = group.duplicateEntityIds
+    .map((id) => new Set(byId.get(id)?.leadPersonIds || []))
+    .filter((leads) => leads.size > 0);
+  const allLeads = new Set(duplicateLeadSets.flatMap((leads) => [...leads]));
+  return duplicateLeadSets.some((leads) => leads.size !== allLeads.size);
 }
 
 export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
@@ -1750,8 +1949,9 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
     canonicalScore(entity) + (entity.piRoleCorroborated ? 200 : 0);
 
   const groups: ResearchEntityPiDedupeGroup[] = [];
+  const byId = new Map(rows.flatMap((row) => row.entities).map((entity) => [entity.id, entity]));
   for (const row of rows) {
-    const key = normalizeWebsiteUrlIdentityKey(row.websiteUrl);
+    const key = row.identityKey || normalizeWebsiteUrlIdentityKey(row.websiteUrl);
     if (!key) continue;
     const cited = row.entities.filter((entity) => entity.id);
     if (cited.length <= 1) continue;
@@ -1761,7 +1961,8 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
     const hasFundingShellEntity = entities.some((entity) => isFundingShellSlug(entity.slug));
     if (hasFundingShellEntity && !isDistinctiveNonFundingWebsiteHost(row.websiteUrl)) continue;
 
-    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(entities)) {
+    const withoutLeadIds = entities.map((entity) => ({ ...entity, leadPersonIds: undefined }));
+    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(withoutLeadIds)) {
       const group = buildGroupFromCluster(
         {
           userId: `website-url:${key}`,
@@ -1771,7 +1972,7 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
         cluster,
         websiteUrlCanonicalScore,
       );
-      if (group) groups.push(group);
+      if (group && !mergeJoinsDistinctLeads(group, byId)) groups.push(group);
     }
   }
   return dedupePlanGroupsByEntitySet(groups);

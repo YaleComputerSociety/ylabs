@@ -30,6 +30,7 @@ import {
   hasRecordedGateVerdict,
   type RecoverabilityInputRecord,
 } from './visibilityRecoverabilityAuditCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
@@ -280,8 +281,7 @@ async function main(): Promise<void> {
   console.log('');
 
   if (args.output) {
-    const fs = await import('fs');
-    fs.writeFileSync(args.output, JSON.stringify(payload, null, 2));
+    writeReportFileSync(args.output, JSON.stringify(payload, null, 2));
     console.log(`report written to ${args.output}\n`);
   }
 

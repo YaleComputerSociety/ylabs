@@ -2,7 +2,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import fs from 'fs';
 import { initializeConnections } from '../../db/connections';
 import { ResearchEntity } from '../../models/researchEntity';
 import { planStudentVisibilityGate } from '../../services/studentVisibilityGateService';
@@ -20,6 +19,7 @@ import {
   type DescriptionObservation,
   type SynthesisCache,
 } from './pipelineEvalStrategies';
+import { writeReportFileSync } from '../../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -527,7 +527,7 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
-    fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
+    writeReportFileSync(outputPath, JSON.stringify(report, null, 2));
     console.error(`Report written to ${outputPath}`);
   }
 }

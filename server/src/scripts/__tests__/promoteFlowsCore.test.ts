@@ -10,6 +10,9 @@ import type { StoredWeeklySweepRun } from '../weeklySweepRunsReportCore';
 
 const NOW = Date.parse('2026-10-05T12:00:00Z');
 
+const HEAD = 'a'.repeat(40);
+const STALE = 'b'.repeat(40);
+
 const RENDER_ENV = {
   RENDER_API_KEY: 'rnd_test_key',
   RENDER_BETA_OPERATOR_SERVICE_ID: 'crn-beta1',
@@ -46,9 +49,11 @@ const productionPlan = {
   includesObservations: false,
   includesScrapeRuns: false,
   collections: [{ name: 'research_entities', sourceCopyCount: 100, targetCount: 90 }],
+  storageHeadroom: { ok: true, message: 'Beta to Production promotion: enough headroom' },
 };
 
 interface Harness {
+  events: string[];
   yarnCalls: Array<{ args: string[]; env?: Record<string, string> }>;
   renderCalls: Array<{ method: string; url: string; body?: string }>;
   logs: string[];
@@ -56,22 +61,47 @@ interface Harness {
   prompts: string[];
 }
 
+interface RenderFetchOptions {
+  finalStatus: string;
+  liveCommit: string;
+  deployFinalStatus: string;
+}
+
 function renderFetch(
   harness: Harness,
   serviceId: string,
   branch: string,
-  finalStatus: string,
+  options: RenderFetchOptions,
 ): FetchLike {
   let polls = 0;
+  let deployPolls = 0;
   return async (url, init) => {
     harness.renderCalls.push({ method: init.method, url, body: init.body });
     const json = async (): Promise<unknown> => {
-      if (init.method === 'POST') return { id: 'job-9', serviceId, status: 'pending' };
+      if (init.method === 'POST' && url.endsWith('/deploys')) {
+        harness.events.push('deploy');
+        return { id: 'dep-7', status: 'build_in_progress', commit: { id: HEAD } };
+      }
+      if (init.method === 'POST') {
+        harness.events.push('job');
+        return { id: 'job-9', serviceId, status: 'pending' };
+      }
       if (url.endsWith(`/services/${serviceId}`)) {
         return { id: serviceId, name: 'operator', branch, rootDir: '', suspended: 'not_suspended' };
       }
+      if (url.includes('/deploys?')) {
+        return [{ deploy: { id: 'dep-1', status: 'live', commit: { id: options.liveCommit } } }];
+      }
+      if (url.endsWith('/deploys/dep-7')) {
+        deployPolls += 1;
+        return {
+          id: 'dep-7',
+          status: deployPolls < 2 ? 'build_in_progress' : options.deployFinalStatus,
+          commit: { id: HEAD },
+        };
+      }
       polls += 1;
-      return { id: 'job-9', serviceId, status: polls < 2 ? 'running' : finalStatus };
+      return { id: 'job-9', serviceId, status: polls < 2 ? 'running' : options.finalStatus };
     };
     return { ok: true, status: 200, json };
   };
@@ -90,6 +120,7 @@ function baseDeps(
     error: (message: string) => harness.errors.push(message),
     runYarn: async (args: string[], env?: Record<string, string>) => {
       harness.yarnCalls.push({ args, env });
+      if (args.includes('--apply')) harness.events.push('apply');
       return exitFor(args);
     },
     readJson: (filePath: string) => {
@@ -103,6 +134,7 @@ function baseDeps(
       return answer;
     },
     fetch,
+    branchHead: async () => HEAD,
     sleep: async () => undefined,
     now: () => NOW,
     pollIntervalMs: 1,
@@ -111,6 +143,7 @@ function baseDeps(
 }
 
 const newHarness = (): Harness => ({
+  events: [],
   yarnCalls: [],
   renderCalls: [],
   logs: [],
@@ -118,11 +151,19 @@ const newHarness = (): Harness => ({
   prompts: [],
 });
 
+type RenderOverrides = Partial<RenderFetchOptions>;
+
 function betaDeps(
   harness: Harness,
-  overrides: Partial<PromoteBetaDeps> & { answer?: string | null; finalStatus?: string } = {},
+  overrides: Partial<PromoteBetaDeps> & { answer?: string | null } & RenderOverrides = {},
 ): PromoteBetaDeps {
-  const { answer = 'yes', finalStatus = 'succeeded', ...rest } = overrides;
+  const {
+    answer = 'yes',
+    finalStatus = 'succeeded',
+    liveCommit = HEAD,
+    deployFinalStatus = 'live',
+    ...rest
+  } = overrides;
   return {
     ...baseDeps(
       harness,
@@ -131,7 +172,7 @@ function betaDeps(
         'development-to-beta-result.json': { ...mirrorPlan, status: 'applied' },
       },
       answer,
-      renderFetch(harness, 'crn-beta1', 'beta', finalStatus),
+      renderFetch(harness, 'crn-beta1', 'beta', { finalStatus, liveCommit, deployFinalStatus }),
     ),
     loadWeeklyRuns: async () => [goodRun],
     heldSweepLocks: async () => [],
@@ -141,15 +182,31 @@ function betaDeps(
 
 function productionDeps(
   harness: Harness,
-  overrides: Partial<PromoteProductionDeps> & { answer?: string | null } = {},
+  overrides: Partial<PromoteProductionDeps> & { answer?: string | null } & RenderOverrides = {},
 ): PromoteProductionDeps {
-  const { answer = 'production', ...rest } = overrides;
+  const {
+    answer = 'production',
+    finalStatus = 'succeeded',
+    liveCommit = HEAD,
+    deployFinalStatus = 'live',
+    ...rest
+  } = overrides;
   return {
     ...baseDeps(
       harness,
-      { 'production-promotion-plan.json': productionPlan },
+      {
+        'production-promotion-plan.json': productionPlan,
+        'production-promotion-apply.json': {
+          ...productionPlan,
+          applied: {
+            operationId: '41_1760000000000',
+            rollbackCommand:
+              'yarn --cwd server production:promote-beta-copy --rollback 41_1760000000000',
+          },
+        },
+      },
       answer,
-      renderFetch(harness, 'crn-prod1', 'main', 'succeeded'),
+      renderFetch(harness, 'crn-prod1', 'main', { finalStatus, liveCommit, deployFinalStatus }),
     ),
     listMainPullRequests: async () => [{ number: 12, isDraft: true, labels: [] }],
     ...rest,
@@ -166,7 +223,7 @@ describe('promote:beta', () => {
     expect(yarnScripts(harness)).toEqual([
       'beta:refresh-from-development --output /tmp/ylabs-promote-test/development-to-beta-plan.json',
     ]);
-    expect(harness.renderCalls.map((call) => call.method)).toEqual(['GET']);
+    expect(harness.renderCalls.map((call) => call.method)).toEqual(['GET', 'GET']);
     expect(harness.prompts).toEqual([]);
   });
 
@@ -181,8 +238,7 @@ describe('promote:beta', () => {
     const created = harness.renderCalls.find((call) => call.method === 'POST')!;
     expect(created.url).toBe('https://api.render.com/v1/services/crn-beta1/jobs');
     expect(JSON.parse(created.body!)).toEqual({
-      startCommand:
-        'yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup',
+      startCommand: 'yarn --cwd server promote:remote-phase --environment beta',
     });
     expect(harness.logs.join('\n')).not.toContain('rnd_test_key');
   });
@@ -285,7 +341,49 @@ describe('promote:beta', () => {
     const harness = newHarness();
     expect(await runPromoteBeta([], betaDeps(harness))).toBe(1);
     expect(harness.errors[0]).toContain('--backup-ref is required');
+    expect(harness.errors[0]).toContain('--backup-ref none-acknowledged');
     expect(harness.prompts).toEqual([]);
+    expect(yarnScripts(harness)).toHaveLength(1);
+    expect(harness.renderCalls.some((call) => call.method === 'POST')).toBe(false);
+  });
+
+  it('accepts none-acknowledged and logs it as an acknowledgement that no backup exists', async () => {
+    const harness = newHarness();
+    const code = await runPromoteBeta(
+      ['--backup-ref', 'none-acknowledged', '--yes'],
+      betaDeps(harness),
+    );
+    expect(code).toBe(0);
+    const line = harness.logs.find((entry) => entry.startsWith('Backup acknowledgement'));
+    expect(line).toContain('acknowledged that no off-cluster Beta backup exists (#4148)');
+    expect(line).toContain('nothing was checked');
+    expect(line).not.toMatch(/\bverified\b|backup taken/i);
+    expect(yarnScripts(harness)).toHaveLength(2);
+  });
+
+  it('accepts a named backup reference and logs it as stated, not as checked', async () => {
+    const harness = newHarness();
+    const code = await runPromoteBeta(
+      ['--backup-ref', 'dump-artifact-1', '--yes'],
+      betaDeps(harness),
+    );
+    expect(code).toBe(0);
+    const line = harness.logs.find((entry) => entry.startsWith('Backup acknowledgement'));
+    expect(line).toContain('the operator named "dump-artifact-1"');
+    expect(line).toContain('did not check it');
+    expect(line).not.toMatch(/\bverified\b/i);
+  });
+
+  it('prints help that describes --backup-ref as an acknowledgement and writes nothing', async () => {
+    const harness = newHarness();
+    expect(await runPromoteBeta(['--help'], betaDeps(harness))).toBe(0);
+    const help = harness.logs.join('\n');
+    expect(help).toContain('--backup-ref <value>');
+    expect(help).toContain('none-acknowledged');
+    expect(help).toContain('does not check it');
+    expect(help).not.toMatch(/\bverified\b|\bverifies\b|backup taken/i);
+    expect(yarnScripts(harness)).toEqual([]);
+    expect(harness.renderCalls).toEqual([]);
   });
 
   it('fails when the Render gate job fails', async () => {
@@ -324,7 +422,7 @@ describe('promote:production', () => {
   it('applies with both confirmations only after the typed target name', async () => {
     const harness = newHarness();
     expect(await runPromoteProduction([], productionDeps(harness))).toBe(0);
-    const apply = harness.yarnCalls.at(-1)!;
+    const apply = harness.yarnCalls.find((call) => call.args.includes('--apply'))!;
     expect(apply.args.slice(0, 2)).toEqual(['production:promote-beta-copy', '--apply']);
     expect(apply.env).toEqual({ CONFIRM_LANE_A_COPY: 'true', CONFIRM_PROD_SCRAPE: 'true' });
     const created = harness.renderCalls.find((call) => call.method === 'POST')!;
@@ -332,6 +430,9 @@ describe('promote:production', () => {
       startCommand: 'yarn --cwd server promote:remote-phase --environment production',
     });
     expect(harness.logs.join('\n')).toContain('merge it (docs/release-process.md step 6)');
+    expect(harness.logs.join('\n')).toContain(
+      'To restore what it replaced: yarn --cwd server production:promote-beta-copy --rollback 41_1760000000000',
+    );
   });
 
   it('writes nothing on a yes instead of the target name', async () => {
@@ -378,5 +479,127 @@ describe('promote:production', () => {
     expect(await runPromoteProduction([], deps)).toBe(1);
     expect(harness.errors).toEqual(['refused: apply blockers: empty source accounts']);
     expect(harness.prompts).toEqual([]);
+  });
+
+  it('refuses a plan that would leave the shared cluster below its storage headroom', async () => {
+    const harness = newHarness();
+    const deps = productionDeps(harness);
+    deps.readJson = () => ({
+      ...productionPlan,
+      storageHeadroom: { ok: false, message: 'promotion refused before writing: no headroom' },
+    });
+    expect(await runPromoteProduction([], deps)).toBe(1);
+    expect(harness.errors).toEqual(['refused: promotion refused before writing: no headroom']);
+    expect(harness.yarnCalls.some((call) => call.args.includes('--apply'))).toBe(false);
+  });
+
+  const indexCheckExit = (harness: Harness, exit: number) => {
+    const deps = productionDeps(harness);
+    const runYarn = deps.runYarn;
+    deps.runYarn = async (args, env) => {
+      const code = await runYarn(args, env);
+      if (args[0] !== 'db:verify-indexes') return code;
+      harness.events.push('verify-indexes');
+      return exit;
+    };
+    return deps;
+  };
+
+  it('checks the declared indexes read-only right after the copy and before the remote phase', async () => {
+    const harness = newHarness();
+    expect(await runPromoteProduction([], indexCheckExit(harness, 0))).toBe(0);
+    const check = harness.yarnCalls.find((call) => call.args[0] === 'db:verify-indexes')!;
+    expect(check.args).toEqual(['db:verify-indexes', '--target', 'production']);
+    expect(check.env).toBeUndefined();
+    expect(harness.events.indexOf('verify-indexes')).toBe(harness.events.indexOf('apply') + 1);
+    expect(harness.events.indexOf('job')).toBeGreaterThan(harness.events.indexOf('verify-indexes'));
+    expect(harness.yarnCalls.some((call) => call.args[0] === 'db:build-indexes')).toBe(false);
+  });
+
+  it('never runs the index check on a dry run', async () => {
+    const harness = newHarness();
+    expect(await runPromoteProduction(['--dry-run'], indexCheckExit(harness, 0))).toBe(0);
+    expect(harness.yarnCalls.some((call) => call.args[0] === 'db:verify-indexes')).toBe(false);
+  });
+
+  it('still runs the remote phase on an index mismatch but fails the promotion loudly', async () => {
+    const harness = newHarness();
+    expect(await runPromoteProduction([], indexCheckExit(harness, 1))).toBe(1);
+    expect(harness.events).toContain('job');
+    expect(harness.logs.join('\n')).not.toContain('Production promoted');
+    expect(harness.errors.join('\n')).toContain(
+      'refused: db:verify-indexes --target production exited 1',
+    );
+    expect(harness.errors.join('\n')).toContain('db:build-indexes command it printed');
+  });
+
+  it('fails an index mismatch with the remote phase skipped', async () => {
+    const harness = newHarness();
+    expect(await runPromoteProduction(['--skip-remote-phase'], indexCheckExit(harness, 1))).toBe(1);
+    expect(harness.errors.join('\n')).toContain('db:verify-indexes --target production exited 1');
+  });
+});
+
+describe('operator build before the remote phase', () => {
+  const deploysPosted = (harness: Harness) =>
+    harness.renderCalls.filter((call) => call.method === 'POST' && call.url.endsWith('/deploys'));
+
+  it('starts the job without a deploy when the operator is live at the branch head', async () => {
+    const harness = newHarness();
+    expect(await runPromoteBeta(['--backup-ref', 'snap', '--yes'], betaDeps(harness))).toBe(0);
+    expect(deploysPosted(harness)).toHaveLength(0);
+    expect(harness.events).toEqual(['apply', 'job']);
+    expect(harness.logs.join('\n')).toContain('live at beta head aaaaaaaaa');
+  });
+
+  it('deploys the operator at the head before writing, then starts the job', async () => {
+    const harness = newHarness();
+    const code = await runPromoteBeta(
+      ['--backup-ref', 'snap', '--yes'],
+      betaDeps(harness, { liveCommit: STALE }),
+    );
+    expect(code).toBe(0);
+    expect(JSON.parse(deploysPosted(harness)[0].body!)).toEqual({ commitId: HEAD });
+    expect(harness.events).toEqual(['deploy', 'apply', 'job']);
+  });
+
+  it('fails before writing when the operator deploy does not go live', async () => {
+    const harness = newHarness();
+    const code = await runPromoteProduction(
+      [],
+      productionDeps(harness, { liveCommit: STALE, deployFinalStatus: 'build_failed' }),
+    );
+    expect(code).toBe(1);
+    expect(harness.events).toEqual(['deploy']);
+    expect(harness.errors.join('\n')).toContain(
+      'ended build_failed, so the Render job was not started',
+    );
+    expect(harness.errors.join('\n')).toContain('build pipeline minutes');
+  });
+
+  it('reports a needed deploy on --dry-run without deploying', async () => {
+    const harness = newHarness();
+    const code = await runPromoteProduction(
+      ['--dry-run'],
+      productionDeps(harness, { liveCommit: STALE }),
+    );
+    expect(code).toBe(0);
+    expect(deploysPosted(harness)).toHaveLength(0);
+    expect(harness.logs.join('\n')).toContain(
+      'live at bbbbbbbbb but main is at aaaaaaaaa; an apply deploys it at the head before writing anything',
+    );
+  });
+
+  it('refuses when the branch head cannot be read', async () => {
+    const harness = newHarness();
+    const deps = betaDeps(harness);
+    deps.branchHead = async () => {
+      throw new Error('origin has no branch beta');
+    };
+    expect(await runPromoteBeta(['--backup-ref', 'snap', '--yes'], deps)).toBe(1);
+    expect(harness.errors.join('\n')).toContain(
+      'could not compare the beta operator build with beta: origin has no branch beta',
+    );
+    expect(harness.events).toEqual([]);
   });
 });

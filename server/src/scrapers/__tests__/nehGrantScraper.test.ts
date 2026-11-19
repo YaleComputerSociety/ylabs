@@ -226,7 +226,7 @@ describe('record helpers', () => {
     expect(parseNehDate('7/1/2024')?.getFullYear()).toBe(2024);
     expect(parseNehDate('garbage')).toBeUndefined();
     const period = parseAwardPeriod('9/1/2025 - 8/31/2027');
-    expect(period.begin?.getMonth()).toBe(8);
+    expect(period.begin?.getUTCMonth()).toBe(8);
     expect(period.end?.getFullYear()).toBe(2027);
     expect(parseAwardPeriod('')).toEqual({ begin: undefined, end: undefined });
     expect(parseNehAmount('$60,000.00')).toBe(60000);

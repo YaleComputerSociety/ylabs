@@ -203,17 +203,26 @@ describe('field retraction counts only absence claims made by fixed lane code', 
 });
 
 describe('declared absence-claim cutoffs', () => {
-  it('cuts off the pre-#3666 websiteUrl claims on both lanes #3666 fixed', () => {
-    for (const source of ['dept-faculty-roster', 'ysm-faculty-directory']) {
-      expect(fieldRetractionContracts[source].absenceClaimCutoffs).toEqual([
-        {
-          field: 'websiteUrl',
-          fixedBy: '#3666',
-          fixCommit: '63ece2c57056f38e588b0c733e59827ba9691f83',
-          fixMergedAt: new Date('2026-09-27T16:51:32Z'),
-        },
-      ]);
-    }
+  it('cuts off the pre-#3666 websiteUrl claims on the directory lane #3666 fixed', () => {
+    expect(fieldRetractionContracts['ysm-faculty-directory'].absenceClaimCutoffs).toEqual([
+      {
+        field: 'websiteUrl',
+        fixedBy: '#3666',
+        fixCommit: '63ece2c57056f38e588b0c733e59827ba9691f83',
+        fixMergedAt: new Date('2026-09-27T16:51:32Z'),
+      },
+    ]);
+  });
+
+  it('cuts off the roster lane websiteUrl claims made before #5819', () => {
+    expect(fieldRetractionContracts['dept-faculty-roster'].absenceClaimCutoffs).toEqual([
+      {
+        field: 'websiteUrl',
+        fixedBy: '#5819',
+        fixCommit: '39ad6670bd789980cedb180923ac179c3a04e05e',
+        fixMergedAt: new Date('2026-11-11T17:47:35Z'),
+      },
+    ]);
   });
 
   it('refuses a cutoff on a field the source cannot retract', () => {
@@ -244,5 +253,58 @@ describe('declared absence-claim cutoffs', () => {
         fixture: { ...CONTRACT, absenceClaimCutoffs: [CUTOFF, { ...CUTOFF, fixedBy: '#9002' }] },
       }),
     ).toThrow(/more than one cutoff/);
+  });
+});
+
+describe('the roster lane cutoff decides which absence claims count', () => {
+  const rosterContract = fieldRetractionContracts['dept-faculty-roster'];
+  const noRecordedCommit: CommitIsAncestor = () => undefined;
+  const rosterRuns = new Map<string, FieldRetractionRunProvenance>([
+    ['run-before-fix-1', { startedAt: new Date('2026-11-10T09:00:00Z') }],
+    ['run-before-fix-2', { startedAt: new Date('2026-11-11T09:00:00Z') }],
+    ['run-after-fix-1', { startedAt: new Date('2026-11-12T09:00:00Z') }],
+    ['run-after-fix-2', { startedAt: new Date('2026-11-13T09:00:00Z') }],
+  ]);
+
+  const planRoster = (runIds: string[]) =>
+    planFieldRetractions({
+      sourceName: 'dept-faculty-roster',
+      contract: rosterContract,
+      completeReads: disregardPreFixAbsenceClaims(
+        runIds.map((runId, index) => read(runId, `2026-11-${10 + index}T12:00:00Z`)),
+        rosterContract,
+        rosterRuns,
+        noRecordedCommit,
+      ),
+      activeObservations: [observation],
+      entities: [entity],
+    });
+
+  it('does not count absence claims made before the fix merged', () => {
+    const result = planRoster(['run-before-fix-1', 'run-before-fix-2']);
+    expect(result.retractions).toEqual([]);
+    expect(result.counts.preFixAbsenceClaims.websiteUrl?.excludedClaims).toBe(2);
+  });
+
+  it('counts absence claims made after the fix merged', () => {
+    const result = planRoster(['run-before-fix-1', 'run-after-fix-1', 'run-after-fix-2']);
+    expect(result.retractions).toHaveLength(1);
+    expect(result.counts.preFixAbsenceClaims.websiteUrl?.excludedClaims).toBe(1);
+  });
+
+  it('does not count a run that recorded a commit without the fix', () => {
+    const lacksFix: CommitIsAncestor = () => false;
+    const reads = disregardPreFixAbsenceClaims(
+      [read('run-after-fix-1', '2026-11-12T12:00:00Z')],
+      rosterContract,
+      new Map([
+        [
+          'run-after-fix-1',
+          { startedAt: new Date('2026-11-12T09:00:00Z'), codeSha: STALE_RUN_COMMIT },
+        ],
+      ]),
+      lacksFix,
+    );
+    expect(reads[0].preFixAbsenceClaims).toEqual(['websiteUrl']);
   });
 });

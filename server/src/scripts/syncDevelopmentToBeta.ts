@@ -7,6 +7,12 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { DATABASE_COPY_PAIRS } from './databaseCopyPairs';
+import { directoryRemovalCopyBlockers } from './directoryRemovalCopyGuard';
+import {
+  archivedResearchEntityIds,
+  mergedFromBySurvivorAtCopyTime,
+  withLiveResearchRowsOnly,
+} from './archivedTombstoneMirror';
 import {
   ACCOUNT_COPY_POLICY,
   applySync,
@@ -15,7 +21,9 @@ import {
   parseMongoTarget,
   syncAccountReferences,
   syncCountMismatches,
+  syncHeadroomPreflight,
 } from './syncBetaToDevelopment';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 dotenv.config({ path: path.join(SERVER_ROOT, '.env'), quiet: true });
@@ -85,7 +93,7 @@ export function assertSafeDevelopmentToBetaOptions(options: DevelopmentToBetaOpt
 function writeOutput(report: unknown, output?: string): void {
   if (!output) return;
   fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function main(): Promise<void> {
@@ -97,7 +105,11 @@ async function main(): Promise<void> {
     await Promise.all([sourceClient.connect(), targetClient.connect()]);
     const sourceDb = sourceClient.db();
     const targetDb = targetClient.db();
-    const collections = collectionsForOptions({ includeObservations: options.includeObservations });
+    const collections = withLiveResearchRowsOnly(
+      collectionsForOptions({ includeObservations: options.includeObservations }),
+      await archivedResearchEntityIds(sourceDb),
+      await mergedFromBySurvivorAtCopyTime(sourceDb),
+    );
     const before = await buildPlan(sourceDb, targetDb, collections);
     let after = before;
     const report = {
@@ -109,7 +121,14 @@ async function main(): Promise<void> {
       includesObservations: options.includeObservations,
       collections: before,
       preservedBetaOperationalCollections: true,
+      archivedTombstonePolicy:
+        'Archived research entities and the rows that hang off them stay in Development; each live survivor carries its merged identities as mergedFrom (#5148).',
       accountReferences: await syncAccountReferences(sourceDb, collections),
+      directoryRemovalBlockers: await directoryRemovalCopyBlockers(
+        sourceDb,
+        targetDb,
+        'Development to Beta sync',
+      ),
       userCopyPolicy: ACCOUNT_COPY_POLICY,
       observationPolicy: options.includeObservations
         ? 'Observations included by explicit --include-observations opt-in.'
@@ -120,7 +139,13 @@ async function main(): Promise<void> {
       writeOutput(report, options.output);
       return;
     }
-    await applySync(sourceDb, targetDb, collections, [], async () => {
+    const preflight = syncHeadroomPreflight({
+      sourceDb,
+      targetClient,
+      collections,
+      label: 'Development to Beta sync',
+    });
+    await applySync(sourceDb, targetDb, collections, [], preflight, async () => {
       after = await buildPlan(sourceDb, targetDb, collections);
       const mismatches = syncCountMismatches(after);
       if (mismatches.length) {

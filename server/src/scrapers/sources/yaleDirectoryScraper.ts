@@ -32,7 +32,7 @@
  */
 import axios from 'axios';
 import dotenv from 'dotenv';
-import { listYalies, YaliesPerson } from '../../services/yaliesService';
+import { FIRST_YALIES_PAGE, listYalies, YaliesPerson } from '../../services/yaliesService';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import {
@@ -40,13 +40,22 @@ import {
   descriptionStatesCreativePracticeEvidence,
 } from '../../utils/descriptionStatesResearch';
 import { getCached, setCached } from '../snapshotCache';
+import { Researcher } from '../../models/researcher';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import { directoryUnitDepartment } from '../utils/directoryUnitDepartment';
+import { catalogDepartment } from '../directoryExportDepartmentEvidence';
+import { YALE_DIRECTORY_SOURCE } from '../directoryDepartmentCatalogGate';
+import {
+  TRAILING_UNIT_ACRONYM,
+  type CanonicalDepartment,
+} from '../utils/directoryExportDepartment';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import { plausiblePersonOrcid } from '../../utils/orcid';
 
 dotenv.config({ quiet: true });
 
-const SOURCE_NAME = 'yale-directory';
+const SOURCE_NAME = YALE_DIRECTORY_SOURCE;
 const SOURCE_URL = 'https://api.yalies.io/v2/people';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const PAGE_SIZE = 100;
 const FACULTY_KEYWORDS = [
   'professor',
@@ -81,6 +90,8 @@ const NON_FACULTY_TITLE_PATTERNS: RegExp[] = [
   /\bcoordinator\b/i,
   /\badministrator\b/i,
   /\badministrative\b/i,
+  /\badmin\.?\s+asst\b/i,
+  /\bexecutive assistant\b/i,
   /\bassistant to\b/i,
   /\boperations\b/i,
   /\bbuilding\b/i,
@@ -247,7 +258,9 @@ const RESEARCH_SUPPORT_STAFF_TITLE_PATTERNS: RegExp[] = [
   /\bgenetic counsel(?:o|le)r\b/i,
   /\blibrarian\b/i,
   /\bsoftware (?:engineer|developer)\b/i,
-  /\bbusiness (?:systems )?analyst\b/i,
+  /\banalyst\b/i,
+  /\b(?:bio)?statistician\b/i,
+  /\b(?:financial|account) assistant\b/i,
   /\bbusiness development\b/i,
   // The advancement role, not the word: a bare `alumni` also refuses "Director,
   // Alumni Research Program", and three of the six non-faculty titles containing it
@@ -273,6 +286,19 @@ export function isResearchSupportStaffTitle(title: string | undefined | null): b
   if (!clean) return false;
   if (!RESEARCH_SUPPORT_STAFF_TITLE_PATTERNS.some((rx) => rx.test(clean))) return false;
   return !isFacultyTitle(clean);
+}
+
+/**
+ * Whether a person's own title names a staff role and no faculty appointment anywhere: an
+ * administrative, operations or research-support title. The page a person is listed on is
+ * no witness to this, because a department's people page lists its staff beside its
+ * professors (#5750).
+ */
+export function titleStatesOnlyAStaffRole(title: string | undefined | null): boolean {
+  return (
+    (looksLikeNonResearchTitle(title) || isResearchSupportStaffTitle(title)) &&
+    !statesAnyFacultyAppointment(title)
+  );
 }
 
 const TEACHING_APPOINTMENT_RANK_RE = /\b(?:senior\s+)?lect(?:urer|or)s?\b/gi;
@@ -378,6 +404,35 @@ export function classifyUserType(title: string | undefined | null): 'professor' 
 }
 
 /**
+ * The home department the directory states, read against the catalog (#6129). A unit the
+ * catalog names stands as the directory spells it; an acronym-suffixed spelling ("Biostatistics
+ * (BIS)") or a section the catalog knows only by its coded HR form ("MEDINT Cardiology") is read
+ * as its catalog name; anything else (a center, a council, a bare section name two departments
+ * share) states no department. With no catalog the lane states no department either, failing
+ * closed like the profile lanes; under fill-empty-only that only defers a fill.
+ */
+export function directoryHomeDepartment(
+  person: Pick<YaliesPerson, 'unit' | 'unit_class'>,
+  canonicalDepartment: CanonicalDepartment | null,
+): string | undefined {
+  if (!canonicalDepartment) return undefined;
+  const named = directoryUnitDepartment(person.unit, person.unit_class);
+  if (named && canonicalDepartment(named)) return named;
+  const unit = typeof person.unit === 'string' ? person.unit.replace(/\s+/g, ' ').trim() : '';
+  const unitClass =
+    typeof person.unit_class === 'string' ? person.unit_class.trim().toUpperCase() : '';
+  const spellings = [
+    named?.replace(TRAILING_UNIT_ACRONYM, ''),
+    unitClass && unit ? `${unitClass} ${unit}` : undefined,
+  ];
+  for (const spelling of spellings) {
+    const department = spelling ? canonicalDepartment(spelling) : undefined;
+    if (department) return department;
+  }
+  return undefined;
+}
+
+/**
  * Pure mapping function. Takes one Yalies API record and returns the list of
  * ObservationInputs to emit for that person. Returns an empty array if the
  * record has no netid (we cannot key observations without it) or is not faculty.
@@ -387,6 +442,7 @@ export function classifyUserType(title: string | undefined | null): 'professor' 
 export function personToObservations(
   person: YaliesPerson,
   sourceUrl: string = SOURCE_URL,
+  canonicalDepartment: CanonicalDepartment | null = null,
 ): ObservationInput[] {
   if (!person || !person.netid) return [];
   if (!isFacultyPerson(person)) return [];
@@ -407,29 +463,9 @@ export function personToObservations(
     (person.school && String(person.school).trim()) ||
     '';
   const imageUrl = (person.image && String(person.image).trim()) || '';
-  const orcid = (person.orcid && String(person.orcid).trim()) || '';
+  const orcid = plausiblePersonOrcid(person.orcid);
 
-  // Department fields. Yalies exposes organization_name / unit_name pairs and
-  // primary_organization_* on faculty records. We treat the most-specific unit
-  // as primaryDepartment and the broader organization as a secondary.
-  const primaryDept =
-    (person.unit_name && String(person.unit_name).trim()) ||
-    (person.primary_division_name && String(person.primary_division_name).trim()) ||
-    (person.organization_name && String(person.organization_name).trim()) ||
-    (person.primary_organization_name && String(person.primary_organization_name).trim()) ||
-    '';
-
-  const secondarySet = new Set<string>();
-  for (const v of [
-    person.organization_name,
-    person.primary_organization_name,
-    person.primary_division_name,
-  ]) {
-    if (typeof v === 'string' && v.trim() && v.trim() !== primaryDept) {
-      secondarySet.add(v.trim());
-    }
-  }
-  const secondaryDepts = Array.from(secondarySet);
+  const primaryDept = directoryHomeDepartment(person, canonicalDepartment) ?? '';
 
   // Profile URLs: Yalies returns a single `url` field on faculty records.
   const profileUrls: Record<string, string> = {};
@@ -445,7 +481,6 @@ export function personToObservations(
     ['userType', classifyUserType(title)],
     ['title', title],
     ['primaryDepartment', primaryDept],
-    ['secondaryDepartments', secondaryDepts.length > 0 ? secondaryDepts : undefined],
     ['school', school],
     ['imageUrl', imageUrl],
     ['orcid', orcid],
@@ -460,6 +495,40 @@ export function personToObservations(
   }
 
   return out;
+}
+
+/**
+ * A directory record whose title fails the faculty screen still verifies the email of a
+ * person the corpus already holds under that netid (#5627). It carries only the netid and
+ * the address: no name, title or user type, so it can rename nobody, mint nobody, and make
+ * no staff record a row or a search result. It only backs the existing researcher's email.
+ */
+export function corpusPersonEmailObservations(
+  person: YaliesPerson,
+  corpusNetids: ReadonlySet<string>,
+  sourceUrl: string = SOURCE_URL,
+): ObservationInput[] {
+  const netid = (person?.netid && String(person.netid).trim()) || '';
+  const email = (person?.email && String(person.email).trim()) || '';
+  if (!netid || !email || !corpusNetids.has(netid.toLowerCase())) return [];
+  const base = { entityType: 'user' as const, entityKey: netid, sourceUrl };
+  return [
+    { ...base, field: 'netid', value: netid },
+    { ...base, field: 'email', value: email },
+  ];
+}
+
+export async function loadCorpusResearcherNetids(): Promise<ReadonlySet<string>> {
+  // Unconnected reads as an empty corpus, which backs nobody rather than blocking the faculty sync.
+  if (!mongooseConnectionWasOpened()) return new Set();
+  const netids = (await Researcher.distinct('identifiers.netid', {
+    archived: { $ne: true },
+  })) as unknown[];
+  return new Set(
+    netids
+      .filter((netid): netid is string => typeof netid === 'string' && netid.trim() !== '')
+      .map((netid) => netid.trim().toLowerCase()),
+  );
 }
 
 /**
@@ -479,7 +548,6 @@ async function fetchYaliesPage(
     page,
     pageSize: PAGE_SIZE,
     filters,
-    userAgent: USER_AGENT,
   });
   if (useCache) {
     await setCached(SOURCE_NAME, cacheKey, records);
@@ -490,6 +558,14 @@ async function fetchYaliesPage(
 export class YaleDirectoryScraper implements IScraper {
   readonly name = SOURCE_NAME;
   readonly displayName = 'Yale Directory (faculty roster via Yalies API)';
+
+  constructor(
+    private readonly corpusNetidLoader: () => Promise<
+      ReadonlySet<string>
+    > = loadCorpusResearcherNetids,
+    private readonly catalogDepartmentLoader: () => Promise<CanonicalDepartment | null> = () =>
+      mongooseConnectionWasOpened() ? catalogDepartment() : Promise.resolve(null),
+  ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const apiKey = process.env.YALIES_API_KEY;
@@ -510,10 +586,13 @@ export class YaleDirectoryScraper implements IScraper {
     }
     const limit = limitOption;
 
+    const corpusNetids = await this.corpusNetidLoader();
+    const canonicalDepartment = await this.catalogDepartmentLoader();
     let totalObs = 0;
     let processed = 0;
     let skippedNonFaculty = 0;
-    let pageNum = 1;
+    let corpusPeopleBacked = 0;
+    let pageNum = FIRST_YALIES_PAGE;
     let stop = false;
     const partialFailures: string[] = [];
 
@@ -532,7 +611,7 @@ export class YaleDirectoryScraper implements IScraper {
             ? 'Yalies API returned 401 (auth failed)'
             : sanitizeLogValue(err instanceof Error ? err.message : String(err));
         const failure = `Yalies page ${pageNum} could not be read (${reason}); pagination aborted`;
-        if (pageNum === 1) throw new Error(failure, { cause: err });
+        if (pageNum === FIRST_YALIES_PAGE) throw new Error(failure, { cause: err });
         ctx.log(`${failure}; the faculty roster is incomplete.`);
         partialFailures.push(failure);
         break;
@@ -550,8 +629,14 @@ export class YaleDirectoryScraper implements IScraper {
           stop = true;
           break;
         }
-        const obs = personToObservations(person);
+        const obs = personToObservations(person, SOURCE_URL, canonicalDepartment);
         if (obs.length === 0) {
+          const backing = corpusPersonEmailObservations(person, corpusNetids);
+          if (backing.length > 0) {
+            await ctx.emit(backing);
+            totalObs += backing.length;
+            corpusPeopleBacked++;
+          }
           skippedNonFaculty++;
           continue;
         }
@@ -570,7 +655,7 @@ export class YaleDirectoryScraper implements IScraper {
 
     ctx.log(
       `Done. Faculty processed: ${processed}, observations emitted: ${totalObs}, ` +
-        `non-faculty skipped: ${skippedNonFaculty}, pages fetched: ${pageNum}.`,
+        `non-faculty skipped: ${skippedNonFaculty} (${corpusPeopleBacked} backing a corpus person's email), pages fetched: ${pageNum - FIRST_YALIES_PAGE + 1}.`,
     );
 
     const incomplete =
@@ -578,7 +663,7 @@ export class YaleDirectoryScraper implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: processed,
-      notes: `Yalies faculty sync: ${processed} faculty, ${totalObs} observations across ${pageNum} pages${incomplete}`,
+      notes: `Yalies faculty sync: ${processed} faculty, ${corpusPeopleBacked} non-faculty corpus emails, ${totalObs} observations across ${pageNum - FIRST_YALIES_PAGE + 1} pages${incomplete}`,
       ...(partialFailures.length > 0 ? { partialFailures } : {}),
     };
   }

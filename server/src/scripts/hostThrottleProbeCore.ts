@@ -2,6 +2,7 @@ import {
   resolveMongoDatabaseName,
   resolveScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
+import type { HostThrottle } from '../scrapers/utils/hostConcurrencyLimiter';
 import { DEVELOPMENT_DATABASE_NAME } from './databaseCopyPairs';
 import { WEEKLY_SWEEP_FORBIDDEN_VARIABLES } from './weeklyDevelopmentSweepCore';
 
@@ -160,7 +161,23 @@ function isRefusal(status: number | null | undefined): boolean {
   return typeof status === 'number' && PROBE_REFUSAL_STATUSES.has(status);
 }
 
-export interface HostProbeSummary {
+export interface ProbeLoad {
+  inFlight: number;
+  minIntervalMs: number;
+}
+
+export function appliedProbeLoad(
+  requested: ProbeLoad,
+  machineBudget: HostThrottle | undefined,
+): ProbeLoad {
+  if (!machineBudget) return requested;
+  return {
+    inFlight: Math.min(requested.inFlight, machineBudget.concurrency),
+    minIntervalMs: Math.max(requested.minIntervalMs, machineBudget.minIntervalMs),
+  };
+}
+
+export interface HostProbeSummary extends ProbeLoad {
   host: string;
   urlsInDevelopment: number;
   requests: number;
@@ -186,6 +203,7 @@ export function percentile(values: number[], fraction: number): number | null {
 export function summarizeHostProbe(input: {
   host: string;
   urlsInDevelopment: number;
+  load: ProbeLoad;
   records: HostProbeRequestRecord[];
   wallTimeMs: number;
 }): HostProbeSummary {
@@ -197,6 +215,8 @@ export function summarizeHostProbe(input: {
   return {
     host: input.host,
     urlsInDevelopment: input.urlsInDevelopment,
+    inFlight: input.load.inFlight,
+    minIntervalMs: input.load.minIntervalMs,
     requests: records.length,
     attempts: records.reduce((total, record) => total + record.attempts, 0),
     firstAttemptRefused,
@@ -218,6 +238,8 @@ function round(value: number): number {
 export function formatHostProbeTable(summaries: HostProbeSummary[]): string {
   const header = [
     'host',
+    'in flight',
+    'spacing ms',
     'requests',
     'first 403/429',
     'recovered',
@@ -229,6 +251,8 @@ export function formatHostProbeTable(summaries: HostProbeSummary[]): string {
   ];
   const rows = summaries.map((summary) => [
     summary.host,
+    String(summary.inFlight),
+    String(summary.minIntervalMs),
     String(summary.requests),
     `${summary.firstAttemptRefused} (${Math.round(summary.firstAttemptRefusedRate * 100)}%)`,
     String(summary.recovered),
@@ -254,7 +278,7 @@ export function formatHostProbeResultLine(result: {
   startedAt: string;
   wallTimeMs: number;
   codeSha: string | null;
-  inFlight?: number;
+  requestedInFlight: number;
   hosts: HostProbeSummary[];
 }): string {
   return `${HOST_PROBE_RESULT_MARKER} ${JSON.stringify(result)}`;

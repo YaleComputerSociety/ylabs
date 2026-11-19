@@ -24,7 +24,11 @@ import {
   researchPlansThatWouldMove,
   type ResearchPlanCarryReport,
 } from '../services/researchPlanMergeCarry';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import {
   assertPhase0SummaryOnlyConfiguredTarget,
   assertPhase0SummaryOnlyConnectedTarget,
@@ -36,6 +40,7 @@ import {
 } from './phase0SummaryOnlyAudit';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -421,12 +426,12 @@ export function parseDuplicateEntityNameReviewArgs(argv: string[]): DuplicateEnt
     }
     if (arg === '--accepted-decisions') {
       const { value, nextIndex } = consumeValue(argv, index, '--accepted-decisions', 'path');
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(value, '--accepted-decisions');
+      args.acceptedDecisions = resolveSafeJsonReportPath(value, '--accepted-decisions');
       index = nextIndex;
       continue;
     }
     if (arg.startsWith('--accepted-decisions=')) {
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
+      args.acceptedDecisions = resolveSafeJsonReportPath(
         consumeInlineValue(arg, '--accepted-decisions', 'path'),
         '--accepted-decisions',
       );
@@ -492,7 +497,7 @@ export function writeDuplicateEntityNameReviewOutput(report: unknown, output?: s
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildDuplicateEntityNameReviewOutput(
@@ -601,7 +606,7 @@ export function writeDuplicateEntityNameReviewDecisionTemplate(
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output, '--decision-template-output');
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
 }
 
 export function buildDuplicateEntityNameReviewDecisionTemplate(
@@ -636,7 +641,7 @@ export function readDuplicateEntityNameReviewDecisions(
   inputPath: string,
   options: { allowEmpty?: boolean } = {},
 ): DuplicateEntityNameReviewDecision[] {
-  const safeInputPath = resolveSafeJsonReportOutputPath(inputPath, '--accepted-decisions');
+  const safeInputPath = resolveSafeJsonReportPath(inputPath, '--accepted-decisions');
   if (!fs.existsSync(safeInputPath) && options.allowEmpty) {
     return [];
   }

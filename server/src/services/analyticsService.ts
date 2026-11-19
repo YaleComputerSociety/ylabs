@@ -641,6 +641,19 @@ const accountByNetidLookupStages = (netidField: string): PipelineStage.FacetPipe
     as: 'account',
   });
 
+const appUserAccountByNetidLookupStages = (
+  netidField: string,
+): PipelineStage.FacetPipelineStage[] =>
+  singleMatchLookupStages({
+    from: 'accounts',
+    localField: netidField,
+    foreignField: 'netid',
+    foreignFieldType: 'string',
+    project: { _id: 1 },
+    as: 'appUserAccount',
+    match: appUserAccountMatch(),
+  });
+
 const researcherByNetidLookupStages = (netidField: string): PipelineStage.FacetPipelineStage[] =>
   singleMatchLookupStages({
     from: 'researchers',
@@ -1799,10 +1812,11 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
               totalEvents: { $sum: 1 },
             },
           },
+          ...appUserAccountByNetidLookupStages('_id'),
           {
             $group: {
               _id: null,
-              activeUsers: { $sum: 1 },
+              activeUsers: { $sum: { $cond: [{ $ifNull: ['$appUserAccount', false] }, 1, 0] } },
               avgEventsPerUser: { $avg: '$totalEvents' },
             },
           },

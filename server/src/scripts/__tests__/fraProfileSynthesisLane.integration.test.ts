@@ -47,6 +47,7 @@ import {
   selectFraProfileSynthesisTargets,
   type FraProfileSynthesisEntity,
 } from '../fraProfileSynthesisLane';
+import { ungroundedContentTerms } from '../../scrapers/utils/writtenDescriptionChecks';
 
 const SLUG = 'fra-profile-lane-fixture';
 const PROFILE_URL = 'https://medicine.example.edu/profile/avery_lin/';
@@ -296,6 +297,25 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     );
     const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
     expect(served.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+  });
+
+  it('accepts a body the coverage writer grounding check alone would refuse (#5537)', async () => {
+    await seedFra();
+    await seedFullDescriptionObservation(
+      PROFILE_BIO,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const body = SYNTHESIZED_RESEARCH.replace(/\.$/, ', with an emphasis on colitis.');
+    expect(
+      ungroundedContentTerms(body, [{ text: PROFILE_PAGE_TEXT, isResearchPageText: false }]),
+    ).toEqual(['colitis']);
+
+    const report = await runLane(stubLLM(body));
+
+    expect(report).toMatchObject({ synthesized: true, written: true });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(persisted.fullDescription).toBe(body);
   });
 
   it('keeps the synthesized description after the directory re-scrapes the biography', async () => {
@@ -1147,6 +1167,39 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
         any
       >;
       expect(persisted.fieldProvenance?.fullDescription?.sourceName).toBe('ysm-faculty-directory');
+    });
+
+    it('clears the body but keeps its stamp when it is the served row only citation (#6320)', async () => {
+      const laneBody = await seedFullDescriptionObservation(
+        SYNTHESIZED_RESEARCH,
+        FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+        0.9,
+      );
+      const entity = await seedFra({
+        studentVisibilityTier: 'student_ready',
+        sourceUrls: [],
+        fullDescription: SYNTHESIZED_RESEARCH,
+        fieldProvenance: {
+          fullDescription: {
+            sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+            sourceUrl: PROFILE_URL,
+            observationId: laneBody._id,
+          },
+        },
+      });
+
+      const result = await applyFraProfileSynthesisWithdrawals(
+        [{ slug: SLUG, entityId: String(entity._id), observationIds: [String(laneBody._id)] }],
+        { apply: true, completeReads: 1 },
+      );
+
+      expect(result.lastCitationStampsKept).toBe(1);
+      const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<
+        string,
+        any
+      >;
+      expect(persisted.fullDescription).toBeUndefined();
+      expect(persisted.fieldProvenance?.fullDescription?.sourceUrl).toBe(PROFILE_URL);
     });
 
     it('re-derives the same answer on a second run without writing anything', async () => {

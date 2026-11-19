@@ -48,7 +48,7 @@ Cycles are not the problem here and a cycle rule is not worth adding: the whole 
 | --------------- | ----------------------------------------------------------------------------------------------------------- |
 | Client          | React 19, TypeScript 6.0, Vite 8, React Router v7, MUI v9, TailwindCSS v4                                   |
 | Server          | Express 5, TypeScript 6.0, Passport.js 0.7, Mongoose 9                                                      |
-| Search          | Meilisearch 0.62 with keyword search plus OpenAI `text-embedding-3-small` semantic search where appropriate |
+| Search          | Meilisearch 1.54.3 (pinned) with keyword search plus OpenAI `text-embedding-3-small` semantic search where appropriate |
 | Database        | MongoDB Atlas with separate Development, Beta, and Production databases                                     |
 | Package Manager | Yarn 4 via Corepack                                                                                         |
 | Tooling         | concurrently, tsx, cross-env                                                                                |
@@ -100,6 +100,9 @@ Do not add a per-hook timeout, because the config already covers it, and `server
 An explicit hook argument wins over the config, so the guard parses every hook call in the `server/src` test and spec files and fails on an argument at or below the config value, on one it cannot resolve to a numeric literal, and on a config value that does not exceed the launch budget.
 Only a setup genuinely slower than 180000 ms may carry its own larger argument.
 Raising `hookTimeout` also raises the guard's threshold, so raise the budget and delete the hook arguments it overtakes in the same change.
+The same wrapper gives every in-memory MongoDB a port from its vitest worker's own range, derived from `VITEST_POOL_ID` in `server/src/test/mongoMemoryPortRange.ts` (128 ports per worker from 20000, below every ephemeral range).
+Without it two workers could draw the same random port, and the loser's failed replica-set start sends `shutdown` to the winner's live server (#5646).
+Do not pass an explicit `port` in a suite: a chosen port wins over the wrapper and reopens the collision.
 This applies to hooks only.
 `testTimeout` stays at 30000 ms, so a slow `it` still needs its own argument.
 
@@ -111,6 +114,8 @@ The server suite is fenced off from the local environment by `server/src/test/he
 It neutralises `dotenv.config()` and `dotenv/config`, deletes every name `server/.env` and `server/.env.example` declare except the ones the runner and the operating system own (`NODE_ENV`, `CI`, `PATH`, `HOME`, `TMPDIR`, `TZ`), and replaces `utils/meiliClient` with a client that refuses every call.
 A test run therefore sees the environment CI sees whether or not a `server/.env` is present, which is the point: before the fence, `browseSchoolFacet()` in one suite asserted against the live Yale school list, and four suites upserted synthetic fixture documents into the search index the local dev stack serves (#2966).
 A suite that needs a search index declares its own `vi.mock('../../utils/meiliClient', ...)`, and a suite that needs a database starts its own `mongodb-memory-server`.
+The same file sets mongoose `autoIndex` and `autoCreate` false, as `db/connections.ts` does for the server, so connecting builds no collection or index (#5722).
+A suite that relies on an index, such as a unique one behind a duplicate-key assertion, builds it with `Model.createIndexes()`; `Model.init()` no longer builds it.
 A suite that spawns a real CLI builds the child environment with `hermeticChildEnvironment({ MONGODBURL: <memory uri> })` from the same file, never with `{ ...process.env }`.
 A module mock stops at the process boundary and a spawned script re-runs `dotenv.config()` for itself, so the child is fenced by its environment alone: unroutable backend values it cannot re-resolve, because `dotenv` only fills a name that is absent, plus the `YLABS_SKIP_LOCAL_DOTENV=true` the scripts honour.
 Never read a connection string or a feature flag from `process.env` in a test, and never re-load an env file inside one.
@@ -158,12 +163,35 @@ The timer stops come before the disconnect, and that order is load-bearing: the 
 
 The serving process and an operator script want opposite things from the driver, so `server/src/db/connections.ts` gives them different budgets.
 `mongoOptions` is the serving budget: 5 s to select a server, a 5 s Mongoose command buffer, and a 20 s socket ceiling.
-`scriptMongoConnectOptions` restores the long ones, 30 s selection and no socket timeout, because a sweep that starts during a replica-set election should wait for it rather than abort.
+`scriptMongoConnectOptions` restores the long ones, 30 s selection and a 10-minute socket ceiling (`SCRIPT_SOCKET_TIMEOUT_MS`), because a sweep that starts during a replica-set election should wait for it rather than abort.
+The three scripts whose single operation is a whole-collection index build, rename or `$merge` (`buildMongoIndexes`, `migrateMongoNaming`, `migrateResearchEntityCollections`) opt back into no socket timeout with `WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS`; a test pins that list.
+The script socket ceiling is long but finite: with none, an operation on a socket the cluster dropped waited forever while the write lease kept renewing (#5880).
+Scripts also cap their pool at 40 connections (`SCRIPT_MAX_POOL_SIZE`), because Development, Beta and Production share one free-tier cluster with a connection cap and many script processes run at once; the serving budget keeps the driver's pool default.
+The cap stays above twice `MAX_MATERIALIZATION_CONCURRENCY`, and a checkout waits at most 2 minutes for a free connection (`SCRIPT_POOL_WAIT_TIMEOUT_MS`), so a checkout that cannot be served fails loudly instead of waiting forever (#5880).
+Both are a mitigation rather than a measured cause: an in-memory reproduction of a field-scoped user materialize never checked out more than 3 connections, and on a pool of 10 it recovered from socket resets, silent blackholes, refused reconnects, DNS failures, a server restart and a frozen replica set, with every pool clear followed by pool ready (#5945).
 `initializeConnections()` connects with the script budget by default, because nearly every caller is an operator entry point, and `server/src/index.ts` is the one caller that passes `mongoOptions`.
+A script that connects through `connectScriptMongo`, `createScriptMongoConnection`, or `initializeConnections` on the script budget writes a Node diagnostic report on `kill -USR2 <pid>`, to the temp directory and without environment variables, so a stalled script yields its pending handles and stack without a restart (#5945).
 `triggerReconnect` reuses whichever budget the process connected with, so a reconnect never moves a script onto the serving budget or the server onto the script one.
 The numbers come from measurement rather than taste: a reachable database answers a detail request in under 10 ms, while the driver's 30 s and 60 s defaults turned an unreachable or hung one into a 30 s to 63 s wait that ended in a generic 500 (#4188).
 The socket ceiling stays above the slowest request this server makes and under the hosting platform's own request timeout.
 Any single in-process operation that legitimately needs longer than the socket ceiling belongs in a script or a child process, which is where the heavy audits already run.
+
+## Script exit and the held-open code
+
+A long operator script hands its entry point to `runScriptMain(main, options?)` in `server/src/db/connections.ts` instead of chaining `.catch`/`.finally` onto `main()` (#5945).
+It awaits `main` and never exits while it runs.
+On success it stops the keep-alive pass, releases held Development write leases, and closes every Mongoose connection, including ones from `createScriptMongoConnection`, and then lets the process exit on its own.
+It arms an unref'd watchdog first (`SCRIPT_EXIT_WATCHDOG_MS`, 30 s).
+A process still alive at that bound logs `work completed; process held the event loop open: <handle types and counts>` from `process.getActiveResourcesInfo()` and exits `SCRIPT_EXIT_HELD_OPEN`, which is 3.
+Exit 3 means the work completed and some handle leaked, so cron and sessions can tell it from exit 1, which is a failure; an exit code the script already set, such as a refusal's 1, is kept rather than replaced by 3.
+A thrown error is logged through `sanitizeLogValue` (or the script's own `logFailure`), the connections are closed within the same bound, and the process exits 1.
+`server/src/scripts/__tests__/longScriptEntryPointsUseRunScriptMain.test.ts` lists the long entry points by package script name with a reason each, runs each one, and fails when one does not hand `main` to `runScriptMain`, so a new long script belongs on that list.
+`server/src/db/__tests__/runScriptMain.integration.test.ts` drives real child processes for the held-open, clean, throwing and second-connection cases.
+Long Development runs need the laptop lid open or AC power: `caffeinate -i` prevents idle sleep only, not clamshell sleep.
+A run that spans a sleep looks hung (its log shows a disconnect and reconnects on each maintenance wake, but no progress), so re-run it.
+That is separate from exit 3, which is a process that finished its work while awake and still would not exit.
+Long user-key runs (`observations:rematerialize-user-keys`, and the field-scoped user materialize `scrape materialize --only-fields`) go through `startLongRunProgress` in `server/src/utils/longRunProgress.ts`.
+They print a start line with the key count before the first key, a progress line every 250 keys or every minute while keys complete, and a `still working` heartbeat every minute while no key completes, so a slow prefetch reads as alive and a stuck one shows how long since its last key.
 
 A request that could not reach the database answers `503` with a `Retry-After`, never `500`, and `isMongoUnavailableError` is the one predicate that decides it.
 Every arm except a lost topology is still reported to error tracking, because a socket timeout against a reachable database is a slow query that needs fixing rather than an outage.
@@ -172,6 +200,17 @@ Selection timeouts, socket timeouts, a closed client, and a Mongoose buffering t
 `triggerReconnect` stays scoped to a lost topology, because the driver recovers from the others on its own and reconnecting under them would close the pool the next request is about to use.
 On the client, `/research` renders every failed search as the limited-search notice with its retry action, whatever the status was, so an outage never renders as "no research matches" (#4266).
 A 503 needs no special case there, because a 500, a 429 and a dropped connection with no response at all are the same thing to a student: a search that did not answer.
+
+## Script report output (`--output`)
+
+Every script's `--output` report path goes through `resolveSafeJsonReportOutputPath` in `server/src/utils/reportOutputPath.ts`, re-exported from `server/src/scripts/scriptWriteGuards.ts` (#6366).
+It must end in `.json` and resolve, symlinks included, under the operating-system temp directory, the shared `/tmp`, `./tmp` from the working directory, or `YLABS_REPORT_ROOT` when that is set.
+Its directory must already exist and be writable, which the resolver proves by creating and removing a probe file, and a report under a temp root prints a one-line warning that the system may wipe it.
+`YLABS_REPORT_ROOT` must be an absolute path to an existing directory outside the repository checkout, symlinks resolved, and an `--output` that resolves into the checkout under it is refused.
+Resolve `--output` in the argument parser, before the script connects or writes, because an apply that finds its report path unusable only after its Development writes loses the per-row report and invites a re-run of an apply that already landed.
+`connectScriptMongo`, `createScriptMongoConnection` and the script path of `initializeConnections` also resolve the process's own `--output` before they connect, which catches a script that still resolves it only when it writes the report.
+The shared scraper writer, `writeJsonOutputFile` in `server/src/scrapers/scraperCliOutput.ts`, writes the report mode 0600.
+`server/src/scripts/__tests__/outputFlagGuard.test.ts` fails when a file under `scripts/` or `scrapers/` reads `--output` without the resolver.
 
 ## TypeScript
 
@@ -195,7 +234,7 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `/research`       | `researchGroups.ts` | Varies, with public search and detail.              |
 | `/programs`       | `programs.ts`       | Varies; current Programs and Fellowships surface.   |
 | `/fellowships`    | `fellowships.ts`    | Auth; legacy, with `/api/programs` as successor.    |
-| `/users`          | `users.ts`          | Auth required.                                      |
+| `/users`          | `users.ts`          | Auth required; includes the directory removal request ([docs/directory-removal-requests.md](../../docs/directory-removal-requests.md)). |
 | `/analytics`      | `analytics.ts`      | Admin.                                              |
 | `/config`         | `config.ts`         | Public.                                             |
 | `/admin`          | `admin.ts`          | Admin.                                              |
@@ -257,4 +296,4 @@ Use `docs/data-refresh-runbook.md` for the canonical commands.
 | Yale CAS SSO   | Authentication                                         | `passport.ts`                                  |
 | Yalies API     | Student, faculty and staff lookup at login             | `yaliesService.ts`                             |
 | Meilisearch    | Hybrid search                                          | `meiliClient.ts`                               |
-| OpenAI         | Embeddings via Meilisearch embedder and LLM extractors | Meilisearch/index setup and scraper extractors |
+| OpenAI         | Embeddings via Meilisearch embedder and LLM extractors | `utils/modelClient.ts` (every server call, usage in `docs/model-usage.md`) and Meilisearch/index setup |

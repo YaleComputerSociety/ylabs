@@ -564,6 +564,14 @@ describe('REMATERIALIZE_TRACKED_FIELDS', () => {
     ]);
   });
 
+  it('can scope a pass to the emeritus-listed leads alone (#6239)', () => {
+    const args = parseRematerializeResearchEntitiesArgs([
+      '--slugs=a',
+      '--only-fields=emeritusListedLeadIds',
+    ]);
+    expect(args.onlyFields).toEqual(['emeritusListedLeadIds']);
+  });
+
   it('has no duplicate entries', () => {
     expect(new Set(REMATERIALIZE_TRACKED_FIELDS).size).toBe(REMATERIALIZE_TRACKED_FIELDS.length);
   });
@@ -585,10 +593,17 @@ describe('withDerivedMaterializerFields', () => {
   });
 
   it('writes the whole org-unit closure whichever member the operator scoped', () => {
-    const closure = ['departments', 'orgAffiliationLabels', 'school', 'schools'];
+    const closure = [
+      'departments',
+      'orgAffiliationLabels',
+      'school',
+      'schools',
+      'statedAppointmentSchools',
+    ];
     expect(withDerivedMaterializerFields(['departments']).sort()).toEqual(closure);
     expect(withDerivedMaterializerFields(['school']).sort()).toEqual(closure);
     expect(withDerivedMaterializerFields(['schools']).sort()).toEqual(closure);
+    expect(withDerivedMaterializerFields(['statedAppointmentSchools']).sort()).toEqual(closure);
   });
 
   it('leaves an unrelated scope alone and does not duplicate a complete group', () => {
@@ -703,6 +718,7 @@ describe('the change set covers every field the run may write (#3822)', () => {
       unbackedResearchAreas: {},
       researchAreaChips: { added: 0, removed: 0 },
       entitiesAwaitingCardSynthesis: 0,
+      entitiesWithLastCitationKept: 0,
     });
     expect(selectRematerializeRegateEntityIds([report])).toEqual(['aaaaaaaaaaaaaaaaaaaaaaaa']);
   });
@@ -758,10 +774,11 @@ describe('the change set covers every field the run may write (#3822)', () => {
       title: 'Example Award',
       startDate: new Date('2024-07-01T00:00:00.000Z'),
       endDate: new Date('2027-06-30T00:00:00.000Z'),
+      role: 'pi',
     };
     const before = {
       ...stored,
-      recentGrants: [{ ...plannedGrant, abstract: '', role: 'pi', _id: new Types.ObjectId() }],
+      recentGrants: [{ ...plannedGrant, abstract: '', _id: new Types.ObjectId() }],
       recentGrantCount: 1,
     };
     const fields = rematerializeComparedFields([]);
@@ -791,6 +808,7 @@ describe('the change set covers every field the run may write (#3822)', () => {
       unbackedResearchAreas: {},
       researchAreaChips: { added: 0, removed: 0 },
       entitiesAwaitingCardSynthesis: 0,
+      entitiesWithLastCitationKept: 0,
     });
   });
 });

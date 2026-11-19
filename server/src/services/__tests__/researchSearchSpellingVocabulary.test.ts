@@ -57,6 +57,27 @@ describe('research search spelling vocabulary', () => {
     expect(correctSearchQuerySpelling('quellin', vocabulary).corrections).toEqual([]);
   });
 
+  it('never respells a roster-listed student surname, nor offers one as a correction', async () => {
+    const search = vi.fn().mockResolvedValueOnce({
+      hits: [
+        ...Array.from({ length: 10 }, () => ({
+          researchAreas: ['chain'],
+          studentVisibilityTier: 'student_ready',
+        })),
+        ...Array.from({ length: 10 }, () => ({
+          memberNames: ['Synthetic Chapin'],
+          studentVisibilityTier: 'student_ready',
+        })),
+      ],
+    });
+
+    const vocabulary = await loadResearchSearchSpellingVocabulary(async () => ({ search }));
+
+    expect(search.mock.calls[0][1].attributesToRetrieve).toContain('memberNames');
+    expect(correctSearchQuerySpelling('synthetic chapin', vocabulary).corrections).toEqual([]);
+    expect(vocabulary.documentFrequency.has('chapin')).toBe(false);
+  });
+
   it('counts only words a student can be served', async () => {
     const search = vi.fn().mockResolvedValueOnce({
       hits: [

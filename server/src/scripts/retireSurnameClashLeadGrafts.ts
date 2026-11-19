@@ -11,16 +11,21 @@ import { RoleAssignment } from '../models/roleAssignment';
 import { researchEntityIdentityTokens } from '../scrapers/utils/personProfileEntityMatch';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { researcherCarriesIdentityEvidence } from '../utils/researcherIdentity';
+import { servedSiteLeadVerdicts } from '../utils/leadContradictedByNamesake';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  pastDetachmentsOfTheNamedPerson,
   planSurnameClashLeadDetachment,
-  researcherIdentityAnchored,
   summarizeSurnameClashRefusals,
   surnameClashGroups,
+  type PastSurnameClashDetachment,
   type SurnameClashEntityRow,
+  type SurnameClashLeadIdentity,
   type SurnameClashLeadRow,
 } from './retireSurnameClashLeadGraftsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,11 +63,22 @@ export function parseRetireSurnameClashArgs(argv: string[]): RetireSurnameClashO
 interface PersonIdentity {
   displayName: string;
   identityAnchored: boolean;
+  identity: SurnameClashLeadIdentity;
+  archivedDuplicate: boolean;
 }
 
+const optionalText = (value: unknown): string | undefined => {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text || undefined;
+};
+
 async function loadPersonIdentities(): Promise<Map<string, PersonIdentity>> {
-  const researchers = (await Researcher.find({ archived: { $ne: true } })
-    .select('_id displayName identifiers profile.title profile.primaryDepartment')
+  const researchers = (await Researcher.find({
+    $or: [{ archived: { $ne: true } }, { dedupedIntoResearcherId: { $exists: true, $ne: null } }],
+  })
+    .select(
+      '_id displayName archived dedupedIntoResearcherId identifiers profileLinks.kind profile.title profile.primaryDepartment',
+    )
     .lean()) as unknown as Array<Record<string, any>>;
   const identities = new Map<string, PersonIdentity>();
   for (const row of researchers) {
@@ -72,10 +88,37 @@ async function loadPersonIdentities(): Promise<Map<string, PersonIdentity>> {
     if (!displayName) continue;
     identities.set(id, {
       displayName,
-      identityAnchored: researcherIdentityAnchored(row),
+      identityAnchored: researcherCarriesIdentityEvidence(row),
+      identity: {
+        netid: optionalText(row.identifiers?.netid),
+        email: optionalText(row.identifiers?.email),
+        orcid: optionalText(row.identifiers?.orcid),
+        title: optionalText(row.profile?.title),
+        department: optionalText(row.profile?.primaryDepartment),
+        dedupedIntoPersonId: serializedDocumentId(row.dedupedIntoResearcherId),
+      },
+      archivedDuplicate: row.archived === true,
     });
   }
   return identities;
+}
+
+/**
+ * An archived duplicate's live lead edge is read only beside a lead edge of the record
+ * it was folded into, where it is evidence that the clash is one person (#5941). Alone,
+ * it is not a clash member: the repair never judged archived records before.
+ */
+function withoutStrayArchivedDuplicates(
+  leads: readonly SurnameClashLeadRow[],
+  identities: ReadonlyMap<string, PersonIdentity>,
+): SurnameClashLeadRow[] {
+  const personIds = new Set(leads.map((lead) => lead.personId));
+  return leads.filter((lead) => {
+    const identity = identities.get(lead.personId);
+    if (!identity?.archivedDuplicate) return true;
+    const dedupedInto = identity.identity.dedupedIntoPersonId;
+    return Boolean(dedupedInto && personIds.has(dedupedInto));
+  });
 }
 
 async function loadClashEntities(
@@ -106,12 +149,17 @@ async function loadClashEntities(
         displayName: identity.displayName,
         reviewStatus: doc.reviewStatus ? String(doc.reviewStatus) : undefined,
         identityAnchored: identity.identityAnchored,
+        identity: identity.identity,
         rosterVerified:
           String(doc.rosterProvenance?.evidenceStatus || '')
             .trim()
             .toLowerCase() === 'verified',
       },
     ]);
+  }
+
+  for (const [entityId, leads] of leadsByEntityId) {
+    leadsByEntityId.set(entityId, withoutStrayArchivedDuplicates(leads, identities));
   }
 
   const clashEntityIds = [...leadsByEntityId.entries()]
@@ -123,7 +171,7 @@ async function loadClashEntities(
     _id: { $in: clashEntityIds.map((id) => new mongoose.Types.ObjectId(id)) },
     archived: { $ne: true },
   })
-    .select('_id slug name displayName')
+    .select('_id slug name displayName websiteUrl website leadVerification')
     .lean()) as unknown as Array<Record<string, any>>;
 
   const rows: SurnameClashEntityRow[] = [];
@@ -131,6 +179,7 @@ async function loadClashEntities(
   for (const entity of entityDocs) {
     const entityId = serializedDocumentId(entity._id);
     if (!entityId) continue;
+    const siteVerdicts = servedSiteLeadVerdicts(entity);
     rows.push({
       entityId,
       identityTokens: researchEntityIdentityTokens({
@@ -138,11 +187,116 @@ async function loadClashEntities(
         displayName: entity.displayName,
         slug: entity.slug,
       }),
-      leads: leadsByEntityId.get(entityId) || [],
+      leads: (leadsByEntityId.get(entityId) || []).map((lead) => {
+        const servedSiteVerdict = siteVerdicts.get(lead.personId);
+        return servedSiteVerdict ? { ...lead, servedSiteVerdict } : lead;
+      }),
     });
     slugByEntityId.set(entityId, String(entity.slug || ''));
   }
   return { rows, slugByEntityId };
+}
+
+/**
+ * For each entity, the records that archived duplicates which ever led it were folded
+ * into, read from `dedupedIntoResearcherId` on every lead edge this repair did not detach.
+ */
+async function loadArchivedDuplicateLeadTargets(
+  entityIds: readonly unknown[],
+): Promise<Map<string, Set<string>>> {
+  const edges = (await RoleAssignment.find({
+    role: { $in: LEAD_ROLES },
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: entityIds },
+    reviewNotes: { $ne: DETACH_NOTE },
+  })
+    .select('personId target')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const duplicates = (await Researcher.find({
+    _id: { $in: [...new Set(edges.map((edge) => edge.personId))] },
+    archived: true,
+    dedupedIntoResearcherId: { $exists: true, $ne: null },
+  })
+    .select('_id dedupedIntoResearcherId')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const targetByDuplicateId = new Map(
+    duplicates.map((row) => [
+      serializedDocumentId(row._id),
+      serializedDocumentId(row.dedupedIntoResearcherId),
+    ]),
+  );
+  const targetsByEntityId = new Map<string, Set<string>>();
+  for (const edge of edges) {
+    const entityId = serializedDocumentId(edge.target?.id);
+    const target = targetByDuplicateId.get(serializedDocumentId(edge.personId));
+    if (!entityId || !target) continue;
+    targetsByEntityId.set(entityId, (targetsByEntityId.get(entityId) || new Set()).add(target));
+  }
+  return targetsByEntityId;
+}
+
+async function loadPastDetachments(): Promise<{
+  detachments: PastSurnameClashDetachment[];
+  slugByEntityId: Map<string, string>;
+}> {
+  const assignments = (await RoleAssignment.find({
+    role: { $in: LEAD_ROLES },
+    archived: true,
+    reviewNotes: DETACH_NOTE,
+    'target.kind': 'RESEARCH_ENTITY',
+  })
+    .select('_id personId target')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const objectIds = (ids: Array<string | undefined>) =>
+    [...new Set(ids)]
+      .filter((id): id is string => Boolean(id) && mongoose.isValidObjectId(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+  const researchers = (await Researcher.find({
+    _id: { $in: objectIds(assignments.map((doc) => serializedDocumentId(doc.personId))) },
+  })
+    .select('_id displayName')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const displayNameByPersonId = new Map(
+    researchers.map((row) => [serializedDocumentId(row._id), String(row.displayName || '')]),
+  );
+
+  const entities = (await ResearchEntity.find({
+    _id: { $in: objectIds(assignments.map((doc) => serializedDocumentId(doc.target?.id))) },
+    archived: { $ne: true },
+  })
+    .select('_id slug name displayName')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const entityById = new Map(entities.map((entity) => [serializedDocumentId(entity._id), entity]));
+  const duplicateTargetsByEntityId = await loadArchivedDuplicateLeadTargets(
+    entities.map((entity) => entity._id),
+  );
+
+  const detachments: PastSurnameClashDetachment[] = [];
+  const slugByEntityId = new Map<string, string>();
+  for (const doc of assignments) {
+    const assignmentId = serializedDocumentId(doc._id);
+    const personId = serializedDocumentId(doc.personId);
+    const entityId = serializedDocumentId(doc.target?.id);
+    const entity = entityById.get(entityId);
+    const displayName = displayNameByPersonId.get(personId);
+    if (!assignmentId || !personId || !entityId || !entity || !displayName) continue;
+    detachments.push({
+      assignmentId,
+      entityId,
+      personId,
+      displayName,
+      identityTokens: researchEntityIdentityTokens({
+        name: entity.name,
+        displayName: entity.displayName,
+        slug: entity.slug,
+      }),
+      entityLeadDuplicateResolvesToPerson:
+        duplicateTargetsByEntityId.get(entityId)?.has(personId) === true,
+    });
+    slugByEntityId.set(entityId, String(entity.slug || ''));
+  }
+  return { detachments, slugByEntityId };
 }
 
 export async function retireSurnameClashLeadGrafts(options: {
@@ -182,6 +336,9 @@ export async function retireSurnameClashLeadGrafts(options: {
     }
   }
 
+  const past = await loadPastDetachments();
+  const pastDetachmentsNowNamed = pastDetachmentsOfTheNamedPerson(past.detachments);
+
   const report = {
     script: SCRIPT_NAME,
     mode: options.dryRun ? 'dry-run' : 'apply',
@@ -192,6 +349,13 @@ export async function retireSurnameClashLeadGrafts(options: {
     refusedByReason: summarizeSurnameClashRefusals(plan.refused),
     detached,
     regatedEntities,
+    pastDetachmentsScanned: past.detachments.length,
+    pastDetachmentsOfTheNamedPerson: pastDetachmentsNowNamed.length,
+    pastDetachmentEntitySlugsOfTheNamedPerson: [
+      ...new Set(
+        pastDetachmentsNowNamed.map((row) => past.slugByEntityId.get(row.entityId) || row.entityId),
+      ),
+    ].sort(),
   };
   return report;
 }
@@ -213,7 +377,7 @@ async function main(): Promise<void> {
 
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, JSON.stringify(report, null, 2));
+    writeReportFileSync(options.output, JSON.stringify(report, null, 2));
     console.log(`Saved report to ${options.output}`);
   }
 

@@ -16,7 +16,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { connectScriptMongo } from '../db/connections';
+import { connectScriptMongo, WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS } from '../db/connections';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -166,7 +167,7 @@ export function writeMongoNamingMigrationOutput(report: unknown, output?: string
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function collectionExists(name: string): Promise<boolean> {
@@ -396,7 +397,7 @@ export async function migrateMongoNaming(options: MongoNamingMigrationCliOptions
     throw new Error('MONGODBURL environment variable is required');
   }
 
-  await connectScriptMongo(mongoUrl);
+  await connectScriptMongo(mongoUrl, WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS);
 
   try {
     return {

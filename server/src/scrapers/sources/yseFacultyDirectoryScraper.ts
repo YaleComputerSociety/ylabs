@@ -26,7 +26,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
-import { normalizeOrcid } from '../../utils/orcid';
+import { plausiblePersonOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
@@ -39,11 +39,24 @@ import {
   type LabUrlVerdictFor,
 } from '../utils/labUrlEvidence';
 import {
+  coLedGroupSiteFor,
+  loadCoLedSiteIndex,
+  type CoLedSiteIndexLoader,
+  type LabUrlIsCoLedGroupSite,
+} from '../utils/coLedGroupSites';
+import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
   normalizeName,
   splitName,
 } from '../utils/scraperHelpers';
+import { personNameKey } from '../rekeyedPersonKeyPlan';
+import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKeyRetirement';
+import { asYaleNetid } from '../../utils/yaleNetid';
+import {
+  eponymousLabNameSurnameCandidates,
+  personSurnamesFromDisplayNames,
+} from '../../utils/researchHomeNameIdentityAuthority';
 import {
   mintsNoResearchEntityAsTeachingAppointment,
   ownsNoResearchEntityByTitle,
@@ -53,7 +66,6 @@ import { retryOnRetryableStatus } from '../utils/httpFetch';
 const DIRECTORY_URL = 'https://environment.yale.edu/directory/faculty';
 const SOURCE_KEY = 'yse-faculty-directory';
 const SCHOOL_NAME = 'Yale School of the Environment';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 // The profile-page research prose is the faculty's own official description but
 // lives on a profile page, so it must rank at the profile-page description tier:
@@ -74,7 +86,13 @@ export interface YseFacultyProfile {
   name: string;
   profileUrl: string;
   slug: string;
+  /** Every appointment in the position block, joined; the title screens read all of them. */
   title?: string;
+  /**
+   * The block's first appointment, the one emitted as `title`: later parts are additional
+   * titles such as a chair or a directorship (#5578).
+   */
+  leadingTitle?: string;
   email?: string;
   orcid?: string;
   researchAreas: string[];
@@ -219,14 +237,34 @@ function extractDescription($: cheerio.CheerioAPI): string | undefined {
 const GENERIC_RESEARCH_SITE_LABEL =
   /^(?:lab(?:oratory)?(?: website| site)?|website|personal(?: website| site| page)?|home ?page|research ?group(?: website| site)?|group(?: website| site)?)$/i;
 
+const SITE_NOUN_SUFFIX = /\s+(?:website|web\s*site|site|home\s*page|page)$/i;
+const OWN_LAB_LABEL_SHAPE =
+  /^(?:the\s+)?(?:[a-z][a-z'’-]*\s+)?[a-z][a-z'’-]*(?:['’]s)?\s+(?:lab|laboratory)$/i;
+
+function labelNamesOwnResearchSite(label: string, personName: string): boolean {
+  if (GENERIC_RESEARCH_SITE_LABEL.test(label)) return true;
+  if (!personName) return false;
+  const labName = label.replace(SITE_NOUN_SUFFIX, '');
+  if (!OWN_LAB_LABEL_SHAPE.test(labName)) return false;
+  const ownSurnames = personSurnamesFromDisplayNames([personName]);
+  return eponymousLabNameSurnameCandidates(labName).some((surname) => ownSurnames.has(surname));
+}
+
 /**
  * The "Links" section can list the faculty's own lab/personal research site, one
- * or more affiliated centers, an ORCID link, and a CV PDF. Only a generically
- * labeled self-site link ("Website" / "Lab Website") is treated as this person's
- * research home; a named-entity link (an affiliated center or institute) belongs
- * to a different research entity and is never adopted as this faculty's website.
+ * or more affiliated centers, an ORCID link, and a CV PDF. A generically labeled
+ * self-site link ("Website" / "Lab Website") or a lab named for this person
+ * ("<surname> Lab Website", #5827) is treated as this person's research home. Any
+ * other named-entity link (an affiliated center, institute or someone else's lab)
+ * belongs to a different research entity and is never adopted, and a longer
+ * free-text label is not widened, because a personal or outside company site must
+ * not seed a LAB row (#6097).
  */
-export function extractLabUrl($: cheerio.CheerioAPI, profileUrl: string): string | undefined {
+export function extractLabUrl(
+  $: cheerio.CheerioAPI,
+  profileUrl: string,
+  personName = '',
+): string | undefined {
   const section = sectionByEyebrow($, 'Links');
   if (!section) return undefined;
   let found: string | undefined;
@@ -234,7 +272,7 @@ export function extractLabUrl($: cheerio.CheerioAPI, profileUrl: string): string
     if (found) return;
     const link = $(a);
     const text = cleanText(link.text());
-    if (!GENERIC_RESEARCH_SITE_LABEL.test(text)) return;
+    if (!labelNamesOwnResearchSite(text, personName)) return;
     const href = link.attr('href') || '';
     if (/^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
     const absolute = absolutize(href, profileUrl);
@@ -256,7 +294,7 @@ function extractOrcid($: cheerio.CheerioAPI): string | undefined {
   let orcid: string | undefined;
   $('a[href*="orcid.org"]').each((_i, a) => {
     if (orcid) return;
-    const normalized = normalizeOrcid($(a).attr('href') || '');
+    const normalized = plausiblePersonOrcid($(a).attr('href') || '');
     if (normalized) orcid = normalized;
   });
   return orcid;
@@ -267,14 +305,16 @@ export function extractProfile(html: string, faculty: RawYseFaculty): YseFaculty
   const name = normalizeName($('h1').first().text()) || faculty.name;
 
   const positionBlock = $('.profile__position').first();
-  const positionParts: string[] = [];
-  positionBlock.find('.semijoin').each((_i, span) => {
-    const text = cleanText($(span).text());
-    if (text) positionParts.push(text);
-  });
-  const title =
-    (positionParts.length > 0 ? positionParts.join('; ') : cleanText(positionBlock.text())) ||
-    undefined;
+  const spanTexts = positionBlock
+    .find('.semijoin')
+    .map((_i, span) => $(span).text())
+    .get();
+  const positionTexts = spanTexts.length > 0 ? spanTexts : [positionBlock.text()];
+  const positionParts = positionTexts
+    .flatMap((text) => cleanText(text).split(/\s*;\s*/))
+    .filter(Boolean);
+  const title = positionParts.join('; ') || undefined;
+  const leadingTitle = positionParts[0];
 
   let email: string | undefined;
   const contact = sectionByEyebrow($, 'Contact');
@@ -294,12 +334,13 @@ export function extractProfile(html: string, faculty: RawYseFaculty): YseFaculty
     profileUrl: faculty.profileUrl,
     slug: faculty.slug,
     title,
+    leadingTitle,
     email,
     orcid: extractOrcid($),
     researchAreas: extractResearchAreas($),
     programs: extractPrograms($),
     description: extractDescription($),
-    labUrl: extractLabUrl($, faculty.profileUrl),
+    labUrl: extractLabUrl($, faculty.profileUrl, name),
   };
 }
 
@@ -318,7 +359,8 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
   const base = { entityType: 'user' as const, entityKey, sourceUrl: profile.profileUrl };
   const obs: ObservationInput[] = [];
 
-  if (netid) obs.push({ ...base, field: 'netid', value: netid });
+  const statedNetid = asYaleNetid(netid);
+  if (statedNetid) obs.push({ ...base, field: 'netid', value: statedNetid });
   if (first) obs.push({ ...base, field: 'fname', value: first });
   if (last) obs.push({ ...base, field: 'lname', value: last });
   obs.push({ ...base, field: 'userType', value: 'faculty' });
@@ -330,7 +372,8 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
   // roster's own claim and defeats `inheritSchoolFromLeadPi`.
   // The school still arrives: `schoolName` on the entity carries it.
   if (profile.email) obs.push({ ...base, field: 'email', value: profile.email });
-  if (profile.title) obs.push({ ...base, field: 'title', value: profile.title });
+  const statedTitle = profile.leadingTitle ?? profile.title;
+  if (statedTitle) obs.push({ ...base, field: 'title', value: statedTitle });
   obs.push({ ...base, field: 'profileUrls', value: { departmental: profile.profileUrl } });
   if (profile.orcid) obs.push({ ...base, field: 'orcid', value: profile.orcid });
   if (profile.description) obs.push({ ...base, field: 'bio', value: profile.description });
@@ -364,6 +407,7 @@ export function facultyToResearchEntityObservations(
   fallbackUserKey: string,
   labUrlVerdict: LabUrlVerdictFor = () => 'usable',
   rowAlreadyExists = false,
+  labUrlIsCoLedGroupSite: LabUrlIsCoLedGroupSite = () => false,
 ): ObservationInput[] {
   // A link's presence is not evidence that a lab exists. `hasLab` used to be
   // `Boolean(profile.labUrl)`, so a profile that still links a site the corpus
@@ -378,7 +422,8 @@ export function facultyToResearchEntityObservations(
   // `labUrlIsUnusableForResearchHome` for which verdicts count and why an absent
   // one keeps the lab.
   const linkedLabVerdict = profile.labUrl ? labUrlVerdict(profile.labUrl) : undefined;
-  const hasLab = linkedLabVerdict === 'usable';
+  const linkedLabIsUsable = linkedLabVerdict === 'usable';
+  const hasLab = linkedLabIsUsable && !labUrlIsCoLedGroupSite(profile.labUrl!);
   // A withdrawal on a dead link must also withdraw the websiteUrl this lane asserted
   // before it knew, or that observation stays live and the row keeps serving the dead
   // site under a "Faculty Research" name (#3452). Only deadness is stated: a refusal is
@@ -391,7 +436,7 @@ export function facultyToResearchEntityObservations(
   // retraction. A row that does not exist yet has nothing to demote, so it stays unminted.
   const carriesDeadWithdrawal = labLinkIsDead && rowAlreadyExists;
   if (
-    !hasLab &&
+    !linkedLabIsUsable &&
     !carriesDeadWithdrawal &&
     profile.researchAreas.length === 0 &&
     !profile.description
@@ -414,7 +459,9 @@ export function facultyToResearchEntityObservations(
 
   const slug = `yse-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab ? `${profile.name} Lab` : `${profile.name} Faculty Research`;
-  const sourceUrls = hasLab ? [profile.profileUrl, profile.labUrl!] : [profile.profileUrl];
+  const sourceUrls = linkedLabIsUsable
+    ? [profile.profileUrl, profile.labUrl!]
+    : [profile.profileUrl];
   const piUserKey = profile.email || fallbackUserKey;
   const base = {
     entityType: 'researchEntity' as const,
@@ -445,7 +492,7 @@ export function facultyToResearchEntityObservations(
   if (profile.programs.length > 0) {
     obs.push({ ...base, field: 'departments', value: profile.programs });
   }
-  if (hasLab) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
+  if (linkedLabIsUsable) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
   if (profile.researchAreas.length > 0) {
     obs.push({ ...base, field: 'researchAreas', value: profile.researchAreas });
   }
@@ -473,7 +520,6 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -492,6 +538,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
     private readonly labUrlProber: LabUrlProber = probeLabUrlIsPositivelyDead,
+    private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -506,6 +553,13 @@ export class YseFacultyDirectoryScraper implements IScraper {
     ctx.log(`Parsed ${roster.length} faculty from directory`);
 
     const limited = limitOption ? roster.slice(0, limitOption) : roster;
+    const rekeyReads = new RekeyedPersonReads(SOURCE_KEY);
+    rekeyReads.recordLaneNames(
+      roster.map((entry) => {
+        const { first, last } = splitName(entry.name);
+        return { nameKey: personNameKey(first, last), identity: entry.slug };
+      }),
+    );
 
     let totalObs = 0;
     let facultyCount = 0;
@@ -520,6 +574,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
     const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
       limited.map((faculty) => `yse-faculty-${faculty.slug}`),
     );
+    const coLedSites = await this.coLedSiteIndexLoader();
 
     for (const faculty of limited) {
       let profileHtml: string;
@@ -533,6 +588,8 @@ export class YseFacultyDirectoryScraper implements IScraper {
       const profile = extractProfile(profileHtml, faculty);
       const { observations: userObs, entityKey } = facultyToUserObservations(profile);
       await ctx.emit(userObs);
+      rekeyReads.recordListingRead(profile.profileUrl, { complete: true });
+      rekeyReads.recordPerson(userObs);
       totalObs += userObs.length;
       facultyCount += 1;
 
@@ -546,6 +603,10 @@ export class YseFacultyDirectoryScraper implements IScraper {
           this.labUrlProber,
         ),
         labUrlEvidenceBySlug.has(`yse-faculty-${profile.slug}`),
+        coLedGroupSiteFor(coLedSites, `yse-faculty-${profile.slug}`, {
+          email: profile.email,
+          profileUrl: profile.profileUrl,
+        }),
       );
       if (entityObs.length > 0) {
         await ctx.emit(entityObs);
@@ -557,6 +618,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
       }
     }
 
+    const rekeyed = await settleRekeyedPersonReads(rekeyReads, ctx);
     ctx.log(
       `Emitted ${totalObs} observations across ${facultyCount} faculty / ${entityCount} entities ` +
         `(${labCount} with lab sites, ${withdrawnLabCount} whose linked lab site is known dead, ` +
@@ -566,7 +628,10 @@ export class YseFacultyDirectoryScraper implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: facultyCount + entityCount,
-      notes: `YSE faculty: ${facultyCount} researchers, ${entityCount} research homes (${labCount} labs, ${withdrawnLabCount} dead lab links withdrawn, ${areaCount} with areas)`,
+      notes:
+        `YSE faculty: ${facultyCount} researchers, ${entityCount} research homes (${labCount} labs, ${withdrawnLabCount} dead lab links withdrawn, ${areaCount} with areas)` +
+        (rekeyed.note ? `; ${rekeyed.note}` : ''),
+      ...(rekeyed.partialFailure ? { partialFailures: [rekeyed.partialFailure] } : {}),
     };
   }
 }

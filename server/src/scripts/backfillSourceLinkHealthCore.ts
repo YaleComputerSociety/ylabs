@@ -1,4 +1,5 @@
 import {
+  CONNECTION_FAILURE_CONFIRMATION_GAP_MS,
   isStaleSourceLinkHealth,
   sourceLinkHealthAgeDays,
   type DatedSourceLinkHealth,
@@ -138,6 +139,65 @@ export function tlsFallbackCandidates(
   return fallbacks;
 }
 
+/** The `https:` spelling of a plain-HTTP URL, or null for any other URL. */
+export const httpsSpellingOf = (url: string): string | null => {
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== 'http:') return null;
+    parsed.protocol = 'https:';
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The `https:` spelling to probe for each plain-HTTP website this pass probed, keyed
+ * by the website URL. A host that answers on both schemes without redirecting would
+ * otherwise send a student to plain HTTP while a working `https:` page exists (#5639).
+ * Only `websiteUrl` and `website` are offered, which bounds the extra probes to one
+ * per row, and a website whose own redirect already recorded an `httpsLandingUrl`
+ * needs no second answer.
+ */
+export function httpsSpellingProbes(
+  websiteValues: readonly unknown[],
+  freshHealth: ReadonlyMap<string, { httpsLandingUrl?: string }>,
+): Map<string, string> {
+  const probes = new Map<string, string>();
+  for (const value of websiteValues) {
+    if (typeof value !== 'string') continue;
+    const url = value.trim();
+    const verdict = freshHealth.get(url);
+    if (!verdict || verdict.httpsLandingUrl) continue;
+    const spelling = httpsSpellingOf(url);
+    if (spelling) probes.set(url, spelling);
+  }
+  return probes;
+}
+
+/**
+ * The probed `https:` spelling, recorded only when it answered `HEALTHY` with a
+ * certificate that verified, from the same host, path and query it asked for. A
+ * shared host's default `https:` site redirecting elsewhere is not this page.
+ * Anything else, including no probe at all, records nothing, so serve time keeps
+ * the stored `http:` link (#5639).
+ */
+export function verifiedHttpsSpelling(
+  spelling: string | undefined,
+  freshHealth: ReadonlyMap<
+    string,
+    { healthStatus?: string; tlsVerificationFailed?: boolean; landedOnRequestedResource?: true }
+  >,
+): string | undefined {
+  if (!spelling) return undefined;
+  const verdict = freshHealth.get(spelling);
+  return verdict?.healthStatus === 'HEALTHY' &&
+    verdict.tlsVerificationFailed !== true &&
+    verdict.landedOnRequestedResource === true
+    ? spelling
+    : undefined;
+}
+
 /**
  * Every `sourceUrl` recorded in `fieldProvenance`. These are citations as far as
  * `hasLiveSourceCitation` is concerned, and a provenance URL can outlive its
@@ -186,8 +246,16 @@ export interface StoredSourceLinkHealthEntry {
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
   httpsLandingUrl?: string;
+  httpsSpellingUrl?: string;
+  redirectLandingUrl?: string;
   checkedAt?: Date;
   lastAttemptedAt?: Date;
+  pendingConnectionFailureAt?: Date;
+  pendingConnectionFailureProbedAt?: Date;
+  confirmingConnectionFailureAt?: Date;
+  connectionLevelFailure?: true;
+  nameNotFound?: true;
+  connectionRefused?: true;
 }
 
 /**
@@ -245,6 +313,136 @@ export function storedSourceLinkHealthByUrl(
 export interface ResolvedSourceLinkHealthEntry {
   entry: StoredSourceLinkHealthEntry;
   preservedDecisiveVerdict: boolean;
+  preservedUnreachedVerdict?: boolean;
+  heldConnectionFailure?: boolean;
+}
+
+const VERDICTS_A_CONNECTION_FAILURE_WAITS_ON = new Set(['HEALTHY', 'REDIRECTED']);
+
+const instantOf = (value: unknown): number | undefined => {
+  if (!value) return undefined;
+  const instant = (value instanceof Date ? value : new Date(value as string)).getTime();
+  return Number.isFinite(instant) ? instant : undefined;
+};
+
+export { CONNECTION_FAILURE_CONFIRMATION_GAP_MS } from '../services/sourceLinkHealth';
+
+/**
+ * A refused or unroutable connection over a live verdict, held until a second run
+ * confirms it.
+ *
+ * A host that refuses connections for a few minutes is not a retired host, and the two
+ * attempts inside one probe are seconds apart, too close to tell the cases apart. The
+ * first such failure keeps the stored verdict and records the run that saw it in
+ * `pendingConnectionFailureAt`, and the probe that saw it in
+ * `pendingConnectionFailureProbedAt`. A later run confirms it as `UNAVAILABLE` only when
+ * both its start and its probe come `CONNECTION_FAILURE_CONFIRMATION_GAP_MS` or more after
+ * the first run's, because a resume minutes later, or a first probe late in a long run,
+ * is the same outage rather than a second observation, and the confirming run start is
+ * kept as `confirmingConnectionFailureAt` beside the first.
+ * A failure inside the gap keeps the first time, so repeated failures cannot reset it,
+ * and a missing or unreadable time never confirms. Any probe that reaches the host
+ * drops the marker (#6116). A confirmed DNS negative is not held: it is how a retired
+ * domain retires (#2726).
+ */
+function resolveConnectionFailure(
+  url: string,
+  fresh: { connectionLevelFailure?: true; httpsSpellingUrl?: string },
+  stored: StoredSourceLinkHealthEntry | undefined,
+  now: Date,
+  runStartedAt: Date,
+): ResolvedSourceLinkHealthEntry | undefined {
+  if (!fresh.connectionLevelFailure || !stored) return undefined;
+  const freshSpelling = fresh.httpsSpellingUrl ? { httpsSpellingUrl: fresh.httpsSpellingUrl } : {};
+  if (stored.healthStatus === 'UNAVAILABLE' && stored.confirmingConnectionFailureAt) {
+    return {
+      entry: {
+        url,
+        healthStatus: 'UNAVAILABLE',
+        ...(stored.privateAddressHost ? { privateAddressHost: true as const } : {}),
+        ...freshSpelling,
+        checkedAt: now,
+        pendingConnectionFailureAt: stored.pendingConnectionFailureAt,
+        ...(stored.pendingConnectionFailureProbedAt
+          ? { pendingConnectionFailureProbedAt: stored.pendingConnectionFailureProbedAt }
+          : {}),
+        confirmingConnectionFailureAt: stored.confirmingConnectionFailureAt,
+      },
+      preservedDecisiveVerdict: false,
+    };
+  }
+  if (!VERDICTS_A_CONNECTION_FAILURE_WAITS_ON.has(stored.healthStatus)) return undefined;
+  const firstFailureRun = instantOf(stored.pendingConnectionFailureAt);
+  const firstFailureProbe = instantOf(stored.pendingConnectionFailureProbedAt);
+  const thisRun = instantOf(runStartedAt);
+  const thisProbe = instantOf(now);
+  if (
+    firstFailureRun !== undefined &&
+    firstFailureProbe !== undefined &&
+    thisRun !== undefined &&
+    thisProbe !== undefined &&
+    thisRun - firstFailureRun >= CONNECTION_FAILURE_CONFIRMATION_GAP_MS &&
+    thisProbe - firstFailureProbe >= CONNECTION_FAILURE_CONFIRMATION_GAP_MS
+  ) {
+    return {
+      entry: {
+        url,
+        healthStatus: 'UNAVAILABLE',
+        ...(stored.privateAddressHost ? { privateAddressHost: true as const } : {}),
+        ...freshSpelling,
+        checkedAt: now,
+        pendingConnectionFailureAt: new Date(firstFailureRun),
+        pendingConnectionFailureProbedAt: new Date(firstFailureProbe),
+        confirmingConnectionFailureAt: new Date(thisRun),
+      },
+      preservedDecisiveVerdict: false,
+    };
+  }
+  return {
+    entry: {
+      ...stored,
+      url,
+      ...freshSpelling,
+      lastAttemptedAt: now,
+      pendingConnectionFailureAt:
+        firstFailureRun !== undefined ? new Date(firstFailureRun) : runStartedAt,
+      pendingConnectionFailureProbedAt:
+        firstFailureRun !== undefined && firstFailureProbe !== undefined
+          ? new Date(firstFailureProbe)
+          : now,
+    },
+    preservedDecisiveVerdict: true,
+    heldConnectionFailure: true,
+  };
+}
+
+export function storedVerdictSurvivesUnknownProbe(
+  fresh: { tlsVerificationFailed?: boolean },
+  stored: { healthStatus?: unknown } | undefined,
+): boolean {
+  if (!isDecisiveStoredVerdict(stored)) return false;
+  return !(fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY');
+}
+
+/**
+ * A probe that never got an answer from the host: no HTTP status and no TLS
+ * handshake to judge. That covers a host the SSRF guard refused as private (on the
+ * Yale network, split-horizon DNS answers internal addresses for some public hosts),
+ * a timeout and a reset. It observed nothing about the URL, so it must not replace
+ * what an earlier probe did observe, a certificate failure included. A confirmed DNS
+ * or connection negative is not this: `classifyProbeOutcome` records it as
+ * `UNAVAILABLE`, which is how a retired host retires (#2726, #2757).
+ */
+export function isUnreachedProbe(fresh: {
+  healthStatus: SourceLinkHealthStatus;
+  httpStatusCode?: number;
+  tlsVerificationFailed?: boolean;
+}): boolean {
+  return (
+    fresh.healthStatus === 'UNKNOWN' &&
+    typeof fresh.httpStatusCode !== 'number' &&
+    !fresh.tlsVerificationFailed
+  );
 }
 
 /**
@@ -274,10 +472,18 @@ export function resolveSourceLinkHealthEntry(
     publicAddressHost?: boolean;
     tlsVerificationFailed?: boolean;
     httpsLandingUrl?: string;
+    httpsSpellingUrl?: string;
+    redirectLandingUrl?: string;
+    connectionLevelFailure?: true;
+    nameNotFound?: true;
+    connectionRefused?: true;
   },
   stored: StoredSourceLinkHealthEntry | undefined,
   now: Date,
+  runStartedAt: Date = now,
 ): ResolvedSourceLinkHealthEntry {
+  const connectionFailure = resolveConnectionFailure(url, fresh, stored, now, runStartedAt);
+  if (connectionFailure) return connectionFailure;
   const privateAddressHost = privateAddressHostForEntry(fresh, stored);
   const routing = {
     ...(privateAddressHost ? { privateAddressHost: true as const } : {}),
@@ -289,17 +495,30 @@ export function resolveSourceLinkHealthEntry(
     ...(typeof fresh.httpStatusCode === 'number' ? { httpStatusCode: fresh.httpStatusCode } : {}),
     ...routing,
     ...(fresh.httpsLandingUrl ? { httpsLandingUrl: fresh.httpsLandingUrl } : {}),
+    ...(fresh.httpsSpellingUrl ? { httpsSpellingUrl: fresh.httpsSpellingUrl } : {}),
+    ...(fresh.redirectLandingUrl ? { redirectLandingUrl: fresh.redirectLandingUrl } : {}),
+    ...(fresh.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
+    ...(fresh.nameNotFound ? { nameNotFound: true } : {}),
+    ...(fresh.connectionRefused ? { connectionRefused: true } : {}),
     checkedAt: now,
   };
 
   if (fresh.healthStatus !== 'UNKNOWN')
     return { entry: freshEntry, preservedDecisiveVerdict: false };
-  if (!isDecisiveStoredVerdict(stored))
-    return { entry: freshEntry, preservedDecisiveVerdict: false };
-  // A certificate that fails verification contradicts a stored HEALTHY for this very
-  // URL, so that verdict is not preserved: it was written by a probe that never
-  // negotiated this spelling's TLS (#4080). A stored UNAVAILABLE still stands.
-  if (fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY')
+  if (stored && isUnreachedProbe(fresh)) {
+    const { privateAddressHost: _storedPrivate, ...storedVerdict } = stored;
+    return {
+      entry: {
+        ...storedVerdict,
+        url,
+        ...(privateAddressHost ? { privateAddressHost: true as const } : {}),
+        lastAttemptedAt: now,
+      },
+      preservedDecisiveVerdict: isDecisiveStoredVerdict(stored),
+      preservedUnreachedVerdict: true,
+    };
+  }
+  if (!storedVerdictSurvivesUnknownProbe(fresh, stored))
     return { entry: freshEntry, preservedDecisiveVerdict: false };
 
   const kept = stored as StoredSourceLinkHealthEntry;
@@ -310,6 +529,14 @@ export function resolveSourceLinkHealthEntry(
       ...(typeof kept.httpStatusCode === 'number' ? { httpStatusCode: kept.httpStatusCode } : {}),
       ...routing,
       ...(kept.httpsLandingUrl ? { httpsLandingUrl: kept.httpsLandingUrl } : {}),
+      ...(kept.httpsSpellingUrl ? { httpsSpellingUrl: kept.httpsSpellingUrl } : {}),
+      ...(kept.redirectLandingUrl ? { redirectLandingUrl: kept.redirectLandingUrl } : {}),
+      ...(kept.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
+      ...(kept.nameNotFound ? { nameNotFound: true } : {}),
+      ...(kept.connectionRefused ? { connectionRefused: true } : {}),
+      ...(kept.confirmingConnectionFailureAt
+        ? { confirmingConnectionFailureAt: kept.confirmingConnectionFailureAt }
+        : {}),
       ...(kept.checkedAt ? { checkedAt: kept.checkedAt } : {}),
       lastAttemptedAt: now,
     },
@@ -324,7 +551,9 @@ export function resolveSourceLinkHealthEntry(
  * verdict never lapses into "unverified", and it is short because the gate and
  * `dead-research-website-clear` act on these verdicts: a site that dies is noticed
  * at most this many days late. Only `HEALTHY` earns the skip; every other verdict,
- * and every URL without one, is probed on every sweep (#3568).
+ * and every URL without one, is probed on every sweep (#3568). A `HEALTHY` verdict
+ * holding a pending connection failure is probed too, or the run that confirms or
+ * clears it would never come (#6116).
  */
 export const SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS = 7;
 
@@ -348,6 +577,7 @@ export function isFreshHealthySourceLinkVerdict(
   now: Date,
 ): boolean {
   if (stored?.healthStatus !== 'HEALTHY') return false;
+  if (stored.pendingConnectionFailureAt) return false;
   const ageDays = sourceLinkHealthAgeDays(stored, now);
   return ageDays !== undefined && ageDays >= 0 && ageDays <= reprobeHealthyAfterDays;
 }
@@ -389,7 +619,97 @@ export function carryForwardSourceLinkHealthEntry(
     ...(stored.privateAddressHost === true ? { privateAddressHost: true } : {}),
     ...(stored.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
     ...(stored.httpsLandingUrl ? { httpsLandingUrl: stored.httpsLandingUrl } : {}),
+    ...(stored.httpsSpellingUrl ? { httpsSpellingUrl: stored.httpsSpellingUrl } : {}),
+    ...(stored.redirectLandingUrl ? { redirectLandingUrl: stored.redirectLandingUrl } : {}),
+    ...(stored.connectionLevelFailure ? { connectionLevelFailure: true } : {}),
+    ...(stored.nameNotFound ? { nameNotFound: true } : {}),
+    ...(stored.connectionRefused ? { connectionRefused: true } : {}),
     ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
     ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
+    ...(stored.pendingConnectionFailureAt
+      ? { pendingConnectionFailureAt: stored.pendingConnectionFailureAt }
+      : {}),
+    ...(stored.pendingConnectionFailureProbedAt
+      ? { pendingConnectionFailureProbedAt: stored.pendingConnectionFailureProbedAt }
+      : {}),
+    ...(stored.confirmingConnectionFailureAt
+      ? { confirmingConnectionFailureAt: stored.confirmingConnectionFailureAt }
+      : {}),
   };
+}
+
+/**
+ * One stored verdict as the gate reads it: its status and the two routing facts that
+ * change what a student sees. `NONE` is a URL nobody has probed.
+ */
+export function sourceLinkVerdictSignature(entry: StoredSourceLinkHealthEntry | undefined): string {
+  if (!entry) return 'NONE';
+  return `${entry.healthStatus}${entry.tlsVerificationFailed ? '+TLS' : ''}${
+    entry.privateAddressHost ? '+PRIVATE' : ''
+  }`;
+}
+
+const VERDICTS_A_STUDENT_CAN_FOLLOW = new Set(['HEALTHY', 'REDIRECTED']);
+
+export interface SourceLinkVerdictTransitionSample {
+  slug: string;
+  url: string;
+  transition: string;
+  servedWebsite: boolean;
+  httpStatusCode?: number;
+}
+
+export interface SourceLinkVerdictTransitionTally {
+  verdictTransitions: Record<string, number>;
+  clearedTlsFlags: number;
+  servedWebsitesLost: number;
+  /**
+   * Every transition away from a verdict a student could follow, or that clears a
+   * certificate flag, so a gate can re-check each one by hand. A first probe of an
+   * unprobed URL is not listed.
+   */
+  lostVerdictSamples: SourceLinkVerdictTransitionSample[];
+}
+
+const MAX_LOST_VERDICT_SAMPLES = 200;
+
+/**
+ * Counts what one URL's stored verdict becomes. A changed `checkedAt` alone is not a
+ * transition, which is why the row-level `updated` count cannot answer the gate's two
+ * questions: how many certificate warnings a pass would erase, and how many websites
+ * on served rows stop being followable.
+ */
+export function tallySourceLinkVerdictTransition(
+  tally: SourceLinkVerdictTransitionTally,
+  before: StoredSourceLinkHealthEntry | undefined,
+  after: StoredSourceLinkHealthEntry,
+  servedWebsite: boolean,
+  slug = '',
+): void {
+  const from = sourceLinkVerdictSignature(before);
+  const to = sourceLinkVerdictSignature(after);
+  if (from === to) return;
+  const key = `${from}->${to}`;
+  tally.verdictTransitions[key] = (tally.verdictTransitions[key] ?? 0) + 1;
+  if (before?.tlsVerificationFailed && !after.tlsVerificationFailed) tally.clearedTlsFlags += 1;
+  const followableBefore =
+    !!before &&
+    VERDICTS_A_STUDENT_CAN_FOLLOW.has(before.healthStatus) &&
+    !before.tlsVerificationFailed;
+  const followableAfter =
+    VERDICTS_A_STUDENT_CAN_FOLLOW.has(after.healthStatus) && !after.tlsVerificationFailed;
+  if (servedWebsite && followableBefore && !followableAfter) tally.servedWebsitesLost += 1;
+  const clearsTls = !!before?.tlsVerificationFailed && !after.tlsVerificationFailed;
+  if (
+    ((followableBefore && !followableAfter) || clearsTls) &&
+    tally.lostVerdictSamples.length < MAX_LOST_VERDICT_SAMPLES
+  ) {
+    tally.lostVerdictSamples.push({
+      slug,
+      url: after.url,
+      transition: key,
+      servedWebsite,
+      ...(typeof after.httpStatusCode === 'number' ? { httpStatusCode: after.httpStatusCode } : {}),
+    });
+  }
 }

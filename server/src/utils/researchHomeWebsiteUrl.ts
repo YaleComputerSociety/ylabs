@@ -1,6 +1,14 @@
 import { isExternalScholarlyPlatformHost } from './externalScholarlyPlatforms';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from './urlSafety';
+import { isLaneDiscoveryEndpointUrl } from './laneDiscoveryEndpointUrl';
+import {
+  buildSourceFieldContributions,
+  contributionFieldIsStoredOnRow,
+  contributionLabelIsServed,
+} from './servedFieldContributionLabels';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
+import { isYaleHostname } from './yaleHost';
+import { websiteShareKey } from './websiteShareKey';
 
 const URL_MAXLENGTH = 2048;
 
@@ -218,14 +226,194 @@ const FILE_SHARE_HOSTS = new Set([
   '1drv.ms',
 ]);
 
+const SHAREPOINT_HOST = /(?:^|\.)sharepoint\.com$/i;
+
 const DIRECT_DOCUMENT_PATH = /\.(?:pdf|docx?|pptx?|xlsx?)$/i;
 
 export function isFileShareOrDocumentUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
+  const host = url.hostname.toLowerCase();
   return (
-    FILE_SHARE_HOSTS.has(url.hostname.toLowerCase()) || DIRECT_DOCUMENT_PATH.test(url.pathname)
+    FILE_SHARE_HOSTS.has(host) ||
+    SHAREPOINT_HOST.test(host) ||
+    DIRECT_DOCUMENT_PATH.test(url.pathname)
   );
+}
+
+const PUBLICATION_RECORD_HOSTS = new Set(['pubmed.ncbi.nlm.nih.gov', 'pmc.ncbi.nlm.nih.gov']);
+
+const NCBI_PUBLICATION_RECORD_PATH = /^\/(?:pubmed|pmc\/articles)\//i;
+
+const PUBLICATION_SECTION_SEGMENT = /^(?:publications?|papers?)$/i;
+
+const TITLE_SLUG_MIN_WORDS = 3;
+
+/**
+ * A `publications` or `papers` segment followed by a slug of three or more words is one
+ * paper's page, the shape a research portal gives each output (#5050). A year, a number
+ * or a one-word section after it is a listing and is not matched.
+ */
+function hasPublicationTitleSlugPath(url: URL): boolean {
+  const segments = url.pathname.split('/').filter(Boolean);
+  return segments.some((segment, index) => {
+    if (!PUBLICATION_SECTION_SEGMENT.test(segment)) return false;
+    const next = segments[index + 1];
+    if (!next) return false;
+    const words = next.split(/[-_]+/).filter((word) => /[a-z]/i.test(word));
+    return words.length >= TITLE_SLUG_MIN_WORDS;
+  });
+}
+
+/**
+ * A DOI, a PubMed or PubMed Central record, or a paper's own page: the address of one
+ * paper.
+ *
+ * The DOI arm reads the same shape the roster lane's website signal refuses (#5052), a
+ * `doi.org` host or a `/doi/` path segment, so the citation and the website refusals
+ * agree on what a paper link is.
+ */
+export function isPublicationRecordUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  if (/(?:^|\.)doi\.org$/.test(host) || /\/doi\//i.test(url.pathname)) return true;
+  if (PUBLICATION_RECORD_HOSTS.has(host)) return true;
+  if (host === 'ncbi.nlm.nih.gov' && NCBI_PUBLICATION_RECORD_PATH.test(url.pathname)) return true;
+  return hasPublicationTitleSlugPath(url);
+}
+
+/**
+ * A link a page carries to one of the person's papers or files, rather than a page about
+ * the row: a file share, a direct document, a DOI, or a PubMed record.
+ */
+export function isLinkedPublicationOrDocumentUrl(value: unknown): boolean {
+  return isFileShareOrDocumentUrl(value) || isPublicationRecordUrl(value);
+}
+
+const citationIdentityKey = (value: unknown): string | undefined => {
+  const url = parseHttpUrl(value);
+  if (!url) return undefined;
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  const path = url.pathname.replace(/\/+$/, '');
+  return `${host}${path}${url.search}`;
+};
+
+function rowFieldHoldsValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.some(rowFieldHoldsValue);
+  return true;
+}
+
+/**
+ * The pages a row's student-facing fields were read from, as `fieldProvenance` credits
+ * them. Bookkeeping provenance (`leadVerification`, a content hash) is not a fact a
+ * student reads, so it does not make a page a source, and neither does an entry that
+ * outlived the value it recorded (#3922): the served label must hold a value, and so
+ * must the credited field itself on `row`, because a label such as Name is always
+ * served and one label covers several fields (#5210). A field never stored on a row
+ * holds no value there, so a lead-identity credit keeps nothing.
+ */
+export function servedFieldSourceUrlKeys(
+  fieldProvenance: unknown,
+  servedPayload: Record<string, unknown>,
+  row: Record<string, unknown> = servedPayload,
+): Set<string> {
+  return new Set(
+    buildSourceFieldContributions(
+      fieldProvenance,
+      () => true,
+      (field) => contributionFieldIsStoredOnRow(field) && rowFieldHoldsValue(row[field]),
+    )
+      .filter((contribution) =>
+        contribution.contributions.some((label) => contributionLabelIsServed(label, servedPayload)),
+      )
+      .map((contribution) => citationIdentityKey(contribution.sourceUrl))
+      .filter((key): key is string => Boolean(key)),
+  );
+}
+
+const NATIONAL_LABORATORY_HOSTS = new Set([
+  'ameslab.gov',
+  'anl.gov',
+  'bnl.gov',
+  'fnal.gov',
+  'inl.gov',
+  'jlab.org',
+  'lanl.gov',
+  'lbl.gov',
+  'llnl.gov',
+  'netl.doe.gov',
+  'nrel.gov',
+  'ornl.gov',
+  'pnnl.gov',
+  'pppl.gov',
+  'sandia.gov',
+  'slac.stanford.edu',
+  'srnl.doe.gov',
+  'srnl.gov',
+]);
+
+const SITE_LANDING_SEGMENT = /^(?:world|home|index|default|main|en)(?:\.[a-z]{2,5})?$/i;
+
+/**
+ * The home page of a US Department of Energy national laboratory: the institution a
+ * research paragraph links to, never a page about one Yale row's research (#5050).
+ *
+ * The roster lane refuses such a link as a website by its text, but a stored citation
+ * from before that fix is re-admitted on every pass (#3476), and a lane that later
+ * read the page recorded provenance for it. Only the bare home page is matched: a
+ * deeper page on a laboratory host can be a Yale person's own group or facility page.
+ * Generic institution roots stay cited, because on Development nearly every non-Yale
+ * host root a row cites is a personal lab site (#5210).
+ */
+export function isNationalLaboratoryHomePageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = url.hostname
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .replace(/\.$/, '');
+  if (!NATIONAL_LABORATORY_HOSTS.has(host)) return false;
+  const segments = url.pathname.split('/').filter(Boolean);
+  return segments.length === 0 || (segments.length === 1 && SITE_LANDING_SEGMENT.test(segments[0]));
+}
+
+/**
+ * A citation that is absent provenance unless a lane read a served field from it: a
+ * paper, DOI, PubMed record, file share or document (#5114), or a national laboratory
+ * home page (#5210).
+ */
+export function isCreditOnlyCitationUrl(value: unknown): boolean {
+  return isLinkedPublicationOrDocumentUrl(value) || isNationalLaboratoryHomePageUrl(value);
+}
+
+/**
+ * Drops a credit-only citation (`isCreditOnlyCitationUrl`) from a row's citations
+ * unless one of the row's student-facing fields, still holding a value, was read from it.
+ *
+ * Such a link reaches `sourceUrls` as a value, never as the page a lane read: the
+ * roster lane cites the website it harvests from a profile, and before #5051/#5052 that
+ * harvest took a paper, a shared PDF or a national laboratory's home page as the
+ * website. Refusing the website (and an operator clearing it) left the same link cited,
+ * because a stored citation is re-admitted on every pass (#3476). A document a lane
+ * actually read and took a served field from is real provenance, which is what the
+ * `fieldProvenance` exemption keeps. `row` is where the credited field's own value is
+ * read, and defaults to `servedPayload`.
+ */
+export function withoutUncreditedCreditOnlyCitations<T>(
+  sourceUrls: readonly T[],
+  fieldProvenance: unknown,
+  servedPayload: Record<string, unknown>,
+  row: Record<string, unknown> = servedPayload,
+): T[] {
+  const credited = servedFieldSourceUrlKeys(fieldProvenance, servedPayload, row);
+  return sourceUrls.filter((url) => {
+    if (!isCreditOnlyCitationUrl(url)) return true;
+    const key = citationIdentityKey(url);
+    return Boolean(key && credited.has(key));
+  });
 }
 
 const MAP_AND_DIRECTIONS_HOSTS = [
@@ -252,6 +440,34 @@ const DIRECTIONS_QUERY_PARAMS = ['directionsmode', 'daddr', 'saddr'];
  * host, so the resolver's direct-personal-site shortcut waves the path checks
  * through. 6 rows served turn-by-turn driving directions as their website (#3184).
  */
+const HOSTING_PROVIDER_ENVIRONMENT_HOST_SUFFIXES = [
+  'pantheonsite.io',
+  'wpengine.com',
+  'wpenginepowered.com',
+  'kinsta.cloud',
+  'acquia-sites.com',
+  'platformsh.site',
+];
+
+const STAGING_ENVIRONMENT_LABEL =
+  /^(?:dev|development|staging|stage|test|preview|qa|uat)(?:[-\d]|$)/;
+
+/**
+ * A hosting provider's own environment hostname, or a host whose first label names a
+ * development or staging environment, serves a copy of a site rather than the public site, so
+ * it is never a person's or a research row's website (#6432).
+ */
+export function isStagingSiteUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  if (HOSTING_PROVIDER_ENVIRONMENT_HOST_SUFFIXES.some((suffix) => host.endsWith(`.${suffix}`))) {
+    return true;
+  }
+  const labels = host.split('.');
+  return labels.length >= 3 && STAGING_ENVIRONMENT_LABEL.test(labels[0]);
+}
+
 export function isMapOrDirectionsUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
@@ -332,7 +548,7 @@ export function isDepartmentRosterProvenanceUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
   const host = url.hostname.replace(/^www\./i, '').toLowerCase();
-  if (!host.endsWith('yale.edu')) return false;
+  if (!isYaleHostname(host)) return false;
   const pathname = url.pathname.toLowerCase().replace(/\/+$/, '');
   return (
     DIRECTORY_LOADER_SEGMENT_PATH.test(pathname) ||
@@ -482,6 +698,7 @@ export interface ResearchEntityHostOwnerIdentity {
   displayName?: unknown;
   entityType?: unknown;
   kind?: unknown;
+  coreFacilityWebsiteKeys?: ReadonlySet<string>;
 }
 
 /**
@@ -550,6 +767,7 @@ export function isDisallowedNonListingResearchEntitySourceUrl(
     isBoilerplatePlatformHostUrl(value) ||
     isInstitutionalAdvancementUrl(value) ||
     isMapOrDirectionsUrl(value) ||
+    isLaneDiscoveryEndpointUrl(value) ||
     isMultiTenantAcademicHostRootUrl(value, entity) ||
     isProgrammePageCitedByPerson(value, entity)
   );
@@ -905,6 +1123,37 @@ export function isPostingPageUrl(value: unknown): boolean {
     .some((segment) => POSTING_PAGE_SEGMENT.test(segment));
 }
 
+const COURSE_PAGE_PARENT_SEGMENT = /^courses?$/i;
+
+const COURSE_CATALOG_HOSTS: ReadonlySet<string> = new Set(['courses.yale.edu', 'coursetable.com']);
+
+/**
+ * A course's own page describes a class, so it is never a research home, never names a
+ * row and is never evidence about one (#5213). A bare `/courses` listing on a research
+ * home's own site is left an ordinary citation, so a course slug must follow the segment.
+ * A person's website refuses the bare listing too, through `isCourseListingPageUrl`.
+ */
+export function isCoursePageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (COURSE_CATALOG_HOSTS.has(hostnameWithoutWwwAlias(url))) return true;
+  const segments = url.pathname.split('/').filter(Boolean);
+  return segments.some(
+    (segment, index) => COURSE_PAGE_PARENT_SEGMENT.test(segment) && index < segments.length - 1,
+  );
+}
+
+/**
+ * A bare `/courses` or `/course` listing, which a research home may cite as its own
+ * teaching page but which lists classes rather than being anyone's own website (#5860).
+ */
+export function isCourseListingPageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const lastSegment = url.pathname.split('/').filter(Boolean).pop();
+  return lastSegment !== undefined && COURSE_PAGE_PARENT_SEGMENT.test(lastSegment);
+}
+
 /**
  * A page about a collective offered as one person's research website: a research
  * group's own root, a department's audience-recruitment page, a department's hiring
@@ -933,8 +1182,31 @@ export function isUmbrellaPageCitedByPerson(
 }
 
 /**
- * A department's audience-recruitment, hiring or programme page, which describes what
- * the department offers rather than one lab or person, so it is never the source of a
+ * A page a live `CORE_FACILITY` row holds as its own website, cited by a person's own row.
+ * The facility's page is the facility's own website, so on a person's row it duplicates the
+ * facility row and names a service the person staffs rather than their research (#5788).
+ * A lab is not a person's row here: a lab citing the facility it runs is a different question.
+ * With no facility keys the arm cannot fire, so serve-time callers keep their behaviour.
+ */
+export function isPersonOwnResearchRowShape(entity?: ResearchEntityHostOwnerIdentity): boolean {
+  if (!isPersonScopedHostTenant(entity)) return false;
+  const entityType = textValue(entity?.entityType).toUpperCase();
+  return entityType ? entityType !== 'LAB' : textValue(entity?.kind).toLowerCase() !== 'lab';
+}
+
+export function isCoreFacilityPageCitedByPerson(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  const keys = entity?.coreFacilityWebsiteKeys;
+  if (!keys || keys.size === 0 || !isPersonOwnResearchRowShape(entity)) return false;
+  const key = websiteShareKey(value);
+  return Boolean(key && keys.has(key));
+}
+
+/**
+ * A department's audience-recruitment, hiring, programme or course page, which describes
+ * what the department offers rather than one lab or person, so it is never the source of a
  * row's description. A research group's own host, its `/lab/` path on a shared school
  * host, or a personal-site path is exempt: its openings page is the group writing about
  * itself.
@@ -949,7 +1221,8 @@ export function isDepartmentCollectivePageUrl(value: unknown): boolean {
   return (
     isDepartmentAudiencePageUrl(value) ||
     isDepartmentHiringPageUrl(value) ||
-    isDepartmentProgrammePageUrl(value)
+    isDepartmentProgrammePageUrl(value) ||
+    isCoursePageUrl(value)
   );
 }
 
@@ -964,6 +1237,92 @@ export function isPostingPageCitedAsResearchWebsite(
   entity?: ResearchEntityHostOwnerIdentity,
 ): boolean {
   return isPostingPageUrl(value) && isPersonScopedHostTenant(entity);
+}
+
+const CLINICAL_PRACTICE_HOSTS: readonly string[] = ['yalemedicine.org', 'ynhh.org', 'ynhhs.org'];
+
+const isClinicalPracticeHost = (url: URL): boolean => {
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  return CLINICAL_PRACTICE_HOSTS.some(
+    (clinicalHost) => host === clinicalHost || host.endsWith(`.${clinicalHost}`),
+  );
+};
+
+const PATIENT_CARE_PATH_SEGMENT =
+  /^(?:patients?|for-patients|care|patient-care|patient-services|clinical-services?|clinical-care)$/i;
+
+const RESEARCH_OR_LAB_PATH_SEGMENT = /research|^labs?$/i;
+
+/**
+ * A page for patients rather than for research: any page on a clinical-practice or
+ * hospital host, or a page under a patient or clinical-care path segment, such as a
+ * cancer center's patient program or a department's condition page (#5364). A path that
+ * also carries a research or lab segment is a research page that happens to sit under a
+ * clinical section, so it never counts.
+ */
+export function isPatientCarePageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (isClinicalPracticeHost(url)) return true;
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.some((segment) => RESEARCH_OR_LAB_PATH_SEGMENT.test(segment))) return false;
+  return segments.some((segment) => PATIENT_CARE_PATH_SEGMENT.test(segment));
+}
+
+/**
+ * A patient-care page offered as the research website of a lab or person-scoped row. An
+ * organization row keeps the scope `isUmbrellaPageCitedByPerson` uses, because a clinic
+ * or program row is the collective the page describes.
+ */
+export function isPatientCarePageCitedAsResearchWebsite(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  return isPatientCarePageUrl(value) && isPersonScopedHostTenant(entity);
+}
+
+/**
+ * A page a research row's `website` or `websiteUrl` is never served as, because it is some
+ * other kind of page: a shared host's root, a collective's page cited by a person, a press
+ * article, a map or publicity page, a posting, a course or a patient-care page. The detail
+ * payload withholds one and the materializer clears a stored legacy `website` holding one
+ * (#5376), so the stored and the served field cannot disagree. A person's profile page is
+ * deliberately absent: the detail page reads one in `website` as the lead's official
+ * profile link.
+ */
+export function isWithheldResearchWebsiteUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  return (
+    isMultiTenantAcademicHostRootUrl(value, entity) ||
+    isUmbrellaPageCitedByPerson(value, entity) ||
+    isCoreFacilityPageCitedByPerson(value, entity) ||
+    isPressOrNewsHostUrl(value) ||
+    isMapOrDirectionsUrl(value) ||
+    isInstitutionalPublicityPageUrl(value) ||
+    isPostingPageCitedAsResearchWebsite(value, entity) ||
+    isCoursePageUrl(value) ||
+    isPatientCarePageCitedAsResearchWebsite(value, entity) ||
+    isStagingSiteUrl(value)
+  );
+}
+
+/**
+ * A page that is never a person's own website: a course page or a bare course listing, a
+ * posting or a patient-care page (#5213, #5364, #5860), or a map or directions link
+ * (#5657). Read on a lead's member website at the user materializer, the roster accessor
+ * and the member serializers (#5376).
+ */
+export function isInadmissiblePersonWebsiteUrl(value: unknown): boolean {
+  return (
+    isCoursePageUrl(value) ||
+    isCourseListingPageUrl(value) ||
+    isPostingPageUrl(value) ||
+    isPatientCarePageUrl(value) ||
+    isMapOrDirectionsUrl(value) ||
+    isStagingSiteUrl(value)
+  );
 }
 
 // Organization shapes whose identity is the collective that publishes a site rather
@@ -1509,7 +1868,7 @@ export function isDepartmentProgrammePageUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
   const host = url.hostname.replace(/^www\./i, '').toLowerCase();
-  if (!host.endsWith('yale.edu')) return false;
+  if (!isYaleHostname(host)) return false;
   const segments = url.pathname.toLowerCase().split('/').filter(Boolean);
   if (segments.length < 2) return false;
   if (segments.some((segment) => SCOPED_RESEARCH_PROGRAMME_SEGMENT.test(segment))) return true;
@@ -1526,6 +1885,7 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'press-or-news-host'
   | 'multi-tenant-host-root'
   | 'umbrella-page-cited-by-person'
+  | 'core-facility-page-cited-by-person'
   | 'unparseable'
   | 'non-http-protocol'
   | 'file-or-document'
@@ -1542,6 +1902,8 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'department-opportunities-path'
   | 'school-section-page'
   | 'posting-page'
+  | 'course-page'
+  | 'patient-care-page'
   | 'yale-path-vocabulary';
 
 /**
@@ -1573,6 +1935,7 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   'press-or-news-host',
   'multi-tenant-host-root',
   'umbrella-page-cited-by-person',
+  'core-facility-page-cited-by-person',
   'cms-profile-path',
   'host-denylist',
   'google-sites-not-a-home',
@@ -1594,6 +1957,8 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   'department-opportunities-path',
   'school-section-page',
   'posting-page',
+  'course-page',
+  'patient-care-page',
 ]);
 
 export function researchHomeWebsiteUrlRefusalBlocksWrite(
@@ -1667,8 +2032,15 @@ export function researchHomeWebsiteUrlDecision(
   // the donor whose fund it commemorates rather than the row's subject (#2460).
   if (isInstitutionalAdvancementUrl(raw)) return refuse('institutional-advancement');
   if (isPostingPageCitedAsResearchWebsite(raw, entity)) return refuse('posting-page');
+  if (isCoursePageUrl(raw)) return refuse('course-page');
+  // Ahead of the `isDirectPersonalSite` shortcut, because a clinical-practice host is not
+  // Yale and would otherwise skip every path check.
+  if (isPatientCarePageCitedAsResearchWebsite(raw, entity)) return refuse('patient-care-page');
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
   if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
+  if (isCoreFacilityPageCitedByPerson(raw, entity)) {
+    return refuse('core-facility-page-cited-by-person');
+  }
   try {
     const url = new URL(raw);
     url.hash = '';

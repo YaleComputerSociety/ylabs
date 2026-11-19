@@ -109,6 +109,52 @@ describe('ResearchHomeCard', () => {
     expect(screen.queryByText('Led by emeritus faculty')).toBeNull();
   });
 
+  describe('under a School filter (#5179)', () => {
+    const jointAppointmentHome = () => {
+      const home = researchHome();
+      return {
+        ...home,
+        entities: [
+          { ...home.entities[0], schools: ['School of Medicine', 'School of Public Health'] },
+        ],
+      };
+    };
+
+    it('says how a row matching through a secondary appointment belongs to the school', () => {
+      render(
+        <MemoryRouter>
+          <ResearchHomeCard
+            home={jointAppointmentHome()}
+            filteredSchool="School of Public Health"
+          />
+        </MemoryRouter>,
+      );
+
+      expect(screen.getByText('Neuroscience · School of Medicine')).toBeTruthy();
+      expect(screen.getByText('Also in School of Public Health')).toBeTruthy();
+    });
+
+    it('adds no line when the primary school is the filtered school', () => {
+      render(
+        <MemoryRouter>
+          <ResearchHomeCard home={jointAppointmentHome()} filteredSchool="School of Medicine" />
+        </MemoryRouter>,
+      );
+
+      expect(screen.queryByText(/^Also in/)).toBeNull();
+    });
+
+    it('adds no line without a School filter', () => {
+      render(
+        <MemoryRouter>
+          <ResearchHomeCard home={jointAppointmentHome()} />
+        </MemoryRouter>,
+      );
+
+      expect(screen.queryByText(/^Also in/)).toBeNull();
+    });
+  });
+
   it('labels a creative practice card and never calls its lead a principal investigator (#4519)', async () => {
     const home = researchHome();
     const { container } = render(
@@ -294,68 +340,71 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    const lead = screen.getByText('Has hosted undergraduate researchers');
+    const lead = screen.getByText('Has had undergrads');
     expect(lead.className).toContain('font-semibold');
     expect(lead.className).not.toContain('yr-pill');
     expect(screen.getByText('Open to inquiries').className).toContain('yr-pill');
   });
 
-  describe('undergraduate quote evidence (#3569)', () => {
-    const SYNTHETIC_QUOTE = 'Undergraduates are welcome to join the lab for summer projects.';
-    const SYNTHETIC_SOURCE = 'https://www.example.yale.edu/join';
-    const quotedHome = (entityOverrides: Partial<ResearchCluster['entities'][number]> = {}) => {
-      const home = researchHome();
-      return {
-        ...home,
-        entities: [
-          {
-            ...home.entities[0],
-            undergradEvidenceQuote: SYNTHETIC_QUOTE,
-            undergradEvidenceSourceUrl: SYNTHETIC_SOURCE,
-            ...entityOverrides,
-          },
-        ],
-      };
-    };
-
-    it.each([
-      ['default', undefined],
-      ['compact', 'compact'],
-    ] as const)(
-      'leaves a served quote to the detail page on the %s card (#5022)',
-      (_label, variant) => {
-        const { container } = render(
-          <MemoryRouter>
-            <ResearchHomeCard home={quotedHome()} variant={variant} />
-          </MemoryRouter>,
-        );
-
-        expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-        expect(container.querySelector('blockquote')).toBeNull();
-        expect(screen.queryByRole('link', { name: /example\.yale\.edu/ })).toBeNull();
-      },
+  it('gives an invitation and the hosting signal the same check treatment, invitation first', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            wayInBadges: ['Undergrad evidence', 'Taking undergrads now, recruiting'],
+          })}
+        />
+      </MemoryRouter>,
     );
 
-    it('never turns a quote into the hosted-undergraduates claim', () => {
-      render(
-        <MemoryRouter>
-          <ResearchHomeCard home={quotedHome()} variant="compact" />
-        </MemoryRouter>,
-      );
+    const signals = screen.getByLabelText('Ways to get involved');
+    const checked = Array.from(signals.querySelectorAll('span.font-semibold')).map(
+      (node) => node.textContent,
+    );
+    expect(checked).toEqual(['Taking undergrads now, recruiting', 'Has had undergrads']);
+  });
 
-      expect(screen.queryByText('Has hosted undergraduate researchers')).toBeNull();
-    });
+  it('tags a row that only mentors undergraduates, from its served list evidence (#5362)', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            wayInBadges: [],
+            entities: [
+              {
+                ...researchHome().entities[0],
+                undergradListEvidence: [
+                  {
+                    source: 'cs-senior-projects',
+                    signal: 'mentors',
+                    kind: 'advised',
+                    sourceUrl: 'https://example.edu/senior-projects',
+                  },
+                ],
+              },
+            ],
+          })}
+        />
+      </MemoryRouter>,
+    );
 
-    it('keeps the hosted-undergraduates lead line when a quote is also served', () => {
-      render(
-        <MemoryRouter>
-          <ResearchHomeCard home={quotedHome({ hasUndergradHostingEvidence: true })} />
-        </MemoryRouter>,
-      );
+    const signals = screen.getByLabelText('Ways to get involved');
+    const checked = Array.from(signals.querySelectorAll('span.font-semibold')).map(
+      (node) => node.textContent,
+    );
+    expect(checked).toEqual(['Advises undergrad research']);
+  });
 
-      expect(screen.getByText('Has hosted undergraduate researchers')).toBeTruthy();
-      expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-    });
+  it('keeps student project evidence a pill even when it is the only signal', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard home={researchHome({ wayInBadges: ['Student project evidence'] })} />
+      </MemoryRouter>,
+    );
+
+    const chip = screen.getByText('Supervises student projects');
+    expect(chip.className).toContain('yr-pill');
+    expect(chip.className).not.toContain('font-semibold');
   });
 
   it('does not elevate a fallback contact route to the prominent lead line', () => {
@@ -399,7 +448,9 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByText('Epsilon Data Curation').className).toContain('sm:inline-flex');
     expect(screen.queryByText('Zeta Visualization')).toBeNull();
     expect(screen.getByText('+3 more').className).toContain('sm:hidden');
-    expect(screen.getByText('+1 more').className).toContain('sm:inline-flex');
+    expect(screen.getByText('+1 more').className).toContain('sm:inline');
+    expect(screen.getByText('+3 more').className).not.toContain('yr-pill');
+    expect(screen.getByText('+1 more').className).not.toContain('yr-pill');
   });
 
   it('keeps the compact card topic count visible at every width', () => {
@@ -443,7 +494,7 @@ describe('ResearchHomeCard', () => {
     expect(actionRow?.className.split(/\s+/)).toEqual(expect.arrayContaining(['mt-auto', 'pt-4']));
   });
 
-  it('renders research-area topic chips in blue to match the entity-page "Best fit for" chips', () => {
+  it('renders research-area topic chips in blue to match the entity-page "Topics" chips', () => {
     render(
       <MemoryRouter>
         <ResearchHomeCard
@@ -511,6 +562,58 @@ describe('ResearchHomeCard', () => {
 
     expect(screen.getByText('Principal Investigator:')).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Fixture Researcher' })).toBeNull();
+  });
+
+  it('links a lead to their Yale profile even when the card is titled with their name', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            label: 'Fixture Scholar',
+            peopleCount: 1,
+            entities: [
+              {
+                ...researchHome().entities[0],
+                name: 'Fixture Scholar',
+                kind: 'individual',
+                contactName: 'Fixture  Scholár',
+                contactRole: 'Principal investigator',
+                sourceUrls: ['https://medicine.yale.edu/profile/fixture-scholar/'],
+              },
+            ],
+          })}
+          variant="compact"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Fixture Scholár' }).getAttribute('href')).toBe(
+      'https://medicine.yale.edu/profile/fixture-scholar/',
+    );
+    expect(container.textContent).toContain('Principal Investigator: Fixture  Scholár');
+  });
+
+  it('keeps the link on a lead who is not the person the card is titled with', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            peopleCount: 1,
+            entities: [
+              {
+                ...researchHome().entities[0],
+                contactName: 'Fixture Scholar',
+                contactRole: 'Principal investigator',
+                sourceUrls: ['https://medicine.yale.edu/profile/fixture-scholar/'],
+              },
+            ],
+          })}
+          variant="compact"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Fixture Scholar' })).toBeTruthy();
   });
 
   it('links principal investigators to official profile sources when no Yale email is present', () => {
@@ -841,5 +944,61 @@ describe('ResearchHomeCard compact browse card', () => {
       'The group studies how synthetic fixture circuits learn precise movements across development. ' +
         'It combines recordings, imaging, and models to test theories of circuit plasticity in fixture systems.',
     );
+  });
+
+  it('names the lead and the matched lab member, linking to the member on the lab page', () => {
+    const home = researchHome();
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={{
+            ...home,
+            entities: [
+              {
+                ...home.entities[0],
+                leadName: 'Fixture Lead',
+                matchedMemberName: 'Fixture Member',
+              },
+            ],
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Fixture Lead')).toBeTruthy();
+    expect(screen.getByText(/Matched a lab member:/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Fixture Member' }).getAttribute('href')).toBe(
+      '/research/example-research-home?member=Fixture%20Member',
+    );
+  });
+
+  it('says which role a matched member holds on the lab page', () => {
+    const home = researchHome();
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={{
+            ...home,
+            entities: [
+              {
+                ...home.entities[0],
+                matchedMemberName: 'Fixture Student',
+                matchedMemberRole: 'undergrad',
+              },
+            ],
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: 'Fixture Student' })).toBeTruthy();
+    expect(screen.getByText(/Undergraduate/)).toBeTruthy();
+  });
+
+  it('shows no matched-member line when the search did not name a member', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard home={researchHome()} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText(/Matched a lab member:/)).toBeNull();
   });
 });

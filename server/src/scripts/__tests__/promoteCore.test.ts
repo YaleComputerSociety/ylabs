@@ -17,6 +17,7 @@ import {
   renderSetupProblems,
   missingWeeklyRunIds,
   weeklyRunCoverage,
+  operatorBuildDecision,
 } from '../promoteCore';
 import type { StoredWeeklySweepRun } from '../weeklySweepRunsReportCore';
 
@@ -170,7 +171,9 @@ describe('argument parsing', () => {
       backupRef: 'snap-1',
       skipRemotePhase: false,
       fullSearchRebuild: false,
+      help: false,
     });
+    expect(parsePromoteBetaArgs(['--help']).help).toBe(true);
     expect(parsePromoteBetaArgs(['--full-search-rebuild']).fullSearchRebuild).toBe(true);
     expect(parsePromoteProductionArgs(['--full-search-rebuild']).fullSearchRebuild).toBe(true);
     expect(() => parsePromoteBetaArgs(['--backup-ref'])).toThrow('--backup-ref requires a value');
@@ -188,10 +191,9 @@ describe('argument parsing', () => {
     ).toThrow('--dataset-version must look like');
   });
 
-  it('parses the remote phase and keeps the backup flag to beta', () => {
-    expect(parseRemotePhaseArgs(['--environment', 'beta', '--confirm-beta-backup'])).toEqual({
+  it('parses the remote phase environment and rebuild flag', () => {
+    expect(parseRemotePhaseArgs(['--environment', 'beta'])).toEqual({
       environment: 'beta',
-      confirmBetaBackup: true,
       fullSearchRebuild: false,
     });
     expect(
@@ -199,12 +201,29 @@ describe('argument parsing', () => {
         .fullSearchRebuild,
     ).toBe(true);
     expect(() => parseRemotePhaseArgs([])).toThrow('--environment beta|production is required');
-    expect(() =>
-      parseRemotePhaseArgs(['--environment', 'production', '--confirm-beta-backup']),
-    ).toThrow('applies only to --environment beta');
     expect(() => parseRemotePhaseArgs(['--environment', 'development'])).toThrow(
       'must be beta or production',
     );
+  });
+});
+
+describe('retired Beta backup confirmation (#5556)', () => {
+  it('refuses --confirm-beta-backup on the remote phase for either environment', () => {
+    for (const environment of ['beta', 'production']) {
+      expect(() =>
+        parseRemotePhaseArgs(['--environment', environment, '--confirm-beta-backup']),
+      ).toThrow('Unknown promote:remote-phase argument: --confirm-beta-backup');
+    }
+  });
+
+  it('never forwards a backup assertion to the Beta job or its readiness step', () => {
+    const steps = remotePhaseSteps('beta', { fullSearchRebuild: true });
+    const command = remotePhaseStartCommand('beta', { fullSearchRebuild: true });
+
+    expect(command).toBe(
+      'yarn --cwd server promote:remote-phase --environment beta --full-search-rebuild',
+    );
+    expect(JSON.stringify(steps)).not.toMatch(/backup/i);
   });
 });
 
@@ -239,6 +258,7 @@ describe('plan checks', () => {
       'apply blockers: empty source accounts',
       'plan would promote observations',
       'plan would promote scrape_runs',
+      'promotion plan reports no cluster storage headroom',
     ]);
   });
 
@@ -254,9 +274,10 @@ describe('plan checks', () => {
 
 describe('remote phase', () => {
   it('runs the Beta gate before the reindex and readiness last', () => {
-    const labels = remotePhaseSteps('beta', { confirmBetaBackup: true }).map((step) => step.label);
+    const labels = remotePhaseSteps('beta').map((step) => step.label);
     expect(labels).toEqual([
       'verify database names',
+      'retarget saved plans',
       'visibility gate',
       'data quality',
       'integrity gate',
@@ -264,9 +285,11 @@ describe('remote phase', () => {
       'search reindex',
       'beta readiness',
     ]);
-    const readiness = remotePhaseSteps('beta', { confirmBetaBackup: true }).at(-1)!;
-    expect(readiness.args).toContain('--confirm-beta-backup');
-    expect(remotePhaseSteps('beta').at(-1)!.args).not.toContain('--confirm-beta-backup');
+    expect(remotePhaseSteps('beta').at(-1)!.args).toEqual([
+      'beta:readiness',
+      '--output',
+      '/tmp/ylabs-beta-readiness-final.json',
+    ]);
     const trust = remotePhaseSteps('beta').find((step) => step.label === 'trust contract')!;
     expect(trust.args).toContain('--fail-on-public-visibility-violation');
     expect(trust.args).not.toContain('--strict');
@@ -276,11 +299,28 @@ describe('remote phase', () => {
     const steps = remotePhaseSteps('production');
     expect(steps.map((step) => step.label)).toEqual([
       'verify database names',
+      'retarget saved plans',
       'visibility gate',
       'search reindex',
       'production smoke',
     ]);
-    expect(steps[2].env).toEqual({ CONFIRM_PROD_SCRAPE: 'true' });
+    expect(steps.find((step) => step.label === 'search reindex')!.env).toEqual({
+      CONFIRM_PROD_SCRAPE: 'true',
+    });
+  });
+
+  it('re-points saved plans to merge survivors in each environment before the gate (#5208)', () => {
+    for (const target of ['beta', 'production'] as const) {
+      const step = remotePhaseSteps(target).find((s) => s.label === 'retarget saved plans')!;
+      expect(step.args).toEqual([
+        'research-plans:retarget-merged',
+        '--apply',
+        '--confirm-research-plan-retarget',
+      ]);
+    }
+    expect(
+      remotePhaseSteps('production').find((s) => s.label === 'retarget saved plans')!.env,
+    ).toEqual({ CONFIRM_PROD_SCRAPE: 'true' });
   });
 
   it('lets the reindex choose its mode unless a full rebuild is forced, and records its result', () => {
@@ -291,15 +331,14 @@ describe('remote phase', () => {
         expect.arrayContaining(['--apply', '--output', searchReindexResultFile(target)]),
       );
       expect(step.resultFile).toBe(searchReindexResultFile(target));
-      const forced = remotePhaseSteps(target, {
-        confirmBetaBackup: false,
-        fullSearchRebuild: true,
-      }).find((s) => s.label === 'search reindex')!;
+      const forced = remotePhaseSteps(target, { fullSearchRebuild: true }).find(
+        (s) => s.label === 'search reindex',
+      )!;
       expect(forced.args).toContain('--full');
     }
-    expect(
-      remotePhaseStartCommand('production', { confirmBetaBackup: false, fullSearchRebuild: true }),
-    ).toBe('yarn --cwd server promote:remote-phase --environment production --full-search-rebuild');
+    expect(remotePhaseStartCommand('production', { fullSearchRebuild: true })).toBe(
+      'yarn --cwd server promote:remote-phase --environment production --full-search-rebuild',
+    );
   });
 
   it('summarizes the reindex result for the phase report', () => {
@@ -328,8 +367,8 @@ describe('remote phase', () => {
   });
 
   it('builds the start command the Render job runs', () => {
-    expect(remotePhaseStartCommand('beta', { confirmBetaBackup: true })).toBe(
-      'yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup',
+    expect(remotePhaseStartCommand('beta')).toBe(
+      'yarn --cwd server promote:remote-phase --environment beta',
     );
     expect(remotePhaseStartCommand('production')).toBe(
       'yarn --cwd server promote:remote-phase --environment production',
@@ -388,5 +427,43 @@ describe('Render setup', () => {
     expect(
       renderServiceProblems('beta', { suspended: 'not_suspended', rootDir: '', branch: 'beta' }),
     ).toEqual([]);
+  });
+});
+
+describe('operatorBuildDecision', () => {
+  const head = 'c'.repeat(40);
+
+  it('needs no deploy when the live build is the branch head', () => {
+    expect(operatorBuildDecision('beta', head, head)).toMatchObject({ needsDeploy: false });
+  });
+
+  it('needs a deploy when the live build is older or missing', () => {
+    expect(operatorBuildDecision('production', head, 'd'.repeat(40))).toMatchObject({
+      needsDeploy: true,
+      headCommit: head,
+    });
+    expect(operatorBuildDecision('production', head, undefined).needsDeploy).toBe(true);
+  });
+});
+
+describe('production restore point on the remote phase', () => {
+  it('passes --meili-restore-point to the job as PFR3_MEILI_RESTORE_POINT', () => {
+    const args = parsePromoteProductionArgs(
+      ['--meili-restore-point', 'meili-dump-20261018-184026162'],
+      new Date('2026-10-18T00:00:00Z'),
+    );
+    expect(
+      remotePhaseStartCommand('production', {
+        meiliRestorePoint: args.meiliRestorePoint,
+      }),
+    ).toBe(
+      'PFR3_MEILI_RESTORE_POINT=meili-dump-20261018-184026162 yarn --cwd server promote:remote-phase --environment production',
+    );
+  });
+
+  it('refuses a restore point that could carry shell syntax', () => {
+    expect(() =>
+      parsePromoteProductionArgs(['--meili-restore-point', 'x;rm -rf /'], new Date()),
+    ).toThrow('--meili-restore-point must be');
   });
 });

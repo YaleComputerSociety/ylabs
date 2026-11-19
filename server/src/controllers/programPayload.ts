@@ -1,4 +1,3 @@
-import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { withoutContactDirections } from '../utils/contactDirection';
 import {
   sanitizeCatalogDescription,
@@ -11,8 +10,19 @@ import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
 import { classifyProgram } from '../services/programClassifier';
 import { fellowshipClassificationInput } from '../scrapers/fellowshipClassificationDerivation';
-import { programAudience } from '../services/programAudience';
-import { isDepartmentResearchGuidance } from '../services/departmentResearchGuidance';
+import { programAudience, servedUndergraduateOnly } from '../services/programAudience';
+import {
+  departmentGuidanceKindOf,
+  departmentGuidanceKinds,
+  type DepartmentGuidanceKind,
+} from '../services/departmentResearchGuidance';
+import {
+  proseStatesPastCycleDates,
+  programTextDeadlineConflict,
+} from '../utils/programDeadlineText';
+import { formatServedAwardAmount } from '../utils/awardAmountFormat';
+import { newYorkCalendarDate } from '../utils/newYorkTime';
+import { programCitizenshipCondition } from '../utils/programCitizenshipCondition';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -52,19 +62,16 @@ const publicProgramLinks = (
           const url = publicSpecificProgramUrl(record.url, sourceUrl);
           if (!url) return [];
           const humanLabel = humanizeProgramLinkLabel(rawLabel, url);
-          const label = humanLabel ? redactDirectContactInfo(humanLabel) : undefined;
+          const label = humanLabel || undefined;
           return [{ ...(label ? { label } : {}), url }];
         })
         .slice(0, MAX_PROGRAM_LINKS)
     : [];
 
-const publicProgramText = (value: unknown): unknown =>
-  typeof value === 'string' ? redactDirectContactInfo(value) : value;
+const publicProgramText = (value: unknown): unknown => value;
 
 export const publicProgramDescription = (value: unknown): unknown =>
-  typeof value === 'string'
-    ? stripRedactionPlaceholders(sanitizeCatalogDescription(redactDirectContactInfo(value)))
-    : value;
+  typeof value === 'string' ? stripRedactionPlaceholders(sanitizeCatalogDescription(value)) : value;
 
 const publicCompensationSummary = (value: unknown): unknown => {
   const cleaned = publicProgramDescription(value);
@@ -72,9 +79,7 @@ const publicCompensationSummary = (value: unknown): unknown => {
 };
 
 const publicProgramTextArray = (value: unknown): string[] =>
-  Array.isArray(value)
-    ? value.flatMap((item) => (typeof item === 'string' ? [redactDirectContactInfo(item)] : []))
-    : [];
+  Array.isArray(value) ? value.flatMap((item) => (typeof item === 'string' ? [item] : [])) : [];
 
 const publicBestNextStep = (program: any): unknown => {
   const stored = publicProgramDescription(program.bestNextStep);
@@ -177,18 +182,62 @@ export const PROGRAM_READER_FIELD_DECISIONS = {
 
 export type ProgramReaderDecidedField = keyof typeof PROGRAM_READER_FIELD_DECISIONS;
 
-export const withProgramAudience = (program: any) =>
-  program && typeof program === 'object'
-    ? {
-        ...program,
-        audience: programAudience(program),
-        departmentResearchGuidance: isDepartmentResearchGuidance(program),
-      }
-    : program;
+const servedDepartmentGuidanceKind = (program: any): DepartmentGuidanceKind | undefined =>
+  program.departmentResearchGuidance === true &&
+  (departmentGuidanceKinds as readonly unknown[]).includes(program.departmentGuidanceKind)
+    ? program.departmentGuidanceKind
+    : undefined;
+
+export const withProgramAudience = (program: any) => {
+  if (!program || typeof program !== 'object') return program;
+  const departmentGuidanceKind = departmentGuidanceKindOf(program);
+  return {
+    ...program,
+    undergraduateOnly: servedUndergraduateOnly(program),
+    audience: programAudience(program),
+    departmentResearchGuidance: departmentGuidanceKind !== null,
+    ...(departmentGuidanceKind ? { departmentGuidanceKind } : {}),
+  };
+};
+
+// A conflicting date already in the past is last cycle's deadline, which the past-cycle
+// note explains, so serving both would tell the student to confirm a deadline the other
+// note calls current (#6412).
+const servedProgramDeadlineTextNotes = ({
+  deadline,
+  prose,
+  datedProse,
+  projected,
+  stale,
+  now,
+}: {
+  deadline: unknown;
+  prose: unknown[];
+  datedProse: unknown[];
+  projected: boolean;
+  stale: boolean;
+  now: Date;
+}) => {
+  const pastCycle = proseStatesPastCycleDates(datedProse, { deadline, now, projected, stale });
+  const conflict = programTextDeadlineConflict(deadline, prose, { projected, stale }) ?? null;
+  const today = newYorkCalendarDate(now);
+  const todayIso = `${today.year}-${String(today.monthIndex + 1).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`;
+  const conflictIsPast = conflict !== null && conflict < todayIso;
+  return {
+    deadlineTextConflict: pastCycle && conflictIsPast ? null : conflict,
+    proseStatesPastCycleDates: pastCycle,
+  };
+};
 
 export const publicProgramForReader = (program: any) => {
   const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
   const departmentResearchGuidance = program.departmentResearchGuidance === true;
+  const departmentGuidanceKind = servedDepartmentGuidanceKind(program);
+  const summary = publicProgramDescription(program.summary);
+  const description = publicProgramDescription(program.description);
+  const applicationInformation = publicProgramDescription(program.applicationInformation);
+  const eligibility = servedProgramEligibility(program).value;
+  const additionalInformation = publicProgramDescription(program.additionalInformation);
   return {
     _id: id,
     id,
@@ -196,11 +245,12 @@ export const publicProgramForReader = (program: any) => {
     programKind: program.programKind,
     programRole: program.programRole,
     departmentResearchGuidance,
+    ...(departmentGuidanceKind ? { departmentGuidanceKind } : {}),
     entryMode: program.entryMode,
     studentFacingCategory: program.studentFacingCategory,
     requiresMentorBeforeApply: program.requiresMentorBeforeApply,
     mentorMatching: program.mentorMatching,
-    undergraduateOnly: program.undergraduateOnly,
+    undergraduateOnly: servedUndergraduateOnly(program),
     yaleCollegeOnly: program.yaleCollegeOnly,
     audience: programAudience(program),
     compensationSummary: publicCompensationSummary(program.compensationSummary),
@@ -212,27 +262,43 @@ export const publicProgramForReader = (program: any) => {
     applicationMaterials: publicProgramTextArray(program.applicationMaterials),
     title: publicProgramText(program.title),
     competitionType: publicProgramText(program.competitionType),
-    summary: publicProgramDescription(program.summary),
+    summary,
     cardSummary: publicProgramDescription(program.cardSummary),
-    description: publicProgramDescription(program.description),
-    applicationInformation: publicProgramDescription(program.applicationInformation),
-    eligibility: servedProgramEligibility(program).value,
+    description,
+    applicationInformation,
+    eligibility,
     restrictionsToUseOfAward: publicProgramDescription(program.restrictionsToUseOfAward),
-    additionalInformation: publicProgramDescription(program.additionalInformation),
+    additionalInformation,
     links: publicProgramLinks(program.links, program.sourceUrl),
     applicationLink: servedProgramApplicationLink(program).value,
-    awardAmount: program.awardAmount,
+    awardAmount: formatServedAwardAmount(program.awardAmount),
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,
     deadline: program.deadline,
     deadlineProjectedNextCycle: program.deadlineProjectedNextCycle === true,
     deadlineStale: program.deadlineStale === true,
+    deadlineRollingReview: program.deadlineRollingReview === true,
+    ...servedProgramDeadlineTextNotes({
+      deadline: program.deadline,
+      prose: [summary, description, applicationInformation, eligibility, additionalInformation],
+      datedProse: [description, applicationInformation, eligibility],
+      projected: program.deadlineProjectedNextCycle === true,
+      stale: program.deadlineStale === true,
+      now: new Date(),
+    }),
     contactOffice: publicProgramText(program.contactOffice),
     yearOfStudy: Array.isArray(program.yearOfStudy) ? program.yearOfStudy : [],
     termOfAward: Array.isArray(program.termOfAward) ? program.termOfAward : [],
     purpose: Array.isArray(program.purpose) ? program.purpose : [],
     globalRegions: Array.isArray(program.globalRegions) ? program.globalRegions : [],
     citizenshipStatus: Array.isArray(program.citizenshipStatus) ? program.citizenshipStatus : [],
+    citizenshipCondition:
+      programCitizenshipCondition([
+        servedProgramEligibility(program).value,
+        publicProgramDescription(program.description),
+        publicProgramDescription(program.applicationInformation),
+        publicProgramDescription(program.additionalInformation),
+      ]) ?? null,
     sourceName: publicProgramText(program.sourceName),
     sourceUrl: publicHttpUrl(program.sourceUrl),
     sourceLinkHealth: publicProgramSourceLinkHealth(program.sourceLinkHealth),

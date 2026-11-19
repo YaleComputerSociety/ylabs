@@ -27,6 +27,10 @@ import {
   listAdminEntityCorrectionReports,
   reviewAdminEntityCorrectionReport,
 } from '../controllers/entityCorrectionReportController';
+import {
+  decideAdminDirectoryRemovalRequest,
+  listAdminDirectoryRemovalRequests,
+} from '../controllers/directoryRemovalRequestController';
 import { buildSafeSearchRegex, escapeRegex } from '../utils/regex';
 import {
   AdminGrantValidationError,
@@ -38,6 +42,8 @@ import {
 import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
 import { listAdminAuditEvents } from '../services/adminAuditService';
 import { adminAuditMutationLogger } from '../middleware/adminAuditLogger';
+import { requireSessionCsrfToken } from '../middleware/sessionCsrfToken';
+import { revokeAccountSessions } from '../services/accountService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { publicHttpUrl } from '../utils/urlSafety';
 
@@ -355,6 +361,17 @@ router.post(
   },
 );
 
+router.post(
+  '/accounts/:netid/sessions/revoke',
+  writeLimit,
+  validateNetid('netid'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const revoked = await revokeAccountSessions(req.params.netid);
+    if (!revoked) return res.status(404).json({ error: 'Account not found' });
+    res.json({ revoked: true });
+  }),
+);
+
 const MAX_ADMIN_AUDIT_FILTER_LENGTH = 128;
 
 const adminAuditFilter = (value: unknown): string | undefined => {
@@ -392,6 +409,15 @@ router.put(
   writeLimit,
   validateObjectId('id'),
   reviewAdminEntityCorrectionReport,
+);
+
+router.get('/directory-removal-requests', listAdminDirectoryRemovalRequests);
+router.put(
+  '/directory-removal-requests/:id',
+  writeLimit,
+  requireSessionCsrfToken,
+  validateObjectId('id'),
+  decideAdminDirectoryRemovalRequest,
 );
 
 router.get(
@@ -680,7 +706,9 @@ router.put(
   writeLimit,
   validateObjectId('id'),
   asyncHandler(async (req: Request, res: Response) => {
-    const fellowship = await updateFellowship(req.params.id, req.body?.data);
+    const fellowship = await updateFellowship(req.params.id, req.body?.data, {
+      reviewerNetid: currentActorNetid(req),
+    });
     res.json({ fellowship: adminFellowshipDto(fellowship) });
   }),
 );

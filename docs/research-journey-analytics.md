@@ -16,7 +16,7 @@ Any enum or payload change must update both files and their focused contract tes
 | `research_profile_open`      | `research_entity` | `source`                                                          | A canonical research profile loaded successfully.                                               |
 | `research_source_review`     | `research_entity` | `sourceCategory`                                                  | A student opened a profile, website, ORCID, publication, or evidence source.                    |
 | `research_filter_change`     | none              | `operation`, `filter`                                             | A bounded research filter was applied, removed, cleared, opened, or closed.                     |
-| `research_save`              | `research_entity` or `fellowship` | `operation`, `surface`                                            | A saved research-entity home, or a watched program on `/programs` (surface `search`) or the Dashboard Program Watch (surface `saved_plans`), was saved or removed successfully. |
+| `research_save`              | `research_entity` or `fellowship` | `operation`, `surface`                                            | A saved research-entity home, or a watched program on `/programs` (surface `search`) or the dashboard's Watched programs tab (surface `saved_plans`), was saved or removed successfully. |
 | `research_compare`           | `research_entity` | `entityCountBucket`                                               | One entity participated in an explicit saved-home comparison or advising preview.               |
 | `research_plan_update`       | `research_entity` | `field`                                                           | A saved plan field group persisted a changed value successfully.                                |
 
@@ -27,6 +27,9 @@ The retired `research_entity_impression` wrote one row per card, which put 56% o
 The batch route refuses it, and on 2026-10-11 its stored rows were deleted from Development and Production, because the three-year TTL would have kept them inflating every all-event total on the dashboard (#4985).
 The enum value is gone, so no read can count it again.
 Every all-event total (Avg Events Per User, Most Active Users, the per-user event counts, and the drilldown) matches only the current enum's types, so a stored row of a removed type adds nothing and is never relabelled as another event (#4985).
+Active Users counts accounts, not raw event netids: a netid with events in the range counts only when it has a non-archived account that has logged in, the same population as Total Users, so Active Users can never exceed Total Users.
+A netid whose account row was deleted keeps its events but is no longer an active user.
+Avg Events Per User stays an all-event total over every netid with events in the range, so those events still count toward it.
 
 The only access-conversion event was `research_qualified_action`, and it is retired.
 It was qualified against a planning context that no source ever produced (#377), so none could be recorded, and the 2026-08-25 "Simple Directory First" decision retired the planning-context framing; #4581 removed the producer, the planning-context service and the qualification check.
@@ -37,10 +40,22 @@ No row of it was ever stored in any database, so #4985 removed the enum value, t
 Source review, profile open, results view, filter, save, compare, and plan events never count as access conversion.
 `outreach_outcome` remains a separate self-reported outcome and is not inferred from any click.
 
+## Email Clicks
+
+A click on an email address on the research detail page records `contact_route_click`, not a `research_source_review`.
+It is one of the three legacy research events (`ways_in_click`, `contact_route_click`, `source_link_click`) the batch route still accepts beside the journey taxonomy, and `RESEARCH_EVENT_TYPES` in `server/src/services/researchAnalytics.ts` lists all of them.
+Its allowlisted payload is `contactMethod` (one of `CONTACT_METHODS`, `email` for a `mailto:` link) and an optional `surface`, one of `CONTACT_ROUTE_SURFACES`.
+The `surface` is `lead_card` for the email on a lead's card and `reach_out` for the email in the "How to get involved" reach-out line.
+A click from anywhere else, including a program's contact on `/programs`, carries no `surface`, and a value outside the allowlist is dropped rather than stored.
+The page records it from one capture-phase click handler on the whole detail page, which reads the surface from the anchor's `data-contact-route-surface` attribute, so a new email link is counted without any wiring and names its surface only if it sets that attribute.
+The payload never carries the address, the `mailto:` href, or a host, only the method and the surface.
+Before #3459 the detail page recorded nothing for an email click, and rows before the `surface` field have no `surface`, so a lead-card versus reach-out split starts when it shipped.
+An email click is a contact attempt, not a source inspection, so it is not counted among the admin funnel's source inspections, and like every click it is never an access conversion.
+
 ## Privacy And Reliability
 
 Everything in this section describes `analytics_events`, the first-party instrument.
-No third-party analytics tag runs on any page; see Third-Party Measurement below for the GA4 tag that did until #4754.
+PostHog, the one third-party instrument, runs only in Production for signed-in students and is described in Third-Party Measurement below; nothing in this section applies to it.
 
 Payloads are deny-by-default allowlists of short enums and count buckets.
 They do not retain raw query text, URLs, hostnames, contact destinations, notes, plan contents, filter values, or cross-event search identifiers.
@@ -58,6 +73,9 @@ On the server, `logEvent` never throws either, so an analytics outage cannot blo
 `POST /analytics/research/batch` counts only `recorded` events in its `accepted` total, and logs event types and counts for rejected and `unstored` events, so a storage failure reads as a gap rather than as a delivered batch (#3638).
 
 The analytics collection uses the existing 1,095-day TTL index in `server/src/models/analytics.ts`.
+The student-facing statement of what is collected, who receives it and how long it is kept is the `/privacy` page (`client/src/pages/privacy.tsx`, #4157).
+Changing what is recorded, its retention, who can read it, or which third party receives it also requires updating that page.
+`server/src/middleware/__tests__/privacyNoticeDisclosures.test.ts` fails when the Content-Security-Policy allows a third-party origin that `PRIVACY_NOTICE_DISCLOSED_ORIGINS` in `client/src/utils/privacyNotice.ts` does not name.
 Beta continues to suppress real student analytics through `shouldSuppressBetaAnalyticsEvent`, while allowing fixture and admin validation.
 The endpoint remains first-party, authenticated, private, and covered by the existing analytics access controls.
 
@@ -101,21 +119,76 @@ Server-side research `search` rows exist in Production only from 2026-09-26, so 
 
 ## Third-Party Measurement
 
-No third-party analytics tag runs on any page, in any environment.
+PostHog Cloud US records where signed-in students click and where they wait, in Production only (#5492, the 2026-11-10 entry in `docs/decisions.md`).
+It is the only third-party analytics instrument, and no Google Analytics tag runs on any page in any environment.
+
+### What runs, and where
+
+`client/src/utils/productAnalytics.ts` is the only module that reaches `posthog-js`.
+It imports the SDK lazily from the app bundle once the session check answers, so nothing loads before the app mounts and nothing loads for a logged-out visitor.
+It imports the no-external build plus the recorder, dead-click and web-vitals extensions, so the SDK has no code path that loads a script from PostHog, and `script-src` stays `'self'`.
+It starts only when all of these hold:
+
+- the build is a production build with `VITE_POSTHOG_KEY` set to a `phc_` project key and `VITE_POSTHOG_HOST` set to exactly `https://us.i.posthog.com`;
+- `GET /api/check` answers `productAnalytics: true`, which `isProductAnalyticsAllowedForSession` in `server/src/utils/posthogConfig.ts` gives only to a signed-in session without an active admin grant, on a deployed runtime whose `MONGODBURL` names the `Prod` database, whose `MEILISEARCH_INDEX_PREFIX` is `prod`, and whose `SCRAPER_ENV` is not `beta`, and only alongside a `productAnalyticsId`;
+- that `productAnalyticsId` is a well-formed version 4 UUID.
+
+The same server gate is the only way `connect-src` in `server/src/middleware/securityHeaders.ts` gains `https://us.i.posthog.com` and `https://us-assets.i.posthog.com`, so a Beta, Development or local page that somehow started the SDK would have every request refused by its own CSP.
+A session that ends, or a request the server answers with an authentication failure, closes the instance: `before_send` drops every later event and replay stops.
+
+### What it captures
+
+- Pageviews on every history change, page leaves, clicks through autocapture, rage clicks, dead clicks, heatmaps, web vitals, and session replay with network timing.
+- Every first-party journey event `trackResearchEvent` in `client/src/utils/researchAnalytics.ts` records is also sent to PostHog under the same name (`research_search`, `research_results_view`, `research_profile_open`, `research_source_review`, `contact_route_click`, `research_filter_change`, `research_save`, `research_compare`, `research_plan_update`, and the program events `fellowship_view`, `ways_in_click` and `source_link_click`), so search, profile open and outbound contact form named funnels.
+`journeyEventProperties` in `client/src/utils/productAnalytics.ts` forwards only payload values that are short lowercase enum or bucket tokens, plus the entity type and the entity ids the first-party event already carries, so a query, address, URL, name or note cannot pass even if a caller put one in a payload.
+An event emitted before the session check answers is held in memory and sent once PostHog starts, and discarded if it does not.
+- Unhandled errors and promise rejections as `$exception` events, with the same query and netid redaction as every other event; console errors are not captured.
+- Autocapture never captures an input value (`capture_value_css_selector_allowlist: []`), copied text, element text (`mask_all_text`), or a text-bearing attribute such as `aria-label`, `title`, `alt` or `placeholder`.
+- Replay masks every input (`maskAllInputs: true`) and all text (`maskTextSelector: '*'`), replaces text-bearing attributes with `*`, records no request or response body or header, and records no console output, structured data or cross-origin frame.
+- Every URL the SDK sends, in events, replay page metadata, element `href` attributes and network timing entries, loses its query string and fragment, so a search query or filter in `?q=` never leaves the page; the URL path is kept, so a recording shows which public research page was open.
+- A URL-valued field (`href`, `src`, `action`, `$current_url`, the referrer and session-entry URLs, and the `href` entries of `$elements_chain`) loses its whole query and fragment even with no path, such as a relative `?q=` link (#5621).
+- `$snapshot` replay events go through the same `createRedactor` in `before_send` as every other event, with the SDK's replay compression off (`compress_events: false`) so the redactor sees the recorded DOM; this is defence in depth over the SDK's own `maskCapturedNetworkRequestFn` and `maskAttributeFn` hooks (#5621).
+- The search term posthog-js reads from a search-engine referrer (`ph_keyword`, `$session_entry_ph_keyword`) and the engine name (`$search_engine`, `$session_entry_search_engine`) are deleted from every event (#5621).
+- The signed-in netid is redacted from every string the SDK sends, as a backstop for a path or attribute that carries one.
+- Nothing is written to a cookie, `localStorage` or `sessionStorage` (`persistence: 'memory'`), so a page reload starts a new recording.
+- A browser that sends Do Not Track is not measured (`respect_dnt: true`).
+- Console logs, surveys, product tours, conversations, web experiments, site apps and feature flags are off, and their extensions are not bundled.
+
+### Identity
+
+PostHog receives `accounts.productAnalyticsId`, a random version 4 UUID that `ensureProductAnalyticsId` in `server/src/services/productAnalyticsIdentityService.ts` assigns on the account's first Production session check that PostHog may measure, and returns in `GET /api/check` as `productAnalyticsId`.
+The client passes it as the bootstrapped, identified distinct ID and never calls `identify`, so person profiles exist only for these IDs.
+A profile carries one person property, `user_type`, bucketed to `undergraduate`, `graduate`, `student`, `faculty`, `professor`, `staff` or `other`; `before_send` drops every other `$set`, every `$set_once`, and every identify, alias and group event.
+An account the server cannot give an ID to is not measured at all: `GET /api/check` answers `productAnalytics: false` and the client starts PostHog only with a well-formed ID, so no session falls back to an SDK-assigned anonymous ID that account deletion could not find (#5621).
+The ID is generated, not derived from the netid or the account `_id`, so it cannot be reversed outside the database, and accounts are environment-local, so it exists only in Production.
+An admin resolves it to a netid with the "PostHog ID Lookup" on `/analytics`, backed by the admin-only `GET /api/analytics/product-analytics-ids/:productAnalyticsId`, so the netid itself never leaves y/labs.
+No other system may receive the ID: error reports, logs and `analytics_events` carry none.
+
+### Operating it
+
+- The owner sets `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` on the Production web service only and redeploys, because the client reads them at build time; Beta and local `.env` files leave both unset.
+- The PostHog project must have "Discard client IP data" on, because the SDK's `ip` option no longer has any effect, and its data retention must be no longer than the 1,095-day TTL on `analytics_events`.
+- The PostHog project retention is 30 days for session replays and 1 year for other events, as stated by the owner on 2026-11-10 for #4160; the repository cannot read that setting, so `/privacy` repeats the owner's statement.
+The 1,095-day bound still applies to on-site activity records, through the TTL on `analytics_events`.
+- The `/privacy` page names PostHog, what it receives, the IP discard and the retention cap (#4157), so both project settings above must be on before the key is set, or the page is wrong.
+- Automated browsers are not measured: the SDK drops events from a `navigator.webdriver` session, so the end-to-end smoke never reaches PostHog.
+
+### Guards
+
+- `client/src/utils/__tests__/productAnalyticsPayload.test.ts` runs the real SDK against a capturing transport and fails if a typed value, page text, query, accessible label or netid reaches an event or a recording, if a body or header is recorded, if anything reaches storage, or if events continue after the session ends.
+- `client/src/__tests__/posthogUsageGuard.test.ts` fails if a `phc_` project key is committed.
+- The payload test also fails if a person property other than the bucketed `user_type` is sent, if a journey event carries a value outside its bucketed enum, or if an identify event is sent.
+- `client/src/__tests__/noGoogleAnalyticsGuard.test.ts` runs a real production `vite build` and fails on any Google tag loader, measurement host, `gtag` call or measurement id, on a third-party script tag in the entry document, and on a bundled PostHog external script loader.
+- `client/src/__tests__/entryChunkGuard.test.ts` keeps `posthog-js` out of the entry chunk.
+- `server/src/middleware/__tests__/securityHeaders.test.ts` pins every directive literally, including the exact PostHog `connect-src`, and refuses a non-US, look-alike, port or path host, Beta and local development.
+
+### History
+
 A Google Analytics 4 tag ran on every page load until #4754 removed it, as the 2026-10-04 entry in `docs/decisions.md` records.
 It loaded from the initial document, before the application mounted and before any consent existed, so it sent every visitor's IP address, user agent and a persistent client-id cookie to Google, and nothing in this repository ever read what it collected.
-
 The removal took out the `gtag/js` loader and the `/analytics.js` bootstrap from `client/index.html`, the inert copy of both in the Create React App leftover `client/public/index.html`, and `client/public/analytics.js` itself, which held nothing but the tag's configuration and the outgoing query redaction of #4158.
-That redaction went with it, because with no tag there is no measurement request left to redact.
-The CSP in `server/src/middleware/securityHeaders.ts` now allows scripts from `'self'` only, and names no Google tag or measurement origin in `connect-src` or `img-src`.
 Google Fonts is a separate decision and is unchanged: `style-src` still names `https://fonts.googleapis.com` and `font-src` still names `https://fonts.gstatic.com`.
-
-Two tests keep the tag from coming back unnoticed.
-`client/src/__tests__/noGoogleAnalyticsGuard.test.ts` runs a real production `vite build` into a temporary directory and scans every emitted file for a Google tag loader, a measurement host, a `gtag` call, or a measurement id, and checks that no `analytics.js` is emitted.
-`server/src/middleware/__tests__/securityHeaders.test.ts` pins every directive string literally and asserts that neither the production nor the local-development CSP names a Google tag or measurement origin.
-
-So `analytics_events` is the only analytics instrument.
-It cannot record a logged-out visitor at all (#2333), and that is now the whole posture rather than half of it: a logged-out visitor is not measured by anything.
+`analytics_events` still cannot record a logged-out visitor (#2333), and neither does PostHog, so a logged-out visitor is not measured by anything.
 
 ## Error Reporting
 
@@ -123,7 +196,8 @@ Error reports are telemetry too, so the posture is recorded here.
 
 `server/src/utils/errorTracking.ts` reports a server error with the request method, the matched route template, whether the caller was authenticated, and the session's `userType`.
 It sends no user identity.
-The session principal (`AuthenticatedSessionUser` in `server/src/passport.ts`) carries a netid and nothing else that identifies the caller, and no stable non-reversible account handle exists to stand in for one, so the report carries no identity rather than a reversible or a newly invented one.
+The session principal (`AuthenticatedSessionUser` in `server/src/passport.ts`) carries a netid and nothing else that identifies the caller, so the report carries no identity rather than a reversible one.
+The one non-reversible account handle, `accounts.productAnalyticsId`, is for PostHog alone (Third-Party Measurement above) and is never added to an error report.
 The report quotes the matched route template rather than the concrete request path, because routes such as `/admin-grants/:netid/revoke` and `/users/:netid` would otherwise put a netid into a tag.
 `server/src/utils/__tests__/errorTracking.test.ts` fails if a netid reaches the payload, as identity or as a path segment.
 The server SDK's defaults are not safe to inherit, and the audit that proved it is recorded in `server/src/utils/__tests__/errorTrackingPayload.test.ts`.

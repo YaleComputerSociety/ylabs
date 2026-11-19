@@ -42,6 +42,8 @@ import {
   uncoveredSiblingTabs,
   type RosterLaneEvidence,
 } from './auditRosterLanesCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const DEFAULT_LANE_CONCURRENCY = 8;
 
@@ -206,6 +208,7 @@ async function resolveSiblingTabAliases(
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseRosterLaneAuditArgs(process.argv.slice(2));
   const configuredUrls = DEFAULT_DEPT_CONFIGS.map((config) => config.url);
   const lanes = options.only
@@ -257,7 +260,7 @@ async function main() {
   console.log(JSON.stringify(output, null, 2));
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(output, null, 2)}\n`);
+    writeReportFileSync(options.output, `${JSON.stringify(output, null, 2)}\n`);
   }
 
   if (report.status === 'findings') {

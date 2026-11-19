@@ -25,6 +25,7 @@ import mongoose from 'mongoose';
 
 import { runLabDescriptionSynthesis } from '../backfillResearchDescriptions';
 import { sanitizeResearchEntityDescription } from '../../utils/descriptionHygiene';
+import { redactContactsAbsentFrom } from '../../utils/contactRedaction';
 
 const labSource =
   'The lab studies how neural circuits in zebrafish encode navigation, using two-photon imaging, ' +
@@ -267,7 +268,11 @@ describe('runLabDescriptionSynthesis durable apply (#1876)', () => {
   });
 
   it('fails the row closed instead of blanking the stored field when a sanitizer collapses', async () => {
-    expect(sanitizeResearchEntityDescription(synthesizedFullWithContact)).toBe('');
+    expect(
+      sanitizeResearchEntityDescription(
+        redactContactsAbsentFrom(synthesizedFullWithContact, [labSource]),
+      ),
+    ).toBe('');
     stubFind([candidate(targetId, 'target-lab')]);
     mocks.getSourceByName.mockResolvedValue({ _id: 'source-1' });
 

@@ -19,6 +19,7 @@ import {
   type OrgUnitBackfillPlanRow,
   type OrgUnitBackfillSummary,
 } from './backfillResearchEntityOrgUnitsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -93,6 +94,7 @@ interface EntityRow {
   departments?: unknown;
   schools?: unknown;
   orgAffiliationLabels?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 export async function runOrgUnitBackfill(options: {
@@ -111,7 +113,7 @@ export async function runOrgUnitBackfill(options: {
   };
 
   const query = ResearchEntity.find(filter)
-    .select('_id slug name school departments schools orgAffiliationLabels')
+    .select('_id slug name school departments schools orgAffiliationLabels fieldValueRefusals')
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
   const entities = (await query.lean()) as EntityRow[];
@@ -128,6 +130,7 @@ export async function runOrgUnitBackfill(options: {
         : {}),
       schools: entity.schools,
       orgAffiliationLabels: entity.orgAffiliationLabels,
+      fieldValueRefusals: entity.fieldValueRefusals,
     });
     rows.push(row);
   }
@@ -201,7 +204,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+      writeReportFileSync(safeOutput, JSON.stringify(payload, null, 2));
       console.log(`Saved org-unit backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result.summary, null, 2));

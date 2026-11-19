@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import ResearchTeamSection from '../ResearchTeamSection';
 import type { LabMember, LabRosterDisclosure } from '../../../types/labDetail';
@@ -30,9 +30,19 @@ const roster = (overrides: Partial<LabRosterDisclosure> = {}): LabRosterDisclosu
 });
 
 describe('ResearchTeamSection', () => {
-  it('presents the observed date as a UTC calendar date', () => {
+  it('presents the observed date as a New York calendar date', () => {
     render(<ResearchTeamSection members={[member(1)]} roster={roster()} />);
-    expect(screen.getByText('Official roster observed Jul 14, 2026')).toBeTruthy();
+    expect(screen.getByText('Official roster observed Jul 13, 2026')).toBeTruthy();
+  });
+
+  it('keeps an evening observation in New York on its own day, not the next UTC day', () => {
+    render(
+      <ResearchTeamSection
+        members={[member(1)]}
+        roster={roster({ observedAt: '2026-10-19T00:05:42.810Z' })}
+      />,
+    );
+    expect(screen.getByText('Official roster observed Oct 18, 2026')).toBeTruthy();
   });
 
   it('groups verified members by honest role and links only official public profiles', () => {
@@ -134,6 +144,89 @@ describe('ResearchTeamSection', () => {
     expect(screen.getByRole('link', { name: 'Official roster source' })).toBeTruthy();
   });
 
+  it('heads a past-only roster with the past list itself, never an empty current heading', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          undergraduates: [{ name: 'Former Fixture', status: 'past', endYear: 2021 }],
+        })}
+      />,
+    );
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual(['Past undergraduate researchers (1)']);
+    expect(screen.queryByRole('heading', { name: 'Undergraduate researchers' })).toBeNull();
+  });
+
+  it('lists a current count from the lab page above named past undergraduates', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          undergraduates: [{ name: 'Former Fixture', status: 'past', endYear: 2021 }],
+        })}
+        undergraduateLines={[
+          { status: 'current', count: 5, sourceUrl: 'https://fixture-lab.example.org/people' },
+        ]}
+      />,
+    );
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual(['Undergraduate researchers', 'Past undergraduate researchers (1)']);
+  });
+
+  it('lists named current undergraduates above a past line from the lab page', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          undergraduates: [{ name: 'Current Fixture', status: 'current', startYear: 2024 }],
+        })}
+        undergraduateLines={[
+          { status: 'past', sourceUrl: 'https://fixture-lab.example.org/alumni' },
+        ]}
+      />,
+    );
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual(['Undergraduate researchers', 'Past undergraduate researchers']);
+  });
+
+  it('lists current undergraduate members above named past undergraduates', () => {
+    render(
+      <ResearchTeamSection
+        members={[member(1, 'undergrad'), member(2, 'postdoc')]}
+        roster={roster({
+          undergraduates: [{ name: 'Former Fixture', status: 'past', endYear: 2021 }],
+        })}
+      />,
+    );
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual([
+      'Undergraduate researchers',
+      'Past undergraduate researchers (1)',
+      'Postdoctoral researchers',
+    ]);
+  });
+
+  it('keeps the past list as a subheading under current undergraduates', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          undergraduates: [
+            { name: 'Current Fixture', status: 'current', startYear: 2024 },
+            { name: 'Former Fixture', status: 'past', endYear: 2021 },
+          ],
+        })}
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Undergraduate researchers' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { level: 4, name: 'Past undergraduate researchers (1)' }),
+    ).toBeTruthy();
+  });
+
   it('orders past undergraduates by year, newest first, then by last name', () => {
     render(
       <ResearchTeamSection
@@ -180,5 +273,85 @@ describe('ResearchTeamSection', () => {
       'href',
       'https://alumnilab.yale.edu/alumni',
     );
+  });
+
+  it('highlights only the member whose whole name the search named', () => {
+    render(
+      <ResearchTeamSection
+        members={[member(2, 'core-faculty'), member(12, 'core-faculty')]}
+        roster={roster()}
+        highlightedMemberName="Fixture Scholar 1"
+      />,
+    );
+    expect(
+      screen.getByText('Fixture Scholar 12').closest('li')?.getAttribute('aria-current'),
+    ).toBeNull();
+
+    cleanup();
+    render(
+      <ResearchTeamSection
+        members={[member(2, 'core-faculty'), member(3, 'core-faculty')]}
+        roster={roster()}
+        highlightedMemberName="Fixture Scholar 2"
+      />,
+    );
+    expect(screen.getByText('Fixture Scholar 2').closest('li')?.getAttribute('aria-current')).toBe(
+      'true',
+    );
+    expect(
+      screen.getByText('Fixture Scholar 3').closest('li')?.getAttribute('aria-current'),
+    ).toBeNull();
+  });
+
+  it('highlights a listed current undergraduate the search named', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          status: 'current',
+          undergraduates: [
+            { name: 'Fixture Undergrad One', status: 'current' },
+            { name: 'Fixture Undergrad Two', status: 'current' },
+          ],
+        })}
+        highlightedMemberName="fixture undergrad two"
+      />,
+    );
+    expect(
+      screen.getByText('Fixture Undergrad Two').closest('li')?.getAttribute('aria-current'),
+    ).toBe('true');
+    expect(
+      screen.getByText('Fixture Undergrad One').closest('li')?.getAttribute('aria-current'),
+    ).toBeNull();
+  });
+
+  it('opens the past list when the named undergraduate sits past its first rows', () => {
+    const past = Array.from({ length: 12 }, (_, index) => ({
+      name: `Fixture Alumnus ${String.fromCharCode(65 + index)}`,
+      status: 'past' as const,
+      endYear: 2020 - index,
+    }));
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({ status: 'current', undergraduates: past })}
+        highlightedMemberName="Fixture Alumnus L"
+      />,
+    );
+    expect(screen.getByText('Fixture Alumnus L').closest('li')?.getAttribute('aria-current')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Show fewer' })).toBeTruthy();
+  });
+
+  it('highlights nobody for a member value with no name in it', () => {
+    render(
+      <ResearchTeamSection
+        members={[member(2, 'core-faculty'), member(3, 'core-faculty')]}
+        roster={roster()}
+        highlightedMemberName=" -- "
+      />,
+    );
+    expect(document.querySelector('[aria-current="true"]')).toBeNull();
   });
 });

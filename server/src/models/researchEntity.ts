@@ -2,12 +2,14 @@
  * Canonical Mongoose model for research entities (`research_entities`).
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import {
   canonicalSchemaVersionField,
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
 import { archiveAttributionFields } from './entityArchival';
 import { registerFieldProvenanceBackingGuard } from './fieldProvenanceBacking';
+import { registerHoldOverrideReasonGuard } from './holdOverrideReasonGuard';
 import {
   fieldLockProvenanceSchema,
   fieldProvenanceSchema,
@@ -27,6 +29,10 @@ import {
   labSiteLeadVerdicts,
   labSiteVerificationStates,
   sourceLinkHealthStatuses,
+  undergradInvitationLevels,
+  undergradListEntryKinds,
+  undergradListSources,
+  officialRosterConfigOrigins,
   officialRosterUndergraduateStatuses,
 } from './storedVocabularies';
 
@@ -62,6 +68,10 @@ const leadVerificationJudgementSchema = new mongoose.Schema(
     evidenceUrl: {
       type: String,
       default: '',
+    },
+    namedOnPage: {
+      type: Boolean,
+      required: false,
     },
     contradictedBy: {
       type: String,
@@ -118,6 +128,24 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    /**
+     * The `https:` spelling of a plain-HTTP website, kept only when its own probe came
+     * back `HEALTHY` with a verified certificate. Serve time offers it when the host
+     * answers on both schemes without redirecting (#5639).
+     */
+    httpsSpellingUrl: {
+      type: String,
+      required: false,
+    },
+    /**
+     * The live page this URL's own host redirected it to, kept only on a `HEALTHY`
+     * verdict whose landing names a different page identity. The evidence a host or
+     * path alias is admitted on by the URL-identity dedupe and resolve-at-mint (#5638).
+     */
+    redirectLandingUrl: {
+      type: String,
+      required: false,
+    },
     checkedAt: {
       type: Date,
       required: false,
@@ -130,6 +158,63 @@ const sourceLinkHealthSchema = new mongoose.Schema(
      */
     lastAttemptedAt: {
       type: Date,
+      required: false,
+    },
+    /**
+     * The start of the backfill run whose probe found the host refusing or unable to
+     * route a connection while the stored verdict was `HEALTHY` or `REDIRECTED`. The
+     * verdict stands until a run starting at least six hours later sees the same
+     * failure, and any probe that reaches the host drops this, so a host that refused
+     * for a few minutes is not recorded as gone (#6116).
+     */
+    pendingConnectionFailureAt: {
+      type: Date,
+      required: false,
+    },
+    /**
+     * When the probe recorded as `pendingConnectionFailureAt` saw the failure. A run can
+     * probe a URL hours after it starts, so the confirming probe must also come at least
+     * six hours after this one (#6116).
+     */
+    pendingConnectionFailureProbedAt: {
+      type: Date,
+      required: false,
+    },
+    /**
+     * The start of the run whose failure confirmed `pendingConnectionFailureAt` and
+     * recorded `UNAVAILABLE`, kept beside it so the retirement shows both observations
+     * (#6116).
+     */
+    confirmingConnectionFailureAt: {
+      type: Date,
+      required: false,
+    },
+    /**
+     * The `UNAVAILABLE` came from a refused or unroutable connection rather than a DNS
+     * record confirmed absent, so a later removal confirms it only against the same class
+     * of failure (#6264).
+     */
+    connectionLevelFailure: {
+      type: Boolean,
+      required: false,
+    },
+    /**
+     * The `UNAVAILABLE` came from a DNS record confirmed absent. Recorded positively, so
+     * a verdict written before either class field existed reads as unknown and a removal
+     * waits for the next sweep to record its class (#6264).
+     */
+    nameNotFound: {
+      type: Boolean,
+      required: false,
+    },
+    /**
+     * The `UNAVAILABLE` came from a host that answered by refusing the connection
+     * (`ECONNREFUSED`). Unlike an unroutable network or host, which can mean this machine
+     * had no route, only this connection failure is evidence about the host, so it is the
+     * only one a removal may confirm against (#6264).
+     */
+    connectionRefused: {
+      type: Boolean,
       required: false,
     },
   },
@@ -208,6 +293,36 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       required: false,
       default: null,
     },
+    // Derived from the canonicalGroupId tombstones by research-entity:derive-survivor-aliases,
+    // never written by a lane: the rows merged into this one, so Beta and Production can
+    // resolve an old slug or id without carrying the archived rows (#5148).
+    mergedFrom: {
+      type: [
+        {
+          _id: false,
+          slug: { type: String, required: true },
+          entityId: { type: mongoose.Schema.Types.ObjectId, required: true },
+          mergedAt: { type: Date, required: false },
+          archivedReason: { type: String, required: false },
+        },
+      ],
+      default: undefined,
+    },
+    // Written only by a reslug that opts into a redirect, never by a lane: the slugs this
+    // live row was served under before it was renamed, kept so an old public URL keeps
+    // answering with a redirect (#5808). It is a redirect source only, never served or
+    // indexed, and promotion copies it with the row.
+    previousSlugs: {
+      type: [
+        {
+          _id: false,
+          slug: { type: String, required: true },
+          renamedAt: { type: Date, required: true },
+          reason: { type: String, required: true },
+        },
+      ],
+      default: undefined,
+    },
     kind: {
       type: String,
       enum: [...researchGroupKinds],
@@ -264,6 +379,10 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: [String],
       default: [],
     },
+    statedAppointmentSchools: {
+      type: [String],
+      default: [],
+    },
     yaleStatusCache: {
       type: String,
       enum: ['active', 'leave', 'departed', 'unknown'],
@@ -275,7 +394,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     },
     yaleStatusReasonCache: {
       type: String,
-      enum: ['deceased', 'departed', ''],
+      enum: ['deceased', 'departed', 'lead_departed', ''],
       default: '',
     },
     lastSeenInCompleteRosterAt: {
@@ -297,6 +416,34 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     undergradEvidenceQuote: {
       type: String,
       default: '',
+    },
+    undergradInvitation: {
+      type: new mongoose.Schema(
+        {
+          level: { type: String, enum: undergradInvitationLevels, required: true },
+          quote: { type: String, required: true },
+          sourceUrl: { type: String, required: true },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
+    /** Leads their own department's emeritus page lists, by researcher id (#5835). */
+    emeritusListedLeadIds: { type: [String], default: undefined },
+    undergradListEvidence: {
+      type: [
+        new mongoose.Schema(
+          {
+            source: { type: String, enum: undergradListSources, required: true },
+            kind: { type: String, enum: undergradListEntryKinds, required: true },
+            count: { type: Number },
+            latestYear: { type: Number },
+            sourceUrl: { type: String, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: undefined,
     },
     pastUndergradAdvisees: {
       type: [
@@ -346,7 +493,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
           endDate: { type: Date },
           dollarAmount: { type: Number },
           url: { type: String },
-          role: { type: String, enum: ['pi', 'copi'], default: 'pi' },
+          role: { type: String, enum: ['pi', 'copi'], required: false },
         },
       ],
       default: [],
@@ -413,6 +560,8 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
           default: undefined,
         },
         undergraduateWithheldCount: { type: Number, min: 0, max: 1000, default: 0 },
+        configOrigin: { type: String, enum: officialRosterConfigOrigins, required: false },
+        withheldReason: { type: String, required: false },
         alumniSourceUrl: { type: String, required: false },
         sourceUrl: { type: String, default: '' },
         sourcePublishedAt: { type: Date, required: false },
@@ -441,6 +590,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
               ],
               default: undefined,
             },
+            configOrigin: { type: String, enum: officialRosterConfigOrigins, required: false },
             sourceUrl: { type: String, required: true },
             alumniSourceUrl: { type: String, required: false },
             sourcePublishedAt: { type: Date, required: false },
@@ -591,10 +741,17 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
 researchEntitySchema.index({ kind: 1 });
 researchEntitySchema.index({ entityType: 1 });
 researchEntitySchema.index({ canonicalGroupId: 1 });
+researchEntitySchema.index({ 'mergedFrom.slug': 1 });
+researchEntitySchema.index({ 'mergedFrom.entityId': 1 });
+researchEntitySchema.index({ 'previousSlugs.slug': 1 });
 // Not unique on purpose: 130 live website-url identity groups already hold more than
 // one row, so a unique index would refuse to build until those are resolved. The
 // resolver's ambiguity guard is what keeps a shared URL from merging (#3036).
 researchEntitySchema.index({ websiteUrl: 1 });
+researchEntitySchema.index(
+  { 'sourceLinkHealth.redirectLandingUrl': 1 },
+  { partialFilterExpression: { 'sourceLinkHealth.redirectLandingUrl': { $exists: true } } },
+);
 researchEntitySchema.index({ school: 1 });
 researchEntitySchema.index({ schools: 1 });
 researchEntitySchema.index({ departments: 1 });
@@ -612,6 +769,7 @@ researchEntitySchema.index({ studentVisibilityComputedAt: -1 });
 researchEntitySchema.index({ studentVisibilityEvaluatedAt: -1 });
 
 registerFieldProvenanceBackingGuard(researchEntitySchema);
+registerHoldOverrideReasonGuard(researchEntitySchema);
 
 export const ResearchEntity =
   mongoose.models.ResearchEntity ||

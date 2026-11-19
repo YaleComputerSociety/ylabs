@@ -21,6 +21,8 @@ const STATIC_PATH_SEGMENTS = new Set([
   'dashboard',
   'departments',
   'dev-login',
+  'directory-removal-requests',
+  'directoryRemovalRequest',
   'fellowships',
   'filters',
   'funnel',

@@ -1,3 +1,5 @@
+import { holdDevApplyLeaseOnDb } from '../db/devWriteLease';
+import { watchMongoClientProgress } from '../db/devWriteProgress';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
@@ -17,7 +19,19 @@ import {
   type CorpusAccountReference,
 } from './corpusAccountReferences';
 import { applyStagedCollectionSwap, mirroredValidationOptions } from './stagedCollectionSwap';
+import { assertStagedSwapHeadroom, collectionsFootprintMb } from './stagedSwapHeadroom';
+import {
+  carriedRowCount,
+  carryDevelopmentArchive,
+  type DevelopmentArchiveCarryReport,
+} from './archivedTombstoneMirror';
 import { DATABASE_COPY_PAIRS, parseMongoTarget } from './databaseCopyPairs';
+import { DIRECTORY_REMOVAL_COLLECTION } from '../models/directoryRemoval';
+import {
+  assertCopyCarriesEveryDirectoryRemoval,
+  directoryRemovalCopyBlockers,
+} from './directoryRemovalCopyGuard';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 export { parseMongoTarget };
 
@@ -55,6 +69,7 @@ const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'signals', category: 'research-discovery' },
   { name: 'researchers', category: 'identity-spine' },
   { name: 'role_assignments', category: 'identity-spine' },
+  { name: 'directory_removals', category: 'identity-spine' },
   { name: 'sources', category: 'source-audit' },
   { name: 'scrape_runs', category: 'source-audit' },
   { name: 'observations', category: 'source-audit' },
@@ -102,6 +117,9 @@ export interface BetaToDevelopmentSummary {
 }
 
 const EXCLUDED_BETA_COLLECTIONS = [
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a pending
+  // cross-environment deletion request belongs to the environment that recorded it (#4156).
+  'account_deletion_requests',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy (#5088).
   'accounts',
   'admin_access_review_projection_state',
@@ -115,10 +133,16 @@ const EXCLUDED_BETA_COLLECTIONS = [
   // still present on the source blocks apply.
   'canonical_aliases',
   'research_entity_redirects',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a removal
+  // request is a private request made in the environment that holds it (#4160).
+  'directory_removal_requests',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy:
   // copying a quality measurement both misdates the target's history and loses
   // it, because a sync replaces the whole collection.
   'corpus_quality_snapshots',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each row
+  // counts or requests this environment's own account deletions (#4156).
+  'deleted_account_event_tallies',
   'entitycorrectionreports',
   'evidence_claims',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a
@@ -139,10 +163,19 @@ const EXCLUDED_BETA_COLLECTIONS = [
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a copied login
   // tally attributes one environment's sign-ins to another.
   'login_signal_tallies',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each entry is
+  // a paid call this environment made (#5523).
+  'model_call_usages',
   'observation_reference_repair_audits',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy (#5092).
   'research_plans',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each entry
+  // is a paid model reading of the environment's own stored page text (#5396).
+  'research_topics_derivations',
   'review_decisions',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each
+  // environment seeds its own rerank scores (#5448).
+  'search_rerank_cache',
   'scrape_job_locks',
   'scrape_snapshots',
   'source_documents',
@@ -153,6 +186,12 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'student_trackings',
   'visibility_release_queue_items',
   'weekly_sweep_runs',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each entry
+  // is a paid draft of the description writer over this environment's evidence (#5537).
+  'written_description_derivations',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each entry
+  // is a paid card draft over this environment's bodies (#5537).
+  'card_synthesis_derivations',
 ];
 
 export function replaceMongoDatabaseName(value: string, databaseName: string): string {
@@ -393,7 +432,7 @@ function writeOutput(report: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function syncIndexes(
@@ -402,6 +441,10 @@ async function syncIndexes(
   sourceCollectionName: string,
   stagingCollectionName: string,
 ): Promise<void> {
+  const sourceExists = await betaDb
+    .listCollections({ name: sourceCollectionName }, { nameOnly: true })
+    .hasNext();
+  if (!sourceExists) return;
   const indexes = await betaDb.collection(sourceCollectionName).indexes();
   const secondaryIndexes = indexes.filter((index) => index.name !== '_id_');
   if (secondaryIndexes.length === 0) return;
@@ -472,8 +515,13 @@ async function copyCollection(
   }
 }
 
-export function syncCountMismatches(after: readonly SyncCollectionPlan[]): SyncCollectionPlan[] {
-  return after.filter((row) => row.sourceCopyCount !== row.targetCount);
+export function syncCountMismatches(
+  after: readonly SyncCollectionPlan[],
+  carry?: DevelopmentArchiveCarryReport,
+): SyncCollectionPlan[] {
+  return after.filter(
+    (row) => row.sourceCopyCount + carriedRowCount(carry, row.name) !== row.targetCount,
+  );
 }
 
 export async function syncAccountReferences(
@@ -492,10 +540,15 @@ export async function applySync(
   targetDb: Db,
   collections: SyncCollection[],
   clearedCollectionNames: string[],
+  preflight: () => Promise<void>,
   verify: () => Promise<void>,
+  afterCutover?: (backups: ReadonlyMap<string, string>) => Promise<void>,
 ): Promise<void> {
   const { blockers } = await syncAccountReferences(sourceDb, collections);
   if (blockers.length > 0) throw new Error(`Sync blocked: ${blockers.join(' ')}`);
+  if (collections.some((collection) => collection.name === DIRECTORY_REMOVAL_COLLECTION)) {
+    await assertCopyCarriesEveryDirectoryRemoval(sourceDb, targetDb, 'Collection sync');
+  }
   await applyStagedCollectionSwap({
     targetDb,
     collections,
@@ -503,21 +556,53 @@ export async function applySync(
     backupPrefix: '__beta_backup_',
     label: 'Beta to Development sync',
     stage: (collection, operationId) => copyCollection(sourceDb, targetDb, collection, operationId),
+    afterCutover,
+    preflight,
     verify,
   });
+}
+
+export function syncHeadroomPreflight(input: {
+  sourceDb: Db;
+  targetClient: MongoClient;
+  collections: readonly SyncCollection[];
+  label: string;
+}): () => Promise<void> {
+  return async () => {
+    await assertStagedSwapHeadroom({
+      client: input.targetClient,
+      stagingMb: await collectionsFootprintMb(
+        input.sourceDb,
+        input.collections.map((collection) => collection.name),
+      ),
+      label: input.label,
+    });
+  };
 }
 
 async function main(): Promise<void> {
   const options = parseBetaToDevelopmentOptions(process.argv.slice(2));
   assertSafeBetaToDevelopmentOptions(options);
 
-  const betaClient = new MongoClient(options.betaUrl);
-  const developmentClient = new MongoClient(options.developmentUrl);
+  const betaClient = new MongoClient(options.betaUrl, { monitorCommands: true });
+  const developmentClient = new MongoClient(options.developmentUrl, { monitorCommands: true });
+  let releaseDevWriteLease: () => Promise<void> = async () => undefined;
   try {
     await betaClient.connect();
     await developmentClient.connect();
+    watchMongoClientProgress(betaClient);
     const betaDb = betaClient.db();
     const developmentDb = developmentClient.db();
+    if (options.mode === 'apply') {
+      releaseDevWriteLease = await holdDevApplyLeaseOnDb(
+        {
+          db: developmentDb,
+          databaseName: developmentDb.databaseName,
+          host: new URL(options.developmentUrl).hostname,
+        },
+        'development:refresh-from-beta',
+      );
+    }
     const collections = collectionsForOptions(options);
     const approvedMirrorCollectionNames = betaToDevelopmentCollectionNames(true);
     const [betaCollectionRows, developmentCollectionRows] = await Promise.all([
@@ -548,7 +633,15 @@ async function main(): Promise<void> {
 
     const accountReferences = await syncAccountReferences(betaDb, collections);
     if (options.mode === 'dry-run') {
-      const report = { ...summary, accountReferences };
+      const report = {
+        ...summary,
+        accountReferences,
+        directoryRemovalBlockers: await directoryRemovalCopyBlockers(
+          betaDb,
+          developmentDb,
+          'Beta to Development sync',
+        ),
+      };
       console.log(JSON.stringify(report, null, 2));
       writeOutput(report, options.output);
       return;
@@ -557,25 +650,43 @@ async function main(): Promise<void> {
     assertNoUnclassifiedBetaCollections(unclassifiedBetaCollections);
     const clearedDevelopmentCollections = localCollectionsClearedOnApply;
     let after: SyncCollectionPlan[] = [];
-    await applySync(betaDb, developmentDb, collections, clearedDevelopmentCollections, async () => {
-      after = await buildPlan(betaDb, developmentDb, collections);
-      const mismatches = syncCountMismatches(after);
-      if (mismatches.length > 0) {
-        throw new Error(
-          `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
-        );
-      }
-    });
+    let archiveCarry: DevelopmentArchiveCarryReport | undefined;
+    await applySync(
+      betaDb,
+      developmentDb,
+      collections,
+      clearedDevelopmentCollections,
+      syncHeadroomPreflight({
+        sourceDb: betaDb,
+        targetClient: developmentClient,
+        collections,
+        label: 'Beta to Development sync',
+      }),
+      async () => {
+        after = await buildPlan(betaDb, developmentDb, collections);
+        const mismatches = syncCountMismatches(after, archiveCarry);
+        if (mismatches.length > 0) {
+          throw new Error(
+            `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
+          );
+        }
+      },
+      async (backups) => {
+        archiveCarry = await carryDevelopmentArchive(developmentDb, backups);
+      },
+    );
     const result = {
       ...summary,
       accountReferences,
       status: 'applied',
       collections: after,
       clearedDevelopmentCollections,
+      developmentArchiveCarry: archiveCarry,
     };
     console.log(JSON.stringify(result, null, 2));
     writeOutput(result, options.output);
   } finally {
+    await releaseDevWriteLease().catch(() => undefined);
     await betaClient.close();
     await developmentClient.close();
   }

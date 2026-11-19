@@ -1,3 +1,5 @@
+import { GONE_HTTP_STATUS_CODES } from './deadWebsiteValueRefusalCore';
+
 import {
   canonicalPersonPageUrlCandidate,
   isLegacyPersonPageUrl,
@@ -133,4 +135,21 @@ export function isAdoptableProbe(
   if (!probe) return false;
   if (typeof probe.status !== 'number' || probe.status < 200 || probe.status >= 400) return false;
   return pageTitleNamesPerson(probe.title, entityName, candidateUrl);
+}
+
+/**
+ * Why an original citation must be kept, or undefined when it may be replaced. Only a 404
+ * or 410 says the page is gone; a throttle, a server error, a timeout or a refused request
+ * observed nothing about it (#6258). Replacing a citation removes the original, so a gone
+ * probe must also agree with a stored gone verdict for that URL (#4729, #6264).
+ */
+export function originalProbeKeepReason(
+  status: number,
+  storedVerdictAgrees = false,
+): string | undefined {
+  if (GONE_HTTP_STATUS_CODES.has(status)) {
+    return storedVerdictAgrees ? undefined : 'original awaiting confirmation';
+  }
+  if (status >= 200 && status < 400) return 'original still resolves';
+  return 'original not confirmed gone';
 }

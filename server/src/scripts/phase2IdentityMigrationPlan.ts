@@ -28,6 +28,7 @@ import {
   type LegacyIdentityUser,
 } from './phase2IdentityMigrationPlannerCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const FULL_COMMIT_PATTERN = /^[a-f0-9]{40}$/;
@@ -463,12 +464,7 @@ export function assertPhase2IdentityPlanOutputAvailable(output: string): string 
 export function writePhase2IdentityPlanOutput(report: object, output: string): void {
   const safeOutput = assertPhase2IdentityPlanOutputAvailable(output);
   try {
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`, {
-      encoding: 'utf8',
-      flag: 'wx',
-      mode: 0o600,
-    });
-    fs.chmodSync(safeOutput, 0o600);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`, { exclusive: true });
   } catch {
     throw new Error('Unable to create the private Phase 2 identity-plan artifact.');
   }

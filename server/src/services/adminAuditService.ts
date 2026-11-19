@@ -8,6 +8,7 @@ import { AdminAuditEvent } from '../models/adminAuditEvent';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const NETID_RE = /^[a-z0-9]{2,12}$/;
+const AGENT_ACTOR_RE = /^agent:[a-z0-9][a-z0-9-]{1,40}$/;
 const ACTION_RE = /^[a-z0-9_]+(\.[a-z0-9_]+)*$/;
 
 export const MAX_AUDIT_TARGET_ID_LENGTH = 128;
@@ -61,6 +62,11 @@ export interface AdminAuditEventsResult {
   totalPages: number;
 }
 
+// An agent acting for the owner names itself rather than borrowing a person's netid, so the
+// audit trail never attributes an automated write to someone who did not make it.
+export const isAuditableActor = (actor: string): boolean =>
+  NETID_RE.test(actor) || AGENT_ACTOR_RE.test(actor);
+
 const normalizeNetid = (value: unknown): string =>
   typeof value === 'string' ? value.trim().toLowerCase() : '';
 
@@ -100,7 +106,7 @@ export const recordAdminAuditEvent = async (input: RecordAdminAuditEventInput): 
   try {
     const actorNetid = normalizeNetid(input.actorNetid);
 
-    if (!NETID_RE.test(actorNetid) || !ACTION_RE.test(action)) {
+    if (!isAuditableActor(actorNetid) || !ACTION_RE.test(action)) {
       console.warn(
         'Admin audit: refused an event with an invalid actor or action:',
         unrecordedEventLabel(ACTION_RE.test(action) ? action : '', targetType),
@@ -161,7 +167,7 @@ export const listAdminAuditEvents = async (
   const filter: Record<string, unknown> = {};
 
   const actor = normalizeNetid(query.actor);
-  if (actor && NETID_RE.test(actor)) filter.actorNetid = actor;
+  if (actor && isAuditableActor(actor)) filter.actorNetid = actor;
 
   const action = boundedString(query.action, MAX_AUDIT_ACTION_LENGTH).toLowerCase();
   if (action && ACTION_RE.test(action)) filter.action = action;

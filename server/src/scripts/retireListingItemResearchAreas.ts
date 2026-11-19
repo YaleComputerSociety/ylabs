@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
 import { getResearchAreaCanonicalizer } from '../scrapers/researchAreaCanonicalization';
@@ -24,6 +25,7 @@ import {
   planListingItemAreaRepair,
   type ListingItemAreaProbe,
 } from './retireListingItemResearchAreasCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -130,6 +132,20 @@ export async function regateAndResyncTouchedEntities(
     resyncedEntities: sync.resynced,
     indexSyncFailures: sync.indexSyncFailures,
   };
+}
+
+export function clearStoredListingItemAreas(decision: {
+  entityId: string;
+  assertedAreas: string[];
+}): Promise<{ modifiedCount: number; withheld: string[] }> {
+  return updateOneKeepingLastCitation(
+    ResearchEntity,
+    {
+      _id: new mongoose.Types.ObjectId(decision.entityId),
+      researchAreas: { $all: decision.assertedAreas, $size: decision.assertedAreas.length },
+    },
+    { $set: { researchAreas: [] }, $unset: { 'fieldProvenance.researchAreas': '' } },
+  );
 }
 
 async function main(): Promise<void> {
@@ -245,6 +261,7 @@ async function main(): Promise<void> {
   let retiredObservations = 0;
   let appendedCorrections = 0;
   let clearedStoredAreas = 0;
+  let lastCitationStampsKept = 0;
   let rematerializedEntities = 0;
   const touchedIds: string[] = [];
 
@@ -293,14 +310,9 @@ async function main(): Promise<void> {
       // harvest would keep serving it. Keyed on the stored value still being the
       // retracted one, read at apply time.
       if (decision.clearsStoredAreas) {
-        const cleared = await ResearchEntity.updateOne(
-          {
-            _id: new mongoose.Types.ObjectId(decision.entityId),
-            researchAreas: { $all: decision.assertedAreas, $size: decision.assertedAreas.length },
-          },
-          { $set: { researchAreas: [] }, $unset: { 'fieldProvenance.researchAreas': '' } },
-        );
-        clearedStoredAreas += cleared.modifiedCount || 0;
+        const cleared = await clearStoredListingItemAreas(decision);
+        clearedStoredAreas += cleared.modifiedCount;
+        if (cleared.withheld.length > 0) lastCitationStampsKept += 1;
       }
 
       if (decision.slug) {
@@ -328,6 +340,7 @@ async function main(): Promise<void> {
     retiredObservations,
     appendedCorrections,
     clearedStoredAreas,
+    lastCitationStampsKept,
     rematerializedEntities,
     visibilityTierChanges,
     resyncedEntities,
@@ -346,7 +359,7 @@ async function main(): Promise<void> {
 
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, JSON.stringify(report, null, 2));
+    writeReportFileSync(options.output, JSON.stringify(report, null, 2));
     console.log(`Saved report to ${options.output}`);
   }
 

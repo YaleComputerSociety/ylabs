@@ -1,6 +1,7 @@
 import { TaxonomyTerm } from '../models/taxonomyTerm';
 import { stripProfileRoleLabelSuffix } from '../utils/researchAreaLabelHygiene';
 import { slugify } from './utils/scraperHelpers';
+import { naturalOrderMeshHeading } from './meshNaturalOrder';
 
 export interface ResearchAreaResolverRow {
   name: string;
@@ -257,7 +258,7 @@ const AMBIGUOUS_SINGLE_WORD_AREA_KEYS = new Set(
  * canonical phrase only matches on whole-word boundaries when tested with
  * `includes`, never as a substring of a longer token.
  */
-function textScanForm(raw: unknown): string {
+export function textScanForm(raw: unknown): string {
   if (typeof raw !== 'string') return ' ';
   const normalized = raw
     .normalize('NFKD')
@@ -299,18 +300,21 @@ export function buildResearchAreaResolverIndex(
   const exact = new Map<string, string>();
   const phrases: ResearchAreaPhrase[] = [];
   for (const row of rows) {
+    const canonical = naturalOrderMeshHeading(row.name);
     const aliases = [...(row.aliases || []), ...(RESEARCH_AREA_ALIASES[row.name] || [])];
     for (const value of [row.name, ...aliases]) {
-      const key = researchAreaMatchKey(value);
-      if (key && !exact.has(key)) exact.set(key, row.name);
+      for (const spelling of [value, naturalOrderMeshHeading(value)]) {
+        const key = researchAreaMatchKey(spelling);
+        if (key && !exact.has(key)) exact.set(key, canonical);
+      }
     }
     const nameAllowsSingleWord = !AMBIGUOUS_SINGLE_WORD_AREA_KEYS.has(
       researchAreaMatchKey(row.name),
     );
-    const namePhrase = phraseFromSlug(row.name, row.name, nameAllowsSingleWord);
+    const namePhrase = phraseFromSlug(canonical, canonical, nameAllowsSingleWord);
     if (namePhrase) phrases.push(namePhrase);
     for (const alias of aliases) {
-      const aliasPhrase = phraseFromSlug(row.name, alias, false);
+      const aliasPhrase = phraseFromSlug(canonical, alias, false);
       if (aliasPhrase) phrases.push(aliasPhrase);
     }
   }
@@ -394,10 +398,16 @@ export function splitGluedRoleTrackLabels(raw: unknown): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Every raw value is read in MeSH natural order before it is resolved, deduped or filtered, so the
+ * stored value, the catalog match key and the #6361 non-subject check all see one form, and a row
+ * listing both "Carcinoma, Hepatocellular" and "Hepatocellular Carcinoma" keeps one topic (#6358).
+ */
 function expandRawResearchAreaEntries(raw: unknown): string[] {
   return toRawList(raw)
     .flatMap((entry) => stripResearchAreaSourceChrome(entry))
-    .flatMap((entry) => splitGluedRoleTrackLabels(entry));
+    .flatMap((entry) => splitGluedRoleTrackLabels(entry))
+    .map((entry) => naturalOrderMeshHeading(entry));
 }
 
 export function createResearchAreaCanonicalizer(
@@ -601,6 +611,25 @@ export interface ResearchAreaPartition {
  * list whose every value this drops is no evidence anywhere: changing it here
  * changes all three together.
  */
+// Only headings a full blind census found to be a research subject on no row (#6357: 59 graded
+// drops, 30 of them real subjects). Frequent method and education headings such as "Education,
+// Medical" or "Curriculum" are a row's real subject about half the time, and no wording rule
+// separates the two, so they stay out of this list.
+const NON_SUBJECT_RESEARCH_AREA_HEADINGS = [
+  'Data Analysis',
+  'Teaching Rounds',
+  'Education Mission',
+  'Qualitative',
+];
+
+const NON_SUBJECT_RESEARCH_AREA_HEADING_KEYS = new Set(
+  NON_SUBJECT_RESEARCH_AREA_HEADINGS.map((heading) => researchAreaMatchKey(heading)),
+);
+
+export function isNonSubjectResearchAreaHeading(raw: unknown): boolean {
+  return NON_SUBJECT_RESEARCH_AREA_HEADING_KEYS.has(researchAreaMatchKey(raw));
+}
+
 export function partitionResearchAreas(
   canonicalizer: ResearchAreaCanonicalizer,
   raw: unknown,
@@ -609,7 +638,9 @@ export function partitionResearchAreas(
   const canonical = canonicalizer.canonicalizeResearchAreas(raw);
   const departmentKeys = departmentMatchKeys(departments);
   const isRejected = (value: string) =>
-    departmentKeys.has(researchAreaMatchKey(value)) || isDivisionLevelResearchAreaLabel(value);
+    departmentKeys.has(researchAreaMatchKey(value)) ||
+    isDivisionLevelResearchAreaLabel(value) ||
+    isNonSubjectResearchAreaHeading(value);
   return {
     admitted: canonical.values.filter((value) => !isRejected(value)),
     unmatched: canonical.unmatched.filter((value) => !isRejected(value)),

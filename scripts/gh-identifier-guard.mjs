@@ -5,9 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { GUARDED_ORG, planGuard } from './gh-identifier-guard-core.mjs';
+import { GUARDED_ORG, planClosingKeywordRewrite, planGuard } from './gh-identifier-guard-core.mjs';
 
-const args = process.argv.slice(2);
+let args = process.argv.slice(2);
 const guardDir = path.dirname(fileURLToPath(import.meta.url));
 const scannerPath = path.join(guardDir, 'check-no-person-identifiers.mjs');
 
@@ -128,4 +128,25 @@ if (scan.status !== 0) {
 
 fs.rmSync(draftDir, { recursive: true, force: true });
 
+const rewriteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-guard-keyword-'));
+let rewriteFiles = 0;
+const rewrite = planClosingKeywordRewrite(args, {
+  readBodyFile: (file) => fs.readFileSync(file, 'utf8'),
+  readStdin: readStdinOnce,
+  writeTempFile: (text) => {
+    rewriteFiles += 1;
+    const file = path.join(rewriteDir, `body-${rewriteFiles}.txt`);
+    fs.writeFileSync(file, text, { mode: 0o600 });
+    return file;
+  },
+});
+if (rewrite.count > 0) {
+  args = rewrite.args;
+  if (rewrite.stdin !== undefined) stdinBuffer = Buffer.from(rewrite.stdin, 'utf8');
+  console.error(
+    `gh guard: rewrote ${rewrite.count} closing keyword${rewrite.count === 1 ? '' : 's'} out of a code span, so GitHub links the issue (#5664)`,
+  );
+}
+
+process.on('exit', () => fs.rmSync(rewriteDir, { recursive: true, force: true }));
 runRealGh();

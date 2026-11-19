@@ -27,6 +27,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -36,6 +37,7 @@ import {
   STALE_LAUNCH_OVERRIDE_FIELDS,
   type StaleLaunchOverridePlan,
 } from './retireStaleLaunchSuppressionOverridesCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -171,13 +173,19 @@ async function loadBackingObservationIds(rows: CohortRow[]): Promise<string[]> {
     .filter((id): id is string => Boolean(id));
 }
 
-async function applyRetirement(
-  rows: CohortRow[],
+export async function applyRetirement(
+  rows: Array<Pick<CohortRow, 'entityId'>>,
   observationIds: string[],
-): Promise<{ entitiesCleared: number; observationsRetired: number }> {
+): Promise<{
+  entitiesCleared: number;
+  observationsRetired: number;
+  lastCitationStampsKept: number;
+}> {
   let entitiesCleared = 0;
+  let lastCitationStampsKept = 0;
   for (const row of rows) {
-    const result = await ResearchEntity.updateOne(
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { _id: new mongoose.Types.ObjectId(row.entityId) },
       {
         $unset: {
@@ -189,6 +197,7 @@ async function applyRetirement(
       },
     );
     if (result.modifiedCount > 0) entitiesCleared += 1;
+    if (result.withheld.length > 0) lastCitationStampsKept += 1;
   }
 
   let observationsRetired = 0;
@@ -208,7 +217,7 @@ async function applyRetirement(
     observationsRetired = result.modifiedCount || 0;
   }
 
-  return { entitiesCleared, observationsRetired };
+  return { entitiesCleared, observationsRetired, lastCitationStampsKept };
 }
 
 async function main(): Promise<void> {
@@ -234,7 +243,7 @@ async function main(): Promise<void> {
   const observationIds = await loadBackingObservationIds(selected);
   const applied = args.apply
     ? await applyRetirement(selected, observationIds)
-    : { entitiesCleared: 0, observationsRetired: 0 };
+    : { entitiesCleared: 0, observationsRetired: 0, lastCitationStampsKept: 0 };
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -247,6 +256,7 @@ async function main(): Promise<void> {
     backingObservations: observationIds.length,
     entitiesCleared: applied.entitiesCleared,
     observationsRetired: applied.observationsRetired,
+    lastCitationStampsKept: applied.lastCitationStampsKept,
     retirableByEntityType: retirable.reduce<Record<string, number>>((acc, row) => {
       const key = row.entityType || 'UNKNOWN';
       acc[key] = (acc[key] || 0) + 1;
@@ -261,7 +271,7 @@ async function main(): Promise<void> {
   if (args.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
   console.log(JSON.stringify(report, null, 2));
   await mongoose.disconnect();

@@ -5,10 +5,12 @@ import {
   classifyPiAttributedUserOutcome,
   mintOnlyOutcomeWithoutApply,
   parseMaterializePiAttributedUsersArgs,
+  piAttributedUserKeyCandidates,
   shouldApplyAfterMintOnlyProbe,
   summarizePiAttributedUserRows,
   type PiAttributedUserRow,
 } from '../materializePiAttributedUsersCore';
+import { userEntityKeyForInferredPiUserKey } from '../../scrapers/entityMaterializer';
 
 describe('parseMaterializePiAttributedUsersArgs', () => {
   it('defaults to a dry run', () => {
@@ -126,5 +128,29 @@ describe('mint-only mode', () => {
         { entityKey: 'a', outcome: 'left-existing', fieldsWritten: 0 },
       ]),
     ).toMatchObject({ leftExisting: 1, enriched: 0, refused: 0 });
+  });
+});
+
+describe('piAttributedUserKeyCandidates', () => {
+  const userKeys = new Set(['netid:ada.fixture', 'dept:physics:alan-fixture']);
+
+  it('reaches the user key from the bare alias and the Yale address a roster stored', () => {
+    expect(
+      piAttributedUserKeyCandidates(
+        ['ada.fixture', 'Ada.Fixture@yale.edu'],
+        userKeys,
+        userEntityKeyForInferredPiUserKey,
+      ),
+    ).toEqual(['netid:ada.fixture']);
+  });
+
+  it('keeps an exact key match and drops an attribution no user key carries', () => {
+    expect(
+      piAttributedUserKeyCandidates(
+        ['dept:physics:alan-fixture', 'netid:grace.fixture'],
+        userKeys,
+        userEntityKeyForInferredPiUserKey,
+      ),
+    ).toEqual(['dept:physics:alan-fixture']);
   });
 });

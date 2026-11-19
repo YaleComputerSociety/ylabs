@@ -39,6 +39,14 @@ describe('ResearchZeroResultRecovery programs handoff', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('shortens a very long query in the link text but searches the whole query', () => {
+    const longQuery = 'a'.repeat(300);
+    renderRecovery(longQuery);
+    const link = screen.getByRole('link', { name: /Search programs and fellowships for/ });
+    expect(link.textContent!.length).toBeLessThan(120);
+    expect(link.getAttribute('href')).toBe(`/programs?q=${longQuery}`);
+  });
+
   it('offers no handoff without a typed query', () => {
     renderRecovery('');
     expect(screen.queryByRole('link', { name: /Search programs and fellowships/ })).toBeNull();

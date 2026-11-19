@@ -6,6 +6,7 @@
  * Observations from this source unless overridden per-observation.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import {
   sourceCoverageArtifactTypes,
   sourceCoverageEvidenceCategories,
@@ -87,6 +88,10 @@ const sourceSchema = new mongoose.Schema(
       defaultConfidence: {
         type: String,
         enum: ['HIGH', 'MEDIUM', 'LOW'],
+        required: false,
+      },
+      producesModelText: {
+        type: Boolean,
         required: false,
       },
       notes: {

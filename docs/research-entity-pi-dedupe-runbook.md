@@ -27,6 +27,30 @@ Default detection groups active, non-archived research entities that share a `pi
 It also folds in exact faculty profile-area shells, such as `<First> <Last> Lab`, `<First> <Last> Laboratory`, and `<First> <Last> Research`, for the same PI.
 Same-name clusters are only treated as duplicates when a single shared PI backs them or when the name is a full-person lab name, so unrelated same-surname labs are not merged.
 
+A grant co-PI listing never puts a row in a person's cluster (#5776).
+A multi-PI award lists collaborators, so a lead whose every lead observation on a row comes from a grant lane (`GRANT_LANE_SOURCE_NAMES`), on a row that also holds a different lead, is not evidence that the row is that person's research.
+Without this, the co-PI's own profile-area shells folded into the other person's lab as if it were the co-PI's concrete home, and the survivor then served the co-PI as an extra lead.
+`loadSamePiCandidateRows` drops such a row from the co-PI's cluster, so the rule binds every lane that reads it: the default lane, `--shared-person-id` with or without `--require-name-agreement`, `--funding-only`, and the sweep's eponymous FRA merge.
+A grant-only lead who is the row's sole lead is a funding shell and still clusters, because that is what the funding lane folds.
+A lead's evidence on the row is its live lead observations together with the source every one of its current lead edges records, so a roster, director, or profile edge keeps a lead from reading as grant-only.
+Only current lead edges count as the row's leads, so a departed lead's `HISTORICAL` edge does not turn a sole-lead funding shell into a listing.
+The withheld co-PI still counts as a person on the row for the `--shared-person-id` multi-person quarantine, so withholding a listing only ever refuses a merge and never turns a two-lead row into a single-lead row another lane may fold.
+The predicate is `grantCoPiListedPersonIds` in `server/src/scrapers/grantCoPiListing.ts`, and the dry-run report counts the withheld rows in `withheldGrantCoPiListings`.
+
+A recorded distinct-people verdict refuses a fold in every lane, whatever evidence the leads carry (#5802).
+The co-PI rule above stops applying once the co-lead gains a non-grant edge, so it cannot keep two separated people apart on its own; the verdict does.
+A verdict is written by `researchers:record-distinct-people` as `distinctFromResearcherIds` on both researchers, and is read from either side and through researcher-dedupe fold chains (`dedupedIntoResearcherId`).
+A merge is refused when one of its rows holds one of the two people and a row holds the other, unless every row holding either already holds both.
+So one person's own row never folds into the other's row or into a lab the two co-lead, while two copies of that co-led lab still merge and the genuine co-lead edge stays.
+Two copies of a co-led lab where one lists only one person and the other lists only the other are refused, which fails closed; none existed on Development when this landed.
+A refused group is refused whole and nothing partial is planned in its place, so the rule only removes merges.
+The predicate is `distinctPeopleVerdictPairsJoinedByFold` in `server/src/scrapers/distinctPeopleVerdict.ts`, and `server/src/services/distinctPeopleVerdicts.ts` loads it.
+It runs on the plan of every `research-entity:dedupe-by-pi` lane (reported as `plannedRefusedAsDistinctPeopleGroups` and `refusedAsDistinctPeople`), again inside `applyResearchEntityDedupeMergeGroup` (reported as `refusedAsDistinctPeople` on an applied group), and in the eponymous FRA merge, the same-lead duplicate merge, the same-person archive tombstones, the merge-tombstone restore, the stranded-key redirect, the dept-roster shell fold, resolve-at-mint adoption, and researcher-dedupe.
+A refused resolve-at-mint adoption mints the new row on its own instead of joining the other person's row.
+The new row starts at the default `operator_review` tier like any other mint, so it serves only once the student-visibility gate passes it.
+The grant-shell port rolls back a refused port and reports it as `refusedAsDistinctPeople`, and a refused grant-only enrichment counts as deferred.
+A new fold path must call the shared predicate before it writes a redirect.
+
 Narrowing modes let an operator review one risk class at a time:
 
 - `--reviewed-profile-area-only` limits the plan to profile-area shells that have a concrete same-PI home.
@@ -41,7 +65,9 @@ The lane also refuses a group, as `duplicate_adds_lead`, when a duplicate holds 
 The slug refusal keeps a row whose leads, read from its live lead `RoleAssignment` edges, are exactly the leads of another row in the cluster, because a topical lab name ("BEACON Lab") has no surname to compare a person slug with, so the slug check refused every lab whose page name is not a surname; a member row that adds its own lead beside the lab's is still refused.
 Every candidate URL the lane plans nothing for is reported with the one rule that refused it, in `refusedCandidates` and `refusedCandidatesByReason` (`no_identity_key`, `single_entity`, `funding_shell`, `entity_type_outside_lane`, `lead_names_disagree`, `conflicting_lead_first_names`, `slug_names_another_person`, `duplicate_adds_lead`), and the counts also land in the stage's `urlIdentityDedupeDelta`, so a run that plans nothing says why.
 Never-demote survivor selection shipped for this mode and now runs for every lane, so it is described once under [Lane-agnostic refusals](#lane-agnostic-refusals) below.
-- `--website-url-only` groups entities whose served `websiteUrl` normalizes to the same identity key (host plus path, scheme-agnostic, `www.` and trailing slash and query stripped), so a lab that lives on its own domain is covered where the path-keyed lane cannot reach.
+- `--website-url-only` groups entities whose served `websiteUrl` normalizes to the same identity key (host plus path, scheme-agnostic, `www.`, trailing slash, a trailing default document such as `index.aspx`, and query stripped), so a lab that lives on its own domain is covered where the path-keyed lane cannot reach.
+  A row whose `websiteUrl` has a recorded `redirectLandingUrl` in any live row's `sourceLinkHealth` is grouped under the landing's key, so a lab that moved from a path on a shared host to its own domain is one page; no host or path is aliased without that recorded redirect (#5638).
+  It never merges two rows whose current lead edges name different researcher ids: a duplicate whose leads the survivor does not hold is refused, the same rule the profile-lab-url lane applies, and a survivor with no lead edge is refused when its lead-bearing duplicates do not all hold the same leads, so two records of one person merge only after researcher-dedupe folds them into one id (#5638).
 This is the lane for a duplicate revealed by a byte-identical custom lab domain: the key is the whole URL rather than a Yale `/lab/<x>` or `/profile/<x>` path, so `crewslab.example.edu/` and `examplelab.org/` are keys while the path lane produces nothing for either (#2581).
 It keys on `websiteUrl` alone, never `sourceUrls`, because a cited source is evidence about a page rather than a claim to be that page, and it prefers the twin with an active PI `RoleAssignment` as canonical so a newer bio clone folds into the established lab.
 A shared URL is not by itself a same-entity proof, so the lane refuses rather than merges in three cases: a group containing a low-trust `faculty-research-area-` shell is left to the profile-area lane, a group containing a funding shell merges only when the shared URL is a distinctive non-funding host (issue #1147), and a row whose entity type the `--org-name-only` lane owns (`CENTER`, `INSTITUTE`, `INITIATIVE`, `CORE_FACILITY`) is dropped from the cluster, because a facility sharing a person's URL is being cited by that person rather than named twice.
@@ -75,12 +101,23 @@ The same refusal also binds `research-entity:merge-same-lead-duplicate-groups`, 
 It computes those verdicts in-process through `planUrlIdentityLaneVerdicts`, running all three URL lanes' loaders and planners, rather than reading lane report files (#3724).
 It refuses to plan at all if a lane was not read or read as many rows as its limit, and its report's `urlLaneInputs` records what each lane read, so a hold that removed nothing because its input was empty cannot pass for one that found nothing.
 The refusal is deliberately independent of `multiPersonEntityQuarantine`, which keys on PI `RoleAssignment` links rather than on cited URLs, so a group carrying no multi-person role links can still be refused on its evidence alone.
+Beside its shared-lead arms, `research-entity:merge-same-lead-duplicate-groups` folds one lab stored twice on its own site, as `leadless-or-member-led-twin`: a two-row group whose normalized names agree and in which exactly one row anchors, so the other row has no lead or is led only by people who lead or belong to the anchor, and a twin led by anyone outside the anchor never folds under it; see `docs/decisions.md` (#6206).
+That arm runs before the shared-lead holds, so a leadless twin is folded rather than held as vacuous, and after the two upstream exclusions above, so a group a URL lane plans or the conflation guard quarantines still goes to those lanes.
+Its candidate groups are the visibility gate's exact-URL groups plus `ownSiteIdentityPairs`, two rows whose own `websiteUrl` values share one `normalizeWebsiteUrlIdentityKey` (`www.` folded), which the exact-URL keying never pairs; only two-row collisions are paired and a pair an exact group already holds is skipped.
+Its `--apply` refuses without `--only-fields=<list>`, validated against the rematerialize tracked-field allowlist, because both survivor rematerialize passes run as `writeOnlyFields` passes with `keepPostProjectionEvidence: true`, and an unscoped pass would write every tracked field, `researchAreas` included (#6296).
+A dry run given the same list reports `scopedSurvivorPlan`: each survivor's planned set and unset paths under that scope, and `changedFields`, the top-level fields whose stored value would move (ignoring subdocument `_id`s and key order), so the apply's write surface is read before it runs.
+That plan is the survivor's before the fold, so a field the repointed role edges move, such as `inferredPiUserId`, can still change once the losers are archived; `lastObservedAt` is written by every pass and always reads as changed.
+An apply re-gates each survivor right after its two rematerialize passes and before the next merge (`settleMergedSurvivor`), because the materializer never recomputes a tier, and reports the merged `survivorRegate` summary plus any `survivorRegateError`; a dry run re-gates nothing (#6374).
 
 **Never-demote survivor selection.** `resolveNonDemotingMerge` runs for every lane, not only the profile-lab-url one it shipped for, because nothing about a demotion is lane-specific: any lane that keeps a less-visible survivor drops a `student_ready` row out of student view (#2060).
+In `research-entity:merge-same-lead-duplicate-groups` every planned merge, shared-lead or twin, goes through `resolveNonDemotingMerge` before it is reported or applied, and a merge the resolver defers or would hand to a different survivor is held as `would-demote-a-served-row` rather than swapped, because that lane's survivor is the one its ownership evidence or twin anchor chose (#6272).
+That lane carries only funding, so it passes `SURVIVOR_KEEPS_ITS_OWN_CARD`: the candidate is simulated with its own prose, research areas, source URLs, and departments, and with the leads of all twins, since the merge repoints their role edges.
 Before committing each group it hydrates a candidate survivor with the best card (the fullest useful descriptions, applied only when the candidate states no prose of its own, and the leads of all twins) plus the candidate's own research areas, source URLs, and departments together with the ones the planned merge actually carries (`mergedResearchAreas`, `mergedSourceUrls`, `mergedDepartments`), so a low-trust shell's topics never count toward the simulated tier (#3779), and simulates the served student-visibility tier with `computeResearchEntityStudentVisibility`, then accepts a candidate only when its simulated tier does not fall below the best input twin's tier.
 It tries the preferred identity-consistent canonical first, then higher-tier twins, and if none holds the tier it defers the group (reported as `deferredAsWouldDemote`) rather than merging, so a merge is structurally incapable of dropping a `student_ready` lab out of student view.
 Its description pick excludes low-trust area and funding shells the same way the plan builders do, so running it in `--funding-only` cannot promote a grant shell's generated blurb onto a real research home.
-When holding the tier requires keeping a twin rather than the planned canonical, the swapped-in survivor keeps its own name and website, because the plan's `canonicalName`/`canonicalWebsiteUrl` carry was gated on the planned canonical and was never evaluated for it.
+When holding the tier requires keeping a twin rather than the planned canonical, the swapped-in survivor keeps its own name, because the plan's `canonicalName` carry was gated on the planned canonical and was never evaluated for it.
+The merge never writes a survivor's website itself: the plan's `canonicalWebsiteUrl` is reported, and after the fold `deriveMergeSurvivorWebsite` runs a `writeOnlyFields: ['website', 'websiteUrl']` materialize, so a merged-in twin's website fills an empty slot only when an observation backs it, and never one the survivor's own lab-identity lane owns (#6323).
+Under `--delete-duplicates` the loser rows are deleted but not their observations: `entityId`-keyed and funding observations are relinked onto the survivor first and reach that pass, while slug-keyed loser observations are stranded, so a donor website only those back is not carried.
 A swap is refused outright, and the group deferred as `deferredAsWouldSwapPinnedCanonical`, whenever the planned canonical is pinned: under `--accepted-decisions`, because the reviewer approved that survivor, and under `--delete-duplicates`, because the swap would hard-delete it.
 `deferredAsWouldDemoteGroups`, `deferredAsWouldSwapPinnedCanonicalGroups`, and the deferral-adjusted `appliedGroups` are reported at the top level of every run, so a run that deferred every group cannot read as a run that merged them.
 
@@ -101,7 +138,7 @@ The one exception is a never-demote swap, which archives the planned canonical a
 ## Merge rematerialization
 
 `--rematerialize-canonical` re-projects the survivor from its own observations after the relink, instead of trusting the carry list alone to move evidence.
-The carry writes eleven fields, so every field outside it keeps the survivor's own value however thin, which is how a merge can leave a research home emptier than the twin it archived.
+The carry writes ten fields, so every field outside it keeps the survivor's own value however thin, which is how a merge can leave a survivor emptier than the twin it archived.
 Because the relink repoints each duplicate's observations onto the survivor, the survivor's evidence set is already the union of the group's, and the materializer resolves it per field with the usual provenance and confidence rules.
 The step is skipped when references were not relinked, because projecting from a survivor's own evidence alone would unset what the carry just wrote, and it is skipped in Beta and Production, where the promotion path copies materialized collections without the evidence store and every materialization reaches an empty observation set.
 
@@ -124,7 +161,7 @@ A merge never discards evidence:
 - Non-conflicting duplicate memberships are relinked to the canonical entity; a duplicate membership that would collide with an existing canonical membership is retired with `isCurrentMember: false` and an `endedAt` timestamp instead of being dropped.
 - Relationships, entry pathways, access signals, contact routes, posted opportunities, and scholarly links are relinked to the canonical entity, or archived when relinking would violate a unique key.
 - Students' saved `ResearchPlan`s on a duplicate are carried to the canonical entity, moved whole or combined with the student's plan already there, and never archived; the carry rules live in [`research-model.md`](research-model.md) (#4701).
-- When the canonical entity lacks a concrete website but a merged duplicate carries one, the canonical inherits that concrete `websiteUrl`, and if its own name is only a PI-derived `<PI> Lab` placeholder it also inherits the donor's real `name`/`displayName`; the `reviewBreakdown` reports these as `groupsCarryingCanonicalWebsite` and `groupsCarryingCanonicalName`.
+- When the canonical entity lacks a concrete website but a merged duplicate carries one, the plan reports the donor's `websiteUrl` but the merge never writes it, and `deriveMergeSurvivorWebsite` derives the survivor's website from evidence after the fold (#6323); if the canonical's own name is only a PI-derived `<PI> Lab` placeholder it inherits the donor's real `name`/`displayName`; the `reviewBreakdown` reports these as `groupsCarryingCanonicalWebsite` and `groupsCarryingCanonicalName`.
 - After apply, the student visibility gate is recomputed for each affected canonical entity and those canonicals are force re-synced to Meilisearch, so reads never serve a stale tier and the surviving entity's search document reflects the relinked members/lead even when its tier did not change.
 - Bookmarked or inbound requests to an archived duplicate's slug follow the tombstone's `canonicalGroupId` chain, hop by hop, until it reaches a live public canonical entity and `302`s there instead of returning a `404`, so saved links to a merged-away duplicate still land on the surviving research home even when an earlier dedupe pass left an intermediate hop pointing at another archived or suppressed shell; a cycle guard and a 10-hop cap bound the walk, and a chain that dead-ends at no live public entity still returns a `404`.
 
@@ -181,8 +218,9 @@ SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi \
 The high-confidence eponymous subset of same-PI dedupe (a `faculty-research-area-*` shell that shadows the SAME PI's own concrete lab, guarded against CENTER/INSTITUTE canonicals) can run automatically inside the scraper sweep instead of the manual review workflow above.
 It is exposed as the `research-entity:merge-eponymous-fra` stage, wired into the `development-full` post-run pipeline before `visibility-gate` and `search-sync`, so the student-visibility gate and the search index evaluate the merged canonical.
 The sibling accountless-researcher-shell dedupe stage (`researchers:dedupe-accountless-shells`) runs by default immediately before this FRA merge so same-name researchers are unified before entities are merged; disable it with `SCRAPER_SWEEP_DEDUPE_RESEARCHERS=0`.
-That stage ranks same-name researchers by identity strength (directory-backed, meaning a linked account or a held `identifiers.email`, then `identifiers.netid`-backed, then name-only) and folds each researcher into the single strongest same-name researcher that outranks it, so a netid-backed researcher is itself a canonical merge target for name-only shells while still folding into a directory-backed canonical.
-A fold is refused when the two sides carry different ORCIDs or different netids (`ORCID_CONFLICT`, `NETID_CONFLICT`), when two equally strong candidates share the name (`AMBIGUOUS_MULTIPLE_CANONICAL`), or when nothing outranks the researcher (`NO_CANONICAL`).
+That stage ranks same-name researchers by identity strength (directory-backed, meaning a linked account or a held `identifiers.email`, then `identifiers.netid`-backed, then name-only) and folds each researcher into the single strongest same-name researcher that outranks it, so a netid-backed researcher is itself a canonical merge target while still folding into a directory-backed canonical.
+A matching name alone never folds: the exact-name arm needs an agreeing netid or ORCID, and a pair joined by a name alone is refused (`NAME_ONLY_EVIDENCE`) and listed for operator review (#6378, `docs/research-model.md`).
+A fold is also refused when the two sides carry different ORCIDs or different netids (`ORCID_CONFLICT`, `NETID_CONFLICT`), when two equally strong candidates share the name (`AMBIGUOUS_MULTIPLE_CANONICAL`), or when nothing outranks the researcher (`NO_CANONICAL`).
 A group of such researchers with no directory-backed member can still fold into a survivor chosen among themselves, reported as `accountlessClusters`; `docs/research-model.md` owns that rule.
 Several identities are tried before the name, and `foldsByMatchedIdentity` reports which one decided each fold; `docs/research-model.md` owns the ordered list.
 The roster arm folds a shell whose live edge carries the same source and membership key on the same entity as an outranking researcher's edge that records `rosterProvenance.identityBasis`, which a roster lane writes only when it proved who the listing names; the names must agree, as they must for every identity join, and two agreeing holders fold nothing.
@@ -246,8 +284,32 @@ These are the bulk of the integrity gate's `officialLabUrlResearchEntities` grou
 Both URL stages need the two rows to share an address, so one lab listed by a school's lab index and by its own domain stayed two rows under one lead, the extra one held at `operator_review` with `duplicate_risk` (#4651).
 `shared-person-name-agreed-dedupe` (`research-entity:dedupe-by-pi --shared-person-id --require-name-agreement --apply --confirm-research-entity-pi-dedupe --limit=10000 --max-apply=<max>`) reaches them through the lead person.
 `--require-name-agreement` groups each lead's rows by `entityType` and by name after folding diacritics and punctuation and dropping `the` and the kind nouns (lab, laboratory, research, faculty, group), so only rows agreeing on all three merge and a lead's other rows neither join nor block the group, because a shared lead alone does not make two rows one entity (#3279): one person can lead a lab and an unrelated project under another name.
+A lab named for its lead takes an eponymous key instead: when the words before its first kind noun, or its whole strict name key, are the lead's surname, optionally preceded by the lead's given names or initials, it agrees with every other such name of that type under that lead whatever follows the kind noun, because a description lane copies a lab site's title and its tagline ("<SURNAME> LAB <tagline> @ Yale") left one lab serving twice beside "<Surname> Lab" (#5308).
+Every name whose strict key is the lead's name takes the eponymous key too, so a bare surname or a "<Surname> Research Group" row still agrees with "<Surname> Lab" as it did under the strict key.
+A topic word in the head keeps the strict key, and a row that more than one person record leads stays out of the lane.
+A faculty research row whose name is a lab name ("<Surname> Lab") counts as a `LAB` for the type half of the key, because one department roster mints the person a faculty research row and another school's lab index mints the lab under the same name; in such a mixed group the `LAB` row stays canonical regardless of which roster holds the lead's primary appointment (#5390).
+A faculty research row named any other way ("<Name> Research") keeps its own type and never joins a lab here.
+The lane also groups live roster rows by the person-specific Yale mailbox the roster read them under (`loadRosterMailboxCandidateRows`, #5969), because one person on two rosters can end up with two lead researchers and every lead-keyed group is then blind to the pair.
+Those groups go through the same name-agreement builder and the same conflated-profile quarantine and distinct-people verdicts, and a mailbox group that touches a row a lead group already plans, or a row that more than one lead researcher leads, is dropped.
+A merge repoints every non-repeated lead edge onto the survivor, so a co-directed row keeps all its co-directors.
+A group whose row names state two different middle initials is refused, because the name key drops a lone initial and two namesakes under one wrongly folded lead would otherwise agree (#5969).
+A profile page slug that carries nursing credentials (`-phd-mph-bsn`, `-aprn-fnp-c-faan`) reads as the same person as the plain slug, because stripping stopped at the first credential the suffix list did not know and the conflated-profile quarantine then read one person's two pages as two people; the list is now the one in `server/src/utils/degreeTokens.ts`, shared with the roster name normalizer, and `skills/scrapers/SKILL.md` owns its contract.
 The plain `--shared-person-id` mode stays operator-only.
 The stage runs under the same flag and contract as the URL stages and writes `development-shared-person-name-agreed-dedupe.json`.
+
+### A faculty research row that restates its lead's own lab
+
+`research-entity:merge-eponymous-fra` also folds a faculty research row into its lead's own lab on a witness, not on name shape (#5969).
+The eponymous lane folds only a person-named shell, and a blind ballot found faculty research rows restating their lead's lab that carry their own names and sites, so name shape never reached them.
+Two witnesses count, both in `services/witnessedFraLabFold.ts`.
+The lab's own page witness: the person holds the lab's PI edge, that edge carries evidence (a source or a confidence above zero), the stored lab-site lead verification confirms that person as PI and records that the page names them (`matchedBy` `NAMED_ON_PAGE`, or `namedOnPage` beside a profile-link confirmation), the verification shows no contradiction, and it was read from the website the lab still serves (`leadVerificationReadsServedPage`, the same rule the served page applies, because a lab that lost or changed its website keeps its last verdict) (#6281); it re-derives on every run, so it is a lane.
+A confirmation by a profile link alone, or by the surname in the site's address, is not a witness, because a page naming a different overseer also links the person and an address does not read the page; measured on Development on 2026-11-12, the only fold that link alone produced was a pair a blind ballot refused, and it rested on a legacy PI edge with no source and confidence zero.
+The lane sets `namedOnPage` from the page's visible text only, never from a link's own slug, and a lab's stored verification carries it only after the lab-site verification lane has re-read that lab, so run that lane before the fold on Development.
+The ballot witness: `--ballot-pairs <file.json>` (an array of `{ label, facultyRowId, labId }`) names pairs an operator's blind ballot confirmed, and each folds only when one researcher holds a lead edge on both rows; the label is the recorded evidence.
+A co-director is not the lab's PI, so a co-director's separate lab never folds a row on the page witness.
+A row with two candidate labs, or whose ballot and page witnesses disagree, is refused with the reason in `witnessedFoldRefusals`; a fold touching a row the eponymous lane already plans is left to that lane, and that, a second row folding into a lab already folding, a row that did not load, a fold the distinct-people verdicts refuse, and a fold the `--max-merges` cap defers are each reported there with their own reason, so `witnessedFolds` lists only the folds this run plans.
+The merge repoints every non-repeated lead edge onto the lab, so a co-directed lab keeps all its co-directors.
+The recorded distinct-people verdicts still refuse a fold whose rows' leads include a pair recorded as two people, even when both already co-lead the lab.
 
 ## Durable canonical redirect (permanent, delete-safe merge)
 
@@ -269,6 +331,10 @@ Within one lane the newest read wins whichever key it was filed under, as it alr
 Identity, lead and visibility fields (`SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS` in `entityMaterializer.ts`, for example `name`, `slug`, `entityType`, `school`, `lead`, the `inferredPi*` and `inferredDirector*` fields, and `studentVisibility*`) stay the survivor's own, so a loser cannot re-open the merge decision on every resolve.
 The one exception is `entityType` on a survivor with no type observation of its own: a loser's observation asserting the type the survivor already holds backs that type, so the stored value resolves from evidence and records it in `fieldProvenance` (#3381).
 A loser's type that contradicts the survivor's never resolves, because an eponymous faculty research profile merged into a lab is evidence the lab exists, not a claim that the lab is a profile.
+The second exception is the PI attribution (`inferredPiUserKey`, `inferredPiUserId`) on a survivor that states none of its own and has no lead lock: the roster that lists the person keeps reading the loser's key after a merge, so the loser's attribution names the survivor's lead, and the person-mint gate counts a merged-in loser's attribution as its survivor's for the same survivors (#5339).
+A survivor that states a PI of its own never takes a loser's, so a merge cannot add a second person beside the lead the survivor's own lane read.
+Nor does a survivor whose losers name different people, or one already holding a live `PI` or `DIRECTOR` edge for someone other than the person the losers name.
+An attribution or held edge that resolves to an archived researcher names nobody who can lead, so it is ignored on both sides of that comparison.
 A low-trust shell loser (`isLowTrustAreaShellSlug`: `faculty-research-area-`, `nih-pi-`, `nsf-pi-`, `federal-pi-`, `doe-pi-`) contributes no `researchAreas` or description prose unless the survivor is itself such a shell, which mirrors the merge plan's `trustedAreaShellEntities` guard (#604, #3330).
 Merge-time unions onto the survivor are therefore durable only where the loser's evidence backs them through these filters; a carried topic from a low-trust shell is refused again on the next resolve by design.
 Access signals for a survivor with merged-in rows derive from the same filtered union, so a loser's access evidence reaches the survivor from either entry point.
@@ -287,8 +353,65 @@ The redirect is written from the shared merge primitive (`applyResearchEntityDed
 This resolution works whether or not the shell row still exists, which makes the merge permanent and lets the shell be deleted safely.
 The redirect supersedes the archived-tombstone resurrection guard for the redirected case; the tombstone guard still covers pre-redirect merges whose shells are only archived.
 
+The redirect checks identity before it carries a person listing onto a person row (#5771).
+When both the merged-away row and the survivor are faculty research rows, the merged-away row's evidence is admitted only if its listed name agrees with the lead the survivor is named after (`listedPersonIsTheNamedLead`: the same name, an initial, a curated nickname pair, a shared given or middle name, or a joined or reordered spelling, and no prefix arm), or if the listing's netid or Yale email local part is that lead's netid, or one of its pages is that lead's own verified Yale official profile link.
+Another lead on the row never vouches for the listing, nor does a lead held only through grant co-PI listings (`grantCoPiListedPersonIds`, #5776).
+Name agreement with the title is read over every lead on the row before the grant co-PI leads are dropped, so a title that names a grant-only lead falls back to nobody rather than promoting the other lead in its place.
+A row whose title names no lead (a lab, a project, or a spelling the strict check misses) is named after its one remaining lead once grant co-PI leads are set aside, unless that lead shares a surname with the person in the row title, because a prefix-built listing must not vouch for itself through a lead it brought (`leadsTheRowIsNamedAfter`).
+A refused listing's observations stay filed under its own key, as an unresolvable chain leaves them: a materialize of that key returns `skipped: 'merge-redirect-identity-refused'`, and the survivor's own resolve leaves them out of `mergedSurvivorEvidence`, which counts them in `redirectRefusedObservations`.
+A stored field whose provenance names a refused listing's observation, and that no live observation now states, is cleared on that resolve, so a value the redirect already carried leaves with its evidence.
+The guard writes no new value and changes no `canonicalGroupId`, so a wrong merge still needs the unmerge below.
+
 Ambiguous, non-eponymous same-PI clusters are never auto-selected here and continue to rely on the manual review workflow and the gate's existing `duplicate_risk` suppress-in-place fallback.
 That fallback is not unconditional suppression: when such a cluster is also joined by a shared-URL duplicate group and every member is held, the gate withdraws the duplicate reasons from one member so the cluster keeps a student-visible card - see [`student-ready-definition.md`](student-ready-definition.md) for the reconciliation rule.
+
+## Reversing a wrong merge
+
+A merge can fold rows that belong to two different people, for example two `<Surname> Lab` rows for different faculty who share a surname (#5454).
+There is no unmerge tool; reversing one is an operator judgement about those rows, and these steps are the procedure.
+Snapshot every row you will touch before each step, and run each step against Development only.
+
+1. Detach the wrong lead from the survivor: archive that one `RoleAssignment` with `reviewStatus: 'DISPUTED'` and a `reviewNotes` entry that records the decision, which keeps every later scrape from re-attaching it.
+Refuse any value derived from the wrong lead, such as a lead-derived `name`, with `research-entity:refuse-field-value --slug=<slug> --field=name --value=<value> --rule=operator_judgement --note='<why>' --decided-by='<who>' --apply --confirm-field-value-refusal`.
+2. Break the redirect before anything below: `$unset` the `canonicalGroupId` on each archived row of the other person, and `$pull` those rows from the survivor's `mergedFrom`.
+Until this is done, every refresh re-derives the other person's evidence into the survivor, and every weekly run feeds it fresh copies, so the steps below would not hold.
+3. Supersede the residue: mark the remaining live observations about the other person that are filed under the survivor as `superseded: true` with a `rollback` reason, then `$pull` any stray `sourceUrls` or `departments` they left.
+Query both identity forms, `entityKey` and `entityId`, of the survivor and of every merged row.
+4. Let the lanes finish: attach the right lead through `research-entity:attach-lab-site-named-leads` where the lab's own site names them, re-gate the survivor, and let `research-entity:dedupe-by-pi` fold the right person's own row in once the guards no longer refuse it.
+5. Restore the detached person when their own evidence passes the directory test (a current Yale appointment, at Yale, and their own research program, read from official sources):
+snapshot the row, set `archived: false` on that one row only, run `research-entity:rematerialize --slugs=<slug> --apply --confirm-rematerialize`, and confirm that a second run plans no change.
+The flag has to be set by hand because `materializeEntity` skips every archived research row (`skipped: 'archived-research-entity'`), so neither a rematerialize nor a fresh scrape can re-activate it.
+Only the lifecycle flag is written; every field is then derived from the row's own evidence, so nothing needs a lock.
+6. Check the stored tier for the touched rows with `student-visibility:gate --collection=research --record-id=<id> --apply --confirm-student-visibility-apply --max-apply=<n>`, repeating `--record-id` once per row, run `yarn development:search:sync`, and re-read the served detail pages and a search for each person's name.
+
+Every archive records an `archivedReason`, because `archivedEntityUpdate` requires one.
+If unmerges become common, that reason is how an engine pass could automate step 5: it would find rows archived only by a merge whose redirect was later broken.
+
+## Reversing a wrong researcher fold
+
+A `researchers:dedupe-accountless-shells` fold can join two different people, for example a name-only shell folded into a same-surname record through the shared-row arm (#5995).
+Reversing one is an operator judgement about that record, and three audited operator tools perform its writes (#6018).
+Each is for one-row judgements, not a bulk repair path, is a dry run by default, and on apply needs its confirm flag, `ALLOW_NON_PROD_SCRAPER_WRITES=true` and an actor (`--actor` or `DEV_WRITE_OWNER`, which must be a netid or `agent:<name>`, so a bare session label is refused), and takes the Development write lease through its apply guard.
+
+1. Decide which person keeps the record from the official pages, and detach the other person's lead edges from it with `role-assignments:detach-edge`.
+2. `researchers:unfold-shell --shell=<id> --expect-survivor=<id> --note='<why>' --apply --confirm-unfold-shell` un-archives the shell, clears its `dedupedIntoResearcherId` and `dedupedAt`, and records the shell and the survivor as distinct people in the same write, so no fold arm re-joins them on the next sweep.
+It writes an `admin_audit_events` record (`researcher.unfold_shell`) holding the pre-image of the shell, the survivor and every shell edge, and the ids of the edges the fold archived (`foldArchivedEdgeIds`: archived, no `DISPUTED` verdict, no note, on a target and role the survivor also holds).
+A second run is a no-op that reports the earlier audit id.
+It refuses, writing nothing, when the shell was folded again after an earlier unfold (`shell-refolded-after-unfold`), when the survivor was itself folded or is archived, when the survivor differs from `--expect-survivor`, and when the record was never folded or a folded shell is not archived.
+It cannot recover what the fold moved onto the survivor, such as a gap-filled identifier or an edge it re-pointed, because the fold recorded none of that; those come back through the lanes or through `researcher:refuse-field-value` and `role-assignments:detach-edge` on the survivor.
+3. Restore each edge the fold archived with `role-assignments:restore-detached-edge --edge=<id> --unfold-audit=<audit id> ...` (below in [`research-model.md`](research-model.md)).
+4. Refuse the other person's values on each record with `researcher:refuse-field-value`.
+5. `observations:supersede --ids=<id>,<id> --reason='<why>' --apply --confirm-supersede-observations` supersedes the residue: the live observations about the other person filed under the kept record's keys, queried in both identity forms.
+It takes at most 25 ids per run and a required `--reason`, stored in `rollback.reason` with `rollback.rolledBackAt`, and writes one `observation.supersede` audit record per observation holding its pre-image; a second run is a no-op.
+It refuses the whole run when an id does not exist or backs an owner-decided value.
+6. Rematerialize both records' keys, gate the touched rows, run `yarn development:search:sync`, and re-read the served pages.
+
+Owner decisions are recorded in these places, and `observations:supersede` reads the two an observation can back:
+
+- an operator-authored source (`OPERATOR_AUTHORED_SOURCE_NAMES`, the `isManualLock` seeds `manual-admin-edit` and `manual-pi-edit`, plus `operator-led-group-verdict`), whose observation is itself the decision, and which also carries a visibility override asserted through `manual-admin-edit`: refused as `operator-authored-source`;
+- a `manuallyLockedFields` entry whose `fieldProvenance` cites the observation: refused as `backs-a-locked-field`;
+- a `fieldValueRefusals` entry on a row or a person, which rejects a value rather than resting on an observation, so superseding the observation it rejects agrees with it;
+- a `DISPUTED` role edge, a `distinctFromResearcherIds` verdict and a `studentVisibilityOverrideTier`, none of which cites an observation.
 
 ## Deleting inert merge residue
 
@@ -316,6 +439,17 @@ The redirect row is preserved on delete, so a later re-scrape still resolves the
 The command is report-only by default; applying requires `--apply --confirm-archived-entity-cleanup`, an explicit `--limit`, and a `--max-apply` bound, and is env-gated Dev-first through the same `assertScriptApplyAllowed` guard.
 In the sweep, the `archived-cleanup` stage (`research-entity:cleanup-archived --merge-residue-only --limit=5000`) runs after the FRA merge stage and, on the two exhaustive Development modes, switches to apply mode (`--apply --confirm-archived-entity-cleanup --max-apply=5000`) by default so the Dev pipeline deletes inert residue every run.
 Disable the delete by setting `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE` to a falsey value (`0`, `false`, `no`, `n`, `off`, `disable`, or `disabled`); the post-run stages never run on Beta or Prod sweeps, so those paths only ever report merge residue.
+
+## Asking whether deleting a retired row would bring it back
+
+`research-entity:measure-retired-remint` answers it for every archived row with no `canonicalGroupId` (#5189).
+It runs `materializeEntity` as a dry run with `treatArchivedResearchEntitiesAsAbsent` naming every such row, so each key is planned exactly as it would be after deletion, and reports per archive reason how many would be minted again.
+It is read-only, refuses `--apply`, and passes a card synthesizer that calls no model.
+A planned create counts as a mint only when it resolves the fields a real create requires, because the dry run plans a create before the create path skips one with no `name`; such a row reports `skipped: missing-required-fields`, and a row with no slug reports `skipped: no-entity-key`.
+The option is refused outside a dry run, because a projection planned against a row that still exists must never be written.
+On Development on 2026-10-18 it found 893 of 1,644 retired rows would be minted again from their own stored observations (288 of 300 staff-minted, 283 of 496 subordinate-rank, 321 of 789 with no archive reason, and 1 of the 59 under other archive reasons), and 432 planned creates lacked the required fields.
+The subordinate-rank and staff-title gates run in the lanes before an observation is written, so stored evidence reaches the materializer ungated; only the `PROGRAM` refusal, which sits in the materializer, plans no mint.
+That measurement is why Development keeps its archive (see the 2026-10-18 entry for #5148, "Beta And Production Carry No Archived Research Rows", in `docs/decisions.md`): an archived row is what refuses those re-mints.
 
 ## Asking whether an archive lost a lab
 

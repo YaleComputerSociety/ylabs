@@ -32,7 +32,13 @@ export interface ResearchEntityQualitySummary {
 export type StudentVisibilityTier =
   'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 
+export type MatchedLabMemberRole =
+  'core-faculty' | 'affiliated' | 'postdoc' | 'grad-student' | 'undergrad' | 'past-undergrad';
+
 export interface ResearchEntity extends ResearchEntityBacking {
+  matchedMemberName?: string;
+  matchedMemberRole?: MatchedLabMemberRole;
+  leadName?: string;
   /** Whether public lead identity evidence is safe to display or requires review. */
   leadIdentityStatus?: 'verified' | 'under_review';
   /** Public member key for the unique lead matched by entity-owned official profile evidence. */
@@ -62,6 +68,7 @@ export interface NormalizedResearchEntitySearchResponse extends Omit<
 > {
   researchEntities: ResearchEntity[];
   hits: ResearchEntity[];
+  moreTopicResults: ResearchEntity[];
 }
 
 export interface ResearchEntityDetailPayload extends Omit<
@@ -122,10 +129,15 @@ export function normalizeResearchEntitySearchResponse(
         : []
   ).map(normalizeResearchEntity);
 
+  const moreTopicResults = Array.isArray(response.moreTopicResults)
+    ? response.moreTopicResults.map(normalizeResearchEntity)
+    : [];
+
   return {
     ...response,
     hits: researchEntities,
     researchEntities,
+    moreTopicResults,
     estimatedTotalHits: response.estimatedTotalHits ?? researchEntities.length,
     page: response.page ?? 1,
     pageSize: response.pageSize ?? researchEntities.length,
@@ -161,5 +173,6 @@ export function normalizeResearchEntityDetailPayload(
     affiliatedRelationships: payload.affiliatedRelationships ?? [],
     affiliatedResearchEntities: payload.affiliatedResearchEntities ?? [],
     similarResearchEntities: payload.similarResearchEntities ?? [],
+    alsoLedResearchEntitiesByLead: payload.alsoLedResearchEntitiesByLead ?? [],
   };
 }

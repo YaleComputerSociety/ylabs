@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { lookupMock } = vi.hoisted(() => ({ lookupMock: vi.fn() }));
 
@@ -10,6 +10,7 @@ import {
   assertPublicHttpUrl,
   classifyHostnameResolution,
   isPublicHostname,
+  NAME_LOOKUP_TIMEOUT_MS,
   SsrfBlockedError,
 } from '../ssrfGuard';
 
@@ -201,5 +202,23 @@ describe('hostname resolution classification (#2709)', () => {
     const blocked = await assertPublicHttpUrl('https://metadata.example.edu/x').catch((e) => e);
     expect(blocked).toBeInstanceOf(SsrfBlockedError);
     expect(blocked.reason).toBe('private-address');
+  });
+});
+
+describe('a resolver that never answers', () => {
+  beforeEach(() => {
+    lookupMock.mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is a resolver failure once the lookup bound passes, so the fetch fails instead of waiting', async () => {
+    lookupMock.mockImplementation(() => new Promise(() => {}));
+    const verdict = classifyHostnameResolution('silent.example.edu', async () => {});
+    await vi.advanceTimersByTimeAsync(NAME_LOOKUP_TIMEOUT_MS);
+    await expect(verdict).resolves.toEqual({ kind: 'resolver-failure' });
   });
 });

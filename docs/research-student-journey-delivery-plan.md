@@ -59,7 +59,7 @@ Progressive disclosure should keep early discovery quiet and move detail into th
   Access context may only break close relevance ties within a bounded server-owned rule.
 - Show at most one sparse, claim-specific, positive planning signal on an entity card.
 - Do not add a parallel results stream, persistent access controls, generic scores, or negative unknown labels.
-- The `Has hosted undergrads before` and `Documented way in` browse controls were retired from research discovery under issue `#1884`, and issue `#2527` then removed the `hasDocumentedWayIn` projection behind the latter outright; the sparse positive card signal remains server-owned, derived from the entity access summary rather than a persistent access-oriented filter, and neither revives the retired unsupported undergraduate-evidence filter.
+- The `Has hosted undergrads before` and `Documented way in` browse controls were retired from research discovery under issue `#1884`, and issue `#2527` then removed the `hasDocumentedWayIn` projection behind the latter outright; the sparse positive card signal remains server-owned, derived from the entity access summary rather than a persistent access-oriented filter. Issue `#5123` re-exposed a hosted-undergraduates toggle (`undergrad=1`) that filters on the same predicate as the "Has hosted undergraduate researchers" badge, a historical fact rather than a way in; `docs/decisions.md` 2026-10-18 owns why.
 
 ## Status Definitions
 
@@ -95,6 +95,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Subsequent state:** issue `#1884` then retired the research-area and hosts-undergrads browse controls (plus the entity-type filter) from research discovery, removing their state, URL params, chips, and analytics kinds along with the research-area field directory and zero-result area pivot; the `researchAreas` field and the standalone research-area pages remain. School and department stayed the adaptive query-scoped discovery filters, so EF-02 stays Complete.
   Issue `#2195` then re-exposed an entity-type axis as a third adaptive control, a single-select Type filter backed by the `entityType` facet the index and the search route already served, round-tripping through a `type` URL param, the snapshot restore, the active-filter count, chips (in the disclosure and in the zero-result recovery panel), clear-all, and the reserved `research_type` analytics kind.
   It differs from the `#1884` control in accepting only the canonical `researchEntityTypes` enum and in labelling each value per type rather than per kind; `docs/decisions.md` 2026-09-22 owns why, and records the coarse-bucket question it leaves open.
+  Issue `#5141` then moved the axis onto the derived `researchType` index field and added a Creative practice option, hidden at a count of 0, so the facet buckets match the card labels.
 - **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171), [#196](https://github.com/YaleComputerSociety/ylabs/pull/196), [#1884](https://github.com/YaleComputerSociety/ylabs/issues/1884), [#2195](https://github.com/YaleComputerSociety/ylabs/issues/2195).
 
 #### EF-03 - Sparse Documented-Way-In Signal

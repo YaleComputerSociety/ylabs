@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  WRITER_CONTRACT_VERSION,
   buildWriterEvidenceSnippets,
   buildWriterEvidenceSnippetsWithMergedInFill,
   eligibleWriterGrants,
   orderWriterEvidence,
   writerEvidenceRank,
 } from '../coverageSynthesisCore';
+import { WRITER_CONTRACT_VERSION } from '../writtenDescriptionDerivationCore';
 import {
   coverageSynthesisDecision,
   isPastCareerClauseSentence,
@@ -55,7 +55,7 @@ describe('writer evidence is text on a fetched page (#4867)', () => {
   it('cites a model-text value found near-verbatim in the stored copy of its page', () => {
     const page = `Home People ${MODEL_TEXT} Contact`;
     const snippets = buildWriterEvidenceSnippets(
-      [observation(MODEL_TEXT, 'lab-microsite-description-llm', 'https://marsh.example.edu/')],
+      [observation(MODEL_TEXT, 'fra-profile-research-synthesis', 'https://marsh.example.edu/')],
       [],
       { now: NOW, storedPageText: () => page },
     );
@@ -81,7 +81,7 @@ describe('writer evidence is text on a fetched page (#4867)', () => {
   });
 
   it('re-judges every row under the new contract', () => {
-    expect(WRITER_CONTRACT_VERSION).toBe('written-description-4915-v2');
+    expect(WRITER_CONTRACT_VERSION).toBe('written-description-5961-v2');
   });
 });
 
@@ -107,20 +107,20 @@ describe('writer evidence order (#4867)', () => {
     );
     const ordered = orderWriterEvidence([other, profile, site], 'https://marsh.example.edu/');
     expect(ordered.map((obs) => obs.value)).toEqual([site.value, profile.value, other.value]);
-    expect(writerEvidenceRank(site, 'https://marsh.example.edu/')).toBe(0);
-    expect(writerEvidenceRank({ sourceName: 'nih-reporter', sourceUrl: '' })).toBe(3);
+    expect(writerEvidenceRank(site, 'https://marsh.example.edu/')).toBe(1);
+    expect(writerEvidenceRank({ sourceName: 'nih-reporter', sourceUrl: '' })).toBe(4);
   });
 
   it('treats only pages under a shared-host site path as the row site', () => {
     const websiteUrl = 'https://medicine.yale.edu/lab/marsh/';
     const rank = (sourceUrl: string, sourceName = 'yale-research-official') =>
       writerEvidenceRank({ sourceName, sourceUrl }, websiteUrl);
-    expect(rank('https://medicine.yale.edu/lab/marsh/research/')).toBe(0);
-    expect(rank('https://medicine.yale.edu/lab/marsh')).toBe(0);
-    expect(rank('https://medicine.yale.edu/lab/marshland/')).toBe(2);
-    expect(rank('https://medicine.yale.edu/lab/reef/')).toBe(2);
-    expect(rank('https://medicine.yale.edu/news/story/')).toBe(2);
-    expect(rank('https://medicine.yale.edu/profile/someone/')).toBe(1);
+    expect(rank('https://medicine.yale.edu/lab/marsh/research/')).toBe(1);
+    expect(rank('https://medicine.yale.edu/lab/marsh')).toBe(1);
+    expect(rank('https://medicine.yale.edu/lab/marshland/')).toBe(3);
+    expect(rank('https://medicine.yale.edu/lab/reef/')).toBe(3);
+    expect(rank('https://medicine.yale.edu/news/story/')).toBe(3);
+    expect(rank('https://medicine.yale.edu/profile/someone/')).toBe(2);
   });
 
   it('does not rank a page as the row site because its lane reads lab sites', () => {
@@ -129,7 +129,7 @@ describe('writer evidence order (#4867)', () => {
         { sourceName: 'yse-centers-index', sourceUrl: 'https://center.example.edu/' },
         'https://marsh.example.edu/',
       ),
-    ).toBe(2);
+    ).toBe(3);
   });
 });
 
@@ -168,18 +168,21 @@ describe('the grant rule (#4867, owner direction)', () => {
     ]);
   });
 
-  it('reads only grants the lead holds as PI that are active or ended within five years', () => {
+  it('reads only grants the lead holds as PI or co-PI that are active or ended within five years', () => {
     const kept = eligibleWriterGrants(
       [
         grant({ title: 'active' }),
         grant({ title: 'recent', endDate: '2022-06-01' }),
         grant({ title: 'old', endDate: '2019-06-01' }),
         grant({ title: 'copi', role: 'copi' }),
+        grant({ title: 'old copi', role: 'copi', endDate: '2019-06-01' }),
+        grant({ title: 'role-less', role: undefined }),
+        grant({ title: 'other role', role: 'investigator' }),
         grant({ title: 'undated', startDate: undefined, endDate: undefined }),
       ],
       NOW,
     ) as Array<{ title: string }>;
-    expect(kept.map((entry) => entry.title)).toEqual(['active', 'recent']);
+    expect(kept.map((entry) => entry.title)).toEqual(['active', 'recent', 'copi']);
   });
 });
 
@@ -242,7 +245,7 @@ describe('the writer refuses wrong attribution and past work (#4867)', () => {
 
 describe('a merge survivor reads its merged-in rows only to fill empty evidence', () => {
   const ROSTER_PROSE =
-    'Studies asymptotic decision theory, including shrinkage estimation, wavelet regression and the theory of high-dimensional covariance estimation.';
+    'His research addresses asymptotic decision theory, including shrinkage estimation, wavelet regression and the theory of high-dimensional covariance estimation.';
 
   it('writes from a merged-in row when the survivor carries no evidence of its own', async () => {
     const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(

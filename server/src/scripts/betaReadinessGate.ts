@@ -8,6 +8,7 @@ import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,22 +48,15 @@ const LEGACY_COLLECTIONS = [
 ] as const;
 
 export interface BetaReadinessGateCliOptions {
-  confirmBetaBackup: boolean;
   output?: string;
 }
 
 export function parseBetaReadinessGateArgs(argv: string[]): BetaReadinessGateCliOptions {
-  const options: BetaReadinessGateCliOptions = {
-    confirmBetaBackup: false,
-  };
+  const options: BetaReadinessGateCliOptions = {};
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = argv[i + 1];
-    if (arg === '--confirm-beta-backup') {
-      options.confirmBetaBackup = true;
-      continue;
-    }
     if (arg === '--output') {
       options.output = resolveSafeJsonReportOutputPath(next);
       i++;
@@ -83,7 +77,7 @@ export function writeBetaReadinessGateOutput(result: unknown, output?: string): 
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
 }
 
 export function buildBetaReadinessGateOutput<T extends object>(
@@ -124,6 +118,34 @@ function describeMongoTarget(rawUrl: string | undefined): string {
   }
 }
 
+export function buildBetaReadinessGates(evidence: {
+  legacyCollectionCounts: Record<string, number>;
+  missingSources: readonly string[];
+}) {
+  const legacyResidueCount = Object.values(evidence.legacyCollectionCounts).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+  return {
+    canonicalMigration: {
+      status: legacyResidueCount === 0 ? 'ready' : 'blocked',
+      message:
+        legacyResidueCount === 0
+          ? 'Canonical hard migration check found no legacy source collection rows.'
+          : 'Legacy source collections still contain rows; clean them up in Development and let the Development-to-Beta refresh mirror the result.',
+      legacyCollectionCounts: evidence.legacyCollectionCounts,
+    },
+    sourceMetadata: {
+      status: evidence.missingSources.length === 0 ? 'ready' : 'blocked',
+      message:
+        evidence.missingSources.length === 0
+          ? 'Expected scraper source metadata exists.'
+          : 'Expected scraper source metadata is missing; the Development-to-Beta refresh copies the sources collection.',
+      missingSources: [...evidence.missingSources],
+    },
+  };
+}
+
 export const betaReadinessExitCode = (blockingGateNames: readonly string[]): number =>
   blockingGateNames.length > 0 ? 1 : 0;
 
@@ -158,34 +180,7 @@ async function main(): Promise<void> {
       LEGACY_COLLECTIONS.map(async (name) => [name, await collectionCount(name)] as const),
     ),
   );
-  const legacyResidueCount = Object.values(legacyCollectionCounts).reduce(
-    (sum, count) => sum + count,
-    0,
-  );
-  const gates = {
-    betaBackup: {
-      status: options.confirmBetaBackup ? 'ready' : 'blocked',
-      message: options.confirmBetaBackup
-        ? 'Operator confirmed a Beta backup or restore point exists.'
-        : 'Pass --confirm-beta-backup only after a Beta backup or restore point exists.',
-    },
-    canonicalMigration: {
-      status: legacyResidueCount === 0 ? 'ready' : 'blocked',
-      message:
-        legacyResidueCount === 0
-          ? 'Canonical hard migration check found no legacy source collection rows.'
-          : 'Legacy source collections still contain rows; clean them up in Development and let the Development-to-Beta refresh mirror the result.',
-      legacyCollectionCounts,
-    },
-    sourceMetadata: {
-      status: missingSources.length === 0 ? 'ready' : 'blocked',
-      message:
-        missingSources.length === 0
-          ? 'Expected scraper source metadata exists.'
-          : 'Expected scraper source metadata is missing; the Development-to-Beta refresh copies the sources collection.',
-      missingSources,
-    },
-  };
+  const gates = buildBetaReadinessGates({ legacyCollectionCounts, missingSources });
 
   const blockingGateNames = Object.entries(gates)
     .filter(([, gate]) => gate.status === 'blocked')

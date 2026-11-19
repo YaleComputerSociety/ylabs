@@ -203,6 +203,33 @@ export function personNameTokensFromEntityTitle(value: unknown): string[] | null
   return tokens.length >= 2 ? tokens : null;
 }
 
+const TITLE_NAME_RUN_BREAKERS = new Set([
+  'for',
+  'of',
+  'and',
+  'in',
+  'on',
+  'at',
+  'to',
+  'with',
+  'yale',
+]);
+
+export function leadingPersonNameTokensFromEntityTitle(value: unknown): string[] | null {
+  if (typeof value !== 'string') return null;
+  const words = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((token) => token.length >= 2 && !CREDENTIAL_TOKENS.has(token));
+  const breakAt = words.findIndex(
+    (token) => ROLE_WORDS.has(token) || TITLE_NAME_RUN_BREAKERS.has(token),
+  );
+  const tokens = breakAt === -1 ? words : words.slice(0, breakAt);
+  return tokens.length >= 2 ? tokens : null;
+}
+
 function personSlugNameTokens(rawSlug: string): string[] | null {
   if (/\d/.test(rawSlug)) return null;
   const tokens = rawSlug

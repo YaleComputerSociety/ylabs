@@ -462,6 +462,21 @@ describe('departmentUndergradResearchScraper', () => {
     expect(records[0].description).not.toContain('coordinator@');
   });
 
+  it('persists the department page text a program record was read from, without a raw email (#6402)', () => {
+    const tobinConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'economics-tobin-ra',
+    );
+    const records = parseStructuredOpportunityPage(TOBIN_HTML, tobinConfig!);
+    const source = departmentUndergradResearchRecordsToObservations(records).find(
+      (observation) => observation.field === 'fullSourceDescription',
+    );
+    expect(source?.entityType).toBe('fellowship');
+    expect(typeof source?.value).toBe('string');
+    expect(String(source?.value)).not.toBe(records[0].description);
+    expect(String(source?.value)).not.toMatch(/^Supports undergraduate research in Economics\./);
+    expect(String(source?.value)).not.toContain('coordinator@yale.edu');
+  });
+
   it('does not take a news link whose slug merely contains "form" as the application route', () => {
     const html = `
       <main>
@@ -519,6 +534,62 @@ describe('departmentUndergradResearchScraper', () => {
       title: 'Fixture Scholars',
     });
     expect(record.joinPageUrl).toBe('https://fixture.yale.edu/scholars/applications');
+  });
+
+  it('observes accepting only when the page states rolling review (#6458)', () => {
+    const config = {
+      key: 'fixture-scholars',
+      url: 'https://fixture.yale.edu/opportunities/fixture-scholars',
+      department: 'Fixture Institute',
+      school: 'Yale University',
+      parser: 'structured-opportunity' as const,
+      title: 'Fixture Scholars',
+    };
+    const accepting = (statement: string) =>
+      departmentUndergradResearchRecordsToObservations(
+        parseStructuredOpportunityPage(
+          `<main><h1>Fixture Scholars</h1><p>The program places Yale College undergraduates as research assistants with faculty.</p><p>${statement}</p></main>`,
+          config,
+        ),
+      ).find((obs) => obs.field === 'isAcceptingApplications')?.value;
+
+    expect(
+      accepting(
+        'A committee of faculty and staff review applications regularly and match applicants.',
+      ),
+    ).toBe(true);
+    expect(accepting('Applications are reviewed on a rolling basis.')).toBe(true);
+    expect(accepting('Applications were reviewed on a rolling basis last year.')).toBeUndefined();
+    expect(accepting('The senior essay prospectus is due September 15.')).toBeUndefined();
+    expect(accepting('Students may ask faculty about research.')).toBeUndefined();
+    for (const negated of [
+      'There is no rolling review; the deadline is March 1.',
+      'Rolling admissions are no longer offered.',
+      'You cannot apply at any time; applications open in January.',
+      'Applications are not reviewed on a rolling basis.',
+    ]) {
+      expect(accepting(negated)).toBeUndefined();
+    }
+  });
+
+  it('never gives a department guide page an accepting flag, whatever its labs do (#6458)', () => {
+    const guide = parseGeneralDepartmentResearchPage(
+      `<main><h1>Fixture Studies Undergraduate Research</h1><p>Undergraduates in Fixture Studies can join faculty research labs during the term or the summer for credit or pay.</p><p>Most labs review applications as they come in, so email faculty directly.</p></main>`,
+      {
+        key: 'fixture-studies',
+        url: 'https://fixture.yale.edu/undergraduate/research',
+        department: 'Fixture Studies',
+        school: 'Yale College',
+        parser: 'general-guidance' as const,
+        title: 'Fixture Studies Undergraduate Research',
+      },
+    );
+    expect(guide.length).toBeGreaterThan(0);
+    expect(
+      departmentUndergradResearchRecordsToObservations(guide).some(
+        (obs) => obs.field === 'isAcceptingApplications',
+      ),
+    ).toBe(false);
   });
 
   it('observes the administering office a program page states, and only that (#4589)', () => {
@@ -755,6 +826,62 @@ describe('departmentUndergradResearchScraper', () => {
         ).programKind,
       ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
     });
+
+    it('derives senior essay guidance from a page titled as the senior essay (#5298)', () => {
+      expect(
+        classificationOf(
+          pageWith(
+            '<title>The Senior Essay | Fixture</title>',
+            'The Senior Essay',
+            seniorEssayBody,
+          ),
+        ),
+      ).toMatchObject({
+        programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+        studentFacingCategory: 'Senior essay guidance',
+      });
+    });
+
+    it('summarises a senior essay page as senior essay guidance, not as research openings', () => {
+      const [record] = parseGeneralDepartmentResearchPage(
+        pageWith('<title>The Senior Essay | Fixture</title>', 'The Senior Essay', seniorEssayBody),
+        guidanceConfig,
+      );
+      expect(record.shortDescription).toBe(
+        "Supports undergraduate research in Fixture Studies through the department's guidance on the senior essay.",
+      );
+    });
+
+    it('keeps the research guidance summary for a research guidance page', () => {
+      const [record] = parseGeneralDepartmentResearchPage(
+        pageWith(
+          '<title>Undergraduate Research | Fixture</title>',
+          'Undergraduate Research',
+          guidanceBody,
+        ),
+        guidanceConfig,
+      );
+      expect(record.shortDescription).toBe(
+        'Supports undergraduate research in Fixture Studies through department guidance on finding faculty research opportunities.',
+      );
+    });
+  });
+
+  describe('configured pages for departments that publish no research page (#5298)', () => {
+    it('keeps the economics lane on its research assistant program', () => {
+      const economicsPages = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.filter(
+        (page) => page.department === 'Economics',
+      );
+      expect(economicsPages.map((page) => page.key)).toEqual(['economics-tobin-ra']);
+    });
+
+    it('no longer titles a senior essay page as research', () => {
+      for (const page of DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES) {
+        if (!/senior-essay|senior-project|senior-requirement/.test(page.url)) continue;
+        if (/registration-form/.test(page.url)) continue;
+        expect(page.title).not.toMatch(/Undergraduate Research|Senior Essay Research/);
+      }
+    });
   });
 
   it('parses new official guidance configs as source-backed entity/access evidence only', () => {
@@ -841,17 +968,17 @@ describe('departmentUndergradResearchScraper', () => {
       department: 'Anthropology',
     });
     expect(configsByKey.get('earth-planetary-sciences')).toMatchObject({
-      url: 'https://earth.yale.edu/undergraduate-program',
+      url: 'https://earth.yale.edu/research-opportunities-and-information',
       parser: 'general-guidance',
       department: 'Earth and Planetary Sciences',
     });
     expect(configsByKey.get('political-science')).toMatchObject({
-      url: 'https://politicalscience.yale.edu/academics/about-undergraduate-program',
+      url: 'https://politicalscience.yale.edu/academics/undergraduate-program/senior-essay',
       parser: 'general-guidance',
       department: 'Political Science',
     });
     expect(configsByKey.get('history')).toMatchObject({
-      url: 'https://history.yale.edu/academics/undergraduate-program',
+      url: 'https://history.yale.edu/undergraduate/senior-essay',
       parser: 'general-guidance',
       department: 'History',
     });
@@ -880,17 +1007,18 @@ describe('departmentUndergradResearchScraper', () => {
         expect.objectContaining({
           entityKey: 'department-undergrad-research-earth-and-planetary-sciences',
           name: 'Earth and Planetary Sciences Research Opportunities',
-          sourceUrl: 'https://earth.yale.edu/undergraduate-program',
+          sourceUrl: 'https://earth.yale.edu/research-opportunities-and-information',
         }),
         expect.objectContaining({
           entityKey: 'department-undergrad-research-political-science',
-          name: 'Political Science Undergraduate Research Opportunities',
-          sourceUrl: 'https://politicalscience.yale.edu/academics/about-undergraduate-program',
+          name: 'Political Science Senior Essay',
+          sourceUrl:
+            'https://politicalscience.yale.edu/academics/undergraduate-program/senior-essay',
         }),
         expect.objectContaining({
           entityKey: 'department-undergrad-research-history',
-          name: 'History Undergraduate Research',
-          sourceUrl: 'https://history.yale.edu/academics/undergraduate-program',
+          name: 'History Senior Essay',
+          sourceUrl: 'https://history.yale.edu/undergraduate/senior-essay',
         }),
       ]),
     );
@@ -1109,7 +1237,7 @@ describe('departmentUndergradResearchScraper', () => {
     expect(records).toMatchObject([
       {
         entityKey: 'department-undergrad-research-sociology',
-        name: 'Sociology Undergraduate Research',
+        name: 'Sociology Senior Project',
         undergradAccessEvidence: true,
         description: expect.stringContaining('yearlong program of original research'),
       },
@@ -1299,7 +1427,7 @@ describe('departmentUndergradResearchScraper', () => {
     expect(records).toMatchObject([
       {
         entityKey: 'department-undergrad-research-environmental-studies',
-        name: 'Environmental Studies Senior Essay Research',
+        name: 'Environmental Studies Senior Essay',
         undergradAccessEvidence: true,
         description: expect.stringContaining('original research essay'),
       },
@@ -1311,13 +1439,13 @@ describe('departmentUndergradResearchScraper', () => {
       },
       {
         entityKey: 'department-undergrad-research-history-of-art',
-        name: 'History of Art Senior Essay Research',
+        name: 'History of Art Senior Essay',
         undergradAccessEvidence: true,
         description: expect.stringContaining('original research and writing project'),
       },
       {
         entityKey: 'department-undergrad-research-film-and-media-studies',
-        name: 'Film and Media Studies Senior Essay Research',
+        name: 'Film and Media Studies Senior Requirement',
         undergradAccessEvidence: true,
         description: expect.stringContaining('independent research'),
       },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeResearchEntityBrowseRank, __testing } from '../researchEntityBrowseRank';
 import { toPublicResearchEntityDto } from '../researchEntityDto';
+import { isDemotedServiceCoreReason, serviceCoreDemotionReason } from '../serviceCoreDemotion';
 
 // A "complete" entity: source-backed full description + official URL.
 const completeEntity = () => ({
@@ -347,5 +348,106 @@ describe('computeResearchEntityBrowseRank', () => {
         __testing.ENRICHMENT_POINTS.website + __testing.ENRICHMENT_POINTS.methods,
       );
     });
+  });
+});
+
+describe('service-core browse demotion (#5748)', () => {
+  const coreServiceOffer =
+    'The facility provides flow cytometry and cell sorting services to investigators across campus. ' +
+    'Staff train users on the analyzers and sorters and support experimental design.';
+  const researchText =
+    'The group studies how immune cells migrate into inflamed tissue, combining intravital ' +
+    'imaging with mouse genetics and computational models of cell trafficking.';
+  const rank = (entity: Record<string, any>, hostsAffiliatedResearchHomes = false) =>
+    computeResearchEntityBrowseRank({
+      entity: { ...completeEntity(), ...entity },
+      leadMembers: attachedLead(),
+      hostsAffiliatedResearchHomes,
+    });
+
+  it('demotes a CORE_FACILITY row by the named adjustment', () => {
+    const lab = rank({ entityType: 'LAB' });
+    const core = rank({ entityType: 'CORE_FACILITY' });
+    expect(core - lab).toBe(__testing.SERVICE_CORE_BROWSE_RANK_ADJUSTMENT);
+    expect(__testing.SERVICE_CORE_BROWSE_RANK_ADJUSTMENT).toBeLessThan(0);
+  });
+
+  it('demotes a hosting core by the same amount, with no umbrella penalty on top', () => {
+    expect(rank({ entityType: 'CORE_FACILITY' }, true)).toBe(rank({ entityType: 'CORE_FACILITY' }));
+  });
+
+  it('demotes a faculty research row whose description is a core service offer', () => {
+    const research = rank({ entityType: 'FACULTY_RESEARCH_AREA', fullDescription: researchText });
+    const serviceText = rank({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      fullDescription: coreServiceOffer,
+    });
+    expect(serviceText).toBeLessThan(research);
+    expect(serviceText - research).toBe(__testing.SERVICE_CORE_BROWSE_RANK_ADJUSTMENT);
+  });
+
+  it('demotes a faculty research row whose card alone opens with the service offer', () => {
+    expect(
+      __testing.serviceCoreBrowseRankAdjustment({
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription: coreServiceOffer,
+      }),
+    ).toBeLessThan(0);
+    expect(
+      __testing.serviceCoreBrowseRankAdjustment({
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription: coreServiceOffer,
+        fullDescription: researchText,
+      }),
+    ).toBe(__testing.SERVICE_CORE_BROWSE_RANK_ADJUSTMENT);
+  });
+
+  it('leaves research rows untouched', () => {
+    for (const entity of [
+      { entityType: 'LAB', fullDescription: researchText },
+      { entityType: 'FACULTY_RESEARCH_AREA', fullDescription: researchText },
+      { entityType: 'FACULTY_PROJECT', fullDescription: researchText },
+      { entityType: 'CENTER', fullDescription: researchText },
+      { entityType: 'LAB', fullDescription: coreServiceOffer },
+      { entityType: 'CENTER', fullDescription: coreServiceOffer },
+    ]) {
+      expect(__testing.serviceCoreBrowseRankAdjustment(entity)).toBe(0);
+    }
+  });
+
+  it('classifies exactly the rows the search demotion classifies', () => {
+    const rows = [
+      { entityType: 'CORE_FACILITY', fullDescription: researchText },
+      { entityType: 'FACULTY_RESEARCH_AREA', fullDescription: coreServiceOffer },
+      { entityType: 'FACULTY_RESEARCH_AREA', fullDescription: researchText },
+      { entityType: 'LAB', fullDescription: coreServiceOffer },
+      { entityType: 'INSTITUTE', fullDescription: researchText },
+    ];
+    for (const row of rows) {
+      expect(__testing.serviceCoreBrowseRankAdjustment(row) !== 0).toBe(
+        isDemotedServiceCoreReason(serviceCoreDemotionReason(row, [])),
+      );
+    }
+  });
+
+  it('ranks a complete core below a research row with only a description and a lead', () => {
+    const completeCore = rank({ entityType: 'CORE_FACILITY', websiteUrl: undefined });
+    const plainResearch = computeResearchEntityBrowseRank({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        fullDescription: researchText,
+        shortDescription: 'Immune cell trafficking in inflamed tissue.',
+      },
+      leadMembers: attachedLead(),
+    });
+    expect(completeCore).toBeLessThan(plainResearch);
+  });
+
+  it('keeps every score inside the range the scorer already produced', () => {
+    expect(__testing.BROWSE_RANK_SCORE_FLOOR).toBe(-39);
+    const bareCore = computeResearchEntityBrowseRank({
+      entity: { entityType: 'CORE_FACILITY', fullDescription: '' },
+    });
+    expect(bareCore).toBe(__testing.BROWSE_RANK_SCORE_FLOOR);
   });
 });

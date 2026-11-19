@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { initializeConnections } from '../db/connections';
+import { initializeConnections, runScriptMain } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
 import { Signal } from '../models/signal';
@@ -49,11 +49,13 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   assertRematerializeApplyAllowed,
   collectRematerializeEntityReports,
+  createChunkedRegater,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
+  isLeadEdgesScope,
+  summarizeLeadEdgeChanges,
   rematerializeComparedFields,
   rematerializeEntityReportFromChanges,
-  rematerializeFailureMessage,
   rematerializeReportedChanges,
   rematerializeSkipReasonForEntity,
   rematerializeStateAfterPlan,
@@ -69,6 +71,7 @@ import {
 } from './rematerializeResearchEntitiesCore';
 import { RESEARCH_ENTITY_CONTACT_FIELDS } from '../scrapers/rowKeyedContactEvidence';
 import { loadResearchAreaEvidenceBackedRowIds } from '../scrapers/researchAreaEvidence';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -196,6 +199,7 @@ export async function rematerializeSlug(
     changes,
     foreignContact,
     unbackedResearchAreas: result.unbackedResearchAreas,
+    lastCitationRemovalsWithheld: result.lastCitationRemovalsWithheld,
     cardSynthesisPending: cardSynthesis.requested,
     skipped: result.skipped ?? (cardSynthesis.requested ? undefined : result.plannedWriteSkip),
   });
@@ -233,6 +237,42 @@ async function processAccessSignalsSlug(
   return {
     ...report,
     accessSignalChanges: result.accessSignalChanges,
+    ...(result.skipped ? { skipped: result.skipped } : {}),
+  };
+}
+
+async function processLeadEdgesSlug(
+  slug: string,
+  apply: boolean,
+  includeArchived: boolean,
+): Promise<RematerializeEntityReport> {
+  const before = await loadComparedFields(slug, ['_id', 'slug', 'studentVisibilityTier']);
+  if (!before) return { slug, found: false, changes: [] };
+  const redirectCanonical = await resolveResearchEntityCanonicalIdentity({
+    slug,
+    entityId: before._id ? String(before._id) : undefined,
+  });
+  const skipReason = rematerializeSkipReasonForEntity(
+    before,
+    includeArchived,
+    redirectCanonical?._id ? String(redirectCanonical._id) : undefined,
+  );
+  const report: RematerializeEntityReport = {
+    slug,
+    found: true,
+    entityId: before._id ? String(before._id) : undefined,
+    studentVisibilityTierBefore: before.studentVisibilityTier,
+    changes: [],
+  };
+  if (skipReason) return { ...report, skipped: skipReason };
+  const result = await materializeEntity(
+    'researchEntity',
+    { entityKey: slug },
+    { dryRun: !apply, leadEdgesOnly: true },
+  );
+  return {
+    ...report,
+    leadEdgeResolution: result.leadEdgeResolution,
     ...(result.skipped ? { skipped: result.skipped } : {}),
   };
 }
@@ -345,7 +385,7 @@ function writeReport(report: Record<string, unknown>, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export interface RematerializeRegateSummary {
@@ -356,6 +396,29 @@ export interface RematerializeRegateSummary {
   tierChanged: number;
   tierTransitions: Array<{ recordId: string; label: string; from: string | null; to: string }>;
   counts: Record<string, number>;
+}
+
+export function mergeRematerializeRegateSummaries(
+  summaries: RematerializeRegateSummary[],
+): RematerializeRegateSummary | undefined {
+  if (summaries.length === 0) return undefined;
+  const counts: Record<string, number> = {};
+  for (const summary of summaries) {
+    for (const [key, value] of Object.entries(summary.counts)) {
+      counts[key] = (counts[key] ?? 0) + value;
+    }
+  }
+  const sum = (pick: (summary: RematerializeRegateSummary) => number) =>
+    summaries.reduce((total, summary) => total + pick(summary), 0);
+  return {
+    scopedEntities: sum((summary) => summary.scopedEntities),
+    indexResynced: sum((summary) => summary.indexResynced),
+    indexSyncFailures: sum((summary) => summary.indexSyncFailures),
+    indexSyncDeferred: sum((summary) => summary.indexSyncDeferred),
+    tierChanged: sum((summary) => summary.tierChanged),
+    tierTransitions: summaries.flatMap((summary) => summary.tierTransitions),
+    counts,
+  };
 }
 
 export async function regateRematerializedEntities(
@@ -440,34 +503,35 @@ async function main() {
     slugs = discoveredAccessSignalSlugs;
   }
 
-  const entities = await collectRematerializeEntityReports(slugs, (slug) =>
-    args.accessSignals
-      ? processAccessSignalsSlug(slug, args.apply, args.includeArchived)
-      : rematerializeSlug(
-          slug,
-          args.apply,
-          args.onlyFields,
-          args.includeArchived,
-          args.unbackedProvenance,
-          args.foreignContact,
-          args.resynthesizeCutCards,
-          args.cardModel,
-          args.resynthesizeWeakCards,
-        ),
+  const regater = args.apply ? createChunkedRegater(regateRematerializedEntities) : undefined;
+  const entities = await collectRematerializeEntityReports(
+    slugs,
+    (slug) =>
+      args.accessSignals
+        ? processAccessSignalsSlug(slug, args.apply, args.includeArchived)
+        : isLeadEdgesScope(args.onlyFields)
+          ? processLeadEdgesSlug(slug, args.apply, args.includeArchived)
+          : rematerializeSlug(
+              slug,
+              args.apply,
+              args.onlyFields,
+              args.includeArchived,
+              args.unbackedProvenance,
+              args.foreignContact,
+              args.resynthesizeCutCards,
+              args.cardModel,
+              args.resynthesizeWeakCards,
+            ),
+    regater ? (report) => regater.add(selectRematerializeRegateEntityIds([report])) : undefined,
   );
   const failed = entities.filter((entity) => entity.error);
 
   let regate: RematerializeRegateSummary | undefined;
   let regateError: string | undefined;
-  if (args.apply) {
-    const regateEntityIds = selectRematerializeRegateEntityIds(entities);
-    if (regateEntityIds.length > 0) {
-      try {
-        regate = await regateRematerializedEntities(regateEntityIds);
-      } catch (error) {
-        regateError = rematerializeFailureMessage(error);
-      }
-    }
+  if (regater) {
+    const regated = await regater.finish();
+    regate = mergeRematerializeRegateSummaries(regated.summaries);
+    regateError = regated.error;
   }
 
   const provenanceReconciliation = args.unbackedProvenance
@@ -491,6 +555,9 @@ async function main() {
     accessSignalsMode: args.accessSignals,
     discoveredAccessSignalCount: discoveredAccessSignalSlugs?.length,
     accessSignalChanges: args.accessSignals ? summarizeAccessSignalChanges(entities) : undefined,
+    leadEdgeChanges: isLeadEdgesScope(args.onlyFields)
+      ? summarizeLeadEdgeChanges(entities)
+      : undefined,
     retiredProvenanceEntries: provenanceReconciliation?.retired,
     relinkedProvenanceEntries: provenanceReconciliation?.relinked,
     onlyFields: args.onlyFields,
@@ -505,6 +572,7 @@ async function main() {
     unbackedResearchAreas: summary.unbackedResearchAreas,
     researchAreaChips: summary.researchAreaChips,
     entitiesAwaitingCardSynthesis: summary.entitiesAwaitingCardSynthesis,
+    entitiesWithLastCitationKept: summary.entitiesWithLastCitationKept,
     entitiesSkipped: entities.filter((entity) => entity.skipped).length,
     entitiesFailed: failed.map((entity) => ({ slug: entity.slug, error: entity.error })),
     regate,
@@ -530,12 +598,8 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  main()
-    .catch((error) => {
-      console.error('Failed to rematerialize research entities:', sanitizeLogValue(error));
-      process.exitCode = 1;
-    })
-    .finally(async () => {
-      await mongoose.disconnect();
-    });
+  void runScriptMain(main, {
+    logFailure: (error) =>
+      console.error('Failed to rematerialize research entities:', sanitizeLogValue(error)),
+  });
 }

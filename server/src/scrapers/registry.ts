@@ -32,12 +32,22 @@ import { LabMicrositeDescriptionLLMExtractor } from './sources/labMicrositeDescr
 import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergradLLMExtractor';
 import { CenterAffiliationLLMExtractor } from './sources/centerAffiliationLLMExtractor';
 import { CenterDirectorLLMExtractor } from './sources/centerDirectorLLMExtractor';
+import { CenterDirectorScraper } from './sources/centerDirectorScraper';
+import { CenterAffiliationRosterScraper } from './sources/centerAffiliationRosterScraper';
 import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBackfillScraper';
+import { LabSiteUndergradInvitationScraper } from './sources/labSiteUndergradInvitationScraper';
 import { OfficialResearchHomeRosterScraper } from './sources/officialResearchHomeRosterScraper';
+import { createUndergradRosterDeriver } from './undergradRosterDerivation';
 import { ResearchAreaSourceExtractor } from './sources/researchAreaSourceExtractor';
 import { LabSiteLeadVerificationScraper } from './sources/labSiteLeadVerificationScraper';
 import { DirectoryAliasResolutionScraper } from './sources/directoryAliasResolutionScraper';
 import { RosterBioResearchEvidenceScraper } from './sources/rosterBioResearchEvidenceScraper';
+import { OfficialUndergradListScraper } from './sources/officialUndergradListScraper';
+import { DepartmentEmeritusListingScraper } from './sources/departmentEmeritusListingScraper';
+import { CenterMemberProfileResearchScraper } from './sources/centerMemberProfileResearchScraper';
+import { CenterProfileResearchRowsScraper } from './sources/centerProfileResearchRowsScraper';
+import { ResearchPageTextScraper } from './sources/researchPageTextScraper';
+import { fetchMemberProfilePage } from './utils/rosterMemberProfileRead';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -46,7 +56,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   // the CLI, cron, or a sweep. Historical source rows, observations, stored collections,
   // and the guarded materializer remain for rollback; verified Google Scholar and ORCID
   // profile identity links are kept on Researcher. See issues #207 and #260.
-  o.register(new YsmAtoZScraper());
+  o.register(new YsmAtoZScraper(undefined, fetchMemberProfilePage));
   o.register(new YsmMeshKeywordScraper());
   o.register(new YsmFacultyDirectoryScraper());
   o.register(new YseCentersScraper());
@@ -73,13 +83,28 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new ProgramOfficialPageScraper());
   o.register(new LabMicrositeDescriptionLLMExtractor());
   o.register(new LabMicrositeUndergradLLMExtractor());
+  o.register(new LabSiteUndergradInvitationScraper());
   o.register(new CenterAffiliationLLMExtractor());
   o.register(new CenterDirectorLLMExtractor());
+  o.register(new CenterDirectorScraper());
+  o.register(new CenterAffiliationRosterScraper());
   o.register(new OfficialProfilePiBackfillScraper());
-  o.register(new OfficialResearchHomeRosterScraper());
+  o.register(
+    new OfficialResearchHomeRosterScraper(
+      undefined,
+      undefined,
+      createUndergradRosterDeriver(),
+      fetchMemberProfilePage,
+    ),
+  );
   o.register(new ResearchAreaSourceExtractor());
   o.register(new LabSiteLeadVerificationScraper());
   o.register(new DirectoryAliasResolutionScraper());
   o.register(new RosterBioResearchEvidenceScraper());
+  o.register(new OfficialUndergradListScraper());
+  o.register(new DepartmentEmeritusListingScraper());
+  o.register(new CenterMemberProfileResearchScraper());
+  o.register(new CenterProfileResearchRowsScraper());
+  o.register(new ResearchPageTextScraper());
   return o;
 }

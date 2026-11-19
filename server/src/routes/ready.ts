@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { checkReadiness, defaultReadinessProbes, isReady } from '../services/readinessService';
+import { accountDeletionServingState } from '../services/accountDeletionServing';
 
 export const createReadinessRouter = (probes = defaultReadinessProbes) => {
   const router = Router();
@@ -10,7 +11,9 @@ export const createReadinessRouter = (probes = defaultReadinessProbes) => {
     asyncHandler(async function readiness(_req: Request, res: Response) {
       const { mongo, search } = await checkReadiness(probes);
       res.set('Cache-Control', 'no-store, private, max-age=0');
-      res.status(isReady({ mongo, search }) ? 200 : 503).json({ mongo, search });
+      res
+        .status(isReady({ mongo, search }) ? 200 : 503)
+        .json({ mongo, search, accountDeletion: accountDeletionServingState() });
     }),
   );
 

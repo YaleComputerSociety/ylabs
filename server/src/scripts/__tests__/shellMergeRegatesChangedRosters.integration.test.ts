@@ -16,6 +16,7 @@ vi.mock('../../services/meiliSyncService', () => ({
 
 import { getResearchGroupDetail, PUBLIC_LEAD_ROLES } from '../../services/researchGroupService';
 import { dedupeAccountlessResearcherShells } from '../dedupeAccountlessResearcherShells';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
 
 const SLUG = 'ysm-faculty-rosalind-quimby';
 const ROSTER_PAGE = 'https://medicine.yale.edu/profile/rosalind-quimby/';
@@ -24,6 +25,7 @@ const SHORT_DESCRIPTION =
 const FULL_DESCRIPTION =
   'The lab studies neonatal care quality improvement across community hospital nurseries, combining bedside outcome audits, staffing and transfer pattern analysis, and implementation trials of standardized resuscitation protocols to reduce avoidable transfers to tertiary intensive care.';
 
+const SHARED_ORCID = syntheticPersonOrcid(2952);
 const entityId = new mongoose.Types.ObjectId();
 const canonicalId = new mongoose.Types.ObjectId();
 const shellId = new mongoose.Types.ObjectId();
@@ -104,7 +106,7 @@ describe('folding a person shell re-gates the rosters it changed (#2952)', () =>
         schemaVersion: 1,
         displayName: 'Rosalind Quimby',
         accountId: new mongoose.Types.ObjectId(),
-        identifiers: { netid: 'rq111' },
+        identifiers: { netid: 'rq111', orcid: SHARED_ORCID },
         profile: { title: 'Associate Professor' },
         status: 'ACTIVE',
         profileLinks: [],
@@ -114,6 +116,7 @@ describe('folding a person shell re-gates the rosters it changed (#2952)', () =>
         _id: shellId,
         schemaVersion: 1,
         displayName: 'Rosalind Quimby',
+        identifiers: { orcid: SHARED_ORCID },
         profile: { title: 'Associate Professor' },
         status: 'ACTIVE',
         profileLinks: [],

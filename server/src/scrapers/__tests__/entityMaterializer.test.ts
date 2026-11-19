@@ -142,7 +142,8 @@ describe('entityMaterializer post-materialization metrics', () => {
       ]),
     ).toEqual({
       recentGrants: [{ id: 'NIH-1' }, { id: 'shared', title: 'new' }, { id: 'NSF-1' }],
-      recentGrantCount: 23,
+      recentGrantPeriods: [{ id: 'NIH-1' }, { id: 'shared' }, { id: 'NSF-1' }],
+      recentGrantCount: 3,
       fundingAgencies: ['NIH', 'NSF'],
     });
   });
@@ -208,7 +209,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     expect(evidence.recentGrantCount).toBe(4);
   });
 
-  it('withholds award periods while a counting source has not dated its awards', () => {
+  it('never counts awards a lane only states a total for (#5785)', () => {
     const evidence = aggregateResearchEntityGrantEvidence([
       {
         field: 'recentGrantPeriods',
@@ -229,8 +230,8 @@ describe('entityMaterializer post-materialization metrics', () => {
         value: 5,
       },
     ]);
-    expect(evidence.recentGrantPeriods).toEqual([]);
-    expect(evidence.recentGrantCount).toBe(6);
+    expect(evidence.recentGrantPeriods).toEqual([{ id: 'NIH-1' }]);
+    expect(evidence.recentGrantCount).toBe(1);
   });
 
   it('normalizes materializer ObjectIds without object-shaped coercion', () => {
@@ -560,6 +561,21 @@ describe('entityMaterializer post-materialization metrics', () => {
     ]);
   });
 
+  it('ignores a lead key minted from the mailbox of the unit whose roster named it', () => {
+    const rosterPage = 'https://fixtureunit.yale.edu/people/faculty';
+    const lead = (value: string) =>
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'inferredPiUserKey',
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: rosterPage,
+        value,
+      });
+    expect(lead('netid:fixtureunit')).toBe(true);
+    expect(lead('fixture.dus@yale.edu')).toBe(true);
+    expect(lead('netid:rowan.synthetic')).toBe(false);
+    expect(lead('dept:fixtureunit:rowan-synthetic')).toBe(false);
+  });
+
   it('ignores sourceContentHash bookkeeping observations for entity materialization', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('researchEntity', {
@@ -585,6 +601,85 @@ describe('entityMaterializer post-materialization metrics', () => {
         value: ['teaching', 'flow cytometry'],
       }),
     ).toBe(false);
+  });
+
+  it('ignores a course page as a person website and as research-entity evidence (#5213)', () => {
+    const coursePage = 'https://fixturedept.example.test/courses/laboratory-fixture-anatomy';
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'website',
+        sourceName: 'dept-faculty-roster',
+        value: coursePage,
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'website',
+        sourceName: 'dept-faculty-roster',
+        value: 'https://fixturelab.example.test/',
+      }),
+    ).toBe(false);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'name',
+        sourceName: 'lab-microsite-description-llm',
+        sourceUrl: coursePage,
+        value: 'Laboratory for Fixture Anatomy',
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores a map or directions link as a person website, in either website field (#5657)', () => {
+    for (const field of ['website', 'websiteUrl']) {
+      expect(
+        shouldIgnoreObservationForEntityMaterialization('user', {
+          field,
+          sourceName: 'dept-faculty-roster',
+          value: 'https://www.google.com/maps?daddr=1.5,-2.5&directionsMode=driving',
+        }),
+      ).toBe(true);
+    }
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'website',
+        sourceName: 'dept-faculty-roster',
+        value: 'https://mapping-lab.example.test/',
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores a person title cut off at a connective, so a complete title wins (#5109)', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'title',
+        sourceName: 'dept-faculty-roster',
+        value: 'Example Chair Professor of',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'title',
+        sourceName: 'dept-faculty-roster',
+        value: 'Example Chair Professor of Ecology and Evolutionary Biology',
+      }),
+    ).toBe(false);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'methods',
+        sourceName: 'lab-microsite-description-llm',
+        value: ['examines'],
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores a methods observation whose every chip is a bare verb (#5109)', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'methods',
+        sourceName: 'lab-microsite-description-llm',
+        value: ['examines', 'investigates'],
+      }),
+    ).toBe(true);
   });
 
   it('keeps the sourceUrl the fellowship database lane asserts, because the database is official (#4284)', () => {
@@ -1585,6 +1680,12 @@ describe('leadPiSchoolInheritanceGate (#2158 PI->school, #2802 PI->department)',
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'center' })).toBe('multi-pi-kind');
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'institute' })).toBe('multi-pi-kind');
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'program' })).toBe('multi-pi-kind');
+  });
+
+  it('lets a core facility inherit from its single lead, because that school has a source (#2195, #6036)', () => {
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'core_facility' })).toBe(
+      'school-and-department',
+    );
   });
 });
 

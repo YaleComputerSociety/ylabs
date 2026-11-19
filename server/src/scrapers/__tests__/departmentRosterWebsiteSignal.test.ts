@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { pathNamesALab, profileEnrichmentFromHtml } from '../sources/departmentRosterScraper';
+import {
+  linkTextDescribesNothing,
+  pathNamesALab,
+  profileEnrichmentFromHtml,
+} from '../sources/departmentRosterScraper';
 
 const PROFILE_URL = 'https://earth.yale.edu/profile/ada-fixture';
 
@@ -29,7 +33,56 @@ describe('pathNamesALab', () => {
   });
 });
 
+describe('linkTextDescribesNothing', () => {
+  it.each([
+    ['', true],
+    ['  ', true],
+    ['https://fixture.example.org/homepage', true],
+    ['fixture.example.github.io/website/', true],
+    ['the Global Fixture Lecture Series', false],
+    ['FIXTURE', false],
+    ['Research Website', false],
+  ])('%j -> %s', (text, expected) => {
+    expect(linkTextDescribesNothing(text)).toBe(expected);
+  });
+});
+
 describe('profile website harvest', () => {
+  it('does not take an event page linked from a bio sentence because its path says homepage', () => {
+    const result = enrich(
+      `<p>Fixture is an Academic Committee member of <a href="https://oversea.fixture.example.net/index/marketing/FixtureEconomy/en/homepage.html">the Global Lecture Series on Fixture Economy</a>.</p>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+  });
+
+  it("does not take a foundation's landing page that its link names", () => {
+    const result = enrich(
+      `<p>Fixture advises <a href="https://www.fixture-foundation.example.org/en/homepage/">FIXFOUND</a>.</p>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+  });
+
+  it('keeps a link whose text is a bare address and whose path says homepage', () => {
+    const result = enrich(
+      `<p><a href="https://fixture.example.github.io/homepage/">fixture.example.github.io</a></p>`,
+    );
+    expect(result.labUrl).toBe('https://fixture.example.github.io/homepage/');
+  });
+
+  it('keeps an image-only link whose path says homepage', () => {
+    const result = enrich(
+      `<p><a href="https://fixture.example.github.io/homepage/"><img src="/fixture.png" alt=""></a></p>`,
+    );
+    expect(result.labUrl).toBe('https://fixture.example.github.io/homepage/');
+  });
+
+  it('keeps a labelled research website whose path says website', () => {
+    const result = enrich(
+      `<p><a href="https://fixture.example.github.io/website/">Research Website</a></p>`,
+    );
+    expect(result.labUrl).toBe('https://fixture.example.github.io/website/');
+  });
+
   it('does not take a publication whose title slug opens with a lab word', () => {
     const result = enrich(
       `<ul><li>Fixture, A. 2009 <a href="https://research-information.example.ac.uk/en/publications/laboratory-degradation-of-fixture-lipids">Degradation of fixture lipids.</a> Journal 1, 2-3.</li></ul>`,
@@ -44,12 +97,27 @@ describe('profile website harvest', () => {
     expect(result.labUrl).toBeUndefined();
   });
 
-  it('retracts the website slot when the only lab link is a national laboratory', () => {
+  it('records a refusal when the only lab link is a national laboratory', () => {
     const result = enrich(
       `<p>Fixture experiments run at the <a href="https://www.fixture-national-lab.gov/world/">Fixture National Laboratory</a> on Long Island.</p>`,
     );
     expect(result.labUrl).toBeUndefined();
-    expect(result.labSlotAttestation).toBe('empty');
+    expect(result.labSlotAttestation).toBe('refused');
+  });
+
+  it("does not take a department's whole labs page that a lab's name links to", () => {
+    const result = enrich(
+      `<p>Fixture directs the <a href="https://lab-sciences.example.edu/labs">Yale Fixture Laboratory</a>.</p>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+    expect(result.labSlotAttestation).toBe('refused');
+  });
+
+  it('keeps one lab page under a labs listing', () => {
+    const result = enrich(
+      `<p>Fixture directs the <a href="https://lab-sciences.example.edu/labs/fixture">Yale Fixture Laboratory</a>.</p>`,
+    );
+    expect(result.labUrl).toBe('https://lab-sciences.example.edu/labs/fixture');
   });
 
   it('keeps a lab whose slug ends in its lab word', () => {
@@ -65,6 +133,22 @@ describe('profile website harvest', () => {
     );
     expect(result.labUrl).toBeUndefined();
     expect(result.labSlotAttestation).toBe('refused');
+  });
+
+  it('does not take a course whose title opens with a lab word', () => {
+    const result = enrich(
+      `<h2>Courses</h2><ul><li><a href="/courses/laboratory-fixture-anatomy">Laboratory for Fixture Anatomy</a></li></ul>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+    expect(result.labSlotAttestation).toBe('refused');
+  });
+
+  it('takes the genuine lab website listed after a refused course', () => {
+    const result = enrich(
+      `<p><a href="/courses/fixture-biology-laboratory">Fixture Biology Laboratory</a></p>
+       <p><a href="https://medicine.yale.edu/lab/fixture/">Fixture Lab</a></p>`,
+    );
+    expect(result.labUrl).toBe('https://medicine.yale.edu/lab/fixture/');
   });
 
   it('takes the genuine lab website listed after a refused posting', () => {

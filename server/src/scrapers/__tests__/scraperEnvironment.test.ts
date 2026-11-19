@@ -5,6 +5,8 @@ import {
   assertScraperEnvironmentMatchesMongoTarget,
   promotionOnlyScraperWriteRefusal,
   resolveMongoDatabaseName,
+  scraperApplyWithoutWritePermissionRefusal,
+  scraperWritePermissionWithoutApplyRefusal,
   resolveScraperEnvironment,
   summarizeMongoUrl,
 } from '../scraperEnvironment';
@@ -201,6 +203,7 @@ describe('assertScraperEnvironmentMatchesMongoTarget with the target omitted (#4
         command: 'run',
         options: { dryRun: true, useCache: true, release: false },
         autoMaterialize: false,
+        apply: false,
         env: { SCRAPER_ENV: 'development', MONGODBURL: 'mongodb://localhost/Development' },
       }).dbLabel,
     ).toBe('localhost/Development');
@@ -212,6 +215,7 @@ describe('assertScraperEnvironmentMatchesMongoTarget with the target omitted (#4
         command: 'run',
         options: { dryRun: true, useCache: true, release: false },
         autoMaterialize: false,
+        apply: false,
         env: { SCRAPER_ENV: 'beta', MONGODBURL: productionUrl },
       }),
     ).toThrow('does not match Mongo database "Prod"');
@@ -225,31 +229,30 @@ describe('applyScraperEnvironmentGuards', () => {
     release: false,
   };
 
-  it('forces non-production run commands into dry-run by default', () => {
+  it('treats a Beta run without --apply as a dry run', () => {
     const guarded = applyScraperEnvironmentGuards({
       command: 'run',
       options: baseOptions,
       autoMaterialize: true,
+      apply: false,
       mongoUrl: 'mongodb://localhost/Beta',
       env: { SCRAPER_ENV: 'beta' },
     });
 
     expect(guarded.environment).toBe('beta');
     expect(guarded.options.dryRun).toBe(true);
+    expect(guarded.writes).toBe(false);
     expect(guarded.autoMaterialize).toBe(false);
-    expect(guarded.warnings).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('forcing --dry-run'),
-        expect.stringContaining('disabling --auto-materialize'),
-      ]),
-    );
+    expect(guarded.warnings).toEqual(['Dry run, so --auto-materialize is disabled.']);
+    expect(guarded.banner).toMatch(/^DRY RUN: nothing will be written \(no --apply\)/);
   });
 
-  it('allows explicit non-production writes only with override env var', () => {
+  it('writes to Development only with --apply and the environment permission', () => {
     const guarded = applyScraperEnvironmentGuards({
       command: 'run',
       options: baseOptions,
       autoMaterialize: true,
+      apply: true,
       mongoUrl: 'mongodb://localhost/Development',
       env: {
         SCRAPER_ENV: 'development',
@@ -258,8 +261,124 @@ describe('applyScraperEnvironmentGuards', () => {
     });
 
     expect(guarded.options.dryRun).toBe(false);
+    expect(guarded.writes).toBe(true);
     expect(guarded.autoMaterialize).toBe(true);
     expect(guarded.warnings).toEqual([]);
+    expect(guarded.banner).toBe(
+      'WILL WRITE to Development (scrape run --apply with the ALLOW_NON_PROD_SCRAPER_WRITES permission)',
+    );
+  });
+
+  describe('the command line decides whether a Development run writes (#5842)', () => {
+    const developmentUrl = 'mongodb://localhost/Development';
+    const permitted = { SCRAPER_ENV: 'development', ALLOW_NON_PROD_SCRAPER_WRITES: 'true' };
+    const unpermitted = { SCRAPER_ENV: 'development' };
+
+    it.each(['run', 'materialize'] as const)(
+      'refuses %s when only the environment permission is set, naming --apply',
+      (command) => {
+        expect(() =>
+          applyScraperEnvironmentGuards({
+            command,
+            options: baseOptions,
+            autoMaterialize: false,
+            apply: false,
+            mongoUrl: developmentUrl,
+            env: permitted,
+          }),
+        ).toThrow(scraperWritePermissionWithoutApplyRefusal(command, 'Development'));
+      },
+    );
+
+    it.each(['run', 'materialize'] as const)(
+      'refuses %s --apply when the environment grants no permission',
+      (command) => {
+        expect(() =>
+          applyScraperEnvironmentGuards({
+            command,
+            options: baseOptions,
+            autoMaterialize: false,
+            apply: true,
+            mongoUrl: developmentUrl,
+            env: unpermitted,
+          }),
+        ).toThrow(scraperApplyWithoutWritePermissionRefusal(command));
+      },
+    );
+
+    it.each(['run', 'materialize'] as const)(
+      'treats %s with neither flag as a dry run',
+      (command) => {
+        const guarded = applyScraperEnvironmentGuards({
+          command,
+          options: baseOptions,
+          autoMaterialize: false,
+          apply: false,
+          mongoUrl: developmentUrl,
+          env: unpermitted,
+        });
+        expect(guarded.writes).toBe(false);
+        expect(guarded.options.dryRun).toBe(true);
+        expect(guarded.banner).toMatch(/^DRY RUN: nothing will be written \(no --apply\)/);
+      },
+    );
+
+    it('keeps --dry-run a dry run even when the permission is set', () => {
+      const guarded = applyScraperEnvironmentGuards({
+        command: 'materialize',
+        options: { ...baseOptions, dryRun: true },
+        autoMaterialize: false,
+        apply: false,
+        mongoUrl: developmentUrl,
+        env: permitted,
+      });
+      expect(guarded.writes).toBe(false);
+      expect(guarded.banner).toBe('DRY RUN: nothing will be written (--dry-run)');
+    });
+
+    it('names the materialize write target in its banner', () => {
+      const guarded = applyScraperEnvironmentGuards({
+        command: 'materialize',
+        options: baseOptions,
+        autoMaterialize: false,
+        apply: true,
+        mongoUrl: developmentUrl,
+        env: permitted,
+      });
+      expect(guarded.writes).toBe(true);
+      expect(guarded.banner).toBe(
+        'WILL WRITE to Development (scrape materialize --apply with the ALLOW_NON_PROD_SCRAPER_WRITES permission)',
+      );
+    });
+
+    it('lets an explicit --dry-run win over --apply', () => {
+      const guarded = applyScraperEnvironmentGuards({
+        command: 'run',
+        options: { ...baseOptions, dryRun: true },
+        autoMaterialize: false,
+        apply: true,
+        mongoUrl: developmentUrl,
+        env: permitted,
+      });
+      expect(guarded.writes).toBe(false);
+      expect(guarded.options.dryRun).toBe(true);
+      expect(guarded.banner).toMatch(/^DRY RUN: nothing will be written \(--dry-run\)/);
+    });
+
+    it('names the snapshot cache writes a --use-cache dry run still makes', () => {
+      const guarded = applyScraperEnvironmentGuards({
+        command: 'run',
+        options: { ...baseOptions, dryRun: true, useCache: true },
+        autoMaterialize: false,
+        apply: false,
+        mongoUrl: developmentUrl,
+        env: unpermitted,
+      });
+      expect(guarded.writes).toBe(false);
+      expect(guarded.banner).toBe(
+        'DRY RUN: nothing will be written (--dry-run); observations and entities stay untouched, only the run bookkeeping row and --use-cache fetch snapshots are recorded',
+      );
+    });
   });
 
   it.each([
@@ -275,8 +394,30 @@ describe('applyScraperEnvironmentGuards', () => {
           command,
           options: { ...baseOptions, dryRun: false, release: true },
           autoMaterialize: true,
+          apply: false,
           mongoUrl: `mongodb+srv://example.invalid/${database}`,
           env: { SCRAPER_ENV: environment, ...confirmations },
+        }),
+      ).toThrow(promotionOnlyScraperWriteRefusal(environment));
+    },
+  );
+
+  it.each([
+    ['run', 'beta', 'Beta'],
+    ['materialize', 'beta', 'Beta'],
+    ['run', 'production', 'Prod'],
+    ['materialize', 'production', 'Prod'],
+  ] as const)(
+    'refuses %s --apply against %s with the same promotion refusal',
+    (command, environment, database) => {
+      expect(() =>
+        applyScraperEnvironmentGuards({
+          command,
+          options: baseOptions,
+          autoMaterialize: false,
+          apply: true,
+          mongoUrl: `mongodb+srv://example.invalid/${database}`,
+          env: { SCRAPER_ENV: environment },
         }),
       ).toThrow(promotionOnlyScraperWriteRefusal(environment));
     },
@@ -292,6 +433,7 @@ describe('applyScraperEnvironmentGuards', () => {
       command: 'run',
       options: { ...baseOptions, dryRun: true },
       autoMaterialize: false,
+      apply: false,
       mongoUrl: 'mongodb+srv://example.invalid/Beta',
       env: { SCRAPER_ENV: 'beta', ALLOW_NON_PROD_SCRAPER_WRITES: 'true' },
     });
@@ -301,6 +443,7 @@ describe('applyScraperEnvironmentGuards', () => {
       command: 'materialize',
       options: { ...baseOptions, dryRun: true, useCache: true },
       autoMaterialize: false,
+      apply: false,
       mongoUrl: 'mongodb+srv://example.invalid/Prod',
       env: { SCRAPER_ENV: 'production' },
     });

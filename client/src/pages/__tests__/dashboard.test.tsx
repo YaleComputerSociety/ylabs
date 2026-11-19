@@ -1,10 +1,11 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useEffect } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { Link, MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import UserContext from '../../contexts/UserContext';
 import Dashboard from '../dashboard';
+import type { PlanListView } from '../../utils/dashboardPlanListView';
 
 type ProgramSummary = {
   count: number | null;
@@ -20,13 +21,30 @@ let programSummary: ProgramSummary = { count: 1 };
 vi.mock('../../components/accounts/SavedResearchPlans', () => {
   const MockSavedResearchPlans = ({
     onCountChange,
+    listView,
+    onListViewChange,
   }: {
     onCountChange?: (count: number | null) => void;
+    listView?: PlanListView;
+    onListViewChange?: (view: PlanListView) => void;
   }) => {
     useEffect(() => {
       onCountChange?.(savedResearchCount);
     }, [onCountChange]);
-    return <section>Saved research plans</section>;
+    return (
+      <section>
+        Saved research plans
+        <output data-testid="research-list-view">
+          {listView ? `${listView.stageFilter}|${listView.sort}` : ''}
+        </output>
+        <button
+          type="button"
+          onClick={() => onListViewChange?.({ stageFilter: 'waiting', sort: 'stage' })}
+        >
+          Show research waiting by stage
+        </button>
+      </section>
+    );
   };
 
   return { default: MockSavedResearchPlans };
@@ -35,17 +53,30 @@ vi.mock('../../components/accounts/SavedResearchPlans', () => {
 vi.mock('../../components/accounts/ProgramWatch', () => {
   const MockProgramWatch = ({
     onSummaryChange,
+    listView,
   }: {
     onSummaryChange?: (summary: ProgramSummary) => void;
+    listView?: PlanListView;
   }) => {
     useEffect(() => {
       onSummaryChange?.(programSummary);
     }, [onSummaryChange]);
-    return <section>Program watch list</section>;
+    return (
+      <section>
+        Watched programs list
+        <output data-testid="program-list-view">
+          {listView ? `${listView.stageFilter}|${listView.sort}` : ''}
+        </output>
+      </section>
+    );
   };
 
   return { default: MockProgramWatch };
 });
+
+vi.mock('../../components/accounts/DirectoryRemovalRequest', () => ({
+  default: () => <section aria-label="Your y/labs listing">Removal request</section>,
+}));
 
 const renderDashboard = (userType: string, initialEntries: string[] = ['/dashboard']) =>
   render(
@@ -79,14 +110,23 @@ describe('Dashboard page', () => {
     renderDashboard('student');
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Dashboard (2)' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Program Watch (1)' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Saved research (2)' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Watched programs (1)' })).toBeTruthy();
     expect(screen.queryByRole('tab', { name: /Saved Searches/ })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Interests' })).toBeNull();
     expect(screen.getByText('Saved research plans')).toBeTruthy();
-    expect(screen.getByText('Program watch list')).toBeTruthy();
+    expect(screen.getByText('Watched programs list')).toBeTruthy();
     expect(screen.getByText(/2 research plans/)).toBeTruthy();
     expect(screen.getByText(/1 watched program/)).toBeTruthy();
+  });
+
+  it('places the removal request section outside both tab panels', () => {
+    renderDashboard('professor');
+
+    const listing = screen.getByRole('region', { name: 'Your y/labs listing' });
+    for (const panel of screen.getAllByRole('tabpanel', { hidden: true })) {
+      expect(panel.contains(listing)).toBe(false);
+    }
   });
 
   it('shows no count rather than zero when a count is unknown', () => {
@@ -94,8 +134,8 @@ describe('Dashboard page', () => {
     programSummary = { count: null };
     renderDashboard('student');
 
-    expect(screen.getByRole('tab', { name: 'Dashboard' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Program Watch' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Saved research' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Watched programs' })).toBeTruthy();
     expect(screen.queryByText(/0 research plans/)).toBeNull();
     expect(screen.queryByText(/0 watched programs/)).toBeNull();
     expect(screen.queryByText('Save research to start planning')).toBeNull();
@@ -104,8 +144,8 @@ describe('Dashboard page', () => {
   it('lets an account switch between the Dashboard and Program Watch surfaces', () => {
     renderDashboard('student');
 
-    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
-    const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    const dashboardTab = screen.getByRole('tab', { name: 'Saved research (2)' });
+    const programTab = screen.getByRole('tab', { name: 'Watched programs (1)' });
     expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
     expect(programTab.getAttribute('aria-selected')).toBe('false');
 
@@ -117,8 +157,8 @@ describe('Dashboard page', () => {
   it('wires each tab to its panel and applies roving tabindex', () => {
     renderDashboard('student');
 
-    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
-    const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    const dashboardTab = screen.getByRole('tab', { name: 'Saved research (2)' });
+    const programTab = screen.getByRole('tab', { name: 'Watched programs (1)' });
     const [dashboardPanel, programPanel] = screen.getAllByRole('tabpanel', { hidden: true });
 
     expect(dashboardTab.getAttribute('aria-controls')).toBe(dashboardPanel.id);
@@ -137,8 +177,8 @@ describe('Dashboard page', () => {
   it('moves focus and activates the surface with arrow-key navigation', () => {
     renderDashboard('student');
 
-    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
-    const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    const dashboardTab = screen.getByRole('tab', { name: 'Saved research (2)' });
+    const programTab = screen.getByRole('tab', { name: 'Watched programs (1)' });
     dashboardTab.focus();
 
     fireEvent.keyDown(dashboardTab, { key: 'ArrowRight' });
@@ -179,9 +219,9 @@ describe('Dashboard page', () => {
     renderDashboard('student');
 
     const cta = screen.getByRole('button', {
-      name: '2 watched programs close within 2 weeks, 1 not started',
+      name: '2 watched programs close within 2 weeks, 1 still marked Saved',
     });
-    const programTab = screen.getByRole('tab', { name: 'Program Watch (3)' });
+    const programTab = screen.getByRole('tab', { name: 'Watched programs (3)' });
     expect(programTab.getAttribute('aria-selected')).toBe('false');
 
     fireEvent.click(cta);
@@ -196,11 +236,62 @@ describe('Dashboard page', () => {
     expect(screen.queryByText(/close within/)).toBeNull();
   });
 
+  it('keeps the selected tab in the URL so a reload returns to it', () => {
+    const LocationProbe = () => <output data-testid="location">{useLocation().search}</output>;
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: true,
+            user: { netId: 'user1', userType: 'student', userConfirmed: true } as any,
+            checkContext: vi.fn(),
+          }}
+        >
+          <Dashboard />
+          <LocationProbe />
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const dashboardTab = screen.getByRole('tab', { name: 'Saved research (2)' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Watched programs (1)' }));
+    expect(screen.getByTestId('location').textContent).toBe('?tab=programs');
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Watched programs (1)' }), { key: 'Home' });
+    expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('location').textContent).toBe('');
+  });
+
+  it('follows an in-app link that changes the tab param while mounted', () => {
+    const ProgramsLink = () => <Link to="/dashboard?tab=programs">Go to programs</Link>;
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: true,
+            user: { netId: 'user1', userType: 'student', userConfirmed: true } as any,
+            checkContext: vi.fn(),
+          }}
+        >
+          <Dashboard />
+          <ProgramsLink />
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'Go to programs' }));
+    expect(
+      screen.getByRole('tab', { name: 'Watched programs (1)' }).getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+
   it('deep-links to the Program Watch tab via a tab query param', () => {
     renderDashboard('student', ['/dashboard?tab=programs']);
 
     expect(
-      screen.getByRole('tab', { name: 'Program Watch (1)' }).getAttribute('aria-selected'),
+      screen.getByRole('tab', { name: 'Watched programs (1)' }).getAttribute('aria-selected'),
     ).toBe('true');
   });
 
@@ -209,7 +300,7 @@ describe('Dashboard page', () => {
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
     expect(screen.getByText('Saved research plans')).toBeTruthy();
-    expect(screen.getByText('Program watch list')).toBeTruthy();
+    expect(screen.getByText('Watched programs list')).toBeTruthy();
     expect(screen.queryByText('Profile editor')).toBeNull();
     expect(screen.queryByText('Faculty profile center')).toBeNull();
     expect(
@@ -217,5 +308,71 @@ describe('Dashboard page', () => {
     ).toBeNull();
     expect(screen.queryByRole('link', { name: 'View public profile' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Faculty Profile Preview' })).toBeNull();
+  });
+
+  describe('plan list stage filter and sort in the URL', () => {
+    const LocationProbe = () => <output data-testid="location">{useLocation().search}</output>;
+    const renderAt = (entry: string) =>
+      render(
+        <MemoryRouter initialEntries={[entry]}>
+          <UserContext.Provider
+            value={{
+              isLoading: false,
+              isAuthenticated: true,
+              user: { netId: 'user1', userType: 'student', userConfirmed: true } as any,
+              checkContext: vi.fn(),
+            }}
+          >
+            <Dashboard />
+            <LocationProbe />
+          </UserContext.Provider>
+        </MemoryRouter>,
+      );
+
+    it('defaults both lists to every stage, most recently saved first', () => {
+      renderAt('/dashboard');
+
+      expect(screen.getByTestId('research-list-view').textContent).toBe('all|recent');
+      expect(screen.getByTestId('program-list-view').textContent).toBe('all|recent');
+    });
+
+    it('reads ?stage= and ?sort= for the active tab only', () => {
+      renderAt('/dashboard?tab=programs&stage=waiting&sort=deadline');
+
+      expect(screen.getByTestId('program-list-view').textContent).toBe('waiting|deadline');
+      expect(screen.getByTestId('research-list-view').textContent).toBe('all|recent');
+    });
+
+    it('falls back to the default for a value the tab does not offer', () => {
+      renderAt('/dashboard?stage=awarded&sort=deadline');
+
+      expect(screen.getByTestId('research-list-view').textContent).toBe('all|recent');
+    });
+
+    it('accepts a stage the tab offers', () => {
+      renderAt('/dashboard?tab=programs&stage=not_selected');
+
+      expect(screen.getByTestId('program-list-view').textContent).toBe('NOT_SELECTED|recent');
+    });
+
+    it('writes a change to the URL and clears it on a tab switch', () => {
+      renderAt('/dashboard');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Show research waiting by stage' }));
+      expect(screen.getByTestId('location').textContent).toBe('?stage=waiting&sort=stage');
+      expect(screen.getByTestId('research-list-view').textContent).toBe('waiting|stage');
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Watched programs (1)' }));
+      expect(screen.getByTestId('location').textContent).toBe('?tab=programs');
+      expect(screen.getByTestId('program-list-view').textContent).toBe('all|recent');
+    });
+
+    it('keeps the filter when the active tab is chosen again', () => {
+      renderAt('/dashboard?stage=contacted');
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Saved research (2)' }));
+      expect(screen.getByTestId('location').textContent).toBe('?stage=contacted');
+      expect(screen.getByTestId('research-list-view').textContent).toBe('CONTACTED|recent');
+    });
   });
 });

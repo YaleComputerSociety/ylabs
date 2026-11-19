@@ -1074,7 +1074,7 @@ describe('person-bio demotion for fullDescription', () => {
     const CREDENTIAL_BIO =
       'Avery Lindqvist, PhD, is an assistant professor in the department of applied physics. She completed doctoral training in optics and joined the faculty after two postdoctoral appointments.';
     const RECRUITING_PITCH =
-      'We are recruiting a postdoctoral fellow and two graduate students to join the group; if you are interested in joining, please reach out by email.';
+      'We are recruiting a postdoctoral fellow and two graduate students to join the group; if you are interested in joining, please reach out by email. The group values open collaboration across chemistry and engineering.';
     const RESEARCH_PROSE =
       'Research focuses on catalytic reactions in aqueous media, developing earth-abundant metal complexes that convert waste carbon dioxide into liquid fuels.';
     const ranked = resolveFieldRanked(
@@ -1583,6 +1583,108 @@ describe('researchAreas from a graduate-track roster rank below a row-own list',
   });
 });
 
+describe('researchAreas quoted from the row own pages outrank MeSH and directory lists (#5396)', () => {
+  const now = new Date('2026-10-19T00:00:00Z');
+  const quotedAreas = ['Kelp forests', 'Marine heatwaves', 'Marine ecology'];
+  const meshAreas = ['Ecosystem', 'Climate Change'];
+  const directoryAreas = ['Oceans and Seas'];
+  const trackAreas = ['Ecology and Evolutionary Biology'];
+  const quoted = {
+    field: 'researchAreas',
+    value: quotedAreas,
+    sourceName: 'research-page-topics-derived',
+    confidence: 0.5,
+    observedAt: new Date('2026-06-01T00:00:00Z'),
+  };
+  const mesh = {
+    field: 'researchAreas',
+    value: meshAreas,
+    sourceName: 'ysm-mesh-keyword',
+    confidence: 0.95,
+    observedAt: now,
+  };
+  const directory = {
+    field: 'researchAreas',
+    value: directoryAreas,
+    sourceName: 'ysm-faculty-directory',
+    confidence: 0.95,
+    observedAt: now,
+  };
+  const track = {
+    field: 'researchAreas',
+    value: trackAreas,
+    sourceName: 'bbs-research-track',
+    confidence: 0.95,
+    observedAt: now,
+  };
+
+  it('serves the quoted list over a newer, heavier lab-site-research-read list', () => {
+    const codeLane = {
+      field: 'researchAreas',
+      value: ['Coastal ecology'],
+      sourceName: 'lab-site-research-read',
+      confidence: 0.95,
+      observedAt: now,
+    };
+    const resolved = resolveField('researchAreas', [codeLane, quoted], { now });
+    expect(resolved?.value).toEqual(quotedAreas);
+    expect(resolveField('researchAreas', [codeLane, mesh], { now })?.value).toEqual([
+      'Coastal ecology',
+    ]);
+  });
+
+  it('serves the quoted list over newer, heavier MeSH and directory lists', () => {
+    const resolved = resolveField('researchAreas', [mesh, directory, quoted], { now });
+    expect(resolved?.value).toEqual(quotedAreas);
+    expect(resolved?.contributingSources).toEqual(['research-page-topics-derived']);
+    expect(resolved?.hasConflict).toBe(false);
+  });
+
+  it('keeps the MeSH and directory lists ranked as stored evidence', () => {
+    const ranked = resolveFieldRanked('researchAreas', [mesh, directory, quoted], { now });
+    expect(ranked.map((entry) => entry.value)).toEqual([quotedAreas, meshAreas, directoryAreas]);
+  });
+
+  it('still ranks a graduate-track list below every other list', () => {
+    const ranked = resolveFieldRanked('researchAreas', [track, mesh, directory, quoted], { now });
+    expect(ranked.map((entry) => entry.value)).toEqual([
+      quotedAreas,
+      meshAreas,
+      directoryAreas,
+      trackAreas,
+    ]);
+  });
+
+  it('leaves MeSH to win when no quoted list exists', () => {
+    const resolved = resolveField('researchAreas', [mesh, track], { now });
+    expect(resolved?.value).toEqual(meshAreas);
+  });
+
+  it('does not demote a list another source also states', () => {
+    const corroborated = {
+      field: 'researchAreas',
+      value: meshAreas,
+      sourceName: 'lab-microsite-description-llm',
+      confidence: 0.6,
+      observedAt: now,
+    };
+    const resolved = resolveField('researchAreas', [mesh, corroborated, quoted], { now });
+    expect(resolved?.value).toEqual(meshAreas);
+  });
+
+  it('leaves other fields from the MeSH lane to weight', () => {
+    const resolved = resolveField(
+      'methods',
+      [
+        { ...mesh, field: 'methods' },
+        { ...quoted, field: 'methods' },
+      ],
+      { now },
+    );
+    expect(resolved?.value).toEqual(meshAreas);
+  });
+});
+
 describe('pastUndergradAdvisees from lab roster alumni rank below a fellowship history (#4430)', () => {
   const now = new Date('2026-10-03T00:00:00Z');
   const rosterAlumni = {
@@ -1639,5 +1741,47 @@ describe('a Yale fellowship database fund page as a program sourceUrl (#4601)', 
 
   it('still resolves when no other lane states a page', () => {
     expect(resolveField('sourceUrl', [fundPage], { now })?.value).toBe(fundPage.value);
+  });
+});
+
+describe('the research directory typing outranks the profile lane name-word typing (#5749)', () => {
+  const now = new Date('2026-11-11T00:00:00Z');
+  const directoryCore = {
+    field: 'entityType',
+    value: 'CORE_FACILITY',
+    sourceName: 'yale-research-official',
+    confidence: 0.9,
+    observedAt: new Date('2026-10-23T00:00:00Z'),
+  };
+  const profileCenter = {
+    field: 'entityType',
+    value: 'CENTER',
+    sourceName: 'official-profile-pi-backfill',
+    confidence: 0.96,
+    observedAt: now,
+  };
+
+  it('serves the directory type over a newer, heavier profile-lane type', () => {
+    const resolved = resolveField('entityType', [profileCenter, directoryCore], { now });
+    expect(resolved?.value).toBe('CORE_FACILITY');
+    expect(resolved?.hasConflict).toBe(false);
+  });
+
+  it('still lets the profile lane type a home the directory does not list', () => {
+    expect(resolveField('entityType', [profileCenter], { now })?.value).toBe('CENTER');
+  });
+
+  it('keeps a profile-lane type another lane corroborates in the weighing', () => {
+    const centresCenter = {
+      field: 'entityType',
+      value: 'CENTER',
+      sourceName: 'centers-institutes-index',
+      confidence: 0.9,
+      observedAt: now,
+    };
+    const resolved = resolveField('entityType', [profileCenter, centresCenter, directoryCore], {
+      now,
+    });
+    expect(resolved?.value).toBe('CENTER');
   });
 });

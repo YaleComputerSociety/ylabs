@@ -1,3 +1,4 @@
+import { givenNamesAgree } from '../scrapers/utils/piNameMatch';
 import { escapeRegex } from '../utils/regex';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import type { ResearcherProfileLink } from '../models/researcher';
@@ -114,15 +115,62 @@ export const isLikelyOfficialPersonProfileUrl = (value: unknown): boolean => {
  */
 const YSM_SECTION_PROFILE_PATH = /^\/[a-z0-9-]+\/profile\/([a-z0-9-]+)$/i;
 
-const canonicalOfficialProfilePath = (host: string, path: string): string => {
+/**
+ * `divinity.yale.edu` moved its faculty pages from `/faculty-and-research/yds-faculty/<slug>`
+ * to `/profile/<slug>` under the same slug; center rosters still link the old form, which
+ * now answers 404, while archived copies show the same person under it (#5592). Only that
+ * one path pair collapses, and only on that host.
+ */
+const YDS_LEGACY_FACULTY_PATH = /^\/faculty-and-research\/yds-faculty\/([a-z0-9-]+)$/i;
+
+/**
+ * `macmillan.yale.edu` serves one person under both `/person/<slug>` and
+ * `/<program>/person/<slug>` or `/<program>/<subprogram>/person/<slug>`, the same node under a
+ * program's skin, and center rosters moved between those forms between reads (#5677, #5892).
+ * Only an identical slug collapses: a `-0` suffix is a different node.
+ */
+const MACMILLAN_SECTION_PERSON_PATH = /^(?:\/[a-z0-9-]+)+\/person\/([a-z0-9-]+)$/i;
+
+const MACMILLAN_ROOT_PERSON_PATH = /^\/person\/([a-z0-9-]+)$/i;
+
+export const canonicalOfficialProfilePath = (host: string, path: string): string => {
+  if (host === 'macmillan.yale.edu') {
+    const sectioned = MACMILLAN_SECTION_PERSON_PATH.exec(path);
+    return sectioned ? `/person/${sectioned[1]}` : path;
+  }
+  if (host === 'divinity.yale.edu') {
+    const legacy = YDS_LEGACY_FACULTY_PATH.exec(path);
+    return legacy ? `/profile/${legacy[1]}` : path;
+  }
   if (host !== 'medicine.yale.edu') return path;
   const sectioned = YSM_SECTION_PROFILE_PATH.exec(path);
   return sectioned ? `/profile/${sectioned[1]}` : path;
 };
 
-const YSM_ROOT_PROFILE_PATH = /^\/profile\/[a-z0-9-]+$/i;
+const YSM_ROOT_PROFILE_PATH = /^\/profile\/([a-z0-9-]+)$/i;
 
-export const officialProfileDestinationStoredPattern = (url?: string | null): RegExp | null => {
+const YDS_PROFILE_PATH = /^\/profile\/([a-z0-9-]+)$/i;
+
+/**
+ * Hosts whose profile path is the same for everyone and whose query names the person, so
+ * dropping the query would let one URL match every holder of any link on that host (#4500).
+ */
+const IDENTITY_QUERY_PARAMETER_BY_HOST: Readonly<Record<string, string>> = {
+  'scholar.google.com': 'user',
+};
+
+const anyCaseLiteral = (literal: string): string =>
+  literal.replace(/[a-z]/g, (letter) => `[${letter}${letter.toUpperCase()}]`);
+
+interface OfficialProfileDestinationPatternParts {
+  host: string;
+  pathPattern: string;
+  caseInsensitive: boolean;
+}
+
+const officialProfileDestinationPatternParts = (
+  url?: string | null,
+): OfficialProfileDestinationPatternParts | null => {
   let parsed: URL;
   try {
     parsed = new URL(String(url || '').trim());
@@ -132,11 +180,49 @@ export const officialProfileDestinationStoredPattern = (url?: string | null): Re
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
   const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
   const path = canonicalOfficialProfilePath(host, parsed.pathname.replace(/\/+$/, ''));
-  const anySection =
-    host === 'medicine.yale.edu' && YSM_ROOT_PROFILE_PATH.test(path) ? '(?:/[a-z0-9-]+)?' : '';
+  const identityParameter = IDENTITY_QUERY_PARAMETER_BY_HOST[host];
+  if (identityParameter) {
+    const identityValue = parsed.searchParams.get(identityParameter);
+    if (!identityValue) return null;
+    return {
+      host,
+      pathPattern: `${escapeRegex(path)}/*\\?(?:[^#]*&)?${escapeRegex(identityParameter)}=${escapeRegex(encodeURIComponent(identityValue))}(?:[&#].*)?$`,
+      caseInsensitive: false,
+    };
+  }
+  const ysmProfile = host === 'medicine.yale.edu' ? YSM_ROOT_PROFILE_PATH.exec(path) : null;
+  const ydsProfile = host === 'divinity.yale.edu' ? YDS_PROFILE_PATH.exec(path) : null;
+  const macmillanPerson =
+    host === 'macmillan.yale.edu' ? MACMILLAN_ROOT_PERSON_PATH.exec(path) : null;
+  const pathPattern = ysmProfile
+    ? `(?:/[A-Za-z0-9-]+)?${anyCaseLiteral('/profile')}/${escapeRegex(ysmProfile[1])}`
+    : macmillanPerson
+      ? `(?:/[A-Za-z0-9-]+)*${anyCaseLiteral('/person')}/${escapeRegex(macmillanPerson[1])}`
+      : ydsProfile
+        ? `(?:/profile|${anyCaseLiteral('/faculty-and-research/yds-faculty')})/${escapeRegex(ydsProfile[1])}`
+        : escapeRegex(path);
+  return { host, pathPattern: `${pathPattern}/*(?:[?#].*)?$`, caseInsensitive: true };
+};
+
+export const officialProfileDestinationStoredPattern = (url?: string | null): RegExp | null => {
+  const parts = officialProfileDestinationPatternParts(url);
+  if (!parts) return null;
   return new RegExp(
-    `^https?://(?:www\\.)?${escapeRegex(host)}${anySection}${escapeRegex(path)}/*(?:[?#].*)?$`,
-    'i',
+    `^https?://(?:www\\.)?${escapeRegex(parts.host)}${parts.pathPattern}`,
+    parts.caseInsensitive ? 'i' : '',
+  );
+};
+
+/**
+ * The same destinations as `officialProfileDestinationStoredPattern`, as case-sensitive patterns
+ * that each start with a literal scheme and host, so a `sourceUrl` index bounds every one of them.
+ * A case-insensitive pattern cannot be bounded and scans every candidate row instead.
+ */
+export const officialProfileDestinationIndexedPatterns = (url?: string | null): RegExp[] => {
+  const parts = officialProfileDestinationPatternParts(url);
+  if (!parts) return [];
+  return ['https://', 'http://', 'https://www.', 'http://www.'].map(
+    (prefix) => new RegExp(`^${escapeRegex(`${prefix}${parts.host}`)}${parts.pathPattern}`),
   );
 };
 
@@ -216,6 +302,7 @@ interface LeadDirectoryIdentity {
   netid: string;
   nameTokens: Set<string>;
   nameTokenList: string[];
+  compactSurname: string;
   profileSlugs: Set<string>;
   profileSlugNameTokens: string[][];
 }
@@ -267,7 +354,11 @@ const stripWebPageFileExtension = (slug: string): string => {
 const personProfileSlugFromDestination = (destination: string): string => {
   const segments = destination.split('/').filter(Boolean);
   for (let index = segments.length - 2; index >= 1; index -= 1) {
-    if (PERSON_PROFILE_PATH_SEGMENTS.includes(segments[index]) && segments[index + 1]) {
+    if (
+      PERSON_PROFILE_PATH_SEGMENTS.includes(segments[index]) &&
+      segments[index + 1] &&
+      !isGenericProfileCategorySegment(segments[index + 1])
+    ) {
       const slug = stripWebPageFileExtension(segments[index + 1]);
       return isGroupLikeProfileSlug(slug) ? '' : slug;
     }
@@ -306,6 +397,7 @@ const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirect
     netid,
     nameTokens: new Set(nameTokensFrom(nameSource)),
     nameTokenList: orderedNameTokensFrom(nameSource),
+    compactSurname: normalizeIdentityToken(String(nameSource).trim().split(/\s+/).pop()),
     profileSlugs: new Set(ownProfileSlugs.map(normalizeIdentityToken)),
     profileSlugNameTokens: ownProfileSlugs.map((slug) => nameTokensFrom(slug)),
   };
@@ -360,12 +452,13 @@ const sharesGivenNameAndAnotherToken = (slug: string, orderedNameTokens: string[
 const MIN_ABBREVIATED_GIVEN_NAME_LENGTH = 2;
 
 // An abbreviated given name is the SAME name shortened (Doug/Douglas, La/Laurie),
-// not a different one: the shorter form must be a genuine prefix of the longer.
-// This never clears a foreign same-surname graft, which spells out a distinct
-// given name that is not a prefix of the lead's (Mary vs John).
-const givenNamesAbbreviationMatch = (slugGiven: string, leadGiven: string): boolean => {
+// not a different one: the shorter form must be a genuine prefix of the longer, or
+// a pair the curated nickname tables list (Bill/William). This never clears a
+// foreign same-surname graft, which spells out a distinct given name that is
+// neither (Mary vs John).
+const givenNamesNameOnePerson = (slugGiven: string, leadGiven: string): boolean => {
   if (!slugGiven || !leadGiven) return false;
-  if (slugGiven === leadGiven) return true;
+  if (givenNamesAgree(slugGiven, leadGiven)) return true;
   const [shorter, longer] =
     slugGiven.length <= leadGiven.length ? [slugGiven, leadGiven] : [leadGiven, slugGiven];
   return shorter.length >= MIN_ABBREVIATED_GIVEN_NAME_LENGTH && longer.startsWith(shorter);
@@ -435,7 +528,8 @@ const profileSlugCorroboratesLead = (
   if (slugTokens.length >= 2) {
     const slugGiven = slugTokens[0];
     const slugSurname = slugTokens[slugTokens.length - 1];
-    if (slugSurname === leadSurname && givenNamesAbbreviationMatch(slugGiven, leadGiven)) {
+    const surnameMatches = slugSurname === leadSurname || slugSurname === identity.compactSurname;
+    if (surnameMatches && givenNamesNameOnePerson(slugGiven, leadGiven)) {
       return true;
     }
   }
@@ -483,18 +577,51 @@ export const officialProfileUrlFromRosterEntry = (entry: {
   return isLikelyOfficialPersonProfileUrl(entry.websiteUrl) ? String(entry.websiteUrl).trim() : '';
 };
 
+export const entityOfficialPersonProfileUrls = (entity: Record<string, any>): string[] =>
+  [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+    ...Object.values(safeProfileUrlObject(entity.profileUrls || entity.profile_urls)),
+  ]
+    .filter(isLikelyOfficialPersonProfileUrl)
+    .map((url) => String(url).trim());
+
 export const entityOfficialPersonProfileDestinations = (entity: Record<string, any>): Set<string> =>
   new Set(
-    [
-      entity.websiteUrl,
-      entity.website,
-      ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-      ...Object.values(safeProfileUrlObject(entity.profileUrls || entity.profile_urls)),
-    ]
-      .filter(isLikelyOfficialPersonProfileUrl)
-      .map((url) => normalizeOfficialProfileDestination(String(url)))
+    entityOfficialPersonProfileUrls(entity)
+      .map((url) => normalizeOfficialProfileDestination(url))
       .filter(Boolean),
   );
+
+/**
+ * The stored spellings of one official profile URL that an equality lookup should try: the
+ * URL as given and its canonical path (a section-prefixed school profile collapses to the root
+ * profile), each with and without `www.`, `http`, and a trailing slash. Equality keeps the
+ * lookup on the `sourceUrl` index instead of a host-prefix regex scan (#5970 follow-up).
+ */
+export const officialProfileStoredUrlSpellings = (url: string): string[] => {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return [];
+  }
+  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+  const path = parsed.pathname.replace(/\/+$/, '') || '/';
+  const paths = new Set([path, canonicalOfficialProfilePath(host, path)]);
+  const spellings = new Set<string>();
+  for (const candidatePath of paths) {
+    for (const scheme of ['https://', 'http://']) {
+      for (const prefix of ['', 'www.']) {
+        const base = `${scheme}${prefix}${host}${candidatePath === '/' ? '' : candidatePath}`;
+        spellings.add(base);
+        spellings.add(`${base}/`);
+      }
+    }
+  }
+  return [...spellings];
+};
 
 /**
  * A person-derived entity is one whose own identity links (name/site/sources)

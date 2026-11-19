@@ -7,9 +7,14 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import { buildSourceHealthRows, type SourceHealthRow } from '../services/sourceHealthService';
 import { isDirectScriptInvocation } from './directScriptInvocation';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ path: path.join(resolveServerPackageRoot(import.meta.url), '.env'), quiet: true });
 
@@ -280,7 +285,7 @@ export function writeSourceHealthOutput(report: Record<string, unknown>, output?
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildSourceHealthOutput<T extends object>(
@@ -570,7 +575,7 @@ async function main(): Promise<void> {
     startedAt: { $gte: since },
   })
     .select(
-      'sourceName status startedAt finishedAt heartbeatAt observationCount materializationErrors materializationConflicts invalidated',
+      'sourceName status startedAt finishedAt heartbeatAt observationCount storedObservationCountAtReconcile materializationErrors materializationConflicts invalidated',
     )
     .sort({ sourceName: 1, startedAt: -1 })
     .lean();
@@ -618,7 +623,7 @@ if (isDirectScriptInvocation(import.meta.url, 'sourceHealth')) {
 function readJsonIfExists(reportPath: string): unknown | undefined {
   let safeReportPath: string;
   try {
-    safeReportPath = resolveSafeJsonReportOutputPath(reportPath, 'report path');
+    safeReportPath = resolveSafeJsonReportPath(reportPath, 'report path');
   } catch {
     return undefined;
   }

@@ -5,6 +5,17 @@ The scoreboard answers one question: is the copy students actually see getting b
 It renders a fixed set of slugs through the real serve path against a named environment and diffs the result against a stored baseline.
 Read this before claiming a data fix improved anything.
 
+## Baseline files
+
+Baselines live in `~/Personal/ylabs-backups/handoffs/`, mode 0600, outside every checkout, because they carry served copy about real people.
+The two original baselines are lost: `beta-served-hand-read-n100-20260831.json` and `beta-served-n92-20260913.json` lived under `~/ylabs-backups/handoffs/`, which a scoreboard run still read at 2026-11-13 05:50Z and which was gone, with the whole `~/ylabs-backups` root, by 2026-11-16.
+Do not hunt for them.
+The pinned slug set survives, because a scoreboard run on 2026-11-13 recorded all 100 slugs, but the 2026-08-31 per-row hand-read verdicts and the 2026-09-13 copy do not.
+The class-by-class reading of the hand-read survives in the closing comment on #2299.
+
+The current baseline is `~/Personal/ylabs-backups/handoffs/beta-served-n65-20261116.json`: the 65 rows of the pinned 100 that Beta served on 2026-11-16, read-only and uncapped (longest `fullDescription` 1,739 characters, no length shared by more than two rows).
+Re-running against it on Beta reported 0 changed, 0 no longer served and 0 compared on a prefix, the check that a freshly cut baseline is clean.
+
 ## Why it exists
 
 The only served-corpus quality measurement this repository had ever made was #2299, a hand-read of 100 random `student_ready` Beta cards on 2026-08-31: 46% clean, 26% seriously defective, 11% carrying a name that is not theirs.
@@ -20,14 +31,14 @@ Read the closing comment on #2299 for the class-by-class resolution rather than 
 
 ```bash
 yarn --cwd server research-entity:served-scoreboard \
-  --baseline ~/ylabs-backups/handoffs/beta-served-hand-read-n100-20260831.json \
+  --baseline ~/Personal/ylabs-backups/handoffs/beta-served-n65-20261116.json \
   --output ./tmp/served-scoreboard.json
 ```
 
 It reads and never writes to any environment.
 
 - `--baseline <path.json>` is required.
-The 2026-08-31 artifact is the baseline slug set.
+The pinned slug set is the 100 slugs the 2026-08-31 hand-read drew; the current baseline holds the 65 of them Beta still served on 2026-11-16.
 - `--environment development|beta|production` may be repeated.
 With none given it reads all three.
 Environment URLs come from `MONGODBURL`, `BETA_MONGODBURL`, and `PRODUCTION_MONGODBURL` in `server/.env`, and each connection is checked against the database name it claims to be.
@@ -127,7 +138,12 @@ baseline was exported through a length cap, so these fields cannot be byte-compa
   27 still-served rows were compared on the prefix only and are NOT counted as changed
 ```
 
-**Keep the 2026-08-31 artifact.** Its per-row hand-read verdicts are the only classified sample this product has and the cap does not touch them: a human read the served card, not the export. What is limited is only its use as a byte-comparison source, and only past 700 characters. Do not "fix" it by discarding or regenerating the file.
+That count can fall to zero without anything being wrong: measured on Development on 2026-11-10, all 31 rows the 2026-08-31 artifact holds at 700 characters had been rewritten and differed from it within their first 100 characters, so each one is a real change and none needs the prefix (#5579).
+The self-check therefore does not ask for at least one prefix row.
+It refuses the run when a counted change's served text only continues a capped baseline value, because that is the row the cap-aware comparison exists to exclude and finding one means the comparison did not run.
+
+The 2026-08-31 artifact and its per-row hand-read verdicts are lost (see Baseline files above); this section explains numbers reported against it before then.
+The cap detection stays, because any baseline exported through a length cap needs it.
 
 ## The corpus-wide reachable split
 
@@ -149,9 +165,42 @@ Note that the browse gate and the detail route disagree in both directions, so a
 The figures in the comment above `researchEntityServesPublicDetail` are a snapshot of that disagreement rather than a contract: it records 5 and 2, and 2026-09-13 measured 8 failing the gate of which 3 the route serves.
 Measure it rather than quoting it.
 
+## Served rows that cite nothing
+
+`cites nothing` counts the `student_ready` rows with no citation at all, neither in `sourceUrls` nor in any `fieldProvenance.*.sourceUrl` (#6320).
+The gate reads such a row as silence rather than as dead, so it is served even when everything it once cited is gone.
+It should read 0, because every writer that unsets a provenance stamp or trims `sourceUrls` keeps a row's last citation.
+A non-zero reading means a writer removed a last citation outside the shared rule in `server/src/services/lastCitationGuard.ts`, or a row was served without ever citing a page.
+It is computed on every run from a projection of the served rows, so it costs no route calls.
+
+## Readings unconfirmed since a sustained refusal
+
+`research-page-text` flags a host that has refused it for a sustained period: at least 3 attempted runs spanning at least 14 days, with no answer between (#6195, rule in `server/src/scrapers/utils/sustainedHostRefusal.ts`).
+The flag never retires a reading, so a row whose stored reading came from that host keeps serving it while nothing can re-read it.
+Every run prints one line, so the first time the flag fires is seen here rather than missed:
+
+```
+unconfirmed, sustained refusal | 3
+```
+
+```
+research-page-text hosts refusing for a sustained period, flagged by the run started <iso> (read-only, nothing served changes):
+  - <host>: 3 served readings draw only on it, unconfirmed since <firstRefusedAt> (3 refused runs, latest <confirmingRefusalAt>)
+```
+
+- The hosts come from `metrics.sustainedRefusalHosts` on the newest successful `research-page-text` run.
+The flag is recomputed from run history on every run, so a host missing from the newest run has answered again.
+- A served reading counts when it is the row's newest non-superseded `researchPageText` observation, every page it was built from sits on that host (`www.` ignored), the row is `student_ready` and not archived, and it was read before `firstRefusedAt`.
+A reading that also draws on another host is left out, because that other host can still confirm part of it.
+- The table reads `none flagged` when the newest run flags nothing, and the detail line says so when no `research-page-text` run has succeeded at all.
+
+It is a count, not a correction.
+What to do with an affected row is an operator judgement, per row, or a fix to the cause such as pacing or contact with the site owner; never a bulk retirement.
+The count lives here and not in `yarn served-check`, because that command reads served HTTP paths as an anonymous visitor and has no database read of its own.
+
 ## Cutting a second baseline
 
-**The 2026-08-31 hand-read is the pinned baseline and does not get updated.** Decided 2026-09-12.
+**A baseline file does not get updated.** Decided 2026-09-12, for the 2026-08-31 hand-read, which is now lost.
 Never overwrite it with a fresh render: the whole value of a fixed slug set is that a change in a number is a change in the corpus, and rolling served rows into it silently ends the pairing to the only human-classified sample this product has.
 
 When you want a fresh sample, cut a **second, separately named** baseline and keep both.
@@ -161,14 +210,15 @@ The baseline is a JSON array of objects carrying `slug`, `name`, `shortDescripti
 jq '[.scoreboards[] | select(.environment == "beta") | .servedRows[]
      | select(.served == true)
      | {slug, name, shortDescription, fullDescription, websiteUrl, researchAreas}]' \
-  ./tmp/served-scoreboard.json > ~/ylabs-backups/handoffs/beta-served-n<count>-<YYYYMMDD>.json
+  ./tmp/served-scoreboard.json > ~/Personal/ylabs-backups/handoffs/beta-served-n<count>-<YYYYMMDD>.json
 ```
 
 Filter on `.served == true`.
 A row the route refused is recorded with empty copy, and baking that in would make the row read as changed the moment it starts serving again, which is a fact about the export rather than about the corpus.
 
-The first full-fidelity baseline is `~/ylabs-backups/handoffs/beta-served-n92-20260913.json`: the 92 rows of the pinned 100 that Beta still served on 2026-09-13, uncapped (longest `fullDescription` 1,994 characters, none at a round length).
-Re-running against it reports 0 changed and 0 compared on a prefix, which is the check that a freshly cut baseline is clean.
+The first full-fidelity baseline was `beta-served-n92-20260913.json`, the 92 rows of the pinned 100 that Beta served on 2026-09-13; it is lost.
+The current one is `beta-served-n65-20261116.json`, cut the same way (see Baseline files above).
+Re-running against a freshly cut baseline must report 0 changed and 0 compared on a prefix, which is the check that it is clean.
 
 Report both baselines when you use the new one, so a reader can see which pairing a number belongs to.
 
@@ -189,6 +239,7 @@ A diff count alone cannot tell you whether a defect was repaired or reworded.
 Tier and archived are not the last gate.
 `getResearchGroupDetail` returns null, and `/api/research/:slug` therefore 404s, when the public-description invariant fails or when the stored copy names a deceased lead (#982), even for a row that is `student_ready` and not archived.
 An admin caller is the one exception: the route passes `includeWithheldForOperator`, so an admin sees the page with an `operatorPreview` block naming the tier and each withholding check (#4564).
+The block splits the stored gate reasons on the server, through `isStudentVisibilitySignalReason` in `server/src/services/studentVisibilityTier.ts`, into blocking reasons and soft or evidence signals, so the notice lists what holds the row before the signals that do not (#5319).
 Every script that asks whether a row is served calls `getResearchGroupDetail` without that option, so it still answers for a student.
 The scoreboard calls `researchEntityServesPublicDetail`, the same entity-only predicate the browse list filters on, so it covers both halves from one place instead of reimplementing either.
 
@@ -220,3 +271,10 @@ Two things make it safe, and the second is a check rather than an assumption:
 - The collection set is listed with the raw driver before and after, and the run fails naming any collection that appeared or disappeared.
 
 Corpus counts come from the raw driver, not the models.
+
+## Reading one route instead
+
+The scoreboard reads the research detail route over a fixed slug set.
+To read any single GET route as a student, use `yarn served-check <path>` for an anonymous visitor or `yarn served-check --as student <path>` for a signed-in undergraduate, which a route behind sign-in such as `/api/programs/search` needs (#6079).
+Both go through the real middleware and route stack; the student mode runs in a process that refuses every MongoDB write and ends with a `refusedWrites` line.
+`skills/auth-security/SKILL.md` describes the identity and why the student hook cannot be enabled in a deployed server.

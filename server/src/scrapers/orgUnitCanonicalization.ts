@@ -23,6 +23,8 @@ export interface OrgUnitCanonicalizer {
    * school.
    */
   parentDepartmentsFor(canonicalDepartmentName: string): string[];
+  /** Whether some catalog unit names this canonical department as its nearest ancestor. */
+  hasSubunits(canonicalDepartmentName: string): boolean;
 }
 
 interface OrgUnitResolverRow {
@@ -176,8 +178,11 @@ export function isDroppedAdministrativeOrgUnit(raw: unknown): boolean {
 
 /**
  * Deterministic normalized-key -> canonical OrgUnit index over each row's name,
- * slug, and aliases. Earlier rows win on a key collision, so callers that want
- * schools to take precedence must order school rows first.
+ * slug, and aliases. Every row's name and slug is indexed before any alias, so an
+ * alias never takes a key another unit is named by; between names, earlier rows win,
+ * so callers that want schools to take precedence must order school rows first. An
+ * alias that two different units both claim names neither of them, so it is left out
+ * of the index and fails closed rather than resolving to whichever unit sorted first.
  */
 export function buildOrgUnitResolverIndex(
   rows: OrgUnitResolverRow[],
@@ -185,11 +190,29 @@ export function buildOrgUnitResolverIndex(
   const index = new Map<string, OrgUnitCanonical>();
   for (const row of rows) {
     const canonical: OrgUnitCanonical = { name: row.name, slug: row.slug, kind: row.kind };
-    for (const value of [row.name, row.slug, ...(row.aliases || [])]) {
+    for (const value of [row.name, row.slug]) {
       const key = orgUnitMatchKey(value);
       if (key && !index.has(key)) index.set(key, canonical);
     }
   }
+  const nameKeys = new Set(index.keys());
+  const aliasOwnerSlugByKey = new Map<string, string>();
+  const ambiguousAliasKeys = new Set<string>();
+  for (const row of rows) {
+    const canonical: OrgUnitCanonical = { name: row.name, slug: row.slug, kind: row.kind };
+    for (const alias of row.aliases || []) {
+      const key = orgUnitMatchKey(alias);
+      if (!key || nameKeys.has(key)) continue;
+      const aliasOwnerSlug = aliasOwnerSlugByKey.get(key);
+      if (aliasOwnerSlug === undefined) {
+        index.set(key, canonical);
+        aliasOwnerSlugByKey.set(key, row.slug);
+      } else if (aliasOwnerSlug !== row.slug) {
+        ambiguousAliasKeys.add(key);
+      }
+    }
+  }
+  for (const key of ambiguousAliasKeys) index.delete(key);
   return index;
 }
 
@@ -268,12 +291,18 @@ export function createOrgUnitCanonicalizer(
     DEPARTMENT_KINDS.includes(unit.kind),
   );
   const hasSchoolCatalog = [...index.values()].some((unit) => SCHOOL_KINDS.includes(unit.kind));
+  const departmentsWithSubunits = new Set(
+    [...departmentAncestors.values()].map((ancestors) => ancestors[0]).filter(Boolean),
+  );
   return {
     schoolForDepartment(canonicalDepartmentName) {
       return departmentToSchool.get(canonicalDepartmentName) ?? null;
     },
     parentDepartmentsFor(canonicalDepartmentName) {
       return departmentAncestors.get(canonicalDepartmentName) ?? [];
+    },
+    hasSubunits(canonicalDepartmentName) {
+      return departmentsWithSubunits.has(canonicalDepartmentName);
     },
     canonicalizeSchool(raw) {
       if (typeof raw !== 'string') return { value: '', matched: false };
@@ -436,6 +465,20 @@ function withAncestorDepartments(
   return values;
 }
 
+/**
+ * A stated department as the catalog names it, followed by its department-altitude
+ * ancestors, so a stored section (#6202) reaches the department it sits under. Empty when
+ * the catalog does not name exactly one unit for the value.
+ */
+export function catalogDepartmentWithAncestors(
+  canonicalizer: OrgUnitCanonicalizer,
+  rawDepartment: string,
+): string[] {
+  const canonical = canonicalizer.canonicalizeDepartments([rawDepartment]);
+  if (canonical.values.length !== 1 || canonical.unmatched.length > 0) return [];
+  return withAncestorDepartments(canonicalizer, canonical.values);
+}
+
 async function buildCanonicalizerFromDatabase(): Promise<OrgUnitCanonicalizer> {
   const rows = await OrgUnit.find({
     archived: { $ne: true },
@@ -535,6 +578,29 @@ export function schoolNameFromProfileHosts(urls: string[]): string | null {
     if (school) return school;
   }
   return null;
+}
+
+/**
+ * The URLs whose hosts the canonicalization may read a school from: the row's research
+ * website and its cited sources, each taken from the pending `$set` when this pass writes
+ * it and from the stored row otherwise.
+ */
+export function researchEntityOrgUnitProfileUrls(
+  set: Record<string, unknown>,
+  stored?: Record<string, unknown> | null,
+): string[] {
+  const websiteUrl =
+    typeof set.websiteUrl === 'string' && set.websiteUrl
+      ? [set.websiteUrl]
+      : typeof stored?.websiteUrl === 'string' && stored.websiteUrl
+        ? [stored.websiteUrl]
+        : [];
+  const sourceUrls = Array.isArray(set.sourceUrls)
+    ? set.sourceUrls
+    : Array.isArray(stored?.sourceUrls)
+      ? stored.sourceUrls
+      : [];
+  return [...websiteUrl, ...sourceUrls].filter((url): url is string => typeof url === 'string');
 }
 
 /**
@@ -642,7 +708,11 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   };
   const hasSchool = Object.prototype.hasOwnProperty.call(set, 'school');
   const hasDepartments = Object.prototype.hasOwnProperty.call(set, 'departments');
-  if (!hasSchool && !hasDepartments) return result;
+  const hasStatedAppointmentSchools = Object.prototype.hasOwnProperty.call(
+    set,
+    'statedAppointmentSchools',
+  );
+  if (!hasSchool && !hasDepartments && !hasStatedAppointmentSchools) return result;
 
   const canonicalizer = await getOrgUnitCanonicalizer();
   let clearedSchoolLabel = '';
@@ -729,7 +799,9 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   else if (asStringList(existing?.schools).length > 0) set.schools = [];
 
   const assertedSchool = hasSchool ? stringValue(set.school) : '';
+  const decidesSchool = hasSchool || hasDepartments;
   if (
+    decidesSchool &&
     !assertedSchool &&
     schools.length > 1 &&
     isCrossSchoolOrganizationEntity(set.entityType ?? existing?.entityType) &&
@@ -737,9 +809,21 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   ) {
     set.school = '';
     result.unresolvablePrimarySchool = true;
-  } else if (!canonicalEffectiveSchool && schools.length > 0) {
+  } else if (decidesSchool && !canonicalEffectiveSchool && schools.length > 0) {
     set.school = schools[0];
   }
+
+  const statedAppointmentSchools = asStringList(
+    hasStatedAppointmentSchools ? set.statedAppointmentSchools : existing?.statedAppointmentSchools,
+  )
+    .map((school) => canonicalizer.canonicalizeSchool(school))
+    .filter((canonical) => canonical.matched)
+    .map((canonical) => canonical.value);
+  const withStatedSchools = [...schools];
+  for (const school of statedAppointmentSchools) {
+    if (school && !withStatedSchools.includes(school)) withStatedSchools.push(school);
+  }
+  if (withStatedSchools.length > schools.length) set.schools = withStatedSchools;
 
   return result;
 }

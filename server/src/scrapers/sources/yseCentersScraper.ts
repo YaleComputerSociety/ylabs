@@ -3,6 +3,7 @@
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import { mapResearchGroupKindToEntityType } from '../../models/researchAccessTypes';
@@ -11,7 +12,6 @@ import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 const PAGE_URL = 'https://environment.yale.edu/research/centers';
 const SOURCE_KEY = 'yse-centers-index';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30000;
 
 export type YseEntityKind = 'center' | 'program' | 'initiative' | 'institute' | 'group';
@@ -88,7 +88,6 @@ async function fetchPage(useCache: boolean): Promise<string> {
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrl.toString(), {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -111,7 +110,6 @@ async function fetchUrl(url: string, useCache: boolean): Promise<string> {
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -166,7 +164,7 @@ export function entityToObservations(entity: RawYseEntity, sourceUrl: string): O
 
 function pageText(html: string): string {
   const $ = cheerio.load(html);
-  return $('body').text().replace(/\s+/g, ' ').trim();
+  return extractElementTextWithBlockSeparators($('body')[0]);
 }
 
 export function yasspAccessObservations(htmlByUrl: Map<string, string>): ObservationInput[] {

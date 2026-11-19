@@ -209,6 +209,62 @@ describe('extractProfile', () => {
     expect(extractLabUrl(noLab, MEADOW.profileUrl)).toBeUndefined();
   });
 
+  describe('a Links entry labeled for this person', () => {
+    const profileLinking = (label: string, href = 'https://ownsite.example.org/') =>
+      cheerio.load(`<main>
+        <h1>Avery Quill</h1>
+        <div class="profile__info">
+          <div class="eyebrow">Links</div>
+          <ul><li><a href="${href}">${label}</a></li></ul>
+        </div>
+      </main>`);
+    const PROFILE_URL = 'https://environment.yale.edu/directory/faculty/avery-quill';
+
+    it.each([
+      'Quill Lab Website',
+      'Quill lab website',
+      'Quill Lab',
+      "Quill's Lab",
+      'The Quill Laboratory',
+    ])('adopts "%s" as the person own research site', (label) => {
+      expect(extractLabUrl(profileLinking(label), PROFILE_URL, 'Avery Quill')).toBe(
+        'https://ownsite.example.org/',
+      );
+    });
+
+    it.each([
+      'Marsh Lab Website',
+      'Coastal City Lab',
+      'Center for Fixture Chemistry website',
+      'Fixture Leadership (center homepage)',
+      'Link to personal website',
+      'Link to Fixture Consulting website',
+      'Quill Group',
+      'Quill Group LLC',
+      'Quill Labs',
+      'Quill Labs Inc.',
+      'Quill Lab LLC',
+      'Quill Consulting',
+      'Quill Lab Consulting website',
+    ])('does not adopt "%s", which names another entity', (label) => {
+      expect(extractLabUrl(profileLinking(label), PROFILE_URL, 'Avery Quill')).toBeUndefined();
+    });
+
+    it('does not adopt an eponymous lab label when the person name is unknown', () => {
+      expect(extractLabUrl(profileLinking('Quill Lab Website'), PROFILE_URL)).toBeUndefined();
+    });
+
+    it('passes the profile name through extractProfile', () => {
+      const html = profileLinking('Quill Lab Website').html();
+      const profile = extractProfile(html, {
+        name: 'Avery Quill',
+        profileUrl: PROFILE_URL,
+        slug: 'avery-quill',
+      } as Parameters<typeof extractProfile>[1]);
+      expect(profile.labUrl).toBe('https://ownsite.example.org/');
+    });
+  });
+
   it('drops faculty-type role links from the program list', () => {
     const $ = cheerio.load(PROFILE_WITH_LAB);
     expect(extractPrograms($)).toEqual(['The Forest School']);
@@ -221,7 +277,7 @@ describe('facultyToUserObservations', () => {
     const { observations, entityKey } = facultyToUserObservations(profile);
     expect(entityKey).toBe('netid:jordan.rivers');
     expect(observations.every((o) => o.sourceUrl === RIVERS.profileUrl)).toBe(true);
-    expect(observations.find((o) => o.field === 'netid')?.value).toBe('jordan.rivers');
+    expect(observations.some((o) => o.field === 'netid')).toBe(false);
     expect(observations.find((o) => o.field === 'userType')?.value).toBe('faculty');
   });
 
@@ -595,5 +651,94 @@ describe('a lab link whose verdict the link-health lane has since dropped (#3452
 
     expect(prober).not.toHaveBeenCalled();
     expect(riversFields(emitted).entityType).toBe('LAB');
+  });
+});
+
+describe('the YSE position block (#5578)', () => {
+  const faculty: RawYseFaculty = {
+    name: 'Jordan Rivers',
+    profileUrl: 'https://environment.yale.edu/profile/jordan-rivers',
+    slug: 'jordan-rivers',
+  };
+  const html = `
+    <html><body><main><section class="profile">
+      <h1>Jordan Rivers</h1>
+      <div class="intro-text profile__position"><p>
+        <span class="semijoin" data-self-delimiter="; ">Professor of Wetland Ecology</span>
+        <span class="semijoin" data-self-delimiter="; ">Director, Fixture Center for Water</span>
+      </p></div>
+      <p><a href="mailto:jordan.rivers@yale.edu">jordan.rivers@yale.edu</a></p>
+    </section></main></body></html>
+  `;
+
+  it('emits only the leading title when the page lists an additional one', () => {
+    const profile = extractProfile(html, faculty);
+    const titles = facultyToUserObservations(profile).observations.filter(
+      (observation) => observation.field === 'title',
+    );
+
+    expect(titles.map((observation) => observation.value)).toEqual([
+      'Professor of Wetland Ecology',
+    ]);
+  });
+
+  it('still screens every appointment in the block', () => {
+    expect(extractProfile(html, faculty).title).toBe(
+      'Professor of Wetland Ecology; Director, Fixture Center for Water',
+    );
+  });
+
+  describe('when the page joins every position inside one span, as the live pages do', () => {
+    const joinedHtml = `
+      <html><body><main><section class="profile">
+        <h1>Jordan Rivers</h1>
+        <div class="intro-text profile__position"><p>
+          <span class="semijoin" data-self-delimiter="; ">Associate Dean of Fixture Studies; Professor of Wetland Ecology; Director of Fixture Forests</span>
+        </p></div>
+        <p><a href="mailto:jordan.rivers@yale.edu">jordan.rivers@yale.edu</a></p>
+      </section></main></body></html>
+    `;
+
+    it('emits the first displayed position, even an administrative one', () => {
+      const titles = facultyToUserObservations(
+        extractProfile(joinedHtml, faculty),
+      ).observations.filter((observation) => observation.field === 'title');
+
+      expect(titles.map((observation) => observation.value)).toEqual([
+        'Associate Dean of Fixture Studies',
+      ]);
+    });
+
+    it('still screens every position in the span', () => {
+      expect(extractProfile(joinedHtml, faculty).title).toBe(
+        'Associate Dean of Fixture Studies; Professor of Wetland Ecology; Director of Fixture Forests',
+      );
+    });
+  });
+
+  describe('when the page renders the positions as plain text without spans', () => {
+    const plainHtml = `
+      <html><body><main><section class="profile">
+        <h1>Jordan Rivers</h1>
+        <div class="intro-text profile__position"><p>Professor of Wetland Ecology; Director of Fixture Forests</p></div>
+        <p><a href="mailto:jordan.rivers@yale.edu">jordan.rivers@yale.edu</a></p>
+      </section></main></body></html>
+    `;
+
+    it('emits only the first position', () => {
+      const titles = facultyToUserObservations(
+        extractProfile(plainHtml, faculty),
+      ).observations.filter((observation) => observation.field === 'title');
+
+      expect(titles.map((observation) => observation.value)).toEqual([
+        'Professor of Wetland Ecology',
+      ]);
+    });
+
+    it('still screens every position in the block', () => {
+      expect(extractProfile(plainHtml, faculty).title).toBe(
+        'Professor of Wetland Ecology; Director of Fixture Forests',
+      );
+    });
   });
 });

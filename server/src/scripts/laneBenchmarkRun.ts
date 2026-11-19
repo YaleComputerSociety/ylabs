@@ -6,9 +6,13 @@ import { buildOrchestrator } from '../scrapers/registry';
 import { isRenderedFetchMetadataKey } from '../scrapers/renderedFetch';
 import { SSRF_HOST_REFUSAL_NAMESPACE } from '../scrapers/snapshotBenchmarkMode';
 import type { ScraperOptions } from '../scrapers/types';
-import { installScraperHostConcurrencyInterceptor } from '../scrapers/utils/hostConcurrencyLimiter';
-import { scraperHostSlotLimiter } from '../scrapers/utils/scraperHostSlotLimiter';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 import type { PlannedObservation } from './laneScorecardCore';
+import {
+  WRITER_BENCHMARK_LANE,
+  runWriterBenchmarkDry,
+  type WriterBenchmarkRow,
+} from './coverageSynthesisBenchmark';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +36,8 @@ export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'yale-college-fellowships-office',
   'center-affiliation-llm',
   'center-director-llm',
+  'center-director',
+  'center-affiliation-roster',
   'research-area-source-extractor',
   'nih-reporter',
   'nsf-award-search',
@@ -48,7 +54,10 @@ export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'yale-reu-programs',
   'yse-centers-index',
   'yse-faculty-directory',
+  WRITER_BENCHMARK_LANE,
 ]);
+
+export const SCRIPT_BENCHMARK_LANES: ReadonlySet<string> = new Set([WRITER_BENCHMARK_LANE]);
 
 export const SOURCE_CONCURRENCY_LANES: ReadonlySet<string> = new Set([
   'lab-microsite-undergrad-llm',
@@ -96,8 +105,12 @@ export function assertLaneHonorsSourceConcurrency(sourceName: string): void {
 export async function runLaneDry(spec: LaneBenchmarkSpec): Promise<{
   observations: PlannedObservation[];
   truncated: boolean;
+  writerRows?: WriterBenchmarkRow[];
 }> {
-  installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
+  if (spec.sourceName === WRITER_BENCHMARK_LANE) {
+    return runWriterBenchmarkDry({ only: spec.only, referenceDate: spec.referenceDate });
+  }
+  installScraperFetchHooks({ validatorCache: false });
   const options: ScraperOptions = {
     dryRun: true,
     useCache: true,

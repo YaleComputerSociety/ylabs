@@ -9,6 +9,7 @@ import {
   getResearchGroupDetail,
   normalizeResearchDetailSlug,
   resolveArchivedResearchEntityCanonicalSlug,
+  resolveRenamedResearchEntitySlug,
   searchResearchGroupsViaMeili,
   type ResearchGroupQualityFilter,
   ResearchGroupSearchSort,
@@ -21,7 +22,7 @@ import {
 } from '../models/studentVisibility';
 import { hasAdminAuthorityForUser } from '../services/adminGrantService';
 import { maxReachableResearchSearchPage } from '../services/researchSearchPagination';
-import { getPeerIpKey } from '../middleware/rateLimiters';
+import { getPeerIpKey, getRateLimitKey } from '../middleware/rateLimiters';
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 24;
@@ -61,7 +62,7 @@ const OPERATOR_ALLOWED_SORT_FIELDS: ResearchGroupSearchSort['sortBy'][] = [
   'updatedAt',
 ];
 
-const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
+export const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
   if (!raw || typeof raw !== 'object') return {};
   const r = raw as Record<string, unknown>;
   const filters: ResearchGroupFilterInput = {};
@@ -83,6 +84,18 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
 
   if (r.hostsUndergrads === true) {
     filters.hostsUndergrads = true;
+  }
+
+  if (r.welcomesUndergrads === true) {
+    filters.welcomesUndergrads = true;
+  }
+
+  if (r.mentorsUndergrads === true) {
+    filters.mentorsUndergrads = true;
+  }
+
+  if (r.worksWithUndergrads === true) {
+    filters.worksWithUndergrads = true;
   }
 
   return filters;
@@ -157,6 +170,9 @@ export const searchResearchGroups = async (request: Request, response: Response)
     browseQuality?: unknown;
     qualityFilters?: unknown;
     correctSpelling?: boolean;
+    rewriteAcronym?: boolean;
+    extractSentenceTopic?: boolean;
+    resolveFilterValues?: boolean;
   };
 
   if (isOversizedSearchRequest(body as Record<string, unknown>)) {
@@ -234,6 +250,13 @@ export const searchResearchGroups = async (request: Request, response: Response)
     // per-client ceiling.
     embeddingSpendKey: getPeerIpKey(request),
     correctSpelling: body.correctSpelling !== false,
+    rewriteAcronym: body.rewriteAcronym !== false,
+    extractSentenceTopic: body.extractSentenceTopic !== false,
+    resolveFilterValues: body.resolveFilterValues !== false,
+    rerankLiveMissClient: {
+      ipKey: getPeerIpKey(request),
+      sessionKey: getRateLimitKey(request),
+    },
   });
   if (includeFacets) return response.json(result);
   // Omitted rather than emptied: an empty object is indistinguishable from "this
@@ -253,6 +276,10 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
   if (!slug) {
     return response.status(400).json({ error: 'Invalid slug' });
   }
+  const caseFoldedSlug = slug.toLowerCase();
+  if (caseFoldedSlug !== slug) {
+    return response.redirect(302, `${request.baseUrl}/${encodeURIComponent(caseFoldedSlug)}`);
+  }
 
   const currentUser = request.user as
     { netId?: string; netid?: string; userType?: string } | undefined;
@@ -261,7 +288,9 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
     includeWithheldForOperator: hasAdminAuthority,
   });
   if (!detail) {
-    const canonicalSlug = await resolveArchivedResearchEntityCanonicalSlug(slug);
+    const canonicalSlug =
+      (await resolveArchivedResearchEntityCanonicalSlug(slug)) ??
+      (await resolveRenamedResearchEntitySlug(slug));
     if (canonicalSlug) {
       return response.redirect(302, `${request.baseUrl}/${encodeURIComponent(canonicalSlug)}`);
     }

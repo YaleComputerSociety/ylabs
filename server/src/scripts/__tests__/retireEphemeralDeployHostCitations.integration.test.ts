@@ -93,7 +93,7 @@ describe('deploy-host citations are refused, withheld, and retracted (#2805)', (
     const refused = await appendObservations([input(DEPLOY_HOST_URL)], ctx);
     const accepted = await appendObservations([input(YALE_URL)], ctx);
 
-    expect(refused).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+    expect(refused).toMatchObject({ inserted: 0, skipped: 1, superseded: 0 });
     expect(accepted.inserted).toBe(1);
     expect(await Observation.countDocuments({ sourceUrl: DEPLOY_HOST_URL })).toBe(0);
     expect(await Observation.countDocuments({ sourceUrl: YALE_URL })).toBe(1);

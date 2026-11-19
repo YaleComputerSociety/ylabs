@@ -41,6 +41,16 @@ export class IncorrectPermissionsError extends Error {
   }
 }
 
+export class ConflictError extends Error {
+  status: number;
+
+  constructor(message: string) {
+    super(message);
+    this.status = 409;
+    Object.setPrototypeOf(this, ConflictError.prototype);
+  }
+}
+
 export class SearchUnavailableError extends Error {
   status: number;
 

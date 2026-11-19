@@ -7,6 +7,7 @@ import { OrgUnit, type OrgUnitKind } from '../models/orgUnit';
 import { withMongoReconnect } from '../db/connections';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { replaceAsciiControls } from '../utils/asciiControl';
+import { accountDeletionServingState } from './accountDeletionServing';
 
 let configCache: ConfigData | null = null;
 let cacheTimestamp: number = 0;
@@ -56,6 +57,7 @@ export interface ConfigData {
     provider: 'render' | 'unknown';
   };
   features: Record<string, boolean>;
+  selfServeAccountDeletion: boolean;
   timestamp: string;
 }
 
@@ -67,7 +69,9 @@ type DeploymentEnv = Partial<Record<DeploymentEnvKey, string | undefined>> & {
   [key: string]: string | undefined;
 };
 
-export const RELEASE_FEATURE_FLAGS: readonly string[] = [];
+export const ACCOUNT_DATA_CONTROLS_FLAG = 'accountDataControls';
+
+export const RELEASE_FEATURE_FLAGS: readonly string[] = [ACCOUNT_DATA_CONTROLS_FLAG];
 
 const featureFlagEnvKey = (flag: string): string =>
   `FEATURE_${flag.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase()}`;
@@ -77,6 +81,9 @@ export const buildFeatureFlags = (
   flags: readonly string[] = RELEASE_FEATURE_FLAGS,
 ): Record<string, boolean> =>
   Object.fromEntries(flags.map((flag) => [flag, env[featureFlagEnvKey(flag)] === 'true']));
+
+export const isReleaseFeatureEnabled = (flag: string, env: DeploymentEnv = process.env): boolean =>
+  buildFeatureFlags(env)[flag] === true;
 
 export const buildDeploymentFingerprint = (
   env: DeploymentEnv = process.env,
@@ -201,6 +208,8 @@ export const getConfig = async (
     },
     deployment: buildDeploymentFingerprint(env),
     features: buildFeatureFlags(env),
+    selfServeAccountDeletion:
+      accountDeletionServingState(env as NodeJS.ProcessEnv).status === 'available',
     timestamp: new Date().toISOString(),
   };
 

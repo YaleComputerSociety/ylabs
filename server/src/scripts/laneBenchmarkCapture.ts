@@ -38,6 +38,8 @@ export interface CaptureArgs {
   sourceConcurrency?: number;
   recapture?: string;
   markSuccessorOf?: string;
+  retire: boolean;
+  retireReason?: string;
   withoutGold: boolean;
   dryRun: boolean;
   confirmed: boolean;
@@ -174,17 +176,60 @@ export function goldCarryRefusal(
   return `None of the ${labelCount} gold labels on ${superseded.benchmarkId} judged a page the recapture froze unchanged; pass --without-gold to store an unlabelled successor and label it with lane:benchmark-label`;
 }
 
+const MIN_RETIRE_REASON_LENGTH = 20;
+
+function retireArgs(args: CaptureArgs): CaptureArgs {
+  if (
+    args.recapture !== undefined ||
+    args.markSuccessorOf !== undefined ||
+    args.sourceName ||
+    args.only.length > 0 ||
+    args.limit !== undefined ||
+    args.sourceConcurrency !== undefined ||
+    args.withoutGold
+  ) {
+    throw new Error(
+      '--retire captures nothing and links nothing, so it takes only --id and --reason',
+    );
+  }
+  if ((args.retireReason ?? '').length < MIN_RETIRE_REASON_LENGTH) {
+    throw new Error(
+      `--retire requires --reason=<why the lane can no longer reach this scope>, at least ${MIN_RETIRE_REASON_LENGTH} characters`,
+    );
+  }
+  return { ...args, sourceName: '' };
+}
+
+/**
+ * Why a benchmark cannot be retired. A benchmark with a successor is already out of the
+ * unnamed replay, so retiring it too would hide which of the two decisions removed it.
+ */
+export function retireRefusal(
+  benchmark: { benchmarkId: string; retiredAt?: Date | null } | null,
+  successorId: string | null | undefined,
+  requestedId: string,
+): string | null {
+  if (!benchmark) return `No benchmark ${requestedId} to retire`;
+  if (benchmark.retiredAt) return `Benchmark ${requestedId} is already retired`;
+  if (successorId) {
+    return `Benchmark ${requestedId} is superseded by ${successorId}; a superseded benchmark is not retired`;
+  }
+  return null;
+}
+
 export function parseCaptureArgs(argv: string[]): CaptureArgs {
   const args: Partial<CaptureArgs> & {
     only: string[];
     dryRun: boolean;
     confirmed: boolean;
     withoutGold: boolean;
+    retire: boolean;
   } = {
     only: [],
     dryRun: true,
     confirmed: false,
     withoutGold: false,
+    retire: false,
   };
   for (const arg of argv) {
     if (arg === '--apply') args.dryRun = false;
@@ -197,6 +242,8 @@ export function parseCaptureArgs(argv: string[]): CaptureArgs {
     else if (arg.startsWith('--mark-successor-of='))
       args.markSuccessorOf = arg.slice('--mark-successor-of='.length).trim();
     else if (arg === '--without-gold') args.withoutGold = true;
+    else if (arg === '--retire') args.retire = true;
+    else if (arg.startsWith('--reason=')) args.retireReason = arg.slice('--reason='.length).trim();
     else if (arg.startsWith('--only='))
       args.only = arg
         .slice('--only='.length)
@@ -220,6 +267,8 @@ export function parseCaptureArgs(argv: string[]): CaptureArgs {
       `${SCRIPT_NAME} requires --id=<benchmark-id> of lowercase letters, digits and hyphens`,
     );
   }
+  if (args.retire) return retireArgs(args as CaptureArgs);
+  if (args.retireReason !== undefined) throw new Error('--reason applies only to --retire');
   const supersededId = args.recapture ?? args.markSuccessorOf;
   if (args.recapture !== undefined && args.markSuccessorOf !== undefined) {
     throw new Error('--recapture and --mark-successor-of cannot be combined');
@@ -296,6 +345,39 @@ async function supersededAncestorIds(benchmarkId: string): Promise<string[]> {
   }
 }
 
+async function retireBenchmark(args: CaptureArgs): Promise<void> {
+  const benchmark = (await LaneBenchmark.findOne({ benchmarkId: args.benchmarkId })
+    .select('benchmarkId sourceName retiredAt')
+    .lean()) as unknown as { benchmarkId: string; sourceName: string; retiredAt?: Date } | null;
+  const refusal = retireRefusal(
+    benchmark,
+    await existingSuccessorId(args.benchmarkId),
+    args.benchmarkId,
+  );
+  if (refusal) throw new Error(refusal);
+  const retiredAt = new Date();
+  if (!args.dryRun) {
+    await LaneBenchmark.updateOne(
+      { benchmarkId: args.benchmarkId, retiredAt: { $exists: false } },
+      { $set: { retiredAt, retiredReason: args.retireReason } },
+    );
+  }
+  console.log(
+    JSON.stringify(
+      {
+        script: SCRIPT_NAME,
+        mode: args.dryRun ? 'dry-run' : 'apply',
+        benchmarkId: args.benchmarkId,
+        sourceName: benchmark?.sourceName,
+        retiredAt: args.dryRun ? null : retiredAt.toISOString(),
+        retiredReason: args.retireReason,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 async function markSuccessor(args: CaptureArgs, supersededId: string): Promise<void> {
   const superseded = await loadSupersededBenchmark(supersededId);
   const successor = (await LaneBenchmark.findOne({ benchmarkId: args.benchmarkId })
@@ -348,6 +430,11 @@ async function main(): Promise<void> {
   );
   await initializeConnections();
 
+  if (args.retire) {
+    await retireBenchmark(args);
+    await mongoose.disconnect();
+    return;
+  }
   if (args.markSuccessorOf) {
     await markSuccessor(args, args.markSuccessorOf);
     await mongoose.disconnect();

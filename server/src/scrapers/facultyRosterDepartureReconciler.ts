@@ -457,7 +457,6 @@ export async function yaleProfileUrlsForDepartureEvidence(
 const fetchYaleProfilePage = async (url: string): Promise<YaleProfilePage | null> => {
   const page = await fetchPageWithPolicy(url, {
     headers: {
-      'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)',
       Accept: 'text/html,application/xhtml+xml',
     },
   });
@@ -793,6 +792,11 @@ export async function loadRunRosterPresence(
   for (const row of snapshots) {
     const snapshot = (row.value ?? {}) as DepartmentRosterHealthSnapshot;
     for (const key of snapshotDiscoveredEntityKeys(snapshot)) present.add(key);
+    // A withdrawn mint is a person the roster still lists, so it is presence (#5380).
+    const withdrawn = (snapshot as { withdrawnEntityKeys?: unknown }).withdrawnEntityKeys;
+    if (Array.isArray(withdrawn)) {
+      for (const key of withdrawn) if (typeof key === 'string' && key) present.add(key);
+    }
   }
   const observed = (await Observation.distinct('entityKey', {
     scrapeRunId: runObjectId,

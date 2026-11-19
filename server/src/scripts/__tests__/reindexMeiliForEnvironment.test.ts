@@ -190,7 +190,16 @@ describe('chooseReindexMode', () => {
     });
   });
 
-  it('rebuilds when forced, when the index is missing, or when settings or the embedder differ', () => {
+  it('reconciles a settings-only drift, since the reconcile applies settings in place', () => {
+    expect(
+      chooseReindexMode({
+        forceFull: false,
+        comparison: { indexExists: true, drift: ['settings:searchableAttributes'] },
+      }),
+    ).toMatchObject({ mode: 'incremental', drift: ['settings:searchableAttributes'] });
+  });
+
+  it('rebuilds when forced, when the index is missing, or when the embedder differs', () => {
     expect(chooseReindexMode({ forceFull: true, comparison: match }).mode).toBe('full');
     expect(
       chooseReindexMode({

@@ -42,6 +42,20 @@ export const fieldProvenanceSchema = new mongoose.Schema(
       max: 1,
       required: false,
     },
+    // Set only by a materialize-time derivation (#5296): the full input hash of the reading,
+    // the hash of the text alone, which decides staleness, and the contract that judged it.
+    derivationInputHash: {
+      type: String,
+      required: false,
+    },
+    derivationTextHash: {
+      type: String,
+      required: false,
+    },
+    derivationContract: {
+      type: String,
+      required: false,
+    },
   },
   { _id: false },
 );
@@ -108,6 +122,9 @@ export const fieldValueRefusalSchema = new mongoose.Schema(
     // plural because every lane that asserted a refused value produced it (#3521).
     attributedSourceNames: { type: [String], default: undefined },
     refusedBy: { type: String, default: '' },
+    // The sweep stage that re-derives this refusal on every run and may withdraw it. An
+    // operator refusal never carries it, so no run can touch one (#5838).
+    derivedBy: { type: String, required: false },
     refusedAt: { type: Date, required: false },
     note: { type: String, default: '', maxlength: 2000 },
     evidenceUrl: { type: String, required: false },

@@ -59,6 +59,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import {
   applyStudentVisibilityGatePlans,
@@ -80,6 +81,7 @@ import {
   type OrganizationIdentityWebsite,
   type OrganizationIdentityWebsiteGraftPlan,
 } from './retireOrganizationIdentityWebsiteGraftsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -91,8 +93,6 @@ const ROLLBACK_REASON =
 const ORGANIZATION_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
 const WEBSITE_URL_REFUSAL_NOTE =
   "the organization's identity page stays in this row's `website` field and `sourceUrls`, and `resolveBackfillWebsiteUrl` promotes the first promotable candidate back into an empty slot, so a bare clear is undone on the next materialization; refusing the VALUE holds because the resolver screen drops refused observations and the citation-promotion path checks `valueIsRefused`, and unlike a lock it leaves the field open for a real research home (#2542, #3167).";
-const BROWSER_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 export interface RetireOrganizationIdentityWebsitesArgs {
   apply: boolean;
@@ -149,7 +149,7 @@ function parseSlugList(value: string | undefined): string[] {
  * that row. Reporting one merged count makes the operator verify against the wrong
  * number.
  */
-interface PlannedRow {
+export interface PlannedRow {
   entityId: string;
   slug: string;
   entityType?: string;
@@ -163,17 +163,14 @@ interface PlannedRow {
 
 const servesGraftedWebsiteUrl = (row: PlannedRow): boolean => row.storedWebsiteUrl.length > 0;
 
-async function resolveFinalUrls(urls: string[]): Promise<Map<string, string>> {
+export async function resolveFinalUrls(urls: string[]): Promise<Map<string, string>> {
   const resolved = new Map<string, string>();
-  // Serial, with a browser user agent: a parallel probe of medicine.yale.edu gets
+  // Serial: a parallel probe of medicine.yale.edu gets
   // 403-throttled and a throttled page reads as a different page, which would make
   // the ownership comparison fail on exactly the rows the lane exists to repair.
   for (const url of urls) {
     try {
-      const page = await fetchPageWithPolicy(url, {
-        headers: { 'User-Agent': BROWSER_USER_AGENT },
-        timeoutMs: 20_000,
-      });
+      const page = await fetchPageWithPolicy(url, { timeoutMs: 20_000 });
       resolved.set(url, page.url);
     } catch (error) {
       console.warn(
@@ -314,7 +311,7 @@ export async function loadRegateEntityIds(
   return [...ids];
 }
 
-async function applyRepair(
+export async function applyRepair(
   planned: PlannedRow[],
   observationIds: string[],
   regateEntityIds: string[],
@@ -325,12 +322,15 @@ async function applyRepair(
   observationsSuperseded: number;
   regatedEntities: number;
   indexSyncFailures: number;
+  lastCitationStampsKept: number;
 }> {
   let rowsRepaired = 0;
+  let lastCitationStampsKept = 0;
   let servedSlotsCleared = 0;
   let emptySlotRefusalsRecorded = 0;
   for (const row of planned) {
-    const result = await ResearchEntity.updateOne(
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { _id: new mongoose.Types.ObjectId(row.entityId) },
       {
         $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' },
@@ -344,6 +344,7 @@ async function applyRepair(
         }),
       },
     );
+    if (result.withheld.length > 0) lastCitationStampsKept += 1;
     if (result.modifiedCount > 0) {
       rowsRepaired += 1;
       if (servesGraftedWebsiteUrl(row)) servedSlotsCleared += 1;
@@ -389,6 +390,7 @@ async function applyRepair(
     observationsSuperseded,
     regatedEntities,
     indexSyncFailures,
+    lastCitationStampsKept,
   };
 }
 
@@ -436,6 +438,7 @@ async function main() {
         observationsSuperseded: 0,
         regatedEntities: 0,
         indexSyncFailures: 0,
+        lastCitationStampsKept: 0,
       };
 
   const report = {
@@ -462,6 +465,7 @@ async function main() {
     observationsSuperseded: applied.observationsSuperseded,
     regatedEntities: applied.regatedEntities,
     indexSyncFailures: applied.indexSyncFailures,
+    lastCitationStampsKept: applied.lastCitationStampsKept,
     byOwnerEntityType: planned.reduce<Record<string, number>>((acc, row) => {
       const key = row.plan.ownerEntityType || 'UNKNOWN';
       acc[key] = (acc[key] || 0) + 1;
@@ -478,7 +482,7 @@ async function main() {
   if (args.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
 
   console.log(JSON.stringify({ ...report, rows: planned.slice(0, 25) }, null, 2));

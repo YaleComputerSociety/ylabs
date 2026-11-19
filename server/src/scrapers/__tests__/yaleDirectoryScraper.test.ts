@@ -13,18 +13,22 @@ import {
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
   mintsNoResearchEntityAsTeachingAppointment,
+  ownsNoResearchEntityByTitle,
   personToObservations,
   statesOnlyATeachingAppointment,
+  titleStatesOnlyAStaffRole,
   YaleDirectoryScraper,
 } from '../sources/yaleDirectoryScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+import { syntheticPersonOrcid, withOrcidCheckDigit } from '../../test/syntheticOrcid';
 
 // Mock the yaliesService so the scraper doesn't make real HTTP calls. We also
 // mock the snapshot cache so tests don't need MongoDB. vi.mock factories are
 // hoisted, so the spy is declared via vi.hoisted to keep it accessible from
 // the factory.
 const { listYaliesSpy } = vi.hoisted(() => ({ listYaliesSpy: vi.fn() }));
-vi.mock('../../services/yaliesService', () => ({
+vi.mock('../../services/yaliesService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/yaliesService')>()),
   listYalies: listYaliesSpy,
 }));
 vi.mock('../snapshotCache', () => ({
@@ -123,15 +127,21 @@ describe('personToObservations', () => {
       school_code: 'GS',
       school: 'Graduate School of Arts and Sciences',
       school_name: 'Yale Graduate School of Arts and Sciences',
-      organization_name: 'Yale School of Medicine',
-      primary_organization_name: 'Yale School of Medicine',
-      unit_name: 'Molecular Biophysics & Biochemistry',
+      organization: 'School of Medicine',
+      organization_code: 'MED',
+      unit_class: 'MEDMBB',
+      unit_code: 'CC0000',
+      unit: 'MB and B-All',
       image: 'https://yalies.io/images/jdoe24.jpg',
       url: 'https://yalies.io/jdoe24',
-      orcid: '0000-0001-2345-6789',
+      orcid: syntheticPersonOrcid(),
     };
 
-    const obs = personToObservations(sample, 'https://api.yalies.io/v2/people');
+    const obs = personToObservations(sample, 'https://api.yalies.io/v2/people', (name) =>
+      name === 'Molecular Biophysics and Biochemistry'
+        ? 'Molecular Biophysics & Biochemistry'
+        : undefined,
+    );
 
     // Build a quick lookup by field for easy assertions.
     const byField: Record<string, ObservationInput> = {};
@@ -143,11 +153,11 @@ describe('personToObservations', () => {
     expect(byField.email?.value).toBe('jane.doe@yale.edu');
     expect(byField.userType?.value).toBe('professor');
     expect(byField.title?.value).toContain('Professor');
-    expect(byField.primaryDepartment?.value).toBe('Molecular Biophysics & Biochemistry');
-    expect(byField.secondaryDepartments?.value).toEqual(['Yale School of Medicine']);
+    expect(byField.primaryDepartment?.value).toBe('Molecular Biophysics and Biochemistry');
+    expect(byField.secondaryDepartments).toBeUndefined();
     expect(byField.school?.value).toBe('Yale Graduate School of Arts and Sciences');
     expect(byField.imageUrl?.value).toBe('https://yalies.io/images/jdoe24.jpg');
-    expect(byField.orcid?.value).toBe('0000-0001-2345-6789');
+    expect(byField.orcid?.value).toBe(syntheticPersonOrcid());
     expect(byField.profileUrls?.value).toEqual({ yalies: 'https://yalies.io/jdoe24' });
 
     // All observations should be keyed by netid + entityType=user.
@@ -236,6 +246,18 @@ describe('personToObservations', () => {
     expect(fields).not.toContain('profileUrls');
     expect(fields).not.toContain('secondaryDepartments');
   });
+
+  it('emits no orcid when the directory value is checksum-valid but outside every issued block', () => {
+    const runOfFourYears = withOrcidCheckDigit('202520242023202');
+    const obs = personToObservations({
+      netid: 'yrs01',
+      first_name: 'Ana',
+      last_name: 'Lyst',
+      title: 'Professor of History',
+      orcid: runOfFourYears,
+    });
+    expect(obs.map((o) => o.field)).not.toContain('orcid');
+  });
 });
 
 describe('YaleDirectoryScraper.run', () => {
@@ -306,7 +328,7 @@ describe('YaleDirectoryScraper.run', () => {
       last_name: 'Lovelace',
       email: 'ada@yale.edu',
       title: 'Professor of Computer Science',
-      unit_name: 'Computer Science',
+      unit: 'Computer Science',
     };
     // Page 1: 200 identical-shape records (using distinct netids), Page 2: 1 record.
     const page1 = Array.from({ length: 200 }, (_, i) => ({
@@ -322,11 +344,50 @@ describe('YaleDirectoryScraper.run', () => {
     const result = await scraper.run(ctx);
 
     expect(mockedListYalies).toHaveBeenCalledTimes(2);
+    expect(mockedListYalies.mock.calls.map(([options]) => options.page)).toEqual([0, 1]);
     expect(result.entitiesObserved).toBe(201);
     // Distinct entity keys should match the 201 distinct netids.
     const keys = new Set(emitted.map((o) => o.entityKey));
     expect(keys.size).toBe(201);
     expect(keys.has('aaLast')).toBe(true);
+  });
+
+  it('reads the department from the unit class when the unit is an administrative bucket (#6028)', () => {
+    const obs = personToObservations(
+      {
+        netid: 'pp01',
+        first_name: 'Fixture',
+        last_name: 'Mind',
+        title: 'Professor of Psychology',
+        unit_class: 'FASPSY',
+        unit: 'Department Administration',
+      },
+      undefined,
+      (name) => (name === 'Psychology' ? name : undefined),
+    );
+    expect(obs.find((o) => o.field === 'primaryDepartment')?.value).toBe('Psychology');
+  });
+
+  it('starts at the zero-indexed first page, so the first page of records is read', async () => {
+    process.env.YALIES_API_KEY = 'test-key';
+    const onFirstPage = {
+      netid: 'zz01',
+      first_name: 'Fixture',
+      last_name: 'Firstpage',
+      email: 'fixture.firstpage@yale.edu',
+      title: 'Professor of Fixture Studies',
+      unit: 'Fixture Studies',
+    };
+    mockedListYalies.mockImplementation(async ({ page }: { page: number }) =>
+      page === 0 ? [onFirstPage] : [],
+    );
+
+    const { ctx, emitted } = buildContext();
+    await new YaleDirectoryScraper().run(ctx);
+
+    expect(mockedListYalies.mock.calls[0][0].page).toBe(0);
+    expect(new Set(emitted.map((o) => o.entityKey))).toEqual(new Set(['zz01']));
+    mockedListYalies.mockReset();
   });
 
   it('respects ctx.options.limit', async () => {
@@ -337,7 +398,7 @@ describe('YaleDirectoryScraper.run', () => {
       last_name: 'Hopper',
       email: 'grace@yale.edu',
       title: 'Professor of Naval Engineering',
-      unit_name: 'Engineering',
+      unit: 'Engineering',
     };
     const page1 = Array.from({ length: 200 }, (_, i) => ({
       ...facultyRecord,
@@ -377,7 +438,7 @@ describe('YaleDirectoryScraper.run', () => {
         first_name: 'Faye',
         last_name: 'Faculty',
         title: 'Professor',
-        unit_name: 'Linguistics',
+        unit: 'Linguistics',
       },
       {
         netid: 'stu01',
@@ -419,7 +480,7 @@ describe('YaleDirectoryScraper.run', () => {
     expect(result.entitiesObserved).toBe(200);
     expect(emitted.length).toBeGreaterThan(0);
     expect(logs.some((l) => /ECONNRESET|aborting/i.test(l))).toBe(true);
-    expect(result.partialFailures).toEqual([expect.stringMatching(/page 2.*ECONNRESET/)]);
+    expect(result.partialFailures).toEqual([expect.stringMatching(/page 1.*ECONNRESET/)]);
     expect(result.notes).toMatch(/incomplete/);
   });
 
@@ -441,7 +502,7 @@ describe('YaleDirectoryScraper.run', () => {
     const result = await new YaleDirectoryScraper().run(ctx);
 
     expect(result.entitiesObserved).toBe(200);
-    expect(result.partialFailures).toEqual([expect.stringMatching(/page 2.*401/)]);
+    expect(result.partialFailures).toEqual([expect.stringMatching(/page 1.*401/)]);
   });
 
   it('fails the run when the first page cannot be read, since nothing was synced', async () => {
@@ -450,8 +511,61 @@ describe('YaleDirectoryScraper.run', () => {
 
     const { ctx, emitted } = buildContext();
 
-    await expect(new YaleDirectoryScraper().run(ctx)).rejects.toThrow(/page 1.*ECONNRESET/);
+    await expect(new YaleDirectoryScraper().run(ctx)).rejects.toThrow(/page 0.*ECONNRESET/);
     expect(emitted).toEqual([]);
+  });
+
+  describe("a staff-titled record backs only a corpus person's email (#5627)", () => {
+    const staffRecord = {
+      netid: 'st01',
+      first_name: 'Robin',
+      last_name: 'Staff',
+      email: 'staff.fixture@yale.edu',
+      title: 'Research Affiliates',
+      unit: 'Medicine',
+    };
+
+    it('emits the netid and email of a staff-titled person the corpus already holds', async () => {
+      process.env.YALIES_API_KEY = 'test-key';
+      mockedListYalies.mockResolvedValueOnce([staffRecord]);
+      const { ctx, emitted } = buildContext();
+
+      const result = await new YaleDirectoryScraper(async () => new Set(['st01'])).run(ctx);
+
+      expect(emitted).toEqual([
+        expect.objectContaining({ entityType: 'user', entityKey: 'st01', field: 'netid' }),
+        expect.objectContaining({
+          entityType: 'user',
+          entityKey: 'st01',
+          field: 'email',
+          value: 'staff.fixture@yale.edu',
+        }),
+      ]);
+      expect(result.entitiesObserved).toBe(0);
+    });
+
+    it('emits no name, title or user type that could rename, mint or surface the record', async () => {
+      process.env.YALIES_API_KEY = 'test-key';
+      mockedListYalies.mockResolvedValueOnce([staffRecord]);
+      const { ctx, emitted } = buildContext();
+
+      await new YaleDirectoryScraper(async () => new Set(['st01'])).run(ctx);
+
+      const fields = emitted.map((observation) => observation.field);
+      for (const field of ['fname', 'lname', 'displayName', 'title', 'userType', 'profileUrls']) {
+        expect(fields).not.toContain(field);
+      }
+    });
+
+    it('emits nothing for a staff-titled person the corpus does not hold', async () => {
+      process.env.YALIES_API_KEY = 'test-key';
+      mockedListYalies.mockResolvedValueOnce([staffRecord]);
+      const { ctx, emitted } = buildContext();
+
+      await new YaleDirectoryScraper(async () => new Set(['someone-else'])).run(ctx);
+
+      expect(emitted).toEqual([]);
+    });
   });
 });
 
@@ -631,6 +745,38 @@ describe('isResearchSupportStaffTitle (#3410)', () => {
   });
 });
 
+describe('public-health staff job classes at mint', () => {
+  it('refuses statistician, analyst, finance-assistant and abbreviated assistant titles', () => {
+    for (const title of [
+      'Biostatistician',
+      'Statistician 3',
+      'Data Analyst',
+      'Business Data Analyst',
+      'Financial Analyst 2',
+      'Programmer Analyst',
+      'Portfolio & Grant Analyst',
+      'Geospatial Research Analyst',
+      'Financial Assistant 4',
+      'Sr Admin Asst School of Public Health',
+      'Senior Executive Assistant, Deans Office',
+    ]) {
+      expect(ownsNoResearchEntityByTitle(title)).toBe(true);
+    }
+  });
+
+  it('keeps a faculty appointment stated beside a statistician or analyst role', () => {
+    for (const title of [
+      'Associate Professor of Pediatrics and of Biostatistics; Biostatistician',
+      'Assistant Professor of Biostatistics',
+      'Research Scientist in Biostatistics',
+      'Professor of Psychiatry; Training and Supervising Psychoanalyst',
+    ]) {
+      expect(isResearchSupportStaffTitle(title)).toBe(false);
+      expect(isFacultyTitle(title)).toBe(true);
+    }
+  });
+});
+
 describe('title classification against invisible format characters (#2874)', () => {
   const HYPHENATED_PROFESSOR = 'Assis\u00adtant Pro\u00adfes\u00adsor of Economics';
   const HYPHENATED_MANAGER = 'Lab Man\u00adager';
@@ -657,5 +803,36 @@ describe('title classification against invisible format characters (#2874)', () 
     } as never);
     expect(observations.length).toBeGreaterThan(0);
     expect(observations.find((obs) => obs.field === 'userType')?.value).toBe('professor');
+  });
+});
+
+describe('titleStatesOnlyAStaffRole (#5750)', () => {
+  it('reads administrative, operations and research-support titles as staff', () => {
+    for (const title of [
+      'Senior Administrative Assistant',
+      'Program Coordinator',
+      'Financial Analyst',
+      'Accountant',
+      'Clinical Technologist',
+      'Research and Education Librarian',
+    ]) {
+      expect(titleStatesOnlyAStaffRole(title)).toBe(true);
+    }
+  });
+
+  it('never reads a stated faculty appointment as staff', () => {
+    for (const title of [
+      'Associate Professor of Medicine; Clinical Program Manager',
+      'Special Collections Librarian, Lecturer in American Religious History',
+      'Professor of Chemistry',
+    ]) {
+      expect(titleStatesOnlyAStaffRole(title)).toBe(false);
+    }
+  });
+
+  it('says nothing about an absent title or an academic rank held in another group', () => {
+    for (const title of [undefined, null, '', 'Postdoctoral Associate', 'Graduate Student']) {
+      expect(titleStatesOnlyAStaffRole(title)).toBe(false);
+    }
   });
 });

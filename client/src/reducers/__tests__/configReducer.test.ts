@@ -18,6 +18,8 @@ const samplePayload: ConfigPayload = {
   ],
   departmentCategories: ['Sciences'],
   departmentPillEligibleLabels: ['Neuroscience'],
+  features: { accountDataControls: true },
+  selfServeAccountDeletion: true,
 };
 
 describe('configReducer', () => {

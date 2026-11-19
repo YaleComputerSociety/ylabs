@@ -4,6 +4,7 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   assertSafeOptions,
+  assertSafeRollbackOptions,
   buildRetireScrapeRunsBlockers,
   buildPromotionCutoverMismatches,
   buildRunEvidenceBlockers,
@@ -13,6 +14,7 @@ import {
   promotionCollectionNamesForOptions,
   writePromotionOutput,
 } from '../promoteAcceptedBetaCopy';
+import { evaluateStagedSwapHeadroom } from '../stagedSwapHeadroom';
 
 const baseEnv = {
   BETA_MONGODBURL: 'mongodb+srv://user:pass@beta.example.test/Beta',
@@ -637,5 +639,81 @@ describe('retiring Production scrape_runs (#2589)', () => {
     const blocked = buildPromotionSummary(cleared(['--retire-scrape-runs=abc12']), [], [], 5);
     expect(blocked.retireScrapeRunsBlockersClear).toBe(false);
     expect(blocked.applyBlockers.join(' ')).toContain('must not be cleared');
+  });
+});
+
+describe('promotion rollback guards (#4149)', () => {
+  const rollbackEnv = {
+    PRODUCTION_MONGODBURL: 'mongodb+srv://user:pass@prod.example.test/Prod',
+  };
+
+  it('parses a rollback as a dry run that needs no Beta URL or dataset version', () => {
+    const options = parsePromotionOptions(['--rollback', '41_1760000000000'], rollbackEnv);
+    expect(options).toMatchObject({ mode: 'dry-run', rollbackOperationId: '41_1760000000000' });
+    expect(() => assertSafeRollbackOptions(options)).not.toThrow();
+    expect(
+      parsePromotionOptions(['--rollback=41_1760000000000'], rollbackEnv).rollbackOperationId,
+    ).toBe('41_1760000000000');
+  });
+
+  it('requires an operation id', () => {
+    expect(() => parsePromotionOptions(['--rollback'], rollbackEnv)).toThrow(
+      '--rollback requires an operation id',
+    );
+    expect(() =>
+      assertSafeRollbackOptions(parsePromotionOptions(['--rollback', 'latest'], rollbackEnv)),
+    ).toThrow('--rollback requires the operation id a promotion reported');
+  });
+
+  it('restores only the remote Prod database', () => {
+    const withUrl = (url: string) =>
+      parsePromotionOptions(['--rollback', '41_1760000000000'], { PRODUCTION_MONGODBURL: url });
+    expect(() =>
+      assertSafeRollbackOptions(withUrl('mongodb+srv://user:pass@beta.example.test/Beta')),
+    ).toThrow('a promotion rollback restores only the Prod database');
+    expect(() => assertSafeRollbackOptions(withUrl('mongodb://localhost:27017/Prod'))).toThrow(
+      'must be remote',
+    );
+  });
+
+  it('applies only with the production confirmation and takes no copy options', () => {
+    const apply = parsePromotionOptions(['--rollback', '41_1760000000000', '--apply'], rollbackEnv);
+    expect(() => assertSafeRollbackOptions(apply)).toThrow('CONFIRM_PROD_SCRAPE=true');
+    expect(() =>
+      assertSafeRollbackOptions(
+        parsePromotionOptions(['--rollback', '41_1760000000000', '--apply'], {
+          ...rollbackEnv,
+          CONFIRM_PROD_SCRAPE: 'true',
+        }),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertSafeRollbackOptions(
+        parsePromotionOptions(
+          ['--rollback', '41_1760000000000', '--include-observations'],
+          rollbackEnv,
+        ),
+      ),
+    ).toThrow('takes no copy options');
+  });
+
+  it('keeps a rollback out of the copy path', () => {
+    expect(() =>
+      assertSafeOptions(parsePromotionOptions(['--rollback', '41_1760000000000'], { ...baseEnv })),
+    ).toThrow('--rollback is checked by assertSafeRollbackOptions');
+  });
+});
+
+describe('staged swap headroom refusal', () => {
+  it('names only a remedy the refused operation can act on', () => {
+    const verdict = evaluateStagedSwapHeadroom({
+      usedMb: 500,
+      stagingMb: 10,
+      config: { clusterQuotaMb: 512, minHeadroomMb: 50 },
+      label: 'Beta to Development sync',
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.message).toContain('Free space first.');
+    expect(verdict.message).not.toContain('--include-observations');
   });
 });

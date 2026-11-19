@@ -1,14 +1,17 @@
 import { ResearchEntity } from '../models/researchEntity';
+import { effectiveStudentVisibilityTier } from '../models/studentVisibility';
+import {
+  SEARCH_RERANK_TEXT_HASH_FIELD,
+  buildSearchRerankTextHash,
+} from './searchRerankCandidateText';
 import { asResearchEntityType, type ResearchEntityType } from '../models/researchAccessTypes';
-import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import {
+  freshDirectoryRemovalServing,
+  redactWithheldNamesDeep,
+  servedRosterByEntityId,
+} from './directoryRemovalServing';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizePersonName } from '../utils/personNameHygiene';
-import {
-  isStudiesResearchAreaEchoDescription,
-  isStudiesSentenceNestingTopicsUnderTheFirst,
-  sanitizeResearchEntityDescription,
-  sanitizeResearchEntityShortDescription,
-} from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { researchEntityBrowseTiebreakKey } from '../utils/researchEntityBrowseTiebreakKey';
 import {
@@ -20,27 +23,37 @@ import {
 import { getMeiliClient, getMeiliIndex, resolveIndexName } from '../utils/meiliClient';
 import {
   assertMeiliTaskSucceeded,
+  waitForMeiliTask,
   MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
   MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
   type MeiliTaskWaitingIndex,
 } from '../utils/meiliTask';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { usableOpenAiApiKey } from '../utils/openAiApiKey';
-import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
-import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
+import {
+  warmControlledVocabularyHeadings,
+  warmServedResearchAreaVocabulary,
+} from '../utils/controlledVocabularyHeadings';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
+import { entityHasHostedUndergraduates } from './hostedUndergraduates';
+import { servedEmeritusWayInFlags, type EmeritusWayInDecision } from './emeritusLeadWayIn';
 import {
-  isSyntheticResearchHomeMetadataDescription,
-  revoiceFirstPersonResearchLead,
-} from '../utils/researchEntityDescriptionText';
+  decideServedResearchEntityCreativePractice,
+  entityWelcomesUndergraduates,
+  researchEntityListServedSource,
+  servedUndergradInvitationLevel,
+  servedResearchEntitySearchCopy,
+} from './researchEntityDto';
+import { CREATIVE_PRACTICE_RESEARCH_TYPE, RESEARCH_TYPE_INDEX_FIELD } from './researchGroupFilters';
+import { entityMentorsUndergraduates } from './undergradListEvidenceServing';
+import { isExcludedFromSearchIndex, RESEARCHER_REMOVED_REASON } from './directoryRemovalReason';
+import { isSyntheticResearchHomeMetadataDescription } from '../utils/researchEntityDescriptionText';
 import {
   isPlaceholderEntityName,
-  personScopedResearchEntityNameFromPersonName,
-  servedResearchEntityNameWithoutPageFurniture,
-  personScopedResearchEntityNameNamesSomethingElseByUrlPath,
   isExternalScholarlyPlatformLinkLabelName,
   namesAResearchGroupRatherThanAPerson,
+  IDENTITY_LEAD_DIRECTS_ORGANIZATION,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
@@ -66,6 +79,10 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'methods',
     'studentSearchTerms',
     'departments',
+    // Kept out of `professorNames` so faculty-name ranking and the embedding
+    // template are unchanged, and below the topic fields so a lone given name on
+    // a roster cannot outrank a topic match (#5442).
+    'memberNames',
     // Searchable but deliberately absent from `filterableAttributes`: a center,
     // hospital, or program a source listed beside an appointment should stay
     // findable by name without becoming a department facet value (#2194).
@@ -84,7 +101,12 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'departments',
     'researchAreas',
     'hasUndergradHostingEvidence',
+    'welcomesUndergrads',
+    'mentorsUndergrads',
+    'worksWithUndergrads',
     'studentVisibilityTier',
+    'researchType',
+    'creativePractice',
   ],
   sortableAttributes: [
     'browseRankScore',
@@ -95,6 +117,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'sortTitleQualifier',
     'createdAt',
     'updatedAt',
+    'undergradInvitationRank',
   ],
   displayedAttributes: ['*'],
   // `exactness` and `typo` precede `attribute` (Meili's default puts `attribute`
@@ -125,6 +148,7 @@ export const RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS: readonly string[] = A
     RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
     'slug',
     MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
+    SEARCH_RERANK_TEXT_HASH_FIELD,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.searchableAttributes,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.filterableAttributes,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.sortableAttributes,
@@ -145,11 +169,13 @@ export interface ResearchEntitySearchIndexRebuildOptions {
   getClient?: () => Promise<ResearchEntitySearchIndexAdminClient>;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
   fetchMemberNames?: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>;
+  fetchServedLeads?: (entities: any[]) => Promise<ResearchEntitySearchServedLeadMap>;
   fetchChangedSince?: (since: Date) => Promise<any[]>;
   /**
    * Injectable for the same reason the index and the page fetch are: a rebuild test has no
    * database, and a warm that reached for one would make every rebuild assertion wait for a
-   * connection timeout instead of asserting.
+   * connection timeout instead of asserting. It does not make a connected build cold: the
+   * per-document builder also warms whenever a connection is up (#6542).
    */
   warmVocabulary?: () => Promise<unknown>;
   swapConfirmation?: MeiliSwapConfirmationOptions;
@@ -171,9 +197,23 @@ export interface ResearchEntitySearchIndexRebuildResult {
 export interface ResearchEntitySearchMemberNameFields {
   leadProfessorNames: string[];
   professorNames: string[];
+  memberNames: string[];
 }
 
 export type ResearchEntitySearchMemberNameMap = Map<string, ResearchEntitySearchMemberNameFields>;
+
+export type ResearchEntitySearchEmeritusWayIn = Pick<
+  EmeritusWayInDecision,
+  'emeritusLed' | 'wayInWithheld'
+>;
+
+export interface ResearchEntitySearchServedLead {
+  leadMemberNames?: readonly string[];
+  identityLeadDirectsOrganization?: boolean;
+  emeritusWayIn?: ResearchEntitySearchEmeritusWayIn;
+}
+
+export type ResearchEntitySearchServedLeadMap = ReadonlyMap<string, ResearchEntitySearchServedLead>;
 
 export function getResearchEntitySearchIndexSettings() {
   return {
@@ -203,17 +243,6 @@ export function getResearchEntitySearchIndexSettings() {
   };
 }
 
-const SEARCH_INDEX_TEXT_FIELDS = [
-  'name',
-  'displayName',
-  'summary',
-  'shortDescription',
-  'fullDescription',
-  'description',
-  'undergradEvidenceQuote',
-  'undergradAccessEvidence',
-] as const;
-
 const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
   'contactEmail',
   'contactName',
@@ -223,9 +252,13 @@ const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
   'phone',
 ] as const;
 
-const SEARCH_INDEX_PERSON_NAME_FIELDS = ['leadProfessorNames', 'professorNames'] as const;
+const SEARCH_INDEX_PERSON_NAME_FIELDS = [
+  'leadProfessorNames',
+  'professorNames',
+  'memberNames',
+] as const;
 
-const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
+export const LEAD_PROFESSOR_MEMBER_ROLES: ReadonlySet<string> = new Set([
   'pi',
   'co-pi',
   'director',
@@ -235,7 +268,14 @@ const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
   'faculty_lead',
 ]);
 
-const SEARCHABLE_PROFESSOR_MEMBER_ROLES = new Set([
+export const SEARCHABLE_STUDENT_MEMBER_ROLES: ReadonlySet<string> = new Set([
+  'postdoc',
+  'grad-student',
+  'undergrad',
+  'past-undergrad',
+]);
+
+export const SEARCHABLE_PROFESSOR_MEMBER_ROLES: ReadonlySet<string> = new Set([
   ...LEAD_PROFESSOR_MEMBER_ROLES,
   'core-faculty',
   'affiliated',
@@ -246,6 +286,11 @@ const MONGO_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 const researchEntitySearchDocumentId = (doc: any): string =>
   serializedDocumentId(doc?._id) || serializedDocumentId(doc?.id) || '';
+
+export const searchablePersonName = (value: unknown): string => {
+  const name = cleanPersonName(value);
+  return name && !namesAResearchGroupRatherThanAPerson(name) ? name : '';
+};
 
 const cleanPersonName = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -402,6 +447,7 @@ export function buildStudentSearchTerms(doc: any): string[] {
 const emptyMemberNameFields = (): ResearchEntitySearchMemberNameFields => ({
   leadProfessorNames: [],
   professorNames: [],
+  memberNames: [],
 });
 
 export async function fetchResearchEntitySearchMemberNames(
@@ -414,25 +460,25 @@ export async function fetchResearchEntitySearchMemberNames(
   }
   if (entityById.size === 0) return new Map();
 
-  const rosterByEntityId = await getResearchEntityRosterByEntityId(Array.from(entityById.keys()));
-  const { publicResearchEntityDetailMemberNames } = await import('./researchGroupService');
+  const rosterByEntityId = await servedRosterByEntityId(Array.from(entityById.keys()));
+  const { searchableResearchEntityMembers } = await import('./researchGroupService');
   const now = new Date();
   const byEntityId: ResearchEntitySearchMemberNameMap = new Map();
 
-  for (const [entityId, roster] of rosterByEntityId) {
-    const entity = entityById.get(entityId);
-    if (!entity) continue;
-    for (const member of publicResearchEntityDetailMemberNames(entity, roster, now)) {
-      if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
-
-      const name = cleanPersonName(member.name);
-      if (!name || namesAResearchGroupRatherThanAPerson(name)) continue;
-
-      const fields = byEntityId.get(entityId) || emptyMemberNameFields();
+  for (const [entityId, entity] of entityById) {
+    const rosterEntries = rosterByEntityId.get(entityId) ?? [];
+    const fields = emptyMemberNameFields();
+    for (const { name, kind } of searchableResearchEntityMembers(entity, rosterEntries, now)) {
+      if (kind === 'student') {
+        fields.memberNames = uniquePersonNames([...fields.memberNames, name]);
+        continue;
+      }
       fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
-      if (LEAD_PROFESSOR_MEMBER_ROLES.has(member.role)) {
+      if (kind === 'lead') {
         fields.leadProfessorNames = uniquePersonNames([...fields.leadProfessorNames, name]);
       }
+    }
+    if (fields.professorNames.length > 0 || fields.memberNames.length > 0) {
       byEntityId.set(entityId, fields);
     }
   }
@@ -440,97 +486,81 @@ export async function fetchResearchEntitySearchMemberNames(
   return byEntityId;
 }
 
-const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
+// Read through the call the browse and detail routes make, so the undergraduate filters cannot
+// count a row whose card withholds its way in (#5620), and the Type facet cannot bucket a row
+// apart from the creative practice label its card serves (#5141). A read that could not decide
+// fails the build rather than indexing a flag the card would contradict.
+export async function fetchResearchEntitySearchServedLeads(
+  entities: any[],
+): Promise<ResearchEntitySearchServedLeadMap> {
+  if (entities.length === 0) return new Map();
+  const { optionalPublicLeadMemberNames } = await import('./researchGroupService');
+  const read = await optionalPublicLeadMemberNames(entities, { withEmeritusWayIn: true });
+  if (read.unavailable) {
+    throw new Error('The served lead read failed, so the index documents were not built.');
+  }
+  const entityIds = new Set([
+    ...read.byEntityId.keys(),
+    ...(read.emeritusWayInByEntityId?.keys() ?? []),
+    ...(read.identityLeadDirectorEntityIds ?? []),
+  ]);
+  return new Map(
+    [...entityIds].map((entityId) => [
+      entityId,
+      {
+        leadMemberNames: read.byEntityId.get(entityId),
+        identityLeadDirectsOrganization: read.identityLeadDirectorEntityIds?.has(entityId) === true,
+        emeritusWayIn: read.emeritusWayInByEntityId?.get(entityId),
+      },
+    ]),
+  );
+}
+
+const withServedSearchCopy = (
+  out: Record<string, any>,
+  doc: Record<string, any>,
+  servedLead: ResearchEntitySearchServedLead | undefined,
+) => {
+  const served = servedResearchEntitySearchCopy(doc, servedLead ?? {});
+  for (const field of ['name', 'displayName'] as const) {
+    if (served[field]) out[field] = served[field];
+    else delete out[field];
+  }
+  for (const field of ['shortDescription', 'fullDescription'] as const) {
+    if (typeof doc[field] === 'string') out[field] = served[field] ?? '';
+    else delete out[field];
+  }
+  if (served.methods.length > 0) out.methods = served.methods;
+  else delete out.methods;
+};
+
+const sanitizeResearchEntityIndexDocument = (
+  out: Record<string, any>,
+  doc: Record<string, any>,
+  servedLead: ResearchEntitySearchServedLead | undefined,
+) => {
   for (const field of SEARCH_INDEX_DIRECT_CONTACT_FIELDS) {
     delete out[field];
   }
 
-  // This withhold is a matching guard, not a display guard: browse and search
-  // re-read the Mongo row and spread it over the hit (`researchGroupService.ts`),
-  // so the indexed `displayName` never titles a card. It still has to drop
-  // placeholder filler or an umbrella-organization / foreign-lab graft on the same
-  // terms the detail-page DTO does, because `displayName` is a
-  // `searchableAttributes` entry and filler left in it keyword matches a record
-  // whose served title is its real `name` (#2351/#2367).
+  withServedSearchCopy(out, doc, servedLead);
+
+  // Matching guards on top of the served copy. `displayName` and both descriptions are
+  // `searchableAttributes`, so a placeholder or platform-link alias, a synthetic metadata
+  // blurb, or an endowed chair title would keyword match copy no card leads with
+  // (#2351/#2367/#1466/#2396). The served path does not apply the last two yet.
   if (
     isPlaceholderEntityName(out.displayName) ||
-    isExternalScholarlyPlatformLinkLabelName(out.displayName) ||
-    personScopedResearchEntityNameNamesSomethingElseByUrlPath({
-      candidateName: out.displayName,
-      entityType: out.entityType,
-      kind: out.kind,
-      slug: out.slug,
-      websiteUrl: out.fieldProvenance?.displayName?.sourceUrl || out.websiteUrl || out.website,
-      recordCitedUrls: [out.websiteUrl, out.website, out.sourceUrls],
-      siteDeclaredOwnNames: out.siteDeclaredOwnNames,
-    })
+    isExternalScholarlyPlatformLinkLabelName(out.displayName)
   ) {
     delete out.displayName;
   }
-
-  // The same bare-person-name substitution the serve sanitizer makes, so the
-  // indexed title cannot drift from the served one on a row whose stored name the
-  // repair has not reached yet (#2373/#2507).
-  for (const field of ['name', 'displayName'] as const) {
-    const entity = { entityType: out.entityType, kind: out.kind };
-    const withoutFurniture = servedResearchEntityNameWithoutPageFurniture({
-      ...entity,
-      candidateName: out[field],
-    });
-    if (withoutFurniture) out[field] = withoutFurniture;
-    const derived = personScopedResearchEntityNameFromPersonName({
-      ...entity,
-      candidateName: out[field],
-    });
-    if (derived) out[field] = derived;
-  }
-
-  for (const field of SEARCH_INDEX_TEXT_FIELDS) {
-    if (typeof out[field] === 'string') {
-      out[field] = redactDirectContactInfo(out[field]);
-    }
-  }
-
-  /**
-   * The same revoice the detail path applies, so ranking is computed over the copy a
-   * student is shown rather than the harvested first person underneath it.
-   *
-   * Only the detail chokepoint ran it, so the index stored "I have been heavily
-   * involved ..." while the card displayed the third-person form: 1,245 of 4,908
-   * indexed documents carried a first-person pronoun against 2.9% carrying the
-   * placeholder the served representation puts on 26% of rows (#3418). The
-   * embedder template is built from these fields, so the vectors inherited it too.
-   *
-   * Wired here rather than at materialize time because a stored description no live
-   * observation asserts gets no planned value, so a write-time derivation cannot
-   * reach the stale rows that most need it. #1640 is the precedent for one pure
-   * function wired into both chokepoints.
-   *
-   * Runs before the hygiene chain, which is where the detail path runs it too, so a
-   * description already revoiced upstream is unchanged by this second pass.
-   */
-  const revoiceSubject = out as Record<string, any>;
-  if (typeof out.fullDescription === 'string') {
-    let cleaned = sanitizeResearchEntityDescription(
-      revoiceFirstPersonResearchLead(out.fullDescription, revoiceSubject),
-    );
-    const hasOtherBody =
-      typeof out.profileSynthesisDescription === 'string' &&
-      out.profileSynthesisDescription.trim().length > 0;
-    const blanksEcho = hasOtherBody || isStudiesSentenceNestingTopicsUnderTheFirst(cleaned);
-    if (blanksEcho && isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) {
-      cleaned = '';
-    }
-    if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
-    out.fullDescription = stripEndowedChairTitles(cleaned);
-  }
-  if (typeof out.shortDescription === 'string') {
-    let cleaned = sanitizeResearchEntityShortDescription(
-      revoiceFirstPersonResearchLead(out.shortDescription, revoiceSubject),
-    );
-    if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
-    if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
-    out.shortDescription = stripEndowedChairTitles(cleaned);
+  for (const field of ['shortDescription', 'fullDescription'] as const) {
+    if (typeof out[field] !== 'string') continue;
+    const synthetic =
+      isSyntheticResearchHomeMetadataDescription(doc[field]) ||
+      isSyntheticResearchHomeMetadataDescription(out[field]);
+    out[field] = synthetic ? '' : stripEndowedChairTitles(out[field]);
   }
 
   for (const field of SEARCH_INDEX_PERSON_NAME_FIELDS) {
@@ -554,17 +584,49 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     if (researchAreas.length > 0) out.researchAreas = researchAreas;
     else delete out.researchAreas;
   }
+};
 
-  if (Array.isArray(out.methods)) {
-    const methods = normalizeResearchAreaList(out.methods);
-    if (methods.length > 0) out.methods = methods;
-    else delete out.methods;
-  }
+export const UNDERGRAD_INVITATION_RANK_FIELD = 'undergradInvitationRank';
+
+const UNDERGRAD_INVITATION_RANK_BY_LEVEL: Record<string, number> = {
+  actively_hiring: 2,
+  welcomes_undergrads: 1,
+};
+
+export const undergradInvitationRank = (level: string | undefined): number =>
+  (level && UNDERGRAD_INVITATION_RANK_BY_LEVEL[level]) || 0;
+
+const presentOnlyWhenTrue = (flags: Record<string, boolean>): Record<string, true> =>
+  Object.fromEntries(
+    Object.entries(flags)
+      .filter(([, value]) => value)
+      .map(([key]) => [key, true]),
+  );
+
+// The browse card's label decision, composed exactly as the browse route serves a hit, so the
+// Type facet bucket and the card label cannot disagree (#5141). `journey:eval` calls it too.
+export const researchEntitySearchResearchType = (
+  doc: any,
+  servedLead?: ResearchEntitySearchServedLead,
+): string | undefined => {
+  const leadMemberNames = servedLead?.leadMemberNames;
+  const hit = servedLead?.identityLeadDirectsOrganization
+    ? { ...doc, [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true }
+    : doc;
+  const servesCreativePractice = decideServedResearchEntityCreativePractice(
+    {
+      ...researchEntityListServedSource(hit, leadMemberNames, false),
+      ...servedEmeritusWayInFlags(servedLead?.emeritusWayIn),
+    },
+    leadMemberNames,
+  ).creativePractice;
+  return servesCreativePractice ? CREATIVE_PRACTICE_RESEARCH_TYPE : doc?.entityType;
 };
 
 export function buildResearchEntitySearchIndexDocument(
   doc: any,
   memberNames?: ResearchEntitySearchMemberNameFields,
+  servedLead?: ResearchEntitySearchServedLead,
 ): Record<string, any> | null {
   if (!doc) return null;
   const rawId = doc._id ?? doc.id;
@@ -572,15 +634,37 @@ export function buildResearchEntitySearchIndexDocument(
   const id = serializedDocumentId(rawId);
   if (!id) return null;
 
+  const servedRow = { ...doc, ...servedEmeritusWayInFlags(servedLead?.emeritusWayIn) };
+  const researchType = researchEntitySearchResearchType(doc, servedLead);
+  const creativePractice = researchType === CREATIVE_PRACTICE_RESEARCH_TYPE;
+  const undergradSignals = {
+    hosts: entityHasHostedUndergraduates(servedRow),
+    welcomes: entityWelcomesUndergraduates(servedRow),
+    mentors: entityMentorsUndergraduates(servedRow),
+  };
   const out: Record<string, any> = {
     ...doc,
     id,
+    studentVisibilityTier: effectiveStudentVisibilityTier(doc) || doc.studentVisibilityTier,
+    // Derived from the row rather than copied from the stored flag, so the
+    // `hostsUndergrads` filter and facet read the predicate the served badge reads
+    // even when a writer changed its inputs without recomputing the flag (#5123).
+    hasUndergradHostingEvidence: undergradSignals.hosts,
+    welcomesUndergrads: undergradSignals.welcomes,
+    ...presentOnlyWhenTrue({
+      mentorsUndergrads: undergradSignals.mentors,
+      worksWithUndergrads:
+        undergradSignals.hosts || undergradSignals.welcomes || undergradSignals.mentors,
+    }),
+    undergradInvitationRank: undergradInvitationRank(servedUndergradInvitationLevel(servedRow)),
+    ...presentOnlyWhenTrue({ creativePractice }),
   };
   if (memberNames) {
     out.leadProfessorNames = memberNames.leadProfessorNames;
     out.professorNames = memberNames.professorNames;
+    out.memberNames = memberNames.memberNames;
   }
-  sanitizeResearchEntityIndexDocument(out);
+  sanitizeResearchEntityIndexDocument(out, doc, servedLead);
 
   /**
    * Index the title a student actually reads. `name` carries a synthesized
@@ -600,9 +684,15 @@ export function buildResearchEntitySearchIndexDocument(
       if (out.displayName) out.displayName = servedTitle;
     }
   }
+  // The embedder's documentTemplate renders `doc.name` unguarded, so one document
+  // without it fails the whole addDocuments batch and every replacing rebuild (#5468).
+  out.name = [out.name, out.displayName, out.slug, id].find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  );
   out.sortTitle = researchEntitySortTitle(out);
   out.sortTitleQualifier = researchEntitySortTitleQualifier(out);
   out.browseTiebreakKey = researchEntityBrowseTiebreakKey(id);
+  out[RESEARCH_TYPE_INDEX_FIELD] = researchType;
 
   // Ordering constraint: topic aliases have to come off the sanitized document,
   // never the raw one. `studentSearchTerms` is a `searchableAttributes` entry, so
@@ -629,20 +719,25 @@ export function buildResearchEntitySearchIndexDocument(
     ],
   );
   if (descriptorOnlyTerms.length > 0) out[MESH_DESCRIPTOR_ONLY_TERMS_FIELD] = descriptorOnlyTerms;
+  // Last, so it hashes the final served title and sanitized descriptions.
+  out[SEARCH_RERANK_TEXT_HASH_FIELD] = buildSearchRerankTextHash(out);
   return projectToIndexedFields(out);
 }
 
 export function buildResearchEntitySearchIndexDocuments(
   docs: any[],
   memberNamesByEntityId: ResearchEntitySearchMemberNameMap = new Map(),
+  servedLeadByEntityId: ResearchEntitySearchServedLeadMap = new Map(),
 ): Record<string, any>[] {
   return docs
-    .map((doc) =>
-      buildResearchEntitySearchIndexDocument(
+    .map((doc) => {
+      const id = researchEntitySearchDocumentId(doc);
+      return buildResearchEntitySearchIndexDocument(
         doc,
-        memberNamesByEntityId.get(researchEntitySearchDocumentId(doc)),
-      ),
-    )
+        memberNamesByEntityId.get(id),
+        servedLeadByEntityId.get(id),
+      );
+    })
     .filter((doc): doc is Record<string, any> => doc !== null);
 }
 
@@ -651,13 +746,31 @@ export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
   fetchMemberNames: (
     entities: any[],
   ) => Promise<ResearchEntitySearchMemberNameMap> = fetchResearchEntitySearchMemberNames,
+  fetchServedLeads: (
+    entities: any[],
+  ) => Promise<ResearchEntitySearchServedLeadMap> = fetchResearchEntitySearchServedLeads,
 ): Promise<Record<string, any>[]> {
-  const memberNamesByEntityId = await fetchMemberNames(docs);
-  return buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId);
+  // Every per-row sync builds here, and a script process never warms the vocabulary on its
+  // own, so without this its documents split a multi-part heading the reconcile keeps (#6542).
+  await warmServedResearchAreaVocabulary();
+  const [serving, memberNamesByEntityId, servedLeadByEntityId] = await Promise.all([
+    freshDirectoryRemovalServing(),
+    fetchMemberNames(docs),
+    fetchServedLeads(docs),
+  ]);
+  return redactWithheldNamesDeep(
+    buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId, servedLeadByEntityId),
+    serving,
+  );
 }
 
+export const RESEARCH_ENTITY_SEARCH_INDEX_ROW_FILTER = {
+  archived: { $ne: true },
+  studentVisibilityReasons: { $ne: RESEARCHER_REMOVED_REASON },
+} as const;
+
 async function fetchResearchEntityPage(page: number, pageSize: number): Promise<any[]> {
-  return ResearchEntity.find({ archived: { $ne: true } })
+  return ResearchEntity.find(RESEARCH_ENTITY_SEARCH_INDEX_ROW_FILTER)
     .sort({ _id: 1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
@@ -752,6 +865,64 @@ export async function readResearchEntitySearchEmbedderState(
   embedderStateCacheAt = now;
   return state;
 }
+
+type LiveIndexAttributeMethod = 'getFilterableAttributes' | 'getSortableAttributes';
+
+type ResearchEntitySearchAttributeIndexLike = Partial<
+  Record<LiveIndexAttributeMethod, () => Promise<unknown>>
+>;
+
+/**
+ * Reads, and caches, one attribute list of the live index, or `null` when it cannot be
+ * read. A deploy lands before the reindex that declares a new filterable or sortable
+ * attribute, and Meilisearch refuses a whole search that names an undeclared one, so
+ * search asks only for what this returns.
+ */
+const createLiveIndexAttributeReader = (method: LiveIndexAttributeMethod) => {
+  let cache: ReadonlySet<string> | null = null;
+  let cachedAt = 0;
+  let ttlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS;
+  return {
+    invalidate: (): void => {
+      cache = null;
+      cachedAt = 0;
+    },
+    read: async (
+      index: ResearchEntitySearchAttributeIndexLike,
+    ): Promise<ReadonlySet<string> | null> => {
+      const now = Date.now();
+      if (now - cachedAt < ttlMs) return cache;
+      try {
+        const read = index[method];
+        const attributes = typeof read === 'function' ? await read.call(index) : null;
+        cache = Array.isArray(attributes)
+          ? new Set(attributes.filter((value): value is string => typeof value === 'string'))
+          : null;
+        ttlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS;
+      } catch (error) {
+        console.error(
+          `ResearchEntity Meilisearch ${method} check failed:`,
+          sanitizeLogValue(error),
+        );
+        cache = null;
+        ttlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS;
+      }
+      cachedAt = now;
+      return cache;
+    },
+  };
+};
+
+const liveFilterableAttributes = createLiveIndexAttributeReader('getFilterableAttributes');
+const liveSortableAttributes = createLiveIndexAttributeReader('getSortableAttributes');
+
+export const readResearchEntitySearchFilterableAttributes = liveFilterableAttributes.read;
+export const readResearchEntitySearchSortableAttributes = liveSortableAttributes.read;
+
+export const invalidateResearchEntitySearchIndexAttributesCache = (): void => {
+  liveFilterableAttributes.invalidate();
+  liveSortableAttributes.invalidate();
+};
 
 export async function isResearchEntitySearchEmbedderConfigured(
   index: ResearchEntitySearchIndexLike,
@@ -893,7 +1064,7 @@ async function readSwapTaskIfVisible(
 ): Promise<{ status?: string; error?: unknown } | null> {
   if (typeof client.tasks?.waitForTask !== 'function') return null;
   try {
-    return await client.tasks.waitForTask(taskUid, { timeout: timeoutMs });
+    return await waitForMeiliTask(client.tasks, taskUid, timeoutMs);
   } catch (error) {
     if (isMeiliTaskNotFoundError(error)) return null;
     throw error;
@@ -958,6 +1129,7 @@ async function applyResearchEntitySearchIndexSettings(index: any): Promise<void>
     'updateSettings',
     MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
   );
+  invalidateResearchEntitySearchIndexAttributesCache();
 }
 
 async function addEveryResearchEntityDocument(
@@ -965,6 +1137,7 @@ async function addEveryResearchEntityDocument(
   pageSize: number,
   fetchPage: (page: number, pageSize: number) => Promise<any[]>,
   fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
+  fetchServedLeads: (entities: any[]) => Promise<ResearchEntitySearchServedLeadMap>,
 ): Promise<ResearchEntitySearchIndexPopulateResult> {
   let page = 1;
   let fetchedDocumentCount = 0;
@@ -980,6 +1153,7 @@ async function addEveryResearchEntityDocument(
     const indexDocs = await buildResearchEntitySearchIndexDocumentsWithMemberNames(
       docs,
       fetchMemberNames,
+      fetchServedLeads,
     );
     if (indexDocs.length > 0) {
       const addTask = await index.addDocuments(indexDocs, {
@@ -1019,9 +1193,10 @@ async function catchUpLiveIndexWithRowsChangedDuringBuild(
   liveIndex: any,
   changedRows: any[],
   fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
+  fetchServedLeads: (entities: any[]) => Promise<ResearchEntitySearchServedLeadMap>,
 ): Promise<ResearchEntitySearchIndexCatchUpResult> {
   const archivedIds = changedRows
-    .filter((row) => row?.archived === true)
+    .filter((row) => isExcludedFromSearchIndex(row))
     .map(researchEntitySearchDocumentId)
     .filter(Boolean);
   if (archivedIds.length > 0) {
@@ -1034,8 +1209,9 @@ async function catchUpLiveIndexWithRowsChangedDuringBuild(
   }
 
   const indexDocs = await buildResearchEntitySearchIndexDocumentsWithMemberNames(
-    changedRows.filter((row) => row?.archived !== true),
+    changedRows.filter((row) => !isExcludedFromSearchIndex(row)),
     fetchMemberNames,
+    fetchServedLeads,
   );
   if (indexDocs.length > 0) {
     await assertMeiliTaskSucceeded(
@@ -1164,17 +1340,18 @@ export async function rebuildResearchEntitySearchIndex(
   const startedAt = new Date();
   // A rebuild runs in its own process, so it warms the controlled vocabulary itself rather
   // than inheriting the server's warm. Without it every index document holds the fragments and
-  // the facet offers them as filter values (#3807). Warmed here, at the batch entry point,
-  // rather than in the per-document builder, which `syncEntity` also calls once per row.
+  // the facet offers them as filter values (#3807). The per-document builder warms too, but it
+  // fails open on a read error; this one fails the rebuild instead (#6542).
   await (options.warmVocabulary || warmControlledVocabularyHeadings)();
   const fetchPage = options.fetchPage || fetchResearchEntityPage;
   const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
+  const fetchServedLeads = options.fetchServedLeads || fetchResearchEntitySearchServedLeads;
   const fetchChangedSince = options.fetchChangedSince || fetchResearchEntitiesChangedSince;
   const liveUid = resolveIndexName(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
   const targetsPrefixedIndex = liveUid !== RESEARCH_ENTITY_SEARCH_INDEX_NAME;
   const openAiApiKey = usableOpenAiApiKey();
   const populate = (index: any) =>
-    addEveryResearchEntityDocument(index, pageSize, fetchPage, fetchMemberNames);
+    addEveryResearchEntityDocument(index, pageSize, fetchPage, fetchMemberNames, fetchServedLeads);
 
   let outcome: ResearchEntitySearchIndexPopulateResult & {
     swap?: ResearchEntitySearchIndexSwapResult;
@@ -1191,14 +1368,15 @@ export async function rebuildResearchEntitySearchIndex(
           liveIndex,
           await fetchChangedSince(startedAt),
           fetchMemberNames,
+          fetchServedLeads,
         ),
       swapConfirmation: options.swapConfirmation,
     });
   } else {
     const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
-    await applyResearchEntitySearchIndexSettings(index);
     await applyResearchEntitySearchEmbedderSetting(index, openAiApiKey, targetsPrefixedIndex);
     outcome = await populate(index);
+    await applyResearchEntitySearchIndexSettings(index);
   }
 
   const finishedAt = new Date();
@@ -1226,6 +1404,7 @@ export interface ResearchEntitySearchIndexReconcileOptions {
   getIndex?: typeof getMeiliIndex;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
   fetchMemberNames?: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>;
+  fetchServedLeads?: (entities: any[]) => Promise<ResearchEntitySearchServedLeadMap>;
   warmVocabulary?: () => Promise<unknown>;
 }
 
@@ -1282,13 +1461,18 @@ async function buildEveryCorpusIndexDocument(
   pageSize: number,
   fetchPage: (page: number, pageSize: number) => Promise<any[]>,
   fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
+  fetchServedLeads: (entities: any[]) => Promise<ResearchEntitySearchServedLeadMap>,
 ): Promise<Record<string, any>[]> {
   const corpus: Record<string, any>[] = [];
   for (let page = 1; ; page += 1) {
     const rows = await fetchPage(page, pageSize);
     if (rows.length === 0) break;
     corpus.push(
-      ...(await buildResearchEntitySearchIndexDocumentsWithMemberNames(rows, fetchMemberNames)),
+      ...(await buildResearchEntitySearchIndexDocumentsWithMemberNames(
+        rows,
+        fetchMemberNames,
+        fetchServedLeads,
+      )),
     );
     if (rows.length < pageSize) break;
   }
@@ -1298,8 +1482,10 @@ async function buildEveryCorpusIndexDocument(
 /**
  * Brings the live index in line with the corpus by writing only the difference, so a stale
  * Development index costs embeddings for the rows that changed rather than for all of them.
- * A settings, embedder, or document-shape change still needs the replacing rebuild, because
- * this never touches index settings (#5023).
+ * Drifted index settings are applied in place after the documents: they hold no embedder, so a
+ * new searchable field costs no re-embedding, and a reader that switches on a newly declared
+ * attribute never sees it before the documents carry it (#5141). An embedder or
+ * document-template change still needs the replacing rebuild (#5023).
  */
 export async function reconcileResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexReconcileOptions = {},
@@ -1321,6 +1507,7 @@ export async function reconcileResearchEntitySearchIndex(
     pageSize,
     options.fetchPage || fetchResearchEntityPage,
     options.fetchMemberNames || fetchResearchEntitySearchMemberNames,
+    options.fetchServedLeads || fetchResearchEntitySearchServedLeads,
   );
   if (corpus.length === 0) {
     throw new Error(
@@ -1379,6 +1566,9 @@ export async function reconcileResearchEntitySearchIndex(
         `Reconcile stopped part-way: the live index holds ${upsertedSoFar} of ${changed.length} upserts and ${deletes}, so it mixes old and new documents. Re-run the reconcile or the replacing rebuild. Cause: ${sanitizeLogValue(error)}`,
         { cause: error },
       );
+    }
+    if (researchEntitySearchIndexSettingsDrift(await index.getSettings()).length > 0) {
+      await applyResearchEntitySearchIndexSettings(index);
     }
   }
 

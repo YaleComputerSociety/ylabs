@@ -4,6 +4,7 @@
  * second is the one that would turn it back into `manuallyLockedFields` with extra
  * steps.
  */
+import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import {
   fieldValueRefusalKey,
@@ -12,6 +13,7 @@ import {
   liveFieldValueRefusals,
   planFieldValueRefusal,
   planFieldValueRefusalWithdrawal,
+  planOwnFieldValueRefusalWithdrawal,
   refusedResolverObservations,
   refusedValueRule,
   valueIsRefused,
@@ -221,6 +223,43 @@ describe('recording a refusal', () => {
     expect(() => fieldValueRefusalsPath('a.b')).toThrow(/unusable field name/);
   });
 
+  it('records the stage that derives a refusal only when one is named (#5838)', () => {
+    const derived = planFieldValueRefusal(undefined, {
+      field: 'websiteUrl',
+      value: WRONG,
+      rule: 'wrong_owner',
+      refusedBy: 'repair:example',
+      derivedBy: 'example-stage',
+    })['fieldValueRefusals.websiteUrl'] as Array<Record<string, unknown>>;
+    const standing = planFieldValueRefusal(undefined, {
+      field: 'websiteUrl',
+      value: WRONG,
+      rule: 'wrong_owner',
+      refusedBy: 'repair:example',
+    })['fieldValueRefusals.websiteUrl'] as Array<Record<string, unknown>>;
+    expect(derived[0].derivedBy).toBe('example-stage');
+    expect(standing[0]).not.toHaveProperty('derivedBy');
+  });
+
+  it('withdraws only the refusals of a value its caller owns (#5838)', () => {
+    const own = { ...rowRefusing().fieldValueRefusals.websiteUrl[0], derivedBy: 'example-stage' };
+    const operator = { ...rowRefusing().fieldValueRefusals.websiteUrl[0], refusedBy: 'operator' };
+    const update = planOwnFieldValueRefusalWithdrawal(
+      { websiteUrl: [own, operator] },
+      'websiteUrl',
+      fieldValueRefusalKey('websiteUrl', WRONG),
+      (refusal) => refusal.derivedBy === 'example-stage',
+      'the evidence changed',
+      new Date('2026-09-30T00:00:00Z'),
+    );
+    const after = { websiteUrl: update['fieldValueRefusals.websiteUrl'] };
+    expect(liveFieldValueRefusals(after, 'websiteUrl')).toEqual([operator]);
+    expect(valueIsRefused(after, 'websiteUrl', WRONG)).toBe(true);
+    expect(() =>
+      planOwnFieldValueRefusalWithdrawal(after, 'websiteUrl', 'k', () => true, ' '),
+    ).toThrow(/requires a reason/);
+  });
+
   it('will not withdraw without a reason', () => {
     expect(() =>
       planFieldValueRefusalWithdrawal(rowRefusing().fieldValueRefusals, 'websiteUrl', WRONG, '  '),
@@ -334,5 +373,59 @@ describe('planFieldValueRefusal sourceName', () => {
     const [refusal] = update['fieldValueRefusals.websiteUrl'] as Array<Record<string, unknown>>;
 
     expect('sourceName' in refusal).toBe(false);
+  });
+});
+
+describe('a refused list of records (#5433)', () => {
+  const refused = [{ year: null, programName: 'Lab roster alumni', count: 1 }];
+  const update = planFieldValueRefusal(
+    {},
+    {
+      field: 'pastUndergradAdvisees',
+      value: refused,
+      rule: 'operator_judgement',
+      refusedBy: 'test',
+      note: 'the cited page names no undergraduate',
+    },
+  );
+  const refusals = { pastUndergradAdvisees: update['fieldValueRefusals.pastUndergradAdvisees'] };
+
+  it('keys each record by its fields, not as "[object Object]"', () => {
+    expect(fieldValueRefusalKey('pastUndergradAdvisees', refused)).not.toContain('object Object');
+    expect(
+      fieldValueRefusalKey('pastUndergradAdvisees', [
+        { count: 1, programName: 'Lab roster alumni', year: null },
+      ]),
+    ).toBe(fieldValueRefusalKey('pastUndergradAdvisees', refused));
+  });
+
+  it('refuses the same list and leaves a different list of the same length open', () => {
+    expect(valueIsRefused(refusals, 'pastUndergradAdvisees', refused)).toBe(true);
+    expect(
+      valueIsRefused(refusals, 'pastUndergradAdvisees', [
+        { year: 2024, programName: 'Fixture Fellowship', count: 1 },
+      ]),
+    ).toBe(false);
+  });
+
+  it('keys a stored entry with a subdocument id and no year equal to the refusal and the observation', () => {
+    const storedEntry = [
+      { _id: new mongoose.Types.ObjectId(), programName: 'Lab roster alumni', count: 1 },
+    ];
+    const observedEntry = [{ programName: 'Lab roster alumni', count: 1 }];
+    expect(fieldValueRefusalKey('pastUndergradAdvisees', storedEntry)).toBe(
+      fieldValueRefusalKey('pastUndergradAdvisees', refused),
+    );
+    expect(fieldValueRefusalKey('pastUndergradAdvisees', observedEntry)).toBe(
+      fieldValueRefusalKey('pastUndergradAdvisees', refused),
+    );
+    expect(valueIsRefused(refusals, 'pastUndergradAdvisees', storedEntry)).toBe(true);
+    expect(valueIsRefused(refusals, 'pastUndergradAdvisees', observedEntry)).toBe(true);
+  });
+
+  it('keeps keying a list of strings as before', () => {
+    expect(fieldValueRefusalKey('researchAreas', ['  Fixture  topic ', 'Other'])).toBe(
+      JSON.stringify(['Fixture topic', 'Other']),
+    );
   });
 });

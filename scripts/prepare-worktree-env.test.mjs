@@ -63,6 +63,29 @@ test('copies the primary env files privately and points them at the reserved por
   assert.match(fs.readFileSync(path.join(primaryRoot, 'server', '.env'), 'utf8'), /^PORT=4000$/m);
 });
 
+test('a worktree never inherits scraper write permission from the primary env', () => {
+  const primaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'env-primary-'));
+  const worktreeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'env-worktree-'));
+  try {
+    writeFile(
+      path.join(primaryRoot, 'server', '.env'),
+      'PORT=4000\nALLOW_NON_PROD_SCRAPER_WRITES=true\nexport ALLOW_NON_PROD_SCRAPER_WRITES=1\n',
+    );
+    prepareWorktreeEnv({ primaryRoot, worktreeRoot, serverPort: 4011 });
+    const serverEnv = fs.readFileSync(path.join(worktreeRoot, 'server', '.env'), 'utf8');
+    assert.deepEqual(serverEnv.match(/^.*ALLOW_NON_PROD_SCRAPER_WRITES.*$/gm), [
+      'ALLOW_NON_PROD_SCRAPER_WRITES=',
+    ]);
+    assert.match(
+      fs.readFileSync(path.join(primaryRoot, 'server', '.env'), 'utf8'),
+      /^ALLOW_NON_PROD_SCRAPER_WRITES=true$/m,
+    );
+  } finally {
+    fs.rmSync(primaryRoot, { recursive: true, force: true });
+    fs.rmSync(worktreeRoot, { recursive: true, force: true });
+  }
+});
+
 test('reports a missing primary server env and still points the client at the reserved API port', () => {
   const primaryRoot = makeTempDir('ylabs-primary-');
   const worktreeRoot = makeTempDir('ylabs-worktree-');
@@ -100,7 +123,11 @@ const git = (cwd, ...args) => {
 test('new-agent-worktree.sh produces a worktree with private env files and its own ports', () => {
   const primaryRoot = makeTempDir('ylabs-helper-primary-');
   const worktreeParent = makeTempDir('ylabs-helper-worktrees-');
-  for (const file of ['scripts/new-agent-worktree.sh', 'scripts/prepare-worktree-env.mjs']) {
+  for (const file of [
+    'scripts/new-agent-worktree.sh',
+    'scripts/prepare-worktree-env.mjs',
+    'scripts/worktree-port-probe.mjs',
+  ]) {
     writeFile(path.join(primaryRoot, file), fs.readFileSync(path.join(repoRoot, file), 'utf8'));
   }
   writeFile(
@@ -163,7 +190,11 @@ test('new-agent-worktree.sh produces a worktree with private env files and its o
 test('new-agent-worktree.sh never reuses an API port another worktree already holds', () => {
   const primaryRoot = makeTempDir('ylabs-helper-primary-');
   const worktreeParent = makeTempDir('ylabs-helper-worktrees-');
-  for (const file of ['scripts/new-agent-worktree.sh', 'scripts/prepare-worktree-env.mjs']) {
+  for (const file of [
+    'scripts/new-agent-worktree.sh',
+    'scripts/prepare-worktree-env.mjs',
+    'scripts/worktree-port-probe.mjs',
+  ]) {
     writeFile(path.join(primaryRoot, file), fs.readFileSync(path.join(repoRoot, file), 'utf8'));
   }
   const guardInstaller = path.join(primaryRoot, 'scripts', 'install-gh-identifier-guard.sh');

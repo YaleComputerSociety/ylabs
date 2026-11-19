@@ -242,6 +242,101 @@ describe('parseFundDetailPage', () => {
     expect(acceptingAt('2027-03-24T17:01:00.000Z')).toBe(false);
   });
 
+  it('keeps a fund whose own text states rolling or while-funds-remain applications accepting past its nominal deadline (#6480)', () => {
+    const acceptingWith = (
+      applicationInformation: string,
+      extra: { closedOn?: string; opens?: string } = {},
+    ) =>
+      parseFundDetailPage(
+        fundDetailHtml({
+          opens: extra.opens ?? '9/17/2026',
+          deadline: '11/14/2026 5:00 PM',
+          closedOn: extra.closedOn,
+          applicationInformation,
+        }),
+        { title: '', url: FUND_A_URL },
+        new Date('2026-11-17T12:00:00.000Z'),
+      )?.isAcceptingApplications;
+    expect(acceptingWith('Please submit a short proposal.')).toBe(false);
+    expect(acceptingWith('Please note: Applications for this funding are rolling.')).toBe(true);
+    expect(
+      acceptingWith('Students are encouraged to apply as long as funds remain available.'),
+    ).toBe(true);
+    expect(acceptingWith('Applications are reviewed on a rolling basis.')).toBe(true);
+  });
+
+  it('still reads a negated, dated, closed or not-yet-open rolling fund as not accepting (#6480)', () => {
+    const acceptingWith = (
+      applicationInformation: string,
+      extra: { closedOn?: string; opens?: string } = {},
+    ) =>
+      parseFundDetailPage(
+        fundDetailHtml({
+          opens: extra.opens ?? '9/17/2026',
+          deadline: '11/14/2026 5:00 PM',
+          closedOn: extra.closedOn,
+          applicationInformation,
+        }),
+        { title: '', url: FUND_A_URL },
+        new Date('2026-11-17T12:00:00.000Z'),
+      )?.isAcceptingApplications;
+    expect(acceptingWith('NB: Applications are not reviewed on a rolling basis.')).toBe(false);
+    expect(acceptingWith('Applications are reviewed on a rolling basis until November 14.')).toBe(
+      false,
+    );
+    expect(acceptingWith('Applications are rolling until the deadline.')).toBe(false);
+    expect(acceptingWith('Applications were accepted on a rolling basis.')).toBe(false);
+    expect(
+      acceptingWith('Applications are rolling.', { closedOn: 'Fund closed on 11/15/2026' }),
+    ).toBe(false);
+    expect(acceptingWith('Applications are rolling.', { opens: '1/15/2027' })).toBe(false);
+  });
+
+  it('reads a while-funds-remain fund as closed past its deadline when the page also states a hard close (#6480)', () => {
+    const acceptingWith = (applicationInformation: string) =>
+      parseFundDetailPage(
+        fundDetailHtml({
+          opens: '9/17/2026',
+          deadline: '11/14/2026 5:00 PM',
+          applicationInformation,
+        }),
+        { title: '', url: FUND_A_URL },
+        new Date('2026-11-17T12:00:00.000Z'),
+      )?.isAcceptingApplications;
+    expect(
+      acceptingWith(
+        'Applications are accepted while funds remain. The final deadline is April 30, 2026.',
+      ),
+    ).toBe(false);
+    expect(
+      acceptingWith('Apply as long as funds remain available. Applications close March 1, 2027.'),
+    ).toBe(false);
+    expect(
+      acceptingWith(
+        'No applications will be accepted after the deadline. Applications are rolling.',
+      ),
+    ).toBe(false);
+    expect(
+      acceptingWith('Apply as long as funds remain available. Decisions arrive within two weeks.'),
+    ).toBe(true);
+  });
+
+  it('does not read rolling prose scoped to an earlier cycle as open now (#6480, #6399)', () => {
+    const acceptingWith = (applicationInformation: string) =>
+      parseFundDetailPage(
+        fundDetailHtml({
+          opens: '9/17/2026',
+          deadline: '11/14/2026 5:00 PM',
+          applicationInformation,
+        }),
+        { title: '', url: FUND_A_URL },
+        new Date('2026-11-17T12:00:00.000Z'),
+      )?.isAcceptingApplications;
+    expect(acceptingWith('For the 2025-26 cycle, applications are rolling.')).toBe(false);
+    expect(acceptingWith('For 2025, applications are rolling.')).toBe(false);
+    expect(acceptingWith('For the 2026-27 cycle, applications are rolling.')).toBe(true);
+  });
+
   it('keeps regions and drops the countries listed under them', () => {
     const fund = parseFundDetailPage(
       FUND_A_DETAIL_HTML,
@@ -249,6 +344,88 @@ describe('parseFundDetailPage', () => {
       referenceDate,
     );
     expect(fund?.globalRegions).toEqual(['Europe', 'Asia']);
+  });
+
+  it('states no region for a fund that ticks every region, and keeps a partial list (#6475)', () => {
+    const regionsOf = (regions: string[]) =>
+      parseFundDetailPage(
+        FUND_A_DETAIL_HTML.replace(
+          facetPanel(4, 'Global Region or Country', [
+            'Europe',
+            '-- France (Western Europe)',
+            'Asia',
+            '-- Japan (East Asia)',
+          ]),
+          facetPanel(4, 'Global Region or Country', regions),
+        ),
+        { title: '', url: FUND_A_URL },
+        referenceDate,
+      )?.globalRegions;
+    const everyRegion = [
+      'Africa',
+      'Asia',
+      'Europe',
+      'Latin America and Caribbean',
+      'Middle East & Persian Gulf',
+      'North America',
+      'Oceania',
+    ];
+    expect(regionsOf(everyRegion)).toEqual([]);
+    expect(regionsOf([...everyRegion, '-- France (Western Europe)'])).toEqual([]);
+    expect(regionsOf(everyRegion.slice(0, 6))).toEqual(everyRegion.slice(0, 6));
+    expect(regionsOf([...everyRegion.slice(0, 6), '-- France (Western Europe)'])).toEqual(
+      everyRegion.slice(0, 6),
+    );
+    expect(regionsOf(['North America'])).toEqual(['North America']);
+  });
+
+  it('withdraws its earlier region value when the fund ticks every region (#6507)', () => {
+    const everyRegion = [
+      'Africa',
+      'Asia',
+      'Europe',
+      'Latin America and Caribbean',
+      'Middle East & Persian Gulf',
+      'North America',
+      'Oceania',
+    ];
+    const witnessFor = (html: string) => {
+      const fund = parseFundDetailPage(html, { title: '', url: FUND_A_URL }, referenceDate)!;
+      const observations = fundToObservations(fund);
+      return {
+        claims: observations.find((obs) => obs.field === 'sourceKey')?.assertsNoValueFor ?? [],
+        emitsRegions: observations.some((obs) => obs.field === 'globalRegions'),
+      };
+    };
+    const withRegions = (regions: string[]) =>
+      FUND_A_DETAIL_HTML.replace(
+        facetPanel(4, 'Global Region or Country', [
+          'Europe',
+          '-- France (Western Europe)',
+          'Asia',
+          '-- Japan (East Asia)',
+        ]),
+        facetPanel(4, 'Global Region or Country', regions),
+      );
+
+    expect(witnessFor(withRegions(everyRegion))).toEqual({
+      claims: ['globalRegions'],
+      emitsRegions: false,
+    });
+    expect(witnessFor(withRegions(everyRegion.slice(0, 6)))).toEqual({
+      claims: [],
+      emitsRegions: true,
+    });
+    const withoutRegionFacet = FUND_A_DETAIL_HTML.replace(
+      facetPanel(4, 'Global Region or Country', [
+        'Europe',
+        '-- France (Western Europe)',
+        'Asia',
+        '-- Japan (East Asia)',
+      ]),
+      '',
+    );
+    expect(witnessFor(withoutRegionFacet)).toEqual({ claims: [], emitsRegions: false });
   });
 
   it('never reads the contact block', () => {
@@ -499,12 +676,12 @@ describe('a contact direction in fund prose (#4177)', () => {
     },
   );
 
-  it('leaves a section with no contact direction exactly as it reads', () => {
+  it('leaves a section with no contact direction as it reads, one block apart from the next', () => {
     const fund = fundWith({
       eligibility: '<p>Open to juniors.</p><p>Seniors may apply.</p>',
     });
 
-    expect(fund.eligibility).toBe('Open to juniors.Seniors may apply.');
+    expect(fund.eligibility).toBe('Open to juniors. Seniors may apply.');
   });
 
   it('claims nothing about an eligibility section the page leaves empty', () => {
@@ -1324,5 +1501,60 @@ describe('a fund the portal says is no longer available (#4174)', () => {
       expect(emitted).toEqual([]);
       expect(result.notes).toContain('retired=0');
     }
+  });
+});
+
+describe('link text in fund prose (#5365)', () => {
+  const fundWith = (options: Parameters<typeof fundDetailHtml>[0]) =>
+    parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL })!;
+
+  it('keeps the visible text of an anchor and never its href', () => {
+    const fund = fundWith({
+      applicationInformation:
+        '<p>Submit your proposal through <a href="https://portal.example.edu/apply?session=abc">the fellowship portal</a> before the deadline.</p>',
+    });
+
+    expect(fund.applicationInformation).toBe(
+      'Submit your proposal through the fellowship portal before the deadline.',
+    );
+  });
+
+  it('keeps a bare link target that is the object of its sentence as a readable host and path', () => {
+    const fund = fundWith({
+      applicationInformation:
+        '<ul><li><p>A copy of your transcript. In order to obtain one please go to&nbsp;<font><u>https://records.example.edu/</u></font>&nbsp;and print it as a PDF file.</p></li></ul>',
+      restrictions:
+        'For more information about the review process and requirements go to&nbsp;<a href="http://www.example.edu/review/Student_projects.pdf">http://www.example.edu/review/Student_projects.pdf</a>.<br /><br />Students may only receive the award once.',
+    });
+
+    expect(fund.applicationInformation).toBe(
+      'A copy of your transcript. In order to obtain one please go to records.example.edu and print it as a PDF file.',
+    );
+    expect(fund.restrictionsToUseOfAward).toBe(
+      'For more information about the review process and requirements go to www.example.edu/review/Student_projects.pdf. Students may only receive the award once.',
+    );
+  });
+
+  it('keeps an anchor with an unsafe scheme as its text and never emits the scheme', () => {
+    const fund = fundWith({
+      applicationInformation:
+        '<p>Complete <a href="javascript:alert(1)">the online form</a> and <a href="data:text/html;base64,PGI+">the budget sheet</a> before you apply.</p>',
+    });
+
+    expect(fund.applicationInformation).toBe(
+      'Complete the online form and the budget sheet before you apply.',
+    );
+    expect(JSON.stringify(fund)).not.toMatch(/javascript:|data:text/i);
+  });
+
+  it('keeps each list item apart from the next', () => {
+    const fund = fundWith({
+      applicationInformation:
+        '<ul><li>A budget of your travel expenses.<br /></li><li><span>CV</span><br /></li><li><span>A copy of your most recent transcript.</span></li></ul>',
+    });
+
+    expect(fund.applicationInformation).toBe(
+      'A budget of your travel expenses. CV A copy of your most recent transcript.',
+    );
   });
 });

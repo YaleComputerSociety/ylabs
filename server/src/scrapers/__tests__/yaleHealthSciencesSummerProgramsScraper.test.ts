@@ -104,6 +104,21 @@ describe('parseHealthSciencesProgramPage', () => {
     expect(observations.some((observation) => observation.field === 'contactEmail')).toBe(false);
   });
 
+  it('persists the program page text it read as source evidence, without a raw email (#6402)', () => {
+    const candidate = parseHealthSciencesProgramPage(
+      surfHtml,
+      surfUrl,
+      'Yale School of Medicine',
+      referenceDate,
+    );
+    const source = candidateToObservations(candidate!).find(
+      (observation) => observation.field === 'fullSourceDescription',
+    );
+    expect(typeof source?.value).toBe('string');
+    expect(String(source?.value)).toContain(String(candidate?.eligibility ?? '').slice(0, 40));
+    expect(String(source?.value)).not.toContain('fixture-surf@med.example.edu');
+  });
+
   it('rejects a non-Yale source page (source citations must be Yale-owned)', () => {
     const candidate = parseHealthSciencesProgramPage(
       surfHtml,
@@ -169,6 +184,35 @@ describe('parseHealthSciencesProgramPage', () => {
     const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
     expect(candidate?.description).toMatch(/^A summer research internship/);
     expect(candidate?.description).not.toContain('Fixture Person');
+  });
+
+  it('reads the year of study a program blurb names and emits it as an observation', () => {
+    const html = `
+      <main>
+        <h1>Fixture Child Health Summer Internship</h1>
+        <p>An eight-week summer internship for rising junior and senior undergraduate students is offered by a Yale research center each year.</p>
+        <p>Interns join a research group and present a poster at the end of the summer.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate?.yearOfStudy).toEqual(['Sophomore', 'Junior']);
+    expect(
+      candidateToObservations(candidate!).find((item) => item.field === 'yearOfStudy')?.value,
+    ).toEqual(['Sophomore', 'Junior']);
+  });
+
+  it('states no year of study when the only named level is an exception to an unnamed main audience', () => {
+    const html = `
+      <main>
+        <h1>Fixture Enrichment Summer Research Program</h1>
+        <p>A six-week summer research program for undergraduate students enrolled at another institution.</p>
+        <h2>Eligibility</h2>
+        <p>Applicants must be currently enrolled in an undergraduate degree granting institution. Recent graduates pursuing a research master's degree may also be considered.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate).toBeDefined();
+    expect(candidate?.yearOfStudy).toEqual([]);
   });
 
   it('returns undefined for a page with no undergraduate summer-research signal', () => {

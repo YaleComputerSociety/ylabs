@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   searchSimilarDocuments: vi.fn(),
+  getDocument: vi.fn(),
   getEmbedders: vi.fn(),
   listingDistinct: vi.fn(),
   listingFind: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('../../utils/meiliClient', () => ({
   getMeiliSearchIndex: vi.fn(async () => ({
     search: mocks.search,
     searchSimilarDocuments: mocks.searchSimilarDocuments,
+    getDocument: mocks.getDocument,
     getEmbedders: mocks.getEmbedders,
   })),
 }));
@@ -79,6 +81,12 @@ vi.mock('../../models/researcher', () => ({
   },
 }));
 
+vi.mock('../../models/orgUnit', () => ({
+  OrgUnit: {
+    find: () => ({ select: () => ({ lean: async () => [] }) }),
+  },
+}));
+
 vi.mock('../../models/account', () => ({
   Account: {
     find: mocks.accountFind,
@@ -104,6 +112,7 @@ import {
   orderCandidatesByKeywordLeg,
   fuseKeywordAndSemanticRankings,
   keywordLegTopHitIsNameMatch,
+  keywordLegTopHitTouchesAPersonName,
   SEMANTIC_LEG_SIZE,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
@@ -113,6 +122,7 @@ import {
   listResearchEntityRelationshipPayload,
   listSimilarResearchEntities,
   normalizeResearchSearchQuery,
+  rewriteAcronymToPhrase,
   promoteExactAliasFieldMatches,
   rankOwnEvidenceAboveMeshDescriptorMatches,
   keepMeshDescriptorMatchesBelowOwnEvidence,
@@ -133,6 +143,8 @@ import { invalidateResearchEntitySearchEmbedderCache } from '../researchEntitySe
 import { RESEARCH_SEARCH_MAX_REACHABLE_RECORDS } from '../researchSearchPagination';
 import { searchResearchGroups } from '../../controllers/researchGroupController';
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
+import { setResearchSearchSpellingVocabularyForTests } from '../researchSearchSpellingVocabulary';
+import { buildSearchSpellingVocabulary } from '../searchQuerySpellingCorrection';
 
 // One fully chainable query double: the service composes find().sort().limit()
 // .select().lean() in different orders per call site, so every helper returns
@@ -163,6 +175,8 @@ beforeEach(() => {
   mocks.search.mockReset();
   mocks.searchSimilarDocuments.mockReset();
   mocks.searchSimilarDocuments.mockResolvedValue({ hits: [] });
+  mocks.getDocument.mockReset();
+  mocks.getDocument.mockResolvedValue({});
   mocks.getEmbedders.mockReset();
   mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
   mocks.getResearchSearchQueryVector.mockReset();
@@ -215,6 +229,16 @@ describe('searchResearchGroupsViaMeili', () => {
       query: 'computer vision medical imaging',
       tokens: ['computer', 'vision', 'medical', 'imaging'],
       isTopicAliasQuery: false,
+    });
+  });
+
+  it('treats topic and negation frame words as filler so an unmatched word is not replaced by them', () => {
+    expect(normalizeResearchSearchQuery('qzxjvmw not a research topic')).toMatchObject({
+      query: 'qzxjvmw',
+      tokens: ['qzxjvmw'],
+    });
+    expect(normalizeResearchSearchQuery('topics in medieval history')).toMatchObject({
+      tokens: ['medieval', 'history'],
     });
   });
 
@@ -502,6 +526,19 @@ describe('searchResearchGroupsViaMeili', () => {
       tokens: ['econ'],
       isTopicAliasQuery: true,
     });
+  });
+
+  it('rewrites an acronym only when it is the whole query (#5169)', () => {
+    expect(rewriteAcronymToPhrase('NLP')).toBe('natural language processing');
+    expect(rewriteAcronymToPhrase('nlp lab')).toBe('natural language processing');
+    expect(rewriteAcronymToPhrase('LLM undergraduate research')).toBe('large language models');
+    expect(rewriteAcronymToPhrase('nlp history')).toBe('nlp history');
+    expect(rewriteAcronymToPhrase('ai art')).toBe('ai art');
+    expect(rewriteAcronymToPhrase('rna')).toBe('rna');
+    expect(rewriteAcronymToPhrase('orgo')).toBe('orgo');
+    expect(normalizeResearchSearchQuery(rewriteAcronymToPhrase('NLP'))).toMatchObject(
+      normalizeResearchSearchQuery('natural language processing'),
+    );
   });
 
   it('resolves organic chemistry vernacular to the canonical multi-word field name', () => {
@@ -1304,6 +1341,47 @@ describe('searchResearchGroupsViaMeili', () => {
     ]);
   });
 
+  it('lists actively hiring rows first when browse is filtered to rows that welcome undergraduates', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('', { welcomesUndergrads: true }, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1].sort).toEqual([
+      'undergradInvitationRank:desc',
+      'browseRankScore:desc',
+      'browseTiebreakKey:asc',
+    ]);
+  });
+
+  it('never overrides a sort the student chose with the hiring order', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('', { welcomesUndergrads: true }, 1, 24, {
+      sortBy: 'name',
+      sortOrder: 'asc',
+    });
+
+    for (const [, params] of mocks.search.mock.calls) {
+      expect(params.sort ?? []).not.toContain('undergradInvitationRank:desc');
+    }
+  });
+
+  it('keeps the browse order when the hiring rank is not yet sortable', async () => {
+    mocks.search
+      .mockRejectedValueOnce({
+        code: 'invalid_search_sort',
+        message: 'Attribute `undergradInvitationRank` is not sortable.',
+      })
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('', { welcomesUndergrads: true }, 1, 24);
+
+    expect(mocks.search.mock.calls[1][1].sort).toEqual([
+      'browseRankScore:desc',
+      'browseTiebreakKey:asc',
+    ]);
+  });
+
   it('keeps the browse rank when only the tiebreak key is not yet sortable', async () => {
     mocks.search
       .mockRejectedValueOnce({
@@ -1360,7 +1438,43 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(true);
   });
 
-  it('expands AI and restricts short alias searches to topic fields', async () => {
+  it('searches an acronym typed alone as the phrase it stands for (#5169)', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][0]).toBe('artificial intelligence');
+    for (const [, params] of mocks.search.mock.calls) {
+      expect(params).not.toHaveProperty('attributesToSearchOn');
+    }
+  });
+
+  it('searches a short given name as the full given name a person with that surname carries (#5169)', async () => {
+    setResearchSearchSpellingVocabularyForTests(
+      buildSearchSpellingVocabulary([
+        {
+          nameText: [['Robert Quillfeather']],
+          personNameText: [['Robert Quillfeather']],
+          bodyText: ['art history'],
+          served: true,
+        },
+      ]),
+    );
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    try {
+      await searchResearchGroupsViaMeili('bob quillfeather', {}, 1, 24);
+      expect(mocks.search.mock.calls[0][0]).toBe('robert quillfeather');
+
+      mocks.search.mockClear();
+      await searchResearchGroupsViaMeili('art history', {}, 1, 24);
+      expect(mocks.search.mock.calls[0][0]).toBe('art history');
+    } finally {
+      setResearchSearchSpellingVocabularyForTests(null);
+    }
+  });
+
+  it('expands a kept shorthand and restricts its search to topic fields', async () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],
       estimatedTotalHits: 0,
@@ -1370,13 +1484,21 @@ describe('searchResearchGroupsViaMeili', () => {
       },
     });
 
-    const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+    const result = await searchResearchGroupsViaMeili('neuro', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledWith(
-      'artificial intelligence machine learning deep learning ai',
+      'neuroscience neurology neural brain neuro',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
-        facets: ['schools', 'departments', 'entityType'],
+        facets: [
+          'schools',
+          'departments',
+          'researchType',
+          'hasUndergradHostingEvidence',
+          'welcomesUndergrads',
+          'mentorsUndergrads',
+          'worksWithUndergrads',
+        ],
       }),
     );
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
@@ -1722,7 +1844,7 @@ describe('searchResearchGroupsViaMeili', () => {
       ]),
     );
 
-    const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+    const result = await searchResearchGroupsViaMeili('neuro', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
     expect(mocks.search.mock.calls[0][1]).toHaveProperty('attributesToSearchOn');
@@ -1914,6 +2036,29 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  describe('keywordLegTopHitTouchesAPersonName (#5549)', () => {
+    const hit = (matches: Record<string, unknown>) => ({ _matchesPosition: matches });
+    const span = [{ start: 0, length: 4, indices: [0] }];
+
+    it('is true for any match inside a lead, professor or member name, typo or not', () => {
+      expect(keywordLegTopHitTouchesAPersonName([hit({ leadProfessorNames: span })])).toBe(true);
+      expect(keywordLegTopHitTouchesAPersonName([hit({ professorNames: span })])).toBe(true);
+      expect(keywordLegTopHitTouchesAPersonName([hit({ memberNames: span })])).toBe(true);
+    });
+
+    it('is true for a title match no topic field shares, and false when one does', () => {
+      expect(keywordLegTopHitTouchesAPersonName([hit({ name: span })])).toBe(true);
+      expect(keywordLegTopHitTouchesAPersonName([hit({ name: span, researchAreas: span })])).toBe(
+        false,
+      );
+    });
+
+    it('is false for a topic-only match or no hit', () => {
+      expect(keywordLegTopHitTouchesAPersonName([hit({ researchAreas: span })])).toBe(false);
+      expect(keywordLegTopHitTouchesAPersonName([])).toBe(false);
+    });
+  });
+
   describe('keywordLegTopHitIsNameMatch (#3797)', () => {
     const lead = (name: string, spans: Array<[number, number]>) => ({
       leadProfessorNames: [name],
@@ -1943,6 +2088,28 @@ describe('searchResearchGroupsViaMeili', () => {
             },
           ],
           ['ofixture'],
+        ),
+      ).toBe(true);
+    });
+
+    it('counts a roster member name only for a whole-name query (#5442)', () => {
+      const rosterMember = (spans: Array<[number, number]>) => ({
+        researchAreas: ['Synthetic Topic'],
+        memberNames: ['Quill Vexmoor'],
+        _matchesPosition: {
+          memberNames: spans.map(([start, length]) => ({ start, length, indices: [0] })),
+        },
+      });
+      expect(keywordLegTopHitIsNameMatch([rosterMember([[0, 5]])], ['quill'])).toBe(false);
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            rosterMember([
+              [0, 5],
+              [6, 7],
+            ]),
+          ],
+          ['quill', 'vexmoor'],
         ),
       ).toBe(true);
     });
@@ -2394,11 +2561,17 @@ describe('searchResearchGroupsViaMeili', () => {
       'id',
       'kind',
       'entityType',
+      'researchType',
       'schools',
       'departments',
       'researchAreas',
       'hasUndergradHostingEvidence',
+      'welcomesUndergrads',
+      'mentorsUndergrads',
+      'worksWithUndergrads',
+      'undergradInvitationRank',
       'meshDescriptorOnlyTerms',
+      'rerankTextHash',
     ];
     expect(poolParams.attributesToRetrieve).toEqual(candidateFields);
     expect(keywordLegParams.attributesToRetrieve).toEqual(candidateFields);
@@ -2776,12 +2949,14 @@ describe('searchResearchGroupsViaMeili', () => {
             schools: ['School of Medicine'],
             departments: ['Medical Oncology'],
             entityType: 'LAB',
+            researchType: 'LAB',
           },
           {
             id: 'synthetic-oncology-profile',
             schools: ['School of Medicine', 'Faculty of Arts and Sciences'],
             departments: ['Medical Oncology', 'Molecular Biophysics & Biochemistry'],
             entityType: 'FACULTY_RESEARCH_AREA',
+            researchType: 'FACULTY_RESEARCH_AREA',
           },
         ],
         estimatedTotalHits: 1649,
@@ -2795,6 +2970,7 @@ describe('searchResearchGroupsViaMeili', () => {
             schools: ['Faculty of Arts and Sciences'],
             departments: ['Chemistry'],
             entityType: 'LAB',
+            researchType: 'LAB',
             _rankingScoreDetails: { words: { matchingWords: 1, maxMatchingWords: 1 } },
           },
         ],
@@ -2812,6 +2988,10 @@ describe('searchResearchGroupsViaMeili', () => {
         Chemistry: 1,
       },
       entityType: { LAB: 2, FACULTY_RESEARCH_AREA: 1 },
+      hostsUndergrads: { true: 0 },
+      welcomesUndergrads: { true: 0 },
+      mentorsUndergrads: { true: 0 },
+      worksWithUndergrads: { true: 0 },
     });
   });
 
@@ -3055,7 +3235,7 @@ describe('searchResearchGroupsViaMeili', () => {
   it('does not apply a ranking score threshold to keyword-only topic alias queries', async () => {
     mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
 
-    await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+    await searchResearchGroupsViaMeili('neuro', {}, 1, 24);
 
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('rankingScoreThreshold');
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
@@ -3207,6 +3387,7 @@ describe('searchResearchGroupsViaMeili', () => {
       _id: { $in: [staleEntityId, currentEntityId] },
       archived: { $ne: true },
       studentVisibilityTier: { $in: ['student_ready'] },
+      studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
     });
     expect(result.researchEntities).toEqual([
       expect.objectContaining({
@@ -3508,7 +3689,17 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.researchEntityFind).toHaveBeenCalledWith({
       _id: { $in: [reviewEntityId] },
       archived: { $ne: true },
-      studentVisibilityTier: { $in: ['operator_review'] },
+      $and: [
+        {
+          $or: [
+            { studentVisibilityOverrideTier: { $in: ['operator_review'] } },
+            {
+              studentVisibilityTier: { $in: ['operator_review'] },
+              studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
+            },
+          ],
+        },
+      ],
     });
     expect(result.researchEntities).toEqual([
       expect.objectContaining({ _id: 'review-lab', studentVisibilityTier: 'operator_review' }),
@@ -3578,6 +3769,96 @@ describe('searchResearchGroupsViaMeili', () => {
     ]);
     expect(result.facetDistribution).toEqual({});
   });
+
+  it('keeps only rows whose invitation badge is served when weakest-first browse welcomes undergraduates', async () => {
+    const invitation = (quote: string) => ({
+      level: 'welcomes_undergrads',
+      quote,
+      sourceUrl: 'https://invitation.example.edu/join',
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: '67d8928150621bcef434a1e1',
+          slug: 'quoted-lab',
+          name: 'Quoted Lab',
+          websiteUrl: 'https://invitation.example.edu/',
+          undergradInvitation: invitation('We welcome undergraduates.'),
+          sourceUrls: [],
+          departments: [],
+          researchAreas: [],
+        },
+        {
+          _id: '67d8928150621bcef434a1e2',
+          slug: 'unquoted-lab',
+          name: 'Unquoted Lab',
+          websiteUrl: 'https://invitation.example.edu/',
+          undergradInvitation: invitation(' '),
+          sourceUrls: [],
+          departments: [],
+          researchAreas: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { welcomesUndergrads: true },
+      1,
+      10,
+      {},
+      { includeNonPublic: true, lowQualityFirst: true },
+    );
+
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.researchEntities.map((entity) => entity._id)).toEqual(['quoted-lab']);
+    expect(result.appliedFilters).toBeUndefined();
+  });
+
+  it('keeps only rows whose mentors entry is served when weakest-first browse filters on mentors (#5963)', async () => {
+    const mentorsEntry = {
+      source: 'cs-senior-projects',
+      kind: 'advised',
+      count: 2,
+      sourceUrl: 'https://projects.example.edu/senior-projects/',
+    };
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: '67d8928150621bcef434a1f1',
+          slug: 'mentoring-lab',
+          name: 'Mentoring Lab',
+          websiteUrl: 'https://mentoring.example.edu/',
+          undergradListEvidence: [mentorsEntry],
+          sourceUrls: [],
+          departments: [],
+          researchAreas: [],
+        },
+        {
+          _id: '67d8928150621bcef434a1f2',
+          slug: 'unreviewed-source-lab',
+          name: 'Unreviewed Source Lab',
+          websiteUrl: 'https://mentoring.example.edu/',
+          undergradListEvidence: [{ ...mentorsEntry, source: 'not-a-reviewed-source' }],
+          sourceUrls: [],
+          departments: [],
+          researchAreas: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { mentorsUndergrads: true },
+      1,
+      10,
+      {},
+      { includeNonPublic: true, lowQualityFirst: true },
+    );
+
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.researchEntities.map((entity) => entity._id)).toEqual(['mentoring-lab']);
+  });
 });
 
 describe('getResearchGroupDetail', () => {
@@ -3600,6 +3881,7 @@ describe('getResearchGroupDetail', () => {
       slug: 'hidden-lab',
       archived: { $ne: true },
       studentVisibilityTier: { $in: ['student_ready'] },
+      studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
     });
   });
 
@@ -3673,7 +3955,12 @@ describe('getResearchGroupDetail', () => {
         departments: [],
         researchAreas: [],
         studentVisibilityTier: 'operator_review',
-        studentVisibilityReasons: ['missing_lead'],
+        studentVisibilityReasons: [
+          'source_backed_description',
+          'missing_lead',
+          'missing_facet_signal',
+          'missing_lead',
+        ],
       }),
     );
 
@@ -3688,7 +3975,8 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.researchEntity.slug).toBe('held-review-lab');
     expect(detail?.operatorPreview).toEqual({
       studentVisibilityTier: 'operator_review',
-      studentVisibilityReasons: ['missing_lead'],
+      studentVisibilityBlockingReasons: ['missing_lead'],
+      studentVisibilitySignalReasons: ['source_backed_description', 'missing_facet_signal'],
       studentVisibilitySuppressionReason: undefined,
       withheldBy: ['visibility_tier', 'description_invariant'],
     });
@@ -3886,6 +4174,28 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user.title).toBe(
       'The William K. Lanman, Jr. Professor of Molecular Biophysics',
     );
+  });
+
+  it('serves a real appointment title between the card and stored limits on the detail page (#5594)', async () => {
+    const title =
+      'Professor of Fixture Studies, Economics, and Public Placeholder Health; Professor in the Practice of Synthetic Management; Director of the Fixture Program';
+    expect(title.length).toBeGreaterThan(140);
+    seedSingleMemberDetail(title);
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBe(title);
+  });
+
+  it('serves a long genuine appointment list whole on the detail page (#5594)', async () => {
+    const title =
+      'Fixture Endowed Professor of Synthetic Studies; Director, Center for Fixture Methods in Placeholder Science (CFMPS); Professor of Statistics and Data Science; Professor of Medicine (Synthetic Medicine); Assistant Director, Global Placeholder Program, Fixture Cancer Center';
+    expect(title.length).toBeGreaterThan(250);
+    seedSingleMemberDetail(title);
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBe(title);
   });
 
   it('shows only fresh stable official roster evidence and reports bounded disclosure', () => {
@@ -4281,7 +4591,7 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.accessSignals[0]).toEqual(
       expect.objectContaining({
         signalType: 'CONTACT_INSTRUCTIONS_EXIST',
-        excerpt: 'Questions can go to [email redacted] or [phone redacted].',
+        excerpt: 'Questions can go to private-signal@yale.edu or 203-432-1234.',
       }),
     );
     expect(detail?.accessSignals[0].sourceUrl).toBeUndefined();
@@ -4744,6 +5054,7 @@ describe('listResearchEntityRelationshipPayload', () => {
       affiliatedRelationships: [],
       affiliatedResearchEntities: [],
       affiliatedResearchEntitiesMeta: { returned: 0, truncated: false },
+      pageLeadOwnResearchEntityKeys: [],
     });
     expect(mocks.researchEntityRelationshipFind).not.toHaveBeenCalled();
   });
@@ -4815,6 +5126,7 @@ describe('listResearchEntityRelationshipPayload', () => {
       _id: { $in: [publicInstituteId, reviewInstituteId] },
       archived: { $ne: true },
       studentVisibilityTier: { $in: ['student_ready'] },
+      studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
     });
     expect(result).toEqual({
       entityRelationships: [],
@@ -4834,6 +5146,7 @@ describe('listResearchEntityRelationshipPayload', () => {
         }),
       ],
       affiliatedResearchEntitiesMeta: { returned: 1, truncated: false },
+      pageLeadOwnResearchEntityKeys: [],
     });
     expect(result.affiliatedRelationships[0].sourceUrl).toBeUndefined();
     expect(result.affiliatedRelationships[0]).not.toHaveProperty('evidenceQuote');
@@ -4935,6 +5248,142 @@ describe('listResearchEntityRelationshipPayload', () => {
     expect(result.affiliatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
   });
 
+  it('labels a related row by its own kind rather than the stored edge label', async () => {
+    const currentEntityId = '67d8928150621bcef434a1f5';
+    const facultyResearchId = '67d8928150621bcef434a1f6';
+    const labId = '67d8928150621bcef434a1f7';
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult(
+          [facultyResearchId, labId].map((targetResearchEntityId) => ({
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId,
+            relationshipType: 'AFFILIATED_LAB',
+            label: 'Affiliated lab',
+          })),
+        ),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: facultyResearchId,
+          slug: 'synthetic-faculty-research',
+          name: 'Synthetic Faculty Research',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+        {
+          _id: labId,
+          slug: 'synthetic-member-lab',
+          name: 'Synthetic Member Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    expect(
+      result.entityRelationships.map((edge) => [edge.relatedResearchEntitySlug, edge.label]),
+    ).toEqual([
+      ['synthetic-faculty-research', 'Member'],
+      ['synthetic-member-lab', 'Affiliated'],
+    ]);
+  });
+
+  it("drops the page lead's own faculty research row from the related list", async () => {
+    const currentEntityId = '67d8928150621bcef434a1f8';
+    const leadFacultyResearchId = '67d8928150621bcef434a1f9';
+    const otherFacultyResearchId = '67d8928150621bcef434a1fa';
+    const leadLabId = '67d8928150621bcef434a1fb';
+    const leadPersonId = new mongoose.Types.ObjectId();
+    const otherPersonId = new mongoose.Types.ObjectId();
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult(
+          [leadFacultyResearchId, otherFacultyResearchId, leadLabId].map(
+            (targetResearchEntityId) => ({
+              sourceResearchEntityId: currentEntityId,
+              targetResearchEntityId,
+              relationshipType: 'AFFILIATED_LAB',
+              label: 'Affiliated lab',
+            }),
+          ),
+        ),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    const facultyRow = (id: string, slug: string) => ({
+      _id: id,
+      slug,
+      name: 'Synthetic Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+      ...validPublicDescriptions,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        facultyRow(leadFacultyResearchId, 'synthetic-lead-faculty-research'),
+        facultyRow(otherFacultyResearchId, 'synthetic-other-faculty-research'),
+        {
+          _id: leadLabId,
+          slug: 'synthetic-lead-lab',
+          name: 'Synthetic Lead Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+    const piAssignment = (personId: mongoose.Types.ObjectId, entityId: string) => ({
+      _id: new mongoose.Types.ObjectId(),
+      personId,
+      target: { kind: 'RESEARCH_ENTITY', id: new mongoose.Types.ObjectId(entityId) },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+      reviewStatus: 'APPROVED',
+    });
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        piAssignment(leadPersonId, leadFacultyResearchId),
+        piAssignment(otherPersonId, otherFacultyResearchId),
+        piAssignment(leadPersonId, leadLabId),
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        { _id: leadPersonId, displayName: 'Ada Fixture' },
+        { _id: otherPersonId, displayName: 'Bea Fixture' },
+      ]),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId, {
+      pageLeadPersonIds: [String(leadPersonId)],
+    });
+
+    expect(result.relatedResearchEntities.map((entity) => entity.slug)).toEqual([
+      'synthetic-other-faculty-research',
+      'synthetic-lead-lab',
+    ]);
+    expect(result.entityRelationships.map((edge) => edge.relatedResearchEntitySlug)).toEqual([
+      'synthetic-other-faculty-research',
+      'synthetic-lead-lab',
+    ]);
+    expect(result.pageLeadOwnResearchEntityKeys).toContain('synthetic-lead-faculty-research');
+  });
+
   it('projects an allowlisted card shape and bounds a 99-related hub payload', async () => {
     const currentEntityId = '67d8928150621bcef434a1d5';
     const select = vi.fn();
@@ -4955,7 +5404,7 @@ describe('listResearchEntityRelationshipPayload', () => {
       )
       .mockReturnValueOnce(queryResult([]));
     const entityQuery = queryResult(
-      relatedIds.slice(0, 50).map((id, index) => ({
+      relatedIds.map((id, index) => ({
         _id: id,
         slug: `entity-${index}`,
         name: `Entity ${index}`,
@@ -4986,6 +5435,91 @@ describe('listResearchEntityRelationshipPayload', () => {
     expect(encoded).not.toContain('operator only');
     expect(encoded).not.toContain('@example.edu');
     expect(Buffer.byteLength(encoded)).toBeLessThan(25_000);
+  });
+
+  it('spends the related cap on servable rows, not on held rows ranked ahead of them (#5207)', async () => {
+    const currentEntityId = '67d8928150621bcef434a1d5';
+    const heldIds = Array.from(
+      { length: 30 },
+      (_, index) => `67d8928150621bcef435${String(index).padStart(4, '0')}`,
+    );
+    const servableIds = Array.from(
+      { length: 60 },
+      (_, index) => `67d8928150621bcef436${String(index).padStart(4, '0')}`,
+    );
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult(
+          [...heldIds, ...servableIds].map((id, index) => ({
+            _id: `rel-${String(index).padStart(3, '0')}`,
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId: id,
+            relationshipType: 'MEMBER_RESEARCH_AREA',
+            confidence: 0.9,
+          })),
+        ),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult(
+        servableIds.map((id, index) => ({
+          _id: id,
+          slug: `synthetic-member-${String(index).padStart(2, '0')}`,
+          name: `Synthetic Member ${String(index).padStart(2, '0')}`,
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        })),
+      ),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    expect(result.relatedResearchEntities).toHaveLength(50);
+    expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 50, truncated: true });
+  });
+
+  it('serves the same capped related rows whatever order the edges were written in (#5207)', async () => {
+    const currentEntityId = '67d8928150621bcef434a1d5';
+    const targetIds = Array.from(
+      { length: 70 },
+      (_, index) => `67d8928150621bcef437${String(index).padStart(4, '0')}`,
+    );
+    const edges = targetIds.map((id, index) => ({
+      _id: `rel-${String(index).padStart(3, '0')}`,
+      sourceResearchEntityId: currentEntityId,
+      targetResearchEntityId: id,
+      relationshipType: 'MEMBER_RESEARCH_AREA',
+      confidence: 0.8,
+    }));
+    const entities = targetIds.map((id, index) => ({
+      _id: id,
+      slug: `synthetic-unit-${String(69 - index).padStart(2, '0')}`,
+      name: `Synthetic Unit ${String(69 - index).padStart(2, '0')}`,
+      kind: 'lab',
+      entityType: 'LAB',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+      ...validPublicDescriptions,
+    }));
+    const servedSlugsFor = async (orderedEdges: typeof edges) => {
+      mocks.researchEntityRelationshipFind
+        .mockReturnValueOnce(queryResult(orderedEdges))
+        .mockReturnValueOnce(queryResult([]));
+      mocks.researchEntityFind.mockReturnValue(queryResult(entities));
+      const result = await listResearchEntityRelationshipPayload(currentEntityId);
+      return result.relatedResearchEntities.map((entity) => entity.slug);
+    };
+
+    const writtenOrder = await servedSlugsFor(edges);
+    const refreshedOrder = await servedSlugsFor([...edges.slice(60), ...edges.slice(0, 60)]);
+
+    expect(writtenOrder).toHaveLength(50);
+    expect(refreshedOrder).toEqual(writtenOrder);
+    expect(writtenOrder[0]).toBe('synthetic-unit-00');
+    expect(writtenOrder[49]).toBe('synthetic-unit-49');
   });
 
   it('dedupes a related entity reached by multiple relationships to a single card', async () => {
@@ -5233,6 +5767,103 @@ describe('listSimilarResearchEntities', () => {
     expect(encoded).not.toContain('example.edu/private');
   });
 
+  it('ranks a neighbour sharing a person name with the viewed row after every topical neighbour', async () => {
+    mocks.getDocument.mockResolvedValue({
+      leadProfessorNames: ['Ada Q. Fixture'],
+      professorNames: ['Ada Q. Fixture'],
+    });
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          ...similarHit('67d8928150621bcef434a260', 'same-surname', 0.85),
+          leadProfessorNames: ['Bo Fixture'],
+        },
+        {
+          ...similarHit('67d8928150621bcef434a261', 'same-first-name', 0.63),
+          professorNames: ['Ada Other'],
+        },
+        {
+          ...similarHit('67d8928150621bcef434a262', 'field-peer', 0.6),
+          leadProfessorNames: ['Cy Peer'],
+        },
+        similarHit('67d8928150621bcef434a263', 'unnamed-peer', 0.55),
+      ],
+    });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a260', 'same-surname', 'Same Surname'),
+      mongoEntity('67d8928150621bcef434a261', 'same-first-name', 'Same First Name'),
+      mongoEntity('67d8928150621bcef434a262', 'field-peer', 'Field Peer'),
+      mongoEntity('67d8928150621bcef434a263', 'unnamed-peer', 'Unnamed Peer'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result.map((entity) => entity.slug)).toEqual([
+      'field-peer',
+      'unnamed-peer',
+      'same-surname',
+      'same-first-name',
+    ]);
+    expect(mocks.getDocument).toHaveBeenCalledWith('67d8928150621bcef434a1d5', {
+      fields: ['leadProfessorNames', 'professorNames'],
+    });
+  });
+
+  it('does not treat a shared name particle or generational suffix as a shared name', async () => {
+    mocks.getDocument.mockResolvedValue({
+      professorNames: ['Ada de la Fixture Jr.'],
+    });
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          ...similarHit('67d8928150621bcef434a280', 'particle-peer', 0.8),
+          professorNames: ['Bo de Other Jr'],
+        },
+        {
+          ...similarHit('67d8928150621bcef434a281', 'surname-peer', 0.7),
+          professorNames: ['Cy Fixture'],
+        },
+        similarHit('67d8928150621bcef434a282', 'unnamed-peer', 0.6),
+      ],
+    });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a280', 'particle-peer', 'Particle Peer'),
+      mongoEntity('67d8928150621bcef434a281', 'surname-peer', 'Surname Peer'),
+      mongoEntity('67d8928150621bcef434a282', 'unnamed-peer', 'Unnamed Peer'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result.map((entity) => entity.slug)).toEqual([
+      'particle-peer',
+      'unnamed-peer',
+      'surname-peer',
+    ]);
+  });
+
+  it('keeps the embedding order when the viewed row has no person names to compare', async () => {
+    mocks.getDocument.mockRejectedValue(new Error('document not found'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          ...similarHit('67d8928150621bcef434a270', 'first', 0.8),
+          leadProfessorNames: ['Bo Fixture'],
+        },
+        similarHit('67d8928150621bcef434a271', 'second', 0.7),
+      ],
+    });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a270', 'first', 'First'),
+      mongoEntity('67d8928150621bcef434a271', 'second', 'Second'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+    consoleError.mockRestore();
+
+    expect(result.map((entity) => entity.slug)).toEqual(['first', 'second']);
+  });
+
   it('caps results at the bounded maximum', async () => {
     const ids = Array.from(
       { length: 20 },
@@ -5291,13 +5922,18 @@ describe('listSimilarResearchEntities', () => {
       mocks.researchEntityServesPublicDetail.mockClear();
     });
 
-    it('asks the index for ids and slugs only', async () => {
+    it('asks the index for ids, slugs and the person names it compares only', async () => {
       mocks.searchSimilarDocuments.mockResolvedValue({ hits: [] });
 
       await listSimilarResearchEntities(viewedEntity);
 
       const [request] = mocks.searchSimilarDocuments.mock.calls.at(-1) as [Record<string, any>];
-      expect(request.attributesToRetrieve).toEqual(['id', 'slug']);
+      expect(request.attributesToRetrieve).toEqual([
+        'id',
+        'slug',
+        'leadProfessorNames',
+        'professorNames',
+      ]);
       expect(request.showRankingScore).toBe(true);
     });
 
@@ -6263,5 +6899,119 @@ describe('publicRosterUndergraduates', () => {
     expect(
       publicRosterUndergraduates({ state: 'failed', lastSuccessfulSnapshot: snapshot }, now),
     ).toHaveLength(3);
+  });
+});
+
+describe('a query word no row carries does not empty the search', () => {
+  const entityId = '67d8928150621bcef434a3a1';
+  const keywordHit = {
+    id: entityId,
+    slug: 'medieval-history-row',
+    name: 'Medieval History Row',
+    kind: 'lab',
+    _rankingScoreDetails: { words: { matchingWords: 2, maxMatchingWords: 2 } },
+  };
+  const unmatchedWord = 'zqxvk';
+
+  const searchWithKeywordRowsFor = async (query: string, matchingTexts: string[]) => {
+    mocks.search.mockImplementation(async (text: string, params: Record<string, any>) => {
+      if (params.hybrid) return { hits: [], estimatedTotalHits: 0, totalHits: 0 };
+      return { hits: matchingTexts.includes(text.trim()) ? [keywordHit] : [] };
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'medieval-history-row',
+          name: 'Medieval History Row',
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+    return searchResearchGroupsViaMeili(query, {}, 1, 24);
+  };
+
+  const keywordLegTexts = () =>
+    mocks.search.mock.calls.filter(([, params]) => !params.hybrid).map(([text]) => text);
+
+  it('searches the remaining words when the first word matches no row', async () => {
+    const result = await searchWithKeywordRowsFor(`${unmatchedWord} medieval plague`, [
+      'medieval',
+      'plague',
+      'medieval plague',
+    ]);
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'medieval-history-row',
+    ]);
+    expect(keywordLegTexts()).toContain('medieval plague');
+  });
+
+  it('probes every word but the last whole, since only the last is matched as a prefix', async () => {
+    await searchWithKeywordRowsFor(`${unmatchedWord} medieval plague`, [
+      'medieval',
+      'plague',
+      'medieval plague',
+    ]);
+
+    expect(keywordLegTexts()).toEqual(
+      expect.arrayContaining([`${unmatchedWord} `, 'medieval ', 'plague']),
+    );
+    expect(keywordLegTexts()).not.toContain('plague ');
+  });
+
+  it('keeps the typed order of the words it keeps', async () => {
+    await searchWithKeywordRowsFor(`plague ${unmatchedWord} medieval`, [
+      'plague',
+      'medieval',
+      'plague medieval',
+    ]);
+
+    expect(keywordLegTexts()).toContain('plague medieval');
+    expect(keywordLegTexts()).not.toContain('medieval plague');
+  });
+
+  it('probes no single word when the typed words already have keyword matches', async () => {
+    await searchWithKeywordRowsFor('medieval plague', ['medieval plague']);
+
+    expect(keywordLegTexts()).not.toContain('medieval');
+    expect(keywordLegTexts()).not.toContain('plague');
+  });
+
+  it('probes no single word when only one word was typed', async () => {
+    await searchWithKeywordRowsFor(unmatchedWord, []);
+
+    expect(
+      mocks.search.mock.calls.filter(([, params]) => !params.hybrid && params.hitsPerPage === 1),
+    ).toEqual([]);
+  });
+
+  it('probes each distinct word once and none past the tenth', async () => {
+    const searchedWords = Array.from({ length: 10 }, (_word, position) => `word${position}`);
+    const ignoredWords = Array.from({ length: 30 }, (_word, position) => `extra${position}`);
+    await searchWithKeywordRowsFor(
+      [unmatchedWord, unmatchedWord, ...searchedWords.slice(1), ...ignoredWords].join(' '),
+      [],
+    );
+
+    const probedWords = keywordLegTexts()
+      .map((text) => text.trim())
+      .filter((text) => !text.includes(' '));
+    expect(probedWords.filter((text) => text === unmatchedWord)).toHaveLength(1);
+    expect(probedWords).toEqual(expect.arrayContaining(searchedWords.slice(1)));
+    expect(probedWords.filter((text) => text.startsWith('extra'))).toEqual([]);
+  });
+
+  it('serves nothing from the keyword leg when no typed word matches a row', async () => {
+    const result = await searchWithKeywordRowsFor(`${unmatchedWord} qwfpgjz`, []);
+
+    expect(result.researchEntities).toEqual([]);
+    expect(
+      mocks.search.mock.calls.filter(([, params]) => params.hybrid?.semanticRatio === 1),
+    ).toHaveLength(0);
   });
 });

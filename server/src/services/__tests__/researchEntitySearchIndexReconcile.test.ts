@@ -13,6 +13,7 @@ const row = (hexSuffix: string, name: string) => ({
   _id: `64b000000000000000000${hexSuffix}`,
   name,
   slug: `synthetic-${hexSuffix}`,
+  entityType: 'LAB',
   researchAreas: ['synthetic topic'],
   studentVisibilityTier: 'student_ready',
 });
@@ -20,16 +21,28 @@ const row = (hexSuffix: string, name: string) => ({
 const servedDocument = (source: ReturnType<typeof row>) =>
   JSON.parse(JSON.stringify(buildResearchEntitySearchIndexDocument(source)));
 
-function fakeIndex(initial: Record<string, any>[], options: { embedder?: boolean } = {}) {
+function fakeIndex(
+  initial: Record<string, any>[],
+  options: { embedder?: boolean; settings?: Record<string, any> } = {},
+) {
   const stored = new Map(initial.map((doc) => [String(doc.id), doc]));
   const added: Record<string, any>[][] = [];
   const deleted: string[][] = [];
+  const settingsUpdates: Record<string, any>[] = [];
+  let settings = options.settings ?? getResearchEntitySearchIndexSettings();
   let taskUid = 0;
   return {
     stored,
     added,
     deleted,
+    settingsUpdates,
     tasks: { waitForTask: async () => ({ status: 'succeeded' }) },
+    getSettings: async () => settings,
+    updateSettings: async (next: Record<string, any>) => {
+      settingsUpdates.push(next);
+      settings = next;
+      return { taskUid: (taskUid += 1) };
+    },
     getEmbedders: async () => (options.embedder === false ? {} : { default: { source: 'openAi' } }),
     getDocuments: async ({ limit, offset }: { limit: number; offset: number }) => ({
       results: [...stored.values()].slice(offset, offset + limit),
@@ -55,6 +68,7 @@ const run = (index: ReturnType<typeof fakeIndex>, rows: any[], apply: boolean) =
     getIndex: async () => index as any,
     fetchPage: async (page) => (page === 1 ? rows : []),
     fetchMemberNames: async () => new Map(),
+    fetchServedLeads: async () => new Map(),
     warmVocabulary: async () => undefined,
   });
 
@@ -92,6 +106,64 @@ describe('reconcileResearchEntitySearchIndex', () => {
         .sort(),
     ).toEqual(['synthetic-002', 'synthetic-003']);
     expect(index.deleted).toEqual([[String(orphan._id)]]);
+  });
+
+  it('applies drifted settings in place, and leaves matching settings alone', async () => {
+    const expected = getResearchEntitySearchIndexSettings();
+    const drifted = fakeIndex(indexedBefore(), {
+      settings: {
+        ...expected,
+        searchableAttributes: expected.searchableAttributes.filter(
+          (attribute) => attribute !== 'memberNames',
+        ),
+      },
+    });
+    await run(drifted, rows, true);
+    expect(drifted.settingsUpdates).toEqual([expected]);
+
+    const matching = fakeIndex(indexedBefore());
+    await run(matching, rows, true);
+    expect(matching.settingsUpdates).toEqual([]);
+  });
+
+  it('declares a new filterable attribute only once every changed document carries it', async () => {
+    const expected = getResearchEntitySearchIndexSettings();
+    const indexedBeforeTheField = indexedBefore().map(
+      ({ researchType: _researchType, creativePractice: _creativePractice, ...doc }) => doc,
+    );
+    const index = fakeIndex(indexedBeforeTheField, {
+      settings: {
+        ...expected,
+        filterableAttributes: expected.filterableAttributes.filter(
+          (attribute: string) => attribute !== 'researchType',
+        ),
+      },
+    });
+    const storedWhenDeclared: Record<string, any>[] = [];
+    const updateSettings = index.updateSettings;
+    index.updateSettings = async (next) => {
+      storedWhenDeclared.push(...index.stored.values());
+      return updateSettings(next);
+    };
+
+    await run(index, rows, true);
+
+    expect(index.settingsUpdates).toEqual([expected]);
+    expect(storedWhenDeclared.map((doc) => doc.slug).sort()).toEqual([
+      'synthetic-001',
+      'synthetic-002',
+      'synthetic-003',
+    ]);
+    expect(storedWhenDeclared.map((doc) => doc.researchType)).toEqual(['LAB', 'LAB', 'LAB']);
+  });
+
+  it('changes no settings on a dry run', async () => {
+    const expected = getResearchEntitySearchIndexSettings();
+    const index = fakeIndex(indexedBefore(), {
+      settings: { ...expected, searchableAttributes: ['name'] },
+    });
+    await run(index, rows, false);
+    expect(index.settingsUpdates).toEqual([]);
   });
 
   it('finds nothing to write on a second run', async () => {
@@ -173,6 +245,7 @@ describe('reconcile failure part-way', () => {
         getIndex: async () => failing as any,
         fetchPage: async (page) => (page === 1 ? rows : []),
         fetchMemberNames: async () => new Map(),
+        fetchServedLeads: async () => new Map(),
         warmVocabulary: async () => undefined,
       }),
     ).rejects.toThrow(/stopped part-way: the live index holds 1 of 3 upserts/);

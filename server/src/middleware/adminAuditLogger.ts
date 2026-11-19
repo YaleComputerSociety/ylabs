@@ -37,6 +37,11 @@ export const ADMIN_AUDIT_ROUTES: Record<string, AdminAuditRouteDescriptor> = {
     targetType: 'adminGrant',
     targetId: paramId('netid'),
   },
+  'POST /accounts/:netid/sessions/revoke': {
+    action: 'account.sessions_revoke',
+    targetType: 'account',
+    targetId: paramId('netid'),
+  },
   'POST /departments': {
     action: 'department.create',
     targetType: 'department',
@@ -90,6 +95,11 @@ export const ADMIN_AUDIT_ROUTES: Record<string, AdminAuditRouteDescriptor> = {
   'PUT /correction-reports/:id': {
     action: 'correction_report.review',
     targetType: 'correctionReport',
+    targetId: paramId('id'),
+  },
+  'PUT /directory-removal-requests/:id': {
+    action: 'directory_removal_request.decide',
+    targetType: 'directoryRemovalRequest',
     targetId: paramId('id'),
   },
 };

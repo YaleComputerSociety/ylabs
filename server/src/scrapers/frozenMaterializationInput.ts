@@ -145,4 +145,8 @@ export class FrozenMaterializationInput implements MaterializationReadSource {
     if (!row || row.soleLeadPersonId === undefined) return this.miss('soleLeadPersonId', entityId);
     return hit(row.soleLeadPersonId);
   }
+
+  pageStatedNamePeers(names: readonly string[]): PrefetchLookup<unknown[]> {
+    return this.miss('pageStatedNamePeers', names.join('|'));
+  }
 }

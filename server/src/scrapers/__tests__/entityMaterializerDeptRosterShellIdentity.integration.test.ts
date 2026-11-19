@@ -2,8 +2,9 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { deleteFromIndexMock } = vi.hoisted(() => ({
+const { deleteFromIndexMock, syncEntityMock } = vi.hoisted(() => ({
   deleteFromIndexMock: vi.fn().mockResolvedValue(undefined),
+  syncEntityMock: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../../services/meiliSyncService', async () => {
@@ -12,7 +13,7 @@ vi.mock('../../services/meiliSyncService', async () => {
   );
   return {
     ...actual,
-    syncEntity: vi.fn().mockResolvedValue(undefined),
+    syncEntity: syncEntityMock,
     deleteFromIndex: deleteFromIndexMock,
   };
 });
@@ -146,6 +147,49 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
     );
 
     expect(await ResearchEntity.countDocuments({ archived: { $ne: true } })).toBe(1);
+  });
+
+  it('re-syncs the fold target so search serves the departments and lead the fold gave it (#5612)', async () => {
+    const lab = await ResearchEntity.create({
+      slug: 'jane-smith-lab',
+      name: 'Jane Smith Lab',
+      kind: 'lab',
+      studentVisibilityTier: 'student_ready',
+      departments: ['Molecular Biophysics'],
+      archived: false,
+    });
+    const researcher = await Researcher.create({ displayName: 'Jane Smith' });
+    await RoleAssignment.create({
+      personId: researcher._id,
+      target: { kind: 'RESEARCH_ENTITY', id: lab._id },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+      archived: false,
+    });
+    const deptRosterKey = 'dept-chemistry-jane-smith';
+    await seedDeptRosterObservation({
+      entityKey: deptRosterKey,
+      field: 'name',
+      value: 'Jane Smith Faculty Research',
+    });
+    await seedDeptRosterObservation({
+      entityKey: deptRosterKey,
+      field: 'departments',
+      value: ['Chemistry'],
+    });
+
+    await materializeEntity('researchEntity', { entityKey: deptRosterKey }, {});
+
+    const targetSyncs = syncEntityMock.mock.calls.filter(
+      ([entityType, doc]) =>
+        entityType === 'researchEntity' && String(doc?._id) === String(lab._id),
+    );
+    expect(targetSyncs.length).toBeGreaterThan(0);
+    const [, lastSynced] = targetSyncs[targetSyncs.length - 1];
+    expect(lastSynced.departments).toEqual(
+      expect.arrayContaining(['Molecular Biophysics', 'Chemistry']),
+    );
   });
 
   describe('when every PI-linked row is a cross-listed department roster row (#4371)', () => {

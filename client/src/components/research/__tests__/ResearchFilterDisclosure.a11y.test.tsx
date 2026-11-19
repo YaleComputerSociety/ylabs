@@ -55,6 +55,48 @@ describe('ResearchFilterDisclosure accessibility', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('conforms with the Undergrads group rendered, one option ticked and one disabled at zero (#5963)', async () => {
+    const { container } = render(
+      <ResearchFilterDisclosure
+        {...props({
+          variant: 'sidebar',
+          selectedWelcomesUndergrads: true,
+          facetDistribution: {
+            welcomesUndergrads: { true: 4 },
+            hostsUndergrads: { true: 0 },
+            mentorsUndergrads: { true: 2 },
+            entityType: { LAB: 4 },
+          },
+          onWelcomesUndergradsChange: vi.fn(),
+          onHostsUndergradsChange: vi.fn(),
+          onMentorsUndergradsChange: vi.fn(),
+        })}
+      />,
+    );
+
+    await expectNoAxeViolations(container);
+  });
+
+  it('conforms with the Undergrads group in the open popover (#5963)', async () => {
+    const { container } = render(
+      <ResearchFilterDisclosure
+        {...props({
+          facetDistribution: {
+            welcomesUndergrads: { true: 4 },
+            hostsUndergrads: { true: 7 },
+            mentorsUndergrads: { true: 2 },
+          },
+          onWelcomesUndergradsChange: vi.fn(),
+          onHostsUndergradsChange: vi.fn(),
+          onMentorsUndergradsChange: vi.fn(),
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    await expectNoAxeViolations(container);
+  });
+
   it('conforms when a selected type has no facet counts left to render', async () => {
     const { container } = render(
       <ResearchFilterDisclosure

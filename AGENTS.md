@@ -140,7 +140,7 @@ It is done when the data operation has run against Development and the result ha
 Beta and Production receive whole-collection copies, so a repair applied to Development reaches them through promotion.
 Running the same repair three times is redundant and multiplies the number of writes against a student-facing database.
 - Do not open an issue to track a promotion, and do not hold a fix's issue open waiting for one.
-Promotion is not per-fix work: `promoteAcceptedBetaCopy` replaces twelve whole collections at once (fourteen with `--include-observations` and `--include-scrape-runs`), so a single promotion delivers every pending fix together.
+Promotion is not per-fix work: `promoteAcceptedBetaCopy` replaces thirteen whole collections at once (fifteen with `--include-observations` and `--include-scrape-runs`), so a single promotion delivers every pending fix together.
 An issue per fix implies a queue of operations that does not exist, and the tracker fills with entries nobody can act on individually.
 - What is undelivered is a property of the environments, so read it rather than file it.
 Close a stored-data issue when Development is fixed and verified.
@@ -148,9 +148,11 @@ Close a stored-data issue when Development is fixed and verified.
 An exit code is not verification, and neither is a script's own counter: #2440 records that the repair queue's patch count overstates promotions, so the counter is now named `patched` and the promotion count is `resolvedByGate`.
 A dry run applies no patch, so it reports `resolvedByGate: null` with a note rather than a `0` that reads as "the gate promotes nothing"; take a promotion count from an apply run only.
 - The scoreboard is the instrument for both reads, per-fix verification and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`, documented in `docs/served-corpus-scoreboard.md`.
+A single route is re-read with `yarn served-check <path>`, or `yarn served-check --as student <path>` when the route is behind sign-in, documented in `skills/auth-security/SKILL.md`.
 - Is the corpus getting better over time? Read the Corpus Quality panel on `/analytics`, or take a measurement with `yarn --cwd server corpus:snapshot`, documented in `docs/corpus-quality-panel.md`.
 - Is a served description accurate and useful to a student? A count cannot say, so grade a fresh sample against the cited pages, documented in `docs/description-graded-sample.md`.
 Do not answer a coverage or quality question with a throwaway script when a stored measurement already exists.
+- What do model calls cost, and which lane spends it? Read `yarn --cwd server model-usage:report`, documented in `docs/model-usage.md`.
 - Is one lane getting better? Replay it on its frozen benchmark with `yarn --cwd server lane:scorecard`, documented in `docs/lane-scorecard.md`.
 The other instruments move when the corpus moves; this one moves only when lane code does.
 - What browse actually serves is a third question, and `yarn --cwd server journey:eval` answers it through the real search route, documented in `server/src/scripts/journeyEval/README.md`.
@@ -227,9 +229,21 @@ Multiple agents sharing one checkout will switch branches under each other and s
 The helper creates the worktree, runs `scripts/install-all.sh` so dependencies are fully isolated, and reserves a free client dev-server port and a free API port.
 It copies `server/.env` and `client/.env` from the primary checkout with mode 0600, writes the reserved ports into them (`PORT`, `SERVER_BASE_URL`, `VITE_APP_SERVER`), and prints both start commands and a dev-login URL that returns to the worktree's client port.
 It never prints the env values, and says so when the primary checkout has no `server/.env` to copy.
+It always writes `ALLOW_NON_PROD_SCRAPER_WRITES=` (off) into the copied `server/.env`, whatever the primary checkout holds, so a scraper command run in a worktree is a dry run unless that run sets the flag itself.
+Set `YLABS_REPORT_ROOT` in the worktree's `server/.env` to an absolute directory outside the repository, such as an experiments folder, so an apply's `--output` report survives a temp-directory sweep.
 - Do not symlink `node_modules` between worktrees when running dev servers concurrently.
 They share Vite's `node_modules/.vite` cache and clobber each other.
-A real per-worktree install is the isolation boundary.
+Per-worktree `node_modules` directories are the isolation boundary: caches such as `.vite` are per worktree, while package files are shared hardlinks that must never be written in place.
+- That install hardlinks package files from Yarn's shared store rather than copying them, because the helper writes `nmMode: hardlinks-global` into `<worktree root>/.yarnrc.yml`, which every install under that root inherits.
+Each worktree still gets its own `node_modules` directories, so `.vite` and other caches stay per-worktree, and a worktree costs about 0.3 MB of its own instead of about 0.7 GB.
+Never edit a file inside `node_modules` in place, because the same file is shared by every worktree.
+Never set `ESBUILD_BINARY_PATH` in a worktree: esbuild's install then rewrites `bin/esbuild` and `lib/main.js` in place, which changes them for every worktree.
+The helper runs `scripts/verify-yarn-store.sh` after its install and fails if any store file no longer matches its content hash; run it yourself after any later install.
+Re-run `yarn install:all` in a worktree only between tasks, never while its dev server or tests are running.
+Agent isolation worktrees under `.claude/worktrees/` sit below the primary checkout rather than the worktree root, so they do not inherit the setting and still take full copies.
 - Run each worktree's API with `yarn dev:server` and its client dev server on its own port (`yarn dev --port <port>`) so they coexist, and test each at its own `localhost:<port>`.
 `compose.yaml` pins the Compose project name, so `yarn meili:up` from any worktree reuses the one local Meilisearch.
+- Stop only processes you started, by the PID you recorded or by your own reserved port (`lsof -ti tcp:<your port> -sTCP:LISTEN | xargs kill`).
+Never pattern-kill with `pkill -f`, `killall`, or `pgrep ... | xargs kill`: a pattern such as `tsx src/index.ts` matches every session's server on the machine.
+Never stop or restart anything on ports 3000 or 4000, which belong to the primary checkout (#5222).
 - Integrate an approved branch by merging or landing its pull request, then remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.

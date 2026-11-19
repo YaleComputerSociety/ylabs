@@ -16,6 +16,7 @@ import {
   type LeadEdgeCitation,
   type LeadEdgeRow,
 } from './backfillLeadEdgeSourceNameCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -131,7 +132,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(report, null, 2));
   if (output) {
     fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, JSON.stringify(report, null, 2));
+    writeReportFileSync(output, JSON.stringify(report, null, 2));
     console.log(`Saved ${SCRIPT_NAME} report to ${output}`);
   }
   await mongoose.disconnect();

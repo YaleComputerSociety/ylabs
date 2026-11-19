@@ -1,4 +1,5 @@
 import type { ResearchEntityType } from '../models/researchAccessTypes';
+import { isYaleHostname } from '../utils/yaleHost';
 
 export const PROMOTED_ENTITY_TYPE: ResearchEntityType = 'LAB';
 export const PROMOTED_KIND = 'lab';
@@ -236,7 +237,7 @@ export function looksLikeDepartmentBioPage(
   if (typeof value !== 'string' || !value) return false;
   const parts = urlParts(value);
   if (!parts || parts.segments.length !== 1) return false;
-  if (!parts.host.endsWith('yale.edu')) return false;
+  if (!isYaleHostname(parts.host)) return false;
   const tokens = normalizeEntityName(personName)
     .replace(PLACEHOLDER_NAME_SUFFIX, '')
     .split(' ')

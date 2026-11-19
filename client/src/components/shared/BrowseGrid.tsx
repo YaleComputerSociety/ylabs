@@ -26,6 +26,7 @@ interface BrowseGridProps {
   onLoadMore?: () => void;
   disableVirtualization?: boolean;
   emptyAction?: React.ReactNode;
+  statusBadgeOverrides?: Record<string, { label: string; className: string } | undefined>;
 }
 
 const BrowseGrid = ({
@@ -43,6 +44,7 @@ const BrowseGrid = ({
   onLoadMore,
   disableVirtualization = false,
   emptyAction,
+  statusBadgeOverrides,
 }: BrowseGridProps) => {
   const { viewMode } = useContext(UIContext);
   const isCompact = viewMode === 'compact';
@@ -92,6 +94,7 @@ const BrowseGrid = ({
                 }
                 onOpenModal={() => onOpenModal(item)}
                 onAdminEdit={onAdminEdit ? () => onAdminEdit(item) : undefined}
+                statusBadgeOverride={statusBadgeOverrides?.[getItemId(item)]}
               />
             ))}
           </div>
@@ -116,6 +119,7 @@ const BrowseGrid = ({
                   }
                   onOpenModal={() => onOpenModal(item)}
                   onAdminEdit={onAdminEdit ? () => onAdminEdit(item) : undefined}
+                  statusBadgeOverride={statusBadgeOverrides?.[getItemId(item)]}
                 />
               </div>
             )}
@@ -133,6 +137,7 @@ const BrowseGrid = ({
                 }
                 onOpenModal={() => onOpenModal(item)}
                 onAdminEdit={onAdminEdit ? () => onAdminEdit(item) : undefined}
+                statusBadgeOverride={statusBadgeOverrides?.[getItemId(item)]}
               />
             ))}
           </div>

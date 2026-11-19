@@ -20,10 +20,20 @@ export interface AccountLoginInput {
  */
 const RETIRED_PROFILE_PATHS = ['profile.college', 'profile.year', 'profile.major'];
 
+/**
+ * A login stores no department (#5741): accounts are login-only (#5000) and nothing reads it,
+ * so the schema keeps the field for old rows but no login writes it.
+ */
+const PROFILE_FIELDS_A_LOGIN_NEVER_STORES = new Set(['department']);
+
 const sanitizeLoginProfile = (profile?: AccountProfile): AccountProfile | undefined => {
   if (!profile) return undefined;
-  const entries = Object.entries(profile).filter(([, value]) =>
-    Array.isArray(value) ? value.length > 0 : typeof value === 'string' && value.trim().length > 0,
+  const entries = Object.entries(profile).filter(
+    ([key, value]) =>
+      !PROFILE_FIELDS_A_LOGIN_NEVER_STORES.has(key) &&
+      (Array.isArray(value)
+        ? value.length > 0
+        : typeof value === 'string' && value.trim().length > 0),
   );
   return entries.length > 0 ? (Object.fromEntries(entries) as AccountProfile) : undefined;
 };
@@ -36,6 +46,7 @@ export interface AccountRecordView {
   archived: boolean;
   lastLoginAt?: Date;
   sessionVersion: number;
+  createdAt?: Date;
 }
 
 const normalizeNetid = (value: unknown): string | null => {
@@ -58,6 +69,7 @@ const toAccountView = (account: any): AccountRecordView => ({
   archived: account.archived === true,
   lastLoginAt: account.lastLoginAt ? new Date(account.lastLoginAt) : undefined,
   sessionVersion: normalizedSessionVersion(account.sessionVersion),
+  createdAt: account.createdAt ? new Date(account.createdAt) : undefined,
 });
 
 export const validateAccount = async (netid: unknown): Promise<AccountRecordView | null> => {
@@ -67,10 +79,14 @@ export const validateAccount = async (netid: unknown): Promise<AccountRecordView
   return account ? toAccountView(account) : null;
 };
 
-export const revokeAccountSessions = async (netid: unknown): Promise<void> => {
+export const revokeAccountSessions = async (netid: unknown): Promise<boolean> => {
   const normalizedNetid = normalizeNetid(netid);
-  if (!normalizedNetid) return;
-  await Account.updateOne({ netid: normalizedNetid }, { $inc: { sessionVersion: 1 } });
+  if (!normalizedNetid) return false;
+  const result = await Account.updateOne(
+    { netid: normalizedNetid },
+    { $inc: { sessionVersion: 1 } },
+  );
+  return result.matchedCount > 0;
 };
 
 export const lastKnownAccountUserType = async (netid: unknown): Promise<string | undefined> => {

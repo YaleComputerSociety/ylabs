@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import {
   NO_INDEX_SYNC,
   syncResearchEntitiesWithOutcome,
@@ -27,6 +28,8 @@ import {
   type WebsiteUrlRepairEntity,
   type WebsiteUrlRepairPlan,
 } from './repairPromotionRegressedWebsiteUrlsCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -85,7 +88,12 @@ async function probeVerdicts(
 
 export async function runRepairPromotionRegressedWebsiteUrls(
   options: RepairPromotionRegressedWebsiteUrlsOptions,
-): Promise<{ plans: WebsiteUrlRepairPlan[]; applied: boolean; indexSync: IndexSyncOutcome }> {
+): Promise<{
+  plans: WebsiteUrlRepairPlan[];
+  applied: boolean;
+  indexSync: IndexSyncOutcome;
+  lastCitationStampsKept: number;
+}> {
   const slugs = PROMOTION_REGRESSED_WEBSITE_URL_DECISIONS.map((decision) => decision.slug);
   const entities = await ResearchEntity.find({ slug: { $in: slugs } })
     .select('slug websiteUrl sourceUrls manuallyLockedFields')
@@ -107,11 +115,14 @@ export async function runRepairPromotionRegressedWebsiteUrls(
     ),
   );
 
-  if (!options.apply) return { plans, applied: false, indexSync: NO_INDEX_SYNC };
+  if (!options.apply) {
+    return { plans, applied: false, indexSync: NO_INDEX_SYNC, lastCitationStampsKept: 0 };
+  }
 
   const regateIds: string[] = [];
   const resyncIds: mongoose.Types.ObjectId[] = [];
   const appliedPlans: WebsiteUrlRepairPlan[] = [];
+  let lastCitationStampsKept = 0;
   for (const plan of plans) {
     const entity = bySlug.get(plan.slug);
     if (plan.skipped || plan.nextWebsiteUrl === undefined || !entity) {
@@ -130,10 +141,12 @@ export async function runRepairPromotionRegressedWebsiteUrls(
     // The filter compares the RAW stored value rather than the trimmed one the plan
     // reports, so a row whose value moved between the read and the write is reported
     // as a conflict instead of matching nothing while the summary claims a repair.
-    const result = await ResearchEntity.updateOne(
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { _id: entity._id, websiteUrl: entity.websiteUrl as string },
       update,
     );
+    if (result.withheld.length > 0) lastCitationStampsKept += 1;
     if (result.modifiedCount < 1) {
       appliedPlans.push({ ...plan, nextWebsiteUrl: undefined, skipped: 'write_conflict' });
       continue;
@@ -160,10 +173,11 @@ export async function runRepairPromotionRegressedWebsiteUrls(
     resyncIds.length > 0 ? await ResearchEntity.find({ _id: { $in: resyncIds } }).lean() : [];
   const indexSync = await syncResearchEntitiesWithOutcome(docs);
 
-  return { plans: appliedPlans, applied: true, indexSync };
+  return { plans: appliedPlans, applied: true, indexSync, lastCitationStampsKept };
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseRepairPromotionRegressedWebsiteUrlsArgs(process.argv.slice(2));
   assertScriptApplyAllowed({
     apply: options.apply,
@@ -177,7 +191,8 @@ async function main(): Promise<void> {
   }
   await initializeConnections();
   try {
-    const { plans, applied, indexSync } = await runRepairPromotionRegressedWebsiteUrls(options);
+    const { plans, applied, indexSync, lastCitationStampsKept } =
+      await runRepairPromotionRegressedWebsiteUrls(options);
     const summary = summarizeWebsiteUrlRepairPlans(plans);
     console.log(`${SCRIPT_NAME}: ${applied ? 'APPLIED' : 'DRY RUN'}`);
     for (const plan of plans) {
@@ -190,7 +205,7 @@ async function main(): Promise<void> {
         `  ${plan.slug}\n     from ${plan.currentWebsiteUrl ?? '(none)'}\n     ${outcome}`,
       );
     }
-    console.log(`\n${JSON.stringify({ ...summary, ...indexSync })}`);
+    console.log(`\n${JSON.stringify({ ...summary, ...indexSync, lastCitationStampsKept })}`);
     if (summary.regateSlugs.length > 0) {
       console.log(
         `Re-gated after clearing: ${summary.regateSlugs.join(', ')}${applied ? '' : ' (would re-gate on --apply)'}`,
@@ -199,10 +214,17 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         safeOutput,
         JSON.stringify(
-          { generatedAt: new Date().toISOString(), applied, summary, indexSync, plans },
+          {
+            generatedAt: new Date().toISOString(),
+            applied,
+            summary,
+            indexSync,
+            lastCitationStampsKept,
+            plans,
+          },
           null,
           2,
         ),

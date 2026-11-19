@@ -66,6 +66,13 @@ const SHOUTY_SURNAME_PARTICLES = new Set([
 const isSurnameParticleToken = (token: string): boolean =>
   SHOUTY_SURNAME_PARTICLES.has(token.replace(/[.,]+$/, '').toUpperCase());
 
+export const isPersonNameParticleOrSuffixToken = (token: string): boolean => {
+  const upperToken = token.replace(/[.,]+$/, '').toUpperCase();
+  return (
+    SHOUTY_SURNAME_PARTICLES.has(upperToken) || GENERATIONAL_NAME_SUFFIX_TOKENS.has(upperToken)
+  );
+};
+
 const hasLowercaseLetter = (value: string): boolean => /[a-z]/.test(value);
 
 const CAPTION_LEAD_IN =
@@ -113,6 +120,24 @@ const POST_NOMINAL_TOKEN = [
   'm\\.?\\s?s',
   'm\\.?\\s?a',
   'p\\.?\\s?a\\.?-c',
+  'm\\.?\\s?m\\.?\\s?sc',
+  'm\\.?\\s?ed',
+  'm\\.?\\s?b\\.?\\s?b\\.?\\s?ch',
+  'm\\.?\\s?b\\.?\\s?ch\\.?\\s?b',
+  'm\\.?\\s?h\\.?\\s?s-med',
+  'm\\.?\\s?sci',
+  'b\\.?\\s?m\\.?\\s?sc',
+  'b\\.?\\s?sc',
+  'd\\.?\\s?sc',
+  'sc\\.?\\s?m',
+  'c\\.?\\s?sci',
+  'p\\.\\s?eng',
+  'd\\.?\\s?p\\.?\\s?m',
+  'd\\.?\\s?t\\.?\\s?m\\s?&\\s?h',
+  'dip\\.?\\s?ablm',
+  'dabr',
+  'facmg',
+  'mrsb',
 ].join('|');
 
 /**
@@ -146,6 +171,16 @@ const TRAILING_CREDENTIAL_LIST_RE = new RegExp(
 
 const AMBIGUOUS_BARE_POST_NOMINALS = new Set(['MA', 'MS', 'RN', 'DO', 'JD']);
 
+const LONE_POST_NOMINAL_RE = new RegExp(`^(?:${POST_NOMINAL_TOKEN})\\.?$`, 'i');
+
+export function isPersonNamePostNominalToken(token: string): boolean {
+  return LONE_POST_NOMINAL_RE.test(token.trim());
+}
+
+// "MEd" is a degree but "Med" is also a given name, so only a title-cased lone token
+// is held back here; its interior capital is what marks the degree spelling.
+const TITLE_CASED_AMBIGUOUS_BARE_POST_NOMINALS = new Set(['MED']);
+
 /**
  * `nee` and `aka` are themselves real name elements - Ga "Nee", Japanese "Aka" - so
  * the bare spellings cannot anchor the rule: they would truncate "Kwame Nee Adjei"
@@ -163,6 +198,10 @@ const DOTTED_LOWERCASE_LOCAL_PART_RE = /^[a-z][a-z0-9'-]*(?:\.[a-z][a-z0-9'-]*)+
 // Only inside a caption: there "Dean" is the alt text's title for the person, while a
 // bare "Dean Karlan" is a given name, so this list must never run outside the wrapper.
 const CAPTION_HONORIFIC_LEAD_IN = /^(?:dean|dr\.?|prof\.?|professor)\s+(?=\S+\s+\S)/i;
+
+export function isPersonNameCaption(value: string): boolean {
+  return CAPTION_LEAD_IN.test(value.trim());
+}
 
 export function stripPersonNameCaptionWrapper(value: string): string {
   const trimmed = value.trim();
@@ -237,6 +276,12 @@ function strippedListedCredentialRun(trimmed: string): string | undefined {
   // so an ambiguous token has to be all-caps to read as a credential.
   const bare = match[0].replace(/^,/, '').replace(/[.,&\s]/g, '');
   if (AMBIGUOUS_BARE_POST_NOMINALS.has(bare.toUpperCase()) && bare !== bare.toUpperCase()) {
+    return undefined;
+  }
+  if (
+    TITLE_CASED_AMBIGUOUS_BARE_POST_NOMINALS.has(bare.toUpperCase()) &&
+    /^[A-Z][a-z]+$/.test(bare)
+  ) {
     return undefined;
   }
   return (

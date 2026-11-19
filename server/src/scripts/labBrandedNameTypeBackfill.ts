@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import {
   RESEARCH_ENTITY_IDENTITY_NAME_FIELDS,
   materializeEntity,
@@ -29,6 +30,7 @@ import {
   type LabBrandedNameTypeCandidate,
   type LabBrandedNameTypePlanRow,
 } from './labBrandedNameTypeBackfillCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -190,6 +192,7 @@ async function retractUnevidencedBrands(
 ): Promise<{
   brandAssertionsRetracted: number;
   brandRetractionsLocked: number;
+  lastCitationStampsKept: number;
   namesRematerialized: Array<{ slug: string; name: string }>;
   indexSync: IndexSyncOutcome;
 }> {
@@ -197,6 +200,7 @@ async function retractUnevidencedBrands(
   let indexSync = NO_INDEX_SYNC;
   let brandAssertionsRetracted = 0;
   let brandRetractionsLocked = 0;
+  let lastCitationStampsKept = 0;
   for (const row of retractable) {
     const entity = brandedRowsBySlug.get(row.slug)?.entity;
     if (!entity) continue;
@@ -226,16 +230,24 @@ async function retractUnevidencedBrands(
     if (retired === 0) continue;
     brandAssertionsRetracted += retired;
     await materializeEntity('researchEntity', { entityKey: row.slug }, { syncMeilisearch: false });
-    await ResearchEntity.updateOne(
+    const cleared = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { slug: row.slug, displayName: row.brandedName },
       { $unset: { displayName: '', 'fieldProvenance.displayName': '' } },
     );
+    if (cleared.withheld.length > 0) lastCitationStampsKept += 1;
     const fresh = await ResearchEntity.findOne({ slug: row.slug }).lean<Record<string, unknown>>();
     if (!fresh) continue;
     indexSync = addIndexSyncOutcomes(indexSync, await syncResearchEntitiesWithOutcome([fresh]));
     namesRematerialized.push({ slug: row.slug, name: String(fresh.name ?? '') });
   }
-  return { brandAssertionsRetracted, brandRetractionsLocked, namesRematerialized, indexSync };
+  return {
+    brandAssertionsRetracted,
+    brandRetractionsLocked,
+    lastCitationStampsKept,
+    namesRematerialized,
+    indexSync,
+  };
 }
 
 export interface LabBrandedNameTypeResult {
@@ -247,6 +259,7 @@ export interface LabBrandedNameTypeResult {
   entitiesUpdated: number;
   brandAssertionsRetracted: number;
   brandRetractionsLocked: number;
+  lastCitationStampsKept: number;
   namesRematerialized: Array<{ slug: string; name: string }>;
   synced: number;
   indexSyncFailures: number;
@@ -290,6 +303,7 @@ export async function runLabBrandedNameTypeBackfill(options: {
     entitiesUpdated: 0,
     brandAssertionsRetracted: 0,
     brandRetractionsLocked: 0,
+    lastCitationStampsKept: 0,
     namesRematerialized: [],
     synced: 0,
     indexSyncFailures: 0,
@@ -300,6 +314,7 @@ export async function runLabBrandedNameTypeBackfill(options: {
   const retracted = await retractUnevidencedBrands(retractable, brandedRowsBySlug);
   result.brandAssertionsRetracted = retracted.brandAssertionsRetracted;
   result.brandRetractionsLocked = retracted.brandRetractionsLocked;
+  result.lastCitationStampsKept = retracted.lastCitationStampsKept;
   result.namesRematerialized = retracted.namesRematerialized;
   result.synced = retracted.indexSync.resynced;
   result.indexSyncFailures = retracted.indexSync.indexSyncFailures;
@@ -385,7 +400,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         safeOutput,
         `${JSON.stringify(
           { generatedAt: new Date().toISOString(), environment: guard.environment, ...result },

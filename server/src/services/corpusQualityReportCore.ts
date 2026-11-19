@@ -56,7 +56,13 @@ export interface CorpusQualityReport {
   };
   integrity: {
     publicDescriptionInvariantFails: CorpusQualityRatio;
+    personTitleFromSiteChromeReading: CorpusQualityRatio;
   };
+}
+
+export interface CorpusQualityPersonTitleCounts {
+  withServableTitle: number;
+  fromSiteChromeReading: number;
 }
 
 export const CORPUS_QUALITY_SURFACE =
@@ -87,10 +93,12 @@ const studentReadyBySchool = (
 export function buildCorpusQualityReport({
   facts,
   corpus,
+  personTitles = { withServableTitle: 0, fromSiteChromeReading: 0 },
   generatedAt = new Date(),
 }: {
   facts: readonly CorpusQualityServedRowFacts[];
   corpus: CorpusQualityCorpusCounts;
+  personTitles?: CorpusQualityPersonTitleCounts;
   generatedAt?: Date;
 }): CorpusQualityReport {
   const served = facts.length;
@@ -164,6 +172,10 @@ export function buildCorpusQualityReport({
       publicDescriptionInvariantFails: ratio(
         countWhere(facts, (row) => !row.publicDescriptionInvariantPasses),
         served,
+      ),
+      personTitleFromSiteChromeReading: ratio(
+        personTitles.fromSiteChromeReading,
+        personTitles.withServableTitle,
       ),
     },
   };

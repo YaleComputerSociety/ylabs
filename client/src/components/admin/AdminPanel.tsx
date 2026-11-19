@@ -7,6 +7,7 @@ import AdminResearchAreas from './AdminResearchAreas';
 import AdminDepartments from './AdminDepartments';
 import AdminOperatorBoard from './AdminOperatorBoard';
 import AdminCorrectionReports from './AdminCorrectionReports';
+import AdminDirectoryRemovalRequests from './AdminDirectoryRemovalRequests';
 import { WarningIcon } from '../shared/icons';
 import useRovingTabs from '../../hooks/useRovingTabs';
 
@@ -19,9 +20,16 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
+const AdminReviewQueues = () => (
+  <>
+    <AdminCorrectionReports />
+    <AdminDirectoryRemovalRequests />
+  </>
+);
+
 const TAB_PANELS: Record<Tab, { slug: string; Panel: ComponentType }> = {
   'Operator Board': { slug: 'operator-board', Panel: AdminOperatorBoard },
-  'Correction Reports': { slug: 'correction-reports', Panel: AdminCorrectionReports },
+  'Correction Reports': { slug: 'correction-reports', Panel: AdminReviewQueues },
   Fellowships: { slug: 'fellowships', Panel: AdminFellowshipsTable },
   Topics: { slug: 'topics', Panel: AdminResearchAreas },
   Departments: { slug: 'departments', Panel: AdminDepartments },

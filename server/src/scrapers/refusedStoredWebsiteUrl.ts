@@ -44,6 +44,7 @@
  * two acts.
  */
 import {
+  isWithheldResearchWebsiteUrl,
   researchHomeWebsiteUrlWriteRefusal,
   type ResearchEntityHostOwnerIdentity,
   type ResearchHomeWebsiteUrlRefusal,
@@ -92,4 +93,54 @@ export function planRefusedStoredWebsiteUrlClear(input: {
     return { clear: false, refusal, skipped: 'field-is-locked' };
   }
   return { clear: true, refusal, skipped: null };
+}
+
+export interface WithheldLegacyWebsitePlan {
+  declineStaged: boolean;
+  clearStored: boolean;
+  skipped: RefusedStoredWebsiteUrlSkip | null;
+}
+
+const NO_LEGACY_WEBSITE_CHANGE: WithheldLegacyWebsitePlan = {
+  declineStaged: false,
+  clearStored: false,
+  skipped: null,
+};
+
+const nonBlankString = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0;
+
+/**
+ * The legacy `website` field's counterpart of the `websiteUrl` gate and stored clear
+ * (#5376). It reads `isWithheldResearchWebsiteUrl`, the set the detail payload already
+ * withholds, rather than the full write gate, because the detail page reads a profile
+ * page stored in `website` as the lead's official profile link, and the write gate
+ * refuses profile pages. Clearing exactly what is withheld changes no served value; it
+ * only stops the stored and served field disagreeing.
+ *
+ * A staged value that is withheld is declined, so a live observation cannot re-adopt it,
+ * and a stored one is cleared when the pass stages nothing in its place.
+ */
+export function planWithheldLegacyWebsiteClear(input: {
+  stored: Record<string, unknown> | null | undefined;
+  staged: Record<string, unknown>;
+  identity: ResearchEntityHostOwnerIdentity;
+  lockedFields: readonly string[];
+}): WithheldLegacyWebsitePlan {
+  const staged = input.staged.website;
+  const declineStaged =
+    nonBlankString(staged) && isWithheldResearchWebsiteUrl(staged, input.identity);
+  const stored = input.stored?.website;
+  const storedIsWithheld =
+    nonBlankString(stored) && isWithheldResearchWebsiteUrl(stored, input.identity);
+  if (!declineStaged && !storedIsWithheld) return NO_LEGACY_WEBSITE_CHANGE;
+  if (input.lockedFields.includes('website')) {
+    return { declineStaged: false, clearStored: false, skipped: 'field-is-locked' };
+  }
+  const stagesAnAdmissibleValue = nonBlankString(staged) && !declineStaged;
+  return {
+    declineStaged,
+    clearStored: storedIsWithheld && !stagesAnAdmissibleValue,
+    skipped: null,
+  };
 }

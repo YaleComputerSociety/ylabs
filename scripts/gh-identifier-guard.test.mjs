@@ -6,7 +6,13 @@ import path from 'node:path';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { classifyCommand, isGuardedRepo, planGuard } from './gh-identifier-guard-core.mjs';
+import {
+  classifyCommand,
+  isGuardedRepo,
+  planClosingKeywordRewrite,
+  planGuard,
+  rewriteBacktickedClosingKeywords,
+} from './gh-identifier-guard-core.mjs';
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 const GUARDED = 'YaleComputerSociety/does-not-exist-guard-test';
@@ -282,6 +288,48 @@ test('forwards a clean body and its stdin to the real gh unchanged', () => {
   assert.equal(fs.readFileSync(log, 'utf8'), `issue comment 1 -R ${GUARDED} -F -\n${CLEAN}`);
 });
 
+const ESCAPE_REPRO_MARKDOWN = [
+  '## What Changed',
+  '- `redactWithheldNamesDeep` now drops every prose sentence that names a withheld person. It splits text with `Intl.Segmenter` and does not treat an honorific or initial before a name as a sentence break. Title fields in `TITLE_KEYS` (`name`, `displayName`, `title` and the like) still swap the name for `WITHHELD_PERSON_PHRASE`, because a title has no sentence to drop. The namesake-own-row exemption still applies.',
+  '',
+].join('\n');
+
+const apiInput = (contents) => {
+  const file = path.join(makeTempDirectory('gh-guard-input-'), 'body.json');
+  fs.writeFileSync(file, contents);
+  return file;
+};
+
+const apiPatch = (dir, contents) =>
+  runGuard(
+    path.join(scriptsDir, 'gh-identifier-guard.mjs'),
+    ['api', `repos/${GUARDED}/pulls/1`, '-X', 'PATCH', '--input', apiInput(contents)],
+    { binDir: dir },
+  );
+
+test('forwards a clean gh api JSON body the markdown scan would pass (#5622)', () => {
+  for (const contents of [
+    JSON.stringify({ body: ESCAPE_REPRO_MARKDOWN }),
+    ESCAPE_REPRO_MARKDOWN.replaceAll('\n', '\\n'),
+  ]) {
+    const { dir, log } = makeFakeGh();
+    const result = apiPatch(dir, contents);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(fs.existsSync(log));
+  }
+});
+
+test('still refuses a real claim in a JSON-escaped body, including after a leading heading', () => {
+  const markdown = `## Status\n${FLAGGED_COMMENT}\n`;
+  for (const contents of [JSON.stringify({ body: markdown }), markdown.replaceAll('\n', '\\n')]) {
+    const { dir, log } = makeFakeGh();
+    const result = apiPatch(dir, contents);
+    assert.equal(result.status, 1, result.stdout);
+    assert.match(result.stderr, /gh guard: NOT posted/);
+    assert.equal(fs.existsSync(log), false);
+  }
+});
+
 const makeForkCheckout = () => {
   const repo = makeTempDirectory('gh-guard-fork-');
   const run = (gitArgs) =>
@@ -492,4 +540,148 @@ test('the shim names the missing guard, refuses posts, and passes other commands
   const read = runShim(shimDir, realGhDir, ['pr', 'view', '1']);
   assert.equal(read.status, 0, read.stderr);
   assert.equal(fs.readFileSync(log, 'utf8'), 'pr view 1\n');
+});
+
+test('restores a line-leading closing keyword written inside a code span, and nothing else (#5664)', () => {
+  const { text, count } = rewriteBacktickedClosingKeywords(
+    [
+      'Closes `#5622`',
+      'fixes: `YaleComputerSociety/ylabs#12`',
+      '  Resolved `#7`',
+      'Does not close `#8`; that stays open.',
+      'The bug fixed `#9` came back.',
+      'see `#10`',
+      'Closes #3',
+      '```',
+      'Closes `#11`',
+      '```',
+      'Fixes `#12`',
+    ].join('\n'),
+  );
+  assert.equal(
+    text,
+    [
+      'Closes #5622',
+      'fixes: YaleComputerSociety/ylabs#12',
+      '  Resolved #7',
+      'Does not close `#8`; that stays open.',
+      'The bug fixed `#9` came back.',
+      'see `#10`',
+      'Closes #3',
+      '```',
+      'Closes `#11`',
+      '```',
+      'Fixes #12',
+    ].join('\n'),
+  );
+  assert.equal(count, 4);
+  assert.deepEqual(rewriteBacktickedClosingKeywords('No keyword here: `#9`.'), {
+    text: 'No keyword here: `#9`.',
+    count: 0,
+  });
+});
+
+test('rewrites every way a body reaches gh, and never edits the author file in place', () => {
+  const files = {
+    '/drafts/body.md': 'Body\n\nCloses `#41`\n',
+    '/drafts/input.json': '{"title":"Closes `#2` in a title","body":"Body\\n\\nCloses `#42`"}',
+    '/drafts/not-json.txt': 'Closes `#45`',
+  };
+  const written = [];
+  const deps = {
+    readBodyFile: (file) => files[file],
+    readStdin: () => 'From stdin.\nFixes `#43`',
+    writeTempFile: (text) => {
+      written.push(text);
+      return `/tmp/rewritten-${written.length}`;
+    },
+  };
+
+  assert.deepEqual(
+    planClosingKeywordRewrite(
+      ['pr', 'create', '-t', 'Closes `#1` in a title', '-b', 'Closes `#40`'],
+      deps,
+    ),
+    { args: ['pr', 'create', '-t', 'Closes `#1` in a title', '-b', 'Closes #40'], count: 1 },
+  );
+  assert.deepEqual(
+    planClosingKeywordRewrite(['pr', 'edit', '1', '--body=Closes `#40`'], deps).args,
+    ['pr', 'edit', '1', '--body=Closes #40'],
+  );
+  const fromFile = planClosingKeywordRewrite(
+    ['pr', 'create', '--body-file', '/drafts/body.md'],
+    deps,
+  );
+  assert.deepEqual(fromFile.args, ['pr', 'create', '--body-file', '/tmp/rewritten-1']);
+  assert.equal(written[0], 'Body\n\nCloses #41\n');
+  assert.equal(files['/drafts/body.md'], 'Body\n\nCloses `#41`\n');
+  assert.deepEqual(planClosingKeywordRewrite(['issue', 'comment', '1', '-F', '-'], deps), {
+    args: ['issue', 'comment', '1', '-F', '-'],
+    stdin: 'From stdin.\nFixes #43',
+    count: 1,
+  });
+  assert.deepEqual(
+    planClosingKeywordRewrite(
+      [
+        'api',
+        'repos/x/y/pulls/1',
+        '-X',
+        'PATCH',
+        '-f',
+        'body=Closes `#44`',
+        '-f',
+        'title=Closes `#2`',
+      ],
+      deps,
+    ).args,
+    ['api', 'repos/x/y/pulls/1', '-X', 'PATCH', '-f', 'body=Closes #44', '-f', 'title=Closes `#2`'],
+  );
+  assert.deepEqual(
+    planClosingKeywordRewrite(['api', 'repos/x/y/pulls/1', '--input', '/drafts/input.json'], deps)
+      .args,
+    ['api', 'repos/x/y/pulls/1', '--input', '/tmp/rewritten-2'],
+  );
+  assert.deepEqual(JSON.parse(written[1]), {
+    title: 'Closes `#2` in a title',
+    body: 'Body\n\nCloses #42',
+  });
+  assert.deepEqual(
+    planClosingKeywordRewrite(
+      ['api', 'repos/x/y/pulls/1', '--input', '/drafts/not-json.txt'],
+      deps,
+    ),
+    { args: ['api', 'repos/x/y/pulls/1', '--input', '/drafts/not-json.txt'], count: 0 },
+  );
+  assert.deepEqual(planClosingKeywordRewrite(['pr', 'create', '-b', 'Closes #40'], deps), {
+    args: ['pr', 'create', '-b', 'Closes #40'],
+    count: 0,
+  });
+});
+
+test('posts a backticked closing keyword as plain text end to end, and says so', () => {
+  const { dir, log } = makeFakeGh();
+  const result = runGuard(
+    path.join(scriptsDir, 'gh-identifier-guard.mjs'),
+    ['pr', 'create', '-R', GUARDED, '-t', 'fix: x', '-b', `${CLEAN}\n\nCloses \`#5664\``],
+    { binDir: dir },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /rewrote 1 closing keyword out of a code span/);
+  assert.match(fs.readFileSync(log, 'utf8'), /Closes #5664/);
+  assert.doesNotMatch(fs.readFileSync(log, 'utf8'), /Closes `#5664`/);
+});
+
+test('leaves a body with no backticked closing keyword exactly as written', () => {
+  const { dir, log } = makeFakeGh();
+  const body = `${CLEAN}\n\nSee \`#5664\`; Closes #5664`;
+  const result = runGuard(
+    path.join(scriptsDir, 'gh-identifier-guard.mjs'),
+    ['issue', 'comment', '1', '-R', GUARDED, '-F', '-'],
+    { binDir: dir, input: body },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stderr, /rewrote/);
+  assert.equal(fs.readFileSync(log, 'utf8'), `issue comment 1 -R ${GUARDED} -F -\n${body}`);
 });

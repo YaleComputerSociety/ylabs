@@ -2,6 +2,7 @@ import {
   SCHOOL_PROFILE_HOSTS,
   applyResearchEntityOrgUnitCanonicalization,
 } from '../scrapers/orgUnitCanonicalization';
+import { withoutRefusedSchools } from '../scrapers/refusedSchools';
 
 export const SCHOOL_PROFILE_HOST_BACKFILL_SOURCE = 'school-profile-host-backfill';
 
@@ -15,6 +16,7 @@ export interface SchoolProfileHostEntity {
   departments?: unknown;
   websiteUrl?: unknown;
   sourceUrls?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 const asStringArray = (value: unknown): string[] =>
@@ -76,6 +78,7 @@ export async function planSchoolProfileHostRow(
     { school: entity.school, departments: entity.departments },
     profileUrls,
   );
+  withoutRefusedSchools(set, entity.fieldValueRefusals);
 
   const afterSchool = typeof set.school === 'string' ? set.school : '';
   const afterSchools = asStringArray(set.schools);

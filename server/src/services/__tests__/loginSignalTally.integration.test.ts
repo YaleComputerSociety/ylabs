@@ -79,7 +79,6 @@ describe('the login signal tally', () => {
           lname: 'Person',
           email: 'fixture.person@example.invalid',
           title: 'Synthetic Title',
-          department: '',
         },
       }),
     ).toBe('other_or_faculty');

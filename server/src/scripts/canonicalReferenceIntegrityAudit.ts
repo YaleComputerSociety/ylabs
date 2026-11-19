@@ -11,7 +11,6 @@
  *     --include-samples --output /tmp/ylabs-canonical-reference-integrity-dev.json
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { MongoClient } from 'mongodb';
@@ -26,6 +25,7 @@ import {
   parseCanonicalReferenceIntegrityArgs,
 } from './canonicalReferenceIntegrityAuditCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,7 +62,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ ...report, target: summarizeMongoUrl(mongoUrl) }, null, 2));
     if (args.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(args.output);
-      fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+      writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
     }
   } finally {
     await client.close();

@@ -16,6 +16,7 @@ import {
   buildWebsiteUrlResearchEntityDedupePlan,
   entityMintedByPrimaryAppointmentRoster,
   buildNameAgreedSharedPersonResearchEntityDedupePlan,
+  eponymousLabAgreementKey,
   nameAgreementKey,
   groupConflatesDistinctPersonProfiles,
   normalizeWebsiteUrlIdentityKey,
@@ -1681,6 +1682,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       appliedGroups: 2,
       deferredAsWouldDemoteGroups: 1,
       deferredAsWouldSwapPinnedCanonicalGroups: 1,
+      refusedAsDistinctPeopleGroups: 0,
       deferredByCapGroups: 4,
       archivedEntities: 3,
       deletedEntities: 0,
@@ -1705,6 +1707,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       appliedGroups: 0,
       deferredAsWouldDemoteGroups: 1,
       deferredAsWouldSwapPinnedCanonicalGroups: 2,
+      refusedAsDistinctPeopleGroups: 0,
     });
   });
 
@@ -3548,6 +3551,103 @@ describe('buildNameAgreedSharedPersonResearchEntityDedupePlan (#4651)', () => {
     expect(members(plan)).toEqual([['lab-a', 'lab-b']]);
   });
 
+  const leadRow = (entities: Array<{ id: string; name: string; entityType: string }>) => ({
+    ...row(entities),
+    piFirstName: 'Wren',
+    piLastName: 'Ortolan',
+  });
+
+  it('reads a lab named for its lead the same way whatever follows the kind noun', () => {
+    const lead = { piFirstName: 'Wren', piLastName: 'Ortolan' };
+    const key = eponymousLabAgreementKey('Ortolan Lab', lead);
+    expect(key).not.toBe('');
+    expect(eponymousLabAgreementKey('ORTOLAN LAB Coastal Sediment Genomics @ Yale', lead)).toBe(
+      key,
+    );
+    expect(eponymousLabAgreementKey('The Wren Ortolan Laboratory', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('W. Ortolan Lab', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('Coastal Ortolan Lab', lead)).toBe('');
+    expect(eponymousLabAgreementKey('Coastal Sediment Lab', lead)).toBe('');
+    expect(eponymousLabAgreementKey('Ortolan Faculty Research', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('Ortolan Research Group', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('Ortolan', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('Coastal Research Group', lead)).toBe('');
+    expect(eponymousLabAgreementKey('Ortolan Lab', {})).toBe('');
+  });
+
+  it('groups a lead lab with a copy named by its site title', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      leadRow([
+        { id: 'a', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'b', name: 'ORTOLAN LAB Coastal Sediment Genomics @ Yale', entityType: 'LAB' },
+        { id: 'project', name: 'Coastal Sediment Atlas', entityType: 'LAB' },
+        { id: 'fra', name: 'Wren Ortolan Faculty Research', entityType: 'FACULTY_RESEARCH_AREA' },
+      ]),
+    ]);
+    expect(members(plan)).toEqual([['a', 'b']]);
+  });
+
+  it('keeps every name the strict key agreed on in the eponymous cluster', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      leadRow([
+        { id: 'a', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'b', name: 'Ortolan Research Group', entityType: 'LAB' },
+        { id: 'c', name: 'Ortolan', entityType: 'LAB' },
+        { id: 'd', name: 'The Ortolan Faculty Research Lab', entityType: 'LAB' },
+        { id: 'e', name: 'ORTOLAN LAB Coastal Sediment Genomics @ Yale', entityType: 'LAB' },
+      ]),
+    ]);
+    expect(members(plan)).toEqual([['a', 'b', 'c', 'd', 'e']]);
+  });
+
+  it('keeps an eponymous lab apart when another person also leads it', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      leadRow([
+        { id: 'a', name: 'Wren Ortolan Lab', entityType: 'LAB' },
+        { id: 'shared', name: 'Ortolan Lab', entityType: 'LAB' },
+      ]),
+      {
+        userId: 'person-2',
+        normalizedName: 'same-pi:person-2',
+        piFirstName: 'Juno',
+        piLastName: 'Ortolan Vega',
+        entities: [{ id: 'shared', slug: 'shared', name: 'Ortolan Lab', entityType: 'LAB' }],
+      },
+    ]);
+    expect(plan).toEqual([]);
+  });
+
+  it('groups a faculty research row titled as its lead lab with that lab, keeping the lab', () => {
+    const appointmentRoster = 'https://numbers.example.edu/people/faculty/';
+    const base = leadRow([
+      { id: 'fra', name: 'Ortolan Lab', entityType: 'FACULTY_RESEARCH_AREA' },
+      { id: 'lab', name: 'Ortolan Lab', entityType: 'LAB' },
+      { id: 'project', name: 'Coastal Sediment Atlas', entityType: 'LAB' },
+    ]);
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      {
+        ...base,
+        primaryAppointmentProfileUrl: 'https://numbers.example.edu/profile/wren-ortolan',
+        entities: base.entities.map((entity) =>
+          entity.id === 'fra' ? { ...entity, identitySourceUrl: appointmentRoster } : entity,
+        ),
+      },
+    ]);
+    expect(plan.map((group) => [group.canonicalEntityId, ...group.duplicateEntityIds])).toEqual([
+      ['lab', 'fra'],
+    ]);
+  });
+
+  it('keeps a faculty research row apart from the lab when its name is not a lab name', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      leadRow([
+        { id: 'fra', name: 'Wren Ortolan Research', entityType: 'FACULTY_RESEARCH_AREA' },
+        { id: 'lab', name: 'Ortolan Lab', entityType: 'LAB' },
+      ]),
+    ]);
+    expect(plan).toEqual([]);
+  });
+
   it('plans nothing when no two rows agree on both name and type', () => {
     const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
       row([
@@ -3886,6 +3986,85 @@ describe('buildSameNameDifferentPersonQuarantine', () => {
   });
 });
 
+describe('a name-only group joining a lead lab to a lead-less row of the same name', () => {
+  const sameNameRows = (personLedEntityIds?: string[]) => [
+    {
+      userId: 'pi-ortolan',
+      normalizedName: 'ortolan lab',
+      personLedEntityIds,
+      entities: [
+        {
+          id: 'lead-lab',
+          slug: 'ysm-faculty-wren-ortolan',
+          name: 'Ortolan Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          websiteUrl: 'https://ortolanlab.example.org',
+          sourceUrls: ['https://medicine.example.edu/profile/wren-ortolan/'],
+        },
+        {
+          id: 'member-row',
+          slug: 'ysm-faculty-juno-vega',
+          name: 'Ortolan Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          websiteUrl: 'https://www.ortolanlab.example.org/',
+          sourceUrls: [
+            'https://medicine.example.edu/profile/juno-vega/',
+            'https://www.ortolanlab.example.org/',
+          ],
+          fullDescription: 'Studies coastal sediment genomics with field sampling.',
+        },
+      ],
+    },
+  ];
+
+  it('keeps the row its lead leads as canonical and calls the lead-less row the duplicate', () => {
+    const plan = buildResearchEntityPiDedupePlan(sameNameRows(['lead-lab']));
+    expect(plan.map((group) => [group.canonicalEntityId, group.duplicateEntityIds])).toEqual([
+      ['lead-lab', ['member-row']],
+    ]);
+  });
+
+  it('decides on the row evidence alone when no row names its lead', () => {
+    const plan = buildResearchEntityPiDedupePlan(sameNameRows());
+    expect(plan.map((group) => group.canonicalEntityId)).toEqual(['member-row']);
+  });
+
+  it('never folds a faculty research row its lead leads into a lead-less home of that name', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'pi-ortolan',
+        normalizedName: 'ortolan lab',
+        personLedEntityIds: ['lead-fra'],
+        entities: [
+          {
+            id: 'lead-fra',
+            slug: 'faculty-research-area-wren-ortolan',
+            name: 'Ortolan Lab',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://medicine.example.edu/profile/wren-ortolan/'],
+          },
+          {
+            id: 'member-row',
+            slug: 'ysm-faculty-juno-vega',
+            name: 'Ortolan Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://www.ortolanlab.example.org/',
+            sourceUrls: ['https://www.ortolanlab.example.org/'],
+          },
+        ],
+      },
+    ]);
+    expect(plan.flatMap((group) => group.duplicateEntityIds)).not.toContain('lead-fra');
+    expect(
+      plan.filter((group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home'),
+    ).toEqual([]);
+  });
+});
+
 describe('buildResearchEntityPiDedupePlan center carve-out', () => {
   it('never selects a CENTER as the canonical survivor of an FRA-shadow merge', () => {
     const plan = buildResearchEntityPiDedupePlan([
@@ -3963,6 +4142,39 @@ describe('buildResearchEntityPiDedupePlan center carve-out', () => {
             entityType: 'FACULTY_RESEARCH_AREA',
             sourceUrls: ['https://medicine.yale.edu/profile/grace-hopper/'],
             departments: ['Computer Science'],
+          },
+        ],
+      },
+    ]);
+    expect(
+      plan.filter((group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home'),
+    ).toEqual([]);
+  });
+
+  it('does not fold an FRA shell into a core facility its lead directs, whatever the core is called', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'pi-core-director',
+        normalizedName: 'same-pi:pi-core-director',
+        piFirstName: 'Grace',
+        piLastName: 'Hopper',
+        entities: [
+          {
+            id: 'hopper-core',
+            slug: 'research-yale-rapid-sample-tracing',
+            name: 'Rapid Sample Tracing (RST)',
+            kind: 'core_facility',
+            entityType: 'CORE_FACILITY',
+            websiteUrl: 'https://research.example.edu/cores/rst',
+            sourceUrls: ['https://research.example.edu/cores/rst'],
+          },
+          {
+            id: 'hopper-fra-shell',
+            slug: 'faculty-research-area-grace-hopper',
+            name: 'Grace Hopper Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://medicine.example.edu/profile/grace-hopper/'],
           },
         ],
       },

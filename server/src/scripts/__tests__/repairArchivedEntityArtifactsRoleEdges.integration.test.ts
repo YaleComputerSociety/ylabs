@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ResearchEntity } from '../../models/researchEntity';
+import { ResearchEntityRelationship } from '../../models/researchEntityRelationship';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { Signal } from '../../models/signal';
 import { runPostMaterializationIntegrityGate } from '../../scrapers/integrityGate';
@@ -26,7 +27,12 @@ describe('research-entity:repair-archived-artifacts settles stranded role edges 
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['research_entities', 'role_assignments', 'signals']) {
+    for (const name of [
+      'research_entities',
+      'role_assignments',
+      'signals',
+      'research_entity_relationships',
+    ]) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -176,5 +182,63 @@ describe('research-entity:repair-archived-artifacts settles stranded role edges 
     const summary = await runPostMaterializationIntegrityGate({ includeSamples: false });
     expect(summary.counts.activeArtifactsOnArchivedEntities).toBe(0);
     expect(summary.counts.duplicateAccessSignals).toBe(0);
+  });
+
+  it('settles stranded relationship edges through the archive-time applier (#5122)', async () => {
+    const member = await entity('synthetic-member-profile');
+    const otherMember = await entity('synthetic-other-member');
+    const survivor = await entity('synthetic-survivor-lab');
+    const folded = await entity('dept-synthetic-folded', {
+      archived: true,
+      archivedReason: 'materialize:fold-dept-roster-shell',
+      canonicalGroupId: survivor._id,
+    });
+    const retired = await entity('synthetic-retired-row', {
+      archived: true,
+      archivedReason: 'research-entity:retire-staff-minted-entities',
+    });
+    const link = (source: mongoose.Types.ObjectId, target: mongoose.Types.ObjectId) =>
+      ResearchEntityRelationship.create({
+        sourceResearchEntityId: source,
+        targetResearchEntityId: target,
+        relationshipType: 'MEMBER_RESEARCH_AREA',
+        archived: false,
+      });
+    const held = await link(otherMember._id, survivor._id);
+    const stranded = await link(member._id, folded._id);
+    const redundant = await link(otherMember._id, folded._id);
+    const selfLoop = await link(survivor._id, folded._id);
+    const dead = await link(member._id, retired._id);
+
+    const { plan } = await loadArchivedEntityArtifactPlan(100, {}, ['ResearchEntityRelationship']);
+    expect(plan.relink.map((item) => item.id)).toEqual([String(stranded._id)]);
+    expect(plan.mergeAndArchive.map((item) => [item.duplicateId, item.canonicalId])).toEqual([
+      [String(redundant._id), String(held._id)],
+    ]);
+    expect(plan.archiveWithoutCanonical.map((item) => item.id)).toEqual([String(selfLoop._id)]);
+    expect(plan.skipped.map((item) => [item.id, item.reason])).toEqual([
+      [String(dead._id), 'no-live-endpoint'],
+    ]);
+
+    const applied = await applyArchivedEntityArtifactRepairPlan(plan);
+    expect(applied).toMatchObject({
+      relinked: 1,
+      archivedMergedDuplicates: 1,
+      archivedWithoutCanonical: 1,
+    });
+    const read = (id: unknown) => ResearchEntityRelationship.findById(id).lean();
+    expect(String((await read(stranded._id))?.targetResearchEntityId)).toBe(String(survivor._id));
+    for (const id of [redundant._id, selfLoop._id]) {
+      expect(await read(id)).toMatchObject({
+        archived: true,
+        archivedReason: 'research-entity:repair-archived-artifacts',
+      });
+    }
+    expect(await read(dead._id)).toMatchObject({ archived: false });
+
+    const rerun = await loadArchivedEntityArtifactPlan(100, {}, ['ResearchEntityRelationship']);
+    expect(rerun.plan.relink).toEqual([]);
+    expect(rerun.plan.mergeAndArchive).toEqual([]);
+    expect(rerun.plan.archiveWithoutCanonical).toEqual([]);
   });
 });

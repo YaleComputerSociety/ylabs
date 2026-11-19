@@ -7,6 +7,7 @@ import {
   buildVisibilityRepairPlans,
   classifyVisibilityRepairStage,
   normalizeVisibilityRepairObjectId,
+  repairQueueSuppressionReason,
   researchEntityLeadMembersFromRoster,
   RESOLVED_BY_GATE_DRY_RUN_NOTE,
   runVisibilityRepairQueue,
@@ -16,6 +17,7 @@ import {
 import type { ResearchEntityRosterEntry } from '../researchEntityMembershipAccessor';
 import { partitionResolvableQueueRecordIds } from '../studentVisibilityGateService';
 import { classifyRecoverabilityForRecordIds } from '../visibilityRecoverabilityService';
+import { normalizeOverrideReason } from '../../scripts/studentVisibilityOverrideCore';
 
 vi.mock('../visibilityRecoverabilityService', () => ({
   classifyRecoverabilityForRecordIds: vi.fn().mockResolvedValue({
@@ -34,6 +36,19 @@ const queueItem = (
   blockerReasons: ['missing_description'],
   sourceNames: ['ysm-atoz-index'],
   ...overrides,
+});
+
+const noProtectedLeadEdge = vi.fn().mockResolvedValue(null);
+
+const facultyLeadCandidate = vi.fn().mockResolvedValue({
+  holdsLiveLeadEdge: false,
+  entry: {
+    role: 'pi',
+    state: 'UNKNOWN',
+    personId: 'user-1',
+    name: 'Faculty Lead',
+    title: 'Professor',
+  },
 });
 
 describe('visibilityRepairQueueService', () => {
@@ -142,12 +157,12 @@ describe('visibilityRepairQueueService', () => {
     expect(classifyVisibilityRepairStage(['research_infrastructure_only'])).toBe('suppression');
     expect(classifyVisibilityRepairStage(['formalization_only'])).toBe('review_exception');
     expect(classifyVisibilityRepairStage(['formalization_only', 'application_source_only'])).toBe(
-      'review_exception',
+      'source_description',
     );
     expect(classifyVisibilityRepairStage(['unknown_reason'])).toBe('review_exception');
   });
 
-  it('does not auto-attempt formalization-only review exceptions', () => {
+  it('drops a stale formalization_only blocker when it re-plans a queue item (#6219)', () => {
     const plan = buildVisibilityRepairPlan(
       queueItem({
         collection: 'programs',
@@ -155,9 +170,18 @@ describe('visibilityRepairQueueService', () => {
       }),
     );
 
-    expect(plan.repairStage).toBe('review_exception');
-    expect(plan.safeToAttempt).toBe(false);
-    expect(plan.nextRepairAction).toContain('Keep capped');
+    expect(plan.blockerReasons).toEqual(['application_source_only']);
+    expect(plan.repairStage).toBe('source_description');
+    expect(plan.nextRepairAction).not.toMatch(/keep capped/i);
+  });
+
+  it('leaves a program no blocker when formalization_only was its only one (#6219)', () => {
+    const plan = buildVisibilityRepairPlan(
+      queueItem({ collection: 'programs', blockerReasons: ['formalization_only'] }),
+    );
+
+    expect(plan.blockerReasons).toEqual([]);
+    expect(plan.nextRepairAction).not.toMatch(/keep capped/i);
   });
 
   it('prioritizes source and description repair before PI identity', () => {
@@ -206,6 +230,8 @@ describe('visibilityRepairQueueService', () => {
     findProgram: vi.fn(),
     updateProgram: vi.fn(),
     runGate: vi.fn(),
+    findLeadCandidateEntry: facultyLeadCandidate,
+    findProtectedLeadEdge: noProtectedLeadEdge,
     ...overrides,
   });
 
@@ -311,6 +337,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -341,6 +369,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -367,6 +397,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn().mockResolvedValue(undefined),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -420,6 +452,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -473,6 +507,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -521,6 +557,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn().mockResolvedValue(undefined),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -571,6 +609,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -610,6 +650,8 @@ describe('visibilityRepairQueueService', () => {
       findResearchEntityMembers: vi.fn().mockResolvedValue([]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -663,6 +705,8 @@ describe('visibilityRepairQueueService', () => {
       findResearchEntityMembers: vi.fn().mockResolvedValue([]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -709,6 +753,8 @@ describe('visibilityRepairQueueService', () => {
       findResearchEntityMembers: vi.fn().mockResolvedValue([]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -757,6 +803,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn().mockResolvedValue(undefined),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -787,6 +835,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn().mockResolvedValue(undefined),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -825,6 +875,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn().mockResolvedValue(undefined),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0, promoted: 0 } }),
     };
 
@@ -853,6 +905,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -889,6 +943,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -918,6 +974,8 @@ describe('visibilityRepairQueueService', () => {
       findResearchEntityMembers: vi.fn().mockResolvedValue([]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -966,6 +1024,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -1024,6 +1084,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -1093,6 +1155,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1141,6 +1205,8 @@ describe('visibilityRepairQueueService', () => {
       findResearchEntityMembers: vi.fn().mockResolvedValue([]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -1198,6 +1264,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1257,6 +1325,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1316,6 +1386,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1374,6 +1446,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1431,6 +1505,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1488,6 +1564,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1552,6 +1630,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1612,6 +1692,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -1671,6 +1753,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -1727,6 +1811,8 @@ describe('visibilityRepairQueueService', () => {
       ]),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1769,6 +1855,8 @@ describe('visibilityRepairQueueService', () => {
       upsertResearchEntityMember: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1812,6 +1900,8 @@ describe('visibilityRepairQueueService', () => {
       upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -1868,6 +1958,8 @@ describe('visibilityRepairQueueService', () => {
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -1889,6 +1981,49 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
+  });
+
+  it('attaches no PI who asked to be removed from the directory, and says why', async () => {
+    const deps = {
+      findOpenQueueItems: vi
+        .fn()
+        .mockResolvedValue([queueItem({ blockerReasons: ['missing_lead'] })]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        name: 'Example Faculty Research',
+        websiteUrl: 'https://medicine.yale.edu/profile/example-faculty/',
+        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty/'],
+      }),
+      updateResearchEntity: vi.fn(),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
+      findUserByProfileUrl: vi.fn().mockResolvedValue({
+        _id: '64a000000000000000000001',
+        fname: 'Example',
+        lname: 'Faculty',
+        profileUrls: { medicine: 'https://medicine.yale.edu/profile/example-faculty/' },
+      }),
+      isRemovedByRequest: vi.fn().mockResolvedValue(true),
+      upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    const report = await runVisibilityRepairQueue(
+      { mode: 'apply', collection: 'research', stage: 'pi_identity', limit: 1 },
+      deps,
+    );
+
+    expect(deps.isRemovedByRequest).toHaveBeenCalledWith('64a000000000000000000001');
+    expect(deps.upsertResearchEntityMember).not.toHaveBeenCalled();
+    expect(report.attempts[0]).toMatchObject({
+      applied: false,
+      status: 'blocked',
+      remainingBlockers: expect.arrayContaining(['missing_lead', 'removed_by_request']),
+    });
   });
 
   it('keeps duplicate-risk PI repairs blocked after attaching an exact PI member', async () => {
@@ -1917,6 +2052,8 @@ describe('visibilityRepairQueueService', () => {
       upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -1967,6 +2104,8 @@ describe('visibilityRepairQueueService', () => {
       upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -2021,6 +2160,8 @@ describe('visibilityRepairQueueService', () => {
       upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn(),
     };
 
@@ -2060,6 +2201,8 @@ describe('visibilityRepairQueueService', () => {
       findUserByProfileUrl: vi.fn().mockResolvedValue(null),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -2121,6 +2264,8 @@ describe('visibilityRepairQueueService', () => {
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
     };
 
@@ -2168,6 +2313,8 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn().mockResolvedValue(undefined),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
     };
 
@@ -2194,6 +2341,92 @@ describe('visibilityRepairQueueService', () => {
       expect.objectContaining({
         studentVisibilityOverrideTier: 'suppressed',
         studentVisibilitySuppressionReason: expect.stringContaining('archive_review'),
+      }),
+    );
+  });
+
+  it('records a coded reason, keeps the earlier entries, and audits a suppression it writes (#5856)', async () => {
+    const earlierReason = 'fixture_note: an operator recorded this earlier';
+    const deps = {
+      findOpenQueueItems: vi
+        .fn()
+        .mockResolvedValue([queueItem({ blockerReasons: ['inactive_at_yale', 'archive_review'] })]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi
+        .fn()
+        .mockResolvedValue({ studentVisibilitySuppressionReason: earlierReason }),
+      updateResearchEntity: vi.fn().mockResolvedValue(undefined),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      recordOverrideAudit: vi.fn().mockResolvedValue(undefined),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    await runVisibilityRepairQueue(
+      { mode: 'apply', collection: 'research', stage: 'suppression', suppressUnsafe: true },
+      deps,
+    );
+
+    const reason = repairQueueSuppressionReason(['inactive_at_yale', 'archive_review']);
+    expect(normalizeOverrideReason(reason)).toBe(reason);
+    expect(deps.updateResearchEntity).toHaveBeenCalledWith(
+      'entity-1',
+      expect.objectContaining({
+        studentVisibilityOverrideTier: 'suppressed',
+        studentVisibilitySuppressionReason: `${earlierReason}, ${reason}`,
+        studentVisibilityReviewedAt: expect.any(Date),
+      }),
+    );
+    expect(deps.recordOverrideAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorNetid: 'agent:visibility-repair-queue',
+        action: 'research_entity.visibility_override.set',
+        targetType: 'research_entity',
+        targetId: 'entity-1',
+        summary: expect.objectContaining({ note: reason, status: 'set' }),
+      }),
+    );
+  });
+
+  it('never writes a suppression without a reason, and a dry run writes and audits nothing', async () => {
+    const deps = {
+      findOpenQueueItems: vi
+        .fn()
+        .mockResolvedValue([
+          queueItem({ collection: 'programs', blockerReasons: ['not_undergraduate_relevant'] }),
+        ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn(),
+      updateResearchEntity: vi.fn(),
+      findProgram: vi.fn().mockResolvedValue(null),
+      updateProgram: vi.fn().mockResolvedValue(undefined),
+      recordOverrideAudit: vi.fn().mockResolvedValue(undefined),
+      findLeadCandidateEntry: facultyLeadCandidate,
+      findProtectedLeadEdge: noProtectedLeadEdge,
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'programs', stage: 'suppression', suppressUnsafe: true },
+      deps,
+    );
+    expect(deps.updateProgram).not.toHaveBeenCalled();
+    expect(deps.recordOverrideAudit).not.toHaveBeenCalled();
+
+    await runVisibilityRepairQueue(
+      { mode: 'apply', collection: 'programs', stage: 'suppression', suppressUnsafe: true },
+      deps,
+    );
+    const [, patch] = deps.updateProgram.mock.calls[0];
+    expect(patch.studentVisibilitySuppressionReason).toBe(
+      repairQueueSuppressionReason(['not_undergraduate_relevant']),
+    );
+    expect(deps.recordOverrideAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'fellowship.visibility_override.set',
+        targetType: 'fellowship',
       }),
     );
   });

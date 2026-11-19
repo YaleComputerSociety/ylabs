@@ -10,6 +10,8 @@ import {
   isStudentReadyHardBlockerReason,
   isUnbackedLabNameShell,
   isStudentReadySoftSignalReason,
+  isStudentVisibilitySignalReason,
+  partitionStudentVisibilityReasons,
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
   recordHasNoUsablePublicDescription,
   researchEntityMeetsStudentReadyDefinition,
@@ -46,6 +48,8 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     expect([...STUDENT_READY_SOFT_SIGNAL_REASONS].sort()).toEqual(
       [
         'biography_description_fallback',
+        'formalization_only',
+        'lead_title_ruled_non_hosting_rank',
         'missing_alternate_access_path',
         'missing_application_route',
         'missing_facet_signal',
@@ -53,6 +57,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
         'missing_source_route',
         'missing_source_url',
         'source_backed_description',
+        'thin_card_description',
       ].sort(),
     );
     for (const soft of [
@@ -78,12 +83,38 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
       'exact_url_duplicate_risk',
       'lab_name_org_type_mismatch',
       'unbacked_lab_name',
-      'lead_title_ruled_non_hosting_rank',
       'inactive_at_yale',
       'not_undergraduate_relevant',
     ]) {
       expect(isStudentReadySoftSignalReason(hard)).toBe(false);
     }
+  });
+
+  it('treats every soft signal and positive evidence marker as a signal, and no blocker', () => {
+    for (const soft of STUDENT_READY_SOFT_SIGNAL_REASONS) {
+      expect(isStudentVisibilitySignalReason(soft)).toBe(true);
+    }
+    expect(isStudentVisibilitySignalReason('official_source')).toBe(true);
+    expect(isStudentVisibilitySignalReason('application_route')).toBe(true);
+    for (const held of ['missing_lead', 'profile_identity_risk', 'operator_override']) {
+      expect(isStudentVisibilitySignalReason(held)).toBe(false);
+    }
+  });
+
+  it('partitions stored reasons into blocking reasons and signals, deduplicated', () => {
+    expect(
+      partitionStudentVisibilityReasons([
+        'source_backed_description',
+        ' missing_lead ',
+        'missing_facet_signal',
+        'missing_lead',
+        '',
+      ]),
+    ).toEqual({
+      blocking: ['missing_lead'],
+      signals: ['source_backed_description', 'missing_facet_signal'],
+    });
+    expect(partitionStudentVisibilityReasons(undefined)).toEqual({ blocking: [], signals: [] });
   });
 });
 
@@ -392,6 +423,51 @@ describe('computeResearchEntityStudentVisibility', () => {
     });
 
     expect(result.reasons).not.toContain('unusable_name');
+  });
+
+  it('serves a lab under the programme name its own lab site and key spell', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'programme-named-lab',
+        name: 'Quorvane Imaging Program',
+        slug: 'ysm-quorvane',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription:
+          'Uses positron emission tomography to study synaptic density in the brain.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering positron emission tomography of synaptic density.',
+        websiteUrl: 'https://medicine.yale.edu/lab/quorvane/',
+        sourceUrls: ['https://medicine.yale.edu/lab/quorvane/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
+  it('holds a person record titled with the programme its roster key names', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'programme-on-person-key',
+        name: 'Quorvane Associate Program',
+        slug: 'dept-quorvane-associate-program-avery-sloan-phd',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        shortDescription: 'Studies clinical training outcomes in associate programmes.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering clinical training outcomes.',
+        websiteUrl: 'https://medicine.yale.edu/quorvane/',
+        sourceUrls: ['https://medicine.yale.edu/quorvane/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
   });
 
   it('holds a person-scoped record named after an umbrella organization it does not lead', () => {
@@ -3218,6 +3294,62 @@ describe('a department research guidance page (#4285)', () => {
   });
 });
 
+describe('a department senior essay guidance page (#5298)', () => {
+  const seniorEssayGuide = {
+    title: 'Fixture Studies Senior Essay',
+    studentFacingCategory: 'Senior essay guidance',
+    programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+    entryMode: 'CONTACT_FACULTY',
+    summary:
+      'The department explains how its majors choose a senior essay topic and work with a faculty adviser.',
+    sourceUrl: 'https://fixture.yale.edu/undergraduate/senior-essay',
+    sourcePageTitle: 'The Senior Essay',
+    applicationLink: 'https://fixture.yale.edu/undergraduate/senior-essay',
+    undergraduateOnly: true,
+  };
+
+  it('is served as guidance under its own reason when its page title names a senior essay', () => {
+    const result = computeProgramStudentVisibility(seniorEssayGuide);
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('department_senior_essay_guidance');
+    expect(result.reasons).not.toContain('department_research_guidance');
+    expect(result.reasons).not.toContain('application_route');
+    expect(result.reasons).not.toContain('application_link_is_info_page');
+  });
+
+  it('stays held when the record states an application cycle', () => {
+    const result = computeProgramStudentVisibility({
+      ...seniorEssayGuide,
+      deadline: new Date('2099-02-01T00:00:00Z'),
+    });
+    expect(result.reasons).not.toContain('department_senior_essay_guidance');
+  });
+
+  it('stays held when its page title names an application, a deadline, funding or a form', () => {
+    for (const sourcePageTitle of [
+      'Senior Essay Application',
+      'Senior Essay Deadlines',
+      'Senior Essay Grants',
+      'Senior Essay Registration Form',
+      'Undergraduate Program',
+    ]) {
+      const result = computeProgramStudentVisibility({ ...seniorEssayGuide, sourcePageTitle });
+      expect(result.tier).not.toBe('student_ready');
+      expect(result.reasons).not.toContain('department_senior_essay_guidance');
+    }
+  });
+
+  it('stays held when the research guide kind carries a senior essay page title', () => {
+    const result = computeProgramStudentVisibility({
+      ...seniorEssayGuide,
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+    });
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).not.toContain('department_senior_essay_guidance');
+    expect(result.reasons).not.toContain('department_research_guidance');
+  });
+});
+
 describe('a stored card that repeats a useful body', () => {
   const lead = [
     { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
@@ -3455,6 +3587,52 @@ describe('a lab name backed only by a school section page', () => {
   });
 });
 
+describe('a lab name on a short Yale host', () => {
+  const LAB_NAME = 'Coastal Morphology Lab';
+  const labRow = (websiteUrl: string, siteDeclaredOwnNames?: string[]) => ({
+    entityType: 'LAB',
+    kind: 'lab',
+    name: LAB_NAME,
+    websiteUrl,
+    sourceUrls: [websiteUrl],
+    ...(siteDeclaredOwnNames ? { siteDeclaredOwnNames } : {}),
+  });
+
+  it.each(['https://cml.yale.edu/', 'https://cmlx.yale.edu/rf123/', 'https://www.cml.yale.edu/'])(
+    'is backed by an acronym host whose site declares the lab name: %s',
+    (url) => {
+      expect(isUnbackedLabNameShell(labRow(url, [LAB_NAME]))).toBe(false);
+    },
+  );
+
+  it.each(['https://cml.yale.edu/~rf123/', 'https://zoo.cml.yale.edu/~rf123/'])(
+    'is backed by a netid page whose site declares the lab name: %s',
+    (url) => {
+      expect(isUnbackedLabNameShell(labRow(url, [LAB_NAME]))).toBe(false);
+    },
+  );
+
+  it.each(['https://cml.yale.edu/', 'https://cmlx.yale.edu/', 'https://cml.yale.edu/~rf123/'])(
+    'is still unbacked by a short host whose site declares no name: %s',
+    (url) => {
+      expect(isUnbackedLabNameShell(labRow(url))).toBe(true);
+    },
+  );
+
+  it('is still unbacked when the site declares a different name', () => {
+    expect(isUnbackedLabNameShell(labRow('https://cml.yale.edu/', ['Harbor Sediment Lab']))).toBe(
+      true,
+    );
+  });
+
+  it.each(['https://som.yale.edu/', 'https://seas.yale.edu/~rf123/', 'https://news.yale.edu/'])(
+    'is still unbacked by a short school or department host: %s',
+    (url) => {
+      expect(isUnbackedLabNameShell(labRow(url, [LAB_NAME]))).toBe(true);
+    },
+  );
+});
+
 describe("a lab heading composed from the lead's full name", () => {
   const labRow = (name: string, websiteUrl: string) => ({
     entityType: 'LAB',
@@ -3649,5 +3827,59 @@ describe('a person-scoped biography that states no research', () => {
   it('is not held when the card states the research', () => {
     const result = visibility(biography, 'Studies graphic design and public art.');
     expect(result.reasons).not.toContain('biography_without_research');
+  });
+});
+
+describe('a blank body beside a card', () => {
+  const visibility = (shortDescription: string) =>
+    computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'blank-body-card-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        fullDescription: '',
+        shortDescription,
+        sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+      ],
+    });
+
+  it('records the hold as a missing description rather than a thin one', () => {
+    const result = visibility('Teaches undergraduate courses on glaciology and sea level rise.');
+    expect(result.reasons).toContain('missing_description');
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('stays a suppressed biography shell, not a directory shell, when no lead is attached', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'blank-body-card-shell-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: 'https://example.yale.edu/humans/faculty',
+        sourceUrls: ['https://example.yale.edu/humans/faculty'],
+        fullDescription: '',
+        shortDescription: 'Teaches undergraduate courses on glaciology and sea level rise.',
+        researchAreas: [],
+      },
+      leadMembers: [],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['profile_biography_shell', 'missing_description']),
+    );
+    expect(result.reasons).not.toContain('generic_directory_shell');
+    expect(result.reasons).not.toContain('thin_description');
   });
 });

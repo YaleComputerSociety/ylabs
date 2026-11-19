@@ -5,6 +5,8 @@ import {
   NAMED_PROGRAM_DATE_SOURCE,
   NUMERIC_PROGRAM_DATE_SOURCE,
   OPTIONAL_STATED_CLOCK_TIME,
+  nextCycleDeadline,
+  parseProgramDate,
 } from './programDeadline';
 import { sanitizedObservedFellowshipProse } from '../fellowshipProse';
 
@@ -198,4 +200,189 @@ export function nearestDeadlineText(text: string): string {
     if (date) return date;
   }
   return '';
+}
+
+const PROGRAM_DATE_SOURCE = `(?:${NAMED_PROGRAM_DATE_SOURCE}|${NUMERIC_PROGRAM_DATE_SOURCE})`;
+
+const STATED_OPENING = new RegExp(
+  `\\bapplications?\\b(?:\\s+period\\b)?[^.;]{0,100}?\\b(?:will\\s+)?(?:re)?open(?:s|ed)?\\s+(?:on\\s+)?(${PROGRAM_DATE_SOURCE})`,
+  'gi',
+);
+
+const STATED_CLOSING = new RegExp(
+  `\\bapplications?\\b[^.;]{0,100}?\\b(?:will\\s+)?clos(?:e|es|ed)\\s+(?:on\\s+)?(${PROGRAM_DATE_SOURCE})`,
+  'gi',
+);
+
+const ACTIVE_APPLICATION_LANGUAGE =
+  /\bapplications?\s+(?:are\s+)?(?:now\s+)?open\b(?!\s+(?:on\s+)?(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*|\d))|\bcurrently accepting applications\b|\baccepting applications\b|\bapplications?\s+(?:are\s+)?accepted\b/i;
+
+export interface StatedApplicationWindow {
+  opensAt?: Date;
+  closesAt?: Date;
+}
+
+const STATES_ITS_YEAR = /\b\d{4}\b|\d{1,2}\/\d{1,2}\/\d{2,4}/;
+
+const WEEKDAY = /\b(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\b/i;
+
+const WEEKDAY_ORDER = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+];
+
+const newYorkWeekday = (date: Date): string =>
+  date.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/New_York' }).toLowerCase();
+
+/**
+ * Only a date that states its own year can move a window: a yearless date is rolled to the
+ * next year by inference, which reads a stale page's last cycle as the coming one, and a stated
+ * weekday that does not fit the date marks it as another year's (#6453, #6399).
+ */
+function windowDate(dateText: string, boundary: 'opens' | 'deadline', referenceDate: Date) {
+  if (!STATES_ITS_YEAR.test(dateText)) return undefined;
+  const date = parseProgramDate(dateText, boundary, referenceDate);
+  if (!date) return undefined;
+  const weekday = WEEKDAY.exec(dateText)?.[1].toLowerCase();
+  const boundaryDay = boundary === 'deadline' ? new Date(date.getTime() - 1) : date;
+  if (weekday && WEEKDAY_ORDER.includes(weekday) && newYorkWeekday(boundaryDay) !== weekday) {
+    return undefined;
+  }
+  return date;
+}
+
+const statedDates = (
+  pattern: RegExp,
+  text: string,
+  boundary: 'opens' | 'deadline',
+  referenceDate: Date,
+) =>
+  [...text.matchAll(pattern)]
+    .map((match) => windowDate(match[1], boundary, referenceDate))
+    .filter((date): date is Date => date !== undefined);
+
+/**
+ * The application window a program page states in prose ("Applications open December 15, 2025
+ * and close on March 13, 2026", "the application period will open November 15") (#6453): the
+ * latest stated opening and the closing a student can still meet. A closing before the latest
+ * opening belongs to an earlier cycle, so it is dropped.
+ */
+export function statedApplicationWindow(
+  text: string,
+  referenceDate: Date,
+): StatedApplicationWindow {
+  const normalized = normalizeWhitespace(text).replace(/([a-z])([A-Z])/g, '$1 $2');
+  const openings = statedDates(STATED_OPENING, normalized, 'opens', referenceDate);
+  const opensAt = openings.length
+    ? openings.reduce((latest, date) => (date > latest ? date : latest))
+    : undefined;
+  const closing = nextCycleDeadline(
+    statedDates(STATED_CLOSING, normalized, 'deadline', referenceDate),
+    referenceDate,
+  );
+  const closesAt = closing && opensAt && closing < opensAt ? undefined : closing;
+  return { ...(opensAt ? { opensAt } : {}), ...(closesAt ? { closesAt } : {}) };
+}
+
+/** Open-window language; a dated opening ("applications open December 1") is not one. */
+export function hasActiveApplicationLanguage(text: string): boolean {
+  return ACTIVE_APPLICATION_LANGUAGE.test(text);
+}
+
+/**
+ * Whether a program page's own window is open at `referenceDate`: never before a stated
+ * opening, then by the deadline or stated closing, then open once a stated opening of the
+ * current cycle (the last six months) has passed, and only otherwise by open-window language
+ * (#6453). An older opening with no closing says nothing about this cycle.
+ */
+const CURRENT_CYCLE_MS = 183 * 24 * 60 * 60 * 1000;
+
+export function acceptingByStatedWindow(
+  window: StatedApplicationWindow,
+  deadline: Date | undefined,
+  referenceDate: Date,
+  bodyText: string,
+): boolean {
+  const now = referenceDate.getTime();
+  if (window.opensAt && window.opensAt.getTime() > now) return false;
+  const closesAt = deadline ?? window.closesAt;
+  if (closesAt) return closesAt.getTime() > now;
+  if (window.opensAt && now - window.opensAt.getTime() <= CURRENT_CYCLE_MS) return true;
+  return hasActiveApplicationLanguage(bodyText);
+}
+
+const ROLLING_REVIEW =
+  /\b(?:are|is)\s+(?:reviewed|accepted|considered|evaluated)\s+on\s+a\s+rolling\s+basis\b|\brolling\s+(?:review|admissions?)\b|\bapply\s+(?:at\s+)?any\s*time\b|\breviews?\s+applications\s+(?:regularly|continuously|on\s+an\s+ongoing\s+basis|as\s+they\s+(?:are\s+)?(?:received|come\s+in))\b/i;
+
+const CLAUSE_NEGATION = /\b(?:no|not|never|no\s+longer|cannot|can't|nor)\b/i;
+
+/**
+ * Whether a page says applications are reviewed on a rolling basis now (#6458). Past tense is
+ * not, and neither is a clause that carries a negation ("there is no rolling review", "rolling
+ * admissions are no longer offered", "you cannot apply at any time"), which fails closed.
+ */
+export function statesRollingReview(text: string): boolean {
+  return unnegatedClauses(text).some((clause) => ROLLING_REVIEW.test(clause));
+}
+
+const unnegatedClauses = (text: string): string[] =>
+  normalizeWhitespace(text)
+    .split(/[.;!?:]|,\s+(?:but|so|and|or)\b/)
+    .filter((clause) => !CLAUSE_NEGATION.test(clause));
+
+const ROLLING_APPLICATIONS = /\b(?:applications?|submissions?)\b.{0,40}?\b(?:are|is)\s+rolling\b/i;
+
+const WHILE_FUNDS_REMAIN =
+  /\b(?:as\s+long\s+as|while|until)\s+(?:the\s+)?(?:funds?|funding)\s+(?:remains?|lasts?|(?:is|are)\s+(?:still\s+)?(?:available|exhausted|depleted|expended)|runs?\s+out)\b/i;
+
+const DATED_BOUND =
+  /\b(?:until|through|before|by)\s+(?:the\s+)?(?:deadline|closing\s+date|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d|\d{1,2}\/\d{1,2})/i;
+
+const HARD_CLOSE =
+  /\bfinal\s+deadline\b|\bapplications?\s+(?:will\s+)?close[sd]?\s+(?:on\s+)?(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d|\d{1,2}\/\d{1,2})|\bmust\s+be\s+(?:received|submitted)\s+(?:by|before|no\s+later\s+than)\b/i;
+
+const NO_APPLICATIONS_AFTER =
+  /\bno\s+(?:late\s+)?applications?\s+(?:will\s+be\s+|are\s+|is\s+)?(?:accepted|considered|reviewed)\s+after\b/i;
+
+const ACADEMIC_YEAR = /\b(20\d{2})\s*[-\u2013/]\s*(?:20)?\d{2}\b/g;
+const CALENDAR_YEAR = /\b(20\d{2})\b/g;
+
+const academicCycleStartYear = (referenceDate: Date): number =>
+  referenceDate.getUTCMonth() >= 6
+    ? referenceDate.getUTCFullYear()
+    : referenceDate.getUTCFullYear() - 1;
+
+const namesEarlierCycle = (clause: string, referenceDate: Date): boolean => {
+  const cycleStart = academicCycleStartYear(referenceDate);
+  const academicStarts = [...clause.matchAll(ACADEMIC_YEAR)].map((match) => Number(match[1]));
+  if (academicStarts.length > 0) return Math.max(...academicStarts) < cycleStart;
+  const years = [...clause.matchAll(CALENDAR_YEAR)].map((match) => Number(match[1]));
+  return years.length > 0 && Math.max(...years) < cycleStart;
+};
+
+const statesHardClose = (text: string): boolean =>
+  NO_APPLICATIONS_AFTER.test(normalizeWhitespace(text)) ||
+  unnegatedClauses(text).some((clause) => HARD_CLOSE.test(clause));
+
+/**
+ * Whether a page says applications stay open past any nominal deadline (#6480): rolling review
+ * or applying while funds remain, in a clause with no negation, no dated bound ("rolling until
+ * March 1") and no earlier cycle ("for the 2025-26 cycle", #6399), on a page that states no hard
+ * close anywhere ("final deadline", "no applications accepted after").
+ */
+export function statesOpenEndedApplications(text: string, referenceDate: Date): boolean {
+  if (statesHardClose(text)) return false;
+  return unnegatedClauses(text).some(
+    (clause) =>
+      (ROLLING_REVIEW.test(clause) ||
+        ROLLING_APPLICATIONS.test(clause) ||
+        WHILE_FUNDS_REMAIN.test(clause)) &&
+      !DATED_BOUND.test(clause) &&
+      !namesEarlierCycle(clause, referenceDate),
+  );
 }

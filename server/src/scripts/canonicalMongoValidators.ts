@@ -4,11 +4,12 @@
  * Dry-run is the default.
  * Apply requires a reviewed dry-run artifact and an explicit confirmation flag.
  */
+import { holdDevApplyLeaseOnDb } from '../db/devWriteLease';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { MongoClient } from 'mongodb';
+import { MongoClient, type Db } from 'mongodb';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -35,7 +36,8 @@ import {
   parseOperatorDatabaseEnvironment,
   type OperatorDatabaseEnvironment,
 } from './operatorDatabaseEnvironment';
-import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { resolveSafeJsonReportOutputPath, resolveSafeJsonReportPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -570,13 +572,26 @@ export async function runCanonicalMongoValidators(
   const configuredDatabaseName = databaseNameFromMongoUrl(mongoUrl);
   assertOperatorEnvironmentMatchesDatabase(args.environment, configuredDatabaseName);
 
-  const client = options.client ?? (new MongoClient(mongoUrl) as unknown as ValidatorMongoClient);
+  const client =
+    options.client ??
+    (new MongoClient(mongoUrl, { monitorCommands: true }) as unknown as ValidatorMongoClient);
   let primaryError: unknown;
   let failed = false;
+  let releaseDevWriteLease: () => Promise<void> = async () => undefined;
   try {
     await client.connect();
     const db = client.db();
     assertOperatorEnvironmentMatchesDatabase(args.environment, db.databaseName);
+    if (args.apply) {
+      releaseDevWriteLease = await holdDevApplyLeaseOnDb(
+        {
+          db: db as unknown as Db,
+          databaseName: db.databaseName,
+          host: new URL(mongoUrl).hostname,
+        },
+        'model-refactor:validators',
+      );
+    }
 
     const currentCollections = await readCurrentCanonicalMongoValidators(db);
     const currentReport = buildReport({
@@ -719,12 +734,13 @@ export async function runCanonicalMongoValidators(
     primaryError = error;
     throw error;
   } finally {
+    await releaseDevWriteLease().catch(() => undefined);
     await closeValidatorMongoClient(client, failed, primaryError);
   }
 }
 
 export function readCanonicalMongoValidatorArtifact(target: string): unknown {
-  const safeTarget = resolveSafeJsonReportOutputPath(target, '--apply-from');
+  const safeTarget = resolveSafeJsonReportPath(target, '--apply-from');
   return JSON.parse(fs.readFileSync(safeTarget, 'utf8')) as unknown;
 }
 
@@ -734,7 +750,7 @@ export function writeCanonicalMongoValidatorReport(
 ): void {
   if (!target) return;
   const safeTarget = resolveSafeJsonReportOutputPath(target);
-  fs.writeFileSync(safeTarget, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeTarget, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 /**
@@ -793,7 +809,7 @@ async function main(): Promise<void> {
     resolveSafeJsonReportOutputPath(args.output);
   }
   if (args.applyFrom) {
-    resolveSafeJsonReportOutputPath(args.applyFrom, '--apply-from');
+    resolveSafeJsonReportPath(args.applyFrom, '--apply-from');
   }
   if (args.applyFrom && args.output && pathsReferToSameFile(args.applyFrom, args.output)) {
     throw new Error('--output must not overwrite the reviewed --apply-from artifact.');

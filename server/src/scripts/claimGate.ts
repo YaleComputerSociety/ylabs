@@ -13,6 +13,7 @@ import {
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { connectScriptMongo } from '../db/connections';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -168,7 +169,7 @@ export function writeClaimGateOutput(value: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(value, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 async function main(): Promise<void> {

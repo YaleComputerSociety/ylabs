@@ -1,5 +1,6 @@
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import mongoose from 'mongoose';
 import { isListingOrIndexUrl } from '../../utils/researchHomeWebsiteUrl';
 import {
@@ -418,7 +419,10 @@ function htmlToText(html: string): string {
   const $ = cheerio.load(html);
   $(NON_SUBJECT_CONTENT_SELECTOR).remove();
   removeNonSelfDeclaringContent($);
-  return textValue($('body').text() || $.root().text()).slice(0, MAX_SCAN_CHARS);
+  return textValue(
+    extractElementTextWithBlockSeparators($('body')[0]) ||
+      extractElementTextWithBlockSeparators($.root()[0]),
+  ).slice(0, MAX_SCAN_CHARS);
 }
 
 function proseTextFromPage(html: string): string {
@@ -485,7 +489,6 @@ export function researchAreaObservationsFromExtraction(
 async function defaultFetchPage(url: string): Promise<FetchedAreaPage | null> {
   const page = await fetchPageWithPolicy(url, {
     timeoutMs: 10_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     maxRedirects: 5,
   });
   return { url: page.url, html: page.html };

@@ -76,6 +76,22 @@ const richPayload: LabDetailPayload = {
       departments: ['Radiology'],
     },
   ],
+  alsoLedResearchEntitiesByLead: [
+    {
+      leadName: 'Alex Investigator',
+      researchEntities: [
+        {
+          id: 'alex-investigator-faculty-research',
+          slug: 'alex-investigator-faculty-research',
+          name: 'Alex Investigator Faculty Research',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          departments: ['Neurology'],
+          blurb: 'Studies memory consolidation during sleep.',
+        },
+      ],
+    },
+  ],
   similarResearchEntities: [
     {
       id: 'entity-3',
@@ -124,6 +140,7 @@ describe('research-home detail accessibility', () => {
     const { container } = renderLabDetail(richPayload);
     await screen.findByText(ENTITY_NAME);
     await screen.findByText('More like this');
+    await screen.findByRole('heading', { name: 'Also led by Alex Investigator' });
     await expectNoAxeViolations(container);
   });
 

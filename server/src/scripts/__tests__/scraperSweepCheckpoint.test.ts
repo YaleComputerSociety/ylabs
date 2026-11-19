@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   SweepCheckpointStore,
   checkpointPathForMode,
+  parseSweepCheckpoint,
   readSweepCheckpoint,
   sourceStepId,
   stageStepId,
@@ -307,5 +308,48 @@ describe('scraper sweep checkpoint', () => {
     expect(store.isDone(sourceStepId('yale-directory'))).toBe(true);
     expect(readSweepCheckpoint(checkpointPath)?.steps[stageStepId('search-sync')]).toBeUndefined();
     expect(store.clearStageSteps(now())).toEqual([]);
+  });
+
+  it('offers a recorded step result only once the checkpoint was restored from the run record (#5209)', () => {
+    const checkpointPath = path.join(dir, 'checkpoint.json');
+    const { store } = SweepCheckpointStore.start({
+      mode: 'development-full',
+      checkpointPath,
+      outputDirectory: path.join(dir, 'out'),
+      now: now(),
+      restart: false,
+    });
+    const row = { sourceName: 'yale-directory', status: 'succeeded', observationCount: 3 };
+    store.markDone(sourceStepId('yale-directory'), 'source', 0, now(), undefined, row);
+    expect(store.recordedResult(sourceStepId('yale-directory'))).toBeUndefined();
+
+    const recorded = readSweepCheckpoint(checkpointPath)!;
+    expect(recorded.steps[sourceStepId('yale-directory')].result).toEqual(row);
+    writeSweepCheckpointAtomic(checkpointPath, { ...recorded, restoredFromRunRecord: true });
+    const { store: restored, resumed } = SweepCheckpointStore.start({
+      mode: 'development-full',
+      checkpointPath,
+      outputDirectory: path.join(dir, 'fresh'),
+      now: now(),
+      restart: false,
+    });
+    expect(resumed).toBe(true);
+    expect(restored.recordedResult(sourceStepId('yale-directory'))).toEqual(row);
+    restored.markFailed(stageStepId('visibility-gate'), 'stage', 1, now());
+    expect(restored.recordedResult(stageStepId('visibility-gate'))).toBeUndefined();
+  });
+
+  it('parses a checkpoint read from the run record and refuses one without its identity', () => {
+    expect(
+      parseSweepCheckpoint({ mode: 'development-full', outputDirectory: '/tmp/x' }),
+    ).toMatchObject({
+      flags: '',
+      ownerPid: 0,
+      codeSha: null,
+      codeDrift: [],
+      steps: {},
+    });
+    expect(parseSweepCheckpoint({ outputDirectory: '/tmp/x' })).toBeUndefined();
+    expect(parseSweepCheckpoint(null)).toBeUndefined();
   });
 });

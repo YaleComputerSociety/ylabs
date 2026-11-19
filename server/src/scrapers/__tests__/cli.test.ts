@@ -192,19 +192,31 @@ describe('scraper CLI helpers', () => {
     expect(() =>
       cli.buildScraperCliPreflight(
         'materialize',
-        { run: 'run-1' },
+        { run: 'run-1', 'confirm-materialize': true },
         'mongodb+srv://example.mongodb.net/Development',
         {
           SCRAPER_ENV: 'development',
           ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
         } as NodeJS.ProcessEnv,
       ),
-    ).toThrow(/--confirm-materialize is required/);
+    ).toThrow(/the command line has no --apply/);
+
+    expect(() =>
+      cli.buildScraperCliPreflight(
+        'materialize',
+        { run: 'run-1', apply: true },
+        'mongodb+srv://example.mongodb.net/Development',
+        {
+          SCRAPER_ENV: 'development',
+          ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+        } as NodeJS.ProcessEnv,
+      ),
+    ).toThrow(/--confirm-materialize is required with --apply/);
 
     expect(
       cli.buildScraperCliPreflight(
         'materialize',
-        { run: 'run-1', 'confirm-materialize': true },
+        { run: 'run-1', apply: true, 'confirm-materialize': true },
         'mongodb+srv://example.mongodb.net/Development',
         {
           SCRAPER_ENV: 'development',
@@ -239,6 +251,55 @@ describe('scraper CLI helpers', () => {
         },
       },
     });
+  });
+
+  it('parses a user field scope for materialize only (#5816)', async () => {
+    const cli = await import('../cliHelpers');
+    const env = { SCRAPER_ENV: 'development' } as NodeJS.ProcessEnv;
+    const mongoUrl = 'mongodb+srv://example.mongodb.net/Development';
+
+    expect(
+      cli.buildScraperCliPreflight(
+        'materialize',
+        { run: 'run-1', 'only-fields': 'email,displayName', output: '/tmp/scope.json' },
+        mongoUrl,
+        env,
+      ),
+    ).toMatchObject({
+      command: 'materialize',
+      onlyFields: ['identifiers.email', 'displayName'],
+      guard: { options: { dryRun: true } },
+    });
+    expect(
+      cli.buildScraperCliPreflight('materialize', { run: 'run-1' }, mongoUrl, env),
+    ).toMatchObject({ onlyFields: [] });
+    expect(() =>
+      cli.buildScraperCliPreflight(
+        'materialize',
+        { run: 'run-1', 'only-fields': 'status', output: '/tmp/scope.json' },
+        mongoUrl,
+        env,
+      ),
+    ).toThrow(/Unsupported --only-fields field: status/);
+    expect(() =>
+      cli.buildScraperCliPreflight(
+        'materialize',
+        { run: 'run-1', 'only-fields': 'email' },
+        mongoUrl,
+        env,
+      ),
+    ).toThrow(/--only-fields requires --output/);
+    expect(() =>
+      cli.buildScraperCliPreflight(
+        'run',
+        { source: 'orcid', 'only-fields': 'email' },
+        mongoUrl,
+        env,
+      ),
+    ).toThrow(/--only-fields applies only to scrape materialize/);
+    expect(() => cli.parseArgs(['node', 'cli.ts', 'materialize', '--only-fields'])).toThrow(
+      /--only-fields requires a value/,
+    );
   });
 
   it('builds materialization review artifacts from materialize, visibility, and run reports', async () => {
@@ -404,7 +465,7 @@ describe('a write run that materializes nothing', () => {
     });
     expect(warning).toContain('run-1');
     expect(warning).toContain('1000 observation(s) and materialized none');
-    expect(warning).toContain('scrape materialize --run run-1 --confirm-materialize');
+    expect(warning).toContain('scrape materialize --run run-1 --apply --confirm-materialize');
     expect(warning).toContain('observations:catch-up-materialize');
   });
 
@@ -430,7 +491,7 @@ describe('a scrape command whose run or materialization did not complete cleanly
     expect(outcome.errors.join(' ')).toContain('3 row error(s)');
     expect(outcome.errors.join(' ')).toContain('student visibility gate was skipped');
     expect(outcome.errors.join(' ')).toContain(
-      'scrape materialize --run run-1 --confirm-materialize',
+      'scrape materialize --run run-1 --apply --confirm-materialize',
     );
   });
 

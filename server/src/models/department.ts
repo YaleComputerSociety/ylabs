@@ -2,6 +2,7 @@
  * Mongoose schema and model for academic departments with category-based color mapping.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export enum DepartmentCategory {
   COMPUTING_AI = 'Computing & AI',

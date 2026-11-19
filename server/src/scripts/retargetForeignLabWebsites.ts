@@ -28,6 +28,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { RoleAssignment } from '../models/roleAssignment';
 import { Researcher } from '../models/researcher';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
@@ -60,6 +61,7 @@ import { runStudentVisibilityGate } from '../services/studentVisibilityGateServi
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -497,9 +499,11 @@ function correctGraftedName(
 export async function retireSiteGraftFromHolder(row: RetargetRow): Promise<{
   observationsRetired: number;
   documentFieldsCorrected: number;
+  lastCitationStampsKept: number;
 }> {
   const siteHost = hostOf(row.websiteUrl);
-  if (!siteHost) return { observationsRetired: 0, documentFieldsCorrected: 0 };
+  if (!siteHost)
+    return { observationsRetired: 0, documentFieldsCorrected: 0, lastCitationStampsKept: 0 };
 
   const live = await Observation.find({
     entityType: 'researchEntity',
@@ -582,8 +586,10 @@ export async function retireSiteGraftFromHolder(row: RetargetRow): Promise<{
   }
 
   let documentFieldsCorrected = 0;
+  let lastCitationStampsKept = 0;
   if (Object.keys(set).length > 0 || Object.keys(unset).length > 0) {
-    const result = await ResearchEntity.updateOne(
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { slug: row.holderSlug },
       {
         ...(Object.keys(set).length > 0 ? { $set: set } : {}),
@@ -593,8 +599,13 @@ export async function retireSiteGraftFromHolder(row: RetargetRow): Promise<{
     documentFieldsCorrected = result.modifiedCount
       ? Object.keys(set).length + Object.keys(unset).filter((key) => !key.includes('.')).length
       : 0;
+    if (result.withheld.length > 0) lastCitationStampsKept = 1;
   }
-  return { observationsRetired: retired.modifiedCount || 0, documentFieldsCorrected };
+  return {
+    observationsRetired: retired.modifiedCount || 0,
+    documentFieldsCorrected,
+    lastCitationStampsKept,
+  };
 }
 
 /**
@@ -613,6 +624,7 @@ export async function applyRetargetRows(rows: RetargetRow[]): Promise<{
   observationsRetired: number;
   visibilityTierChanges: number;
   indexSyncFailures: number;
+  lastCitationStampsKept: number;
   touchedSlugs: string[];
 }> {
   const retargets = rows.filter((row) => row.decision === 'RETARGET' && row.targetSlug);
@@ -623,6 +635,7 @@ export async function applyRetargetRows(rows: RetargetRow[]): Promise<{
     observationsRetired: 0,
     visibilityTierChanges: 0,
     indexSyncFailures: 0,
+    lastCitationStampsKept: 0,
     touchedSlugs: [] as string[],
   };
   if (retargets.length === 0) return summary;
@@ -693,10 +706,12 @@ export async function applyRetargetRows(rows: RetargetRow[]): Promise<{
     summary.observationsRetired += retired.modifiedCount || 0;
 
     if (!row.manuallyLockedFields.includes('websiteUrl')) {
-      const holderResult = await ResearchEntity.updateOne(
+      const holderResult = await updateOneKeepingLastCitation(
+        ResearchEntity,
         { slug: row.holderSlug, websiteUrl: row.websiteUrl },
         { $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' } },
       );
+      if (holderResult.withheld.length > 0) summary.lastCitationStampsKept += 1;
       if (holderResult.modifiedCount) {
         summary.holderFieldsCleared += holderResult.modifiedCount;
         summary.touchedSlugs.push(row.holderSlug);
@@ -713,17 +728,22 @@ export async function applyRetargetRows(rows: RetargetRow[]): Promise<{
       remainingSourceUrls.length <
       (((holderSourceUrls as { sourceUrls?: unknown } | null)?.sourceUrls as string[]) || []).length
     ) {
-      await ResearchEntity.updateOne(
+      const trimmed = await updateOneKeepingLastCitation(
+        ResearchEntity,
         { slug: row.holderSlug },
         { $set: { sourceUrls: remainingSourceUrls } },
       );
-      summary.holderFieldsCleared += 1;
-      summary.touchedSlugs.push(row.holderSlug);
+      if (trimmed.withheld.length > 0) summary.lastCitationStampsKept += 1;
+      if (trimmed.modifiedCount > 0) {
+        summary.holderFieldsCleared += 1;
+        summary.touchedSlugs.push(row.holderSlug);
+      }
     }
 
     const graftRemoval = await retireSiteGraftFromHolder(row);
     summary.observationsRetired += graftRemoval.observationsRetired;
     summary.holderFieldsCleared += graftRemoval.documentFieldsCorrected;
+    summary.lastCitationStampsKept += graftRemoval.lastCitationStampsKept;
     if (graftRemoval.documentFieldsCorrected > 0) summary.touchedSlugs.push(row.holderSlug);
   }
 
@@ -793,6 +813,7 @@ async function main() {
         holderFieldsCleared: 0,
         observationsRetired: 0,
         visibilityTierChanges: 0,
+        lastCitationStampsKept: 0,
         touchedSlugs: [],
       };
 
@@ -819,7 +840,7 @@ async function main() {
 
   if (safeOutput) {
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
 
   console.log(sanitizeLogValue(JSON.stringify({ ...report, rows: rows.slice(0, 40) }, null, 2)));

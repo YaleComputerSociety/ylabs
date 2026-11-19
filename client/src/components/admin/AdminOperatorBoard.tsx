@@ -6,7 +6,8 @@ import useLoadEffect from '../../hooks/useLoadEffect';
 
 type Tier = 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 type Risk = 'ok' | 'warn' | 'error';
-type QueueKind = 'blocking' | 'evidence' | 'review';
+type QueueKind = 'blocking' | 'evidence' | 'review' | 'withheld';
+type DecisionLaneKind = Exclude<QueueKind, 'withheld'>;
 type RepairStage =
   'source_description' | 'pi_identity' | 'action_evidence' | 'suppression' | 'review_exception';
 
@@ -21,6 +22,8 @@ interface QueueSample {
   slug?: string;
   tier: Tier;
   reasons: string[];
+  blockerReasons: string[];
+  signalReasons: string[];
   sourceUrl?: string;
   category?: string;
   summary?: string;
@@ -79,13 +82,12 @@ const EntitySampleLabel = ({
 interface ReasonCount {
   reason: string;
   count: number;
-  kind?: QueueKind;
 }
 
 interface QueueSummary {
   collection: 'research' | 'programs';
   reason: string;
-  kind?: QueueKind;
+  kind: QueueKind;
   count: number;
   nextAction: string;
   samples: QueueSample[];
@@ -510,48 +512,17 @@ const riskStyles: Record<Risk, string> = {
   error: 'border-red-200 bg-red-50 text-red-800',
 };
 
-const evidenceReasons = new Set([
-  'application_route',
-  'graduate_relevant',
-  'official_source',
-  'source_backed_description',
-  'undergraduate_relevant',
-]);
-
-const reviewDecisionReasons = new Set([
-  'application_source_only',
-  'archive_review',
-  'duplicate_risk',
-  'exact_url_duplicate_risk',
-  'formalization_only',
-  'not_undergraduate_relevant',
-]);
-
-const classifyReason = (reason: string): QueueKind => {
-  if (evidenceReasons.has(reason)) return 'evidence';
-  if (reviewDecisionReasons.has(reason)) return 'review';
-  if (
-    reason.startsWith('missing_') ||
-    ['inactive_at_yale', 'profile_fallback_only', 'thin_description'].includes(reason)
-  ) {
-    return 'blocking';
-  }
-  return 'review';
-};
-
-const uniqueReasons = (reasons: string[]) => [
-  ...new Set(reasons.map((reason) => reason.trim()).filter(Boolean)),
-];
-
-const splitReasons = (reasons: string[], primaryReason: string) => {
+const splitReasons = (
+  sample: Pick<QueueSample, 'blockerReasons' | 'signalReasons'>,
+  primaryReason: string,
+) => {
   const normalizedPrimaryReason = primaryReason.trim().toLowerCase();
-  const sampleReasons = uniqueReasons(reasons).filter(
-    (reason) => reason.toLowerCase() !== normalizedPrimaryReason,
-  );
+  const withoutPrimary = (reasons: string[] | undefined) =>
+    (reasons ?? []).filter((reason) => reason.toLowerCase() !== normalizedPrimaryReason);
 
   return {
-    blockers: sampleReasons.filter((reason) => classifyReason(reason) === 'blocking'),
-    signals: sampleReasons.filter((reason) => classifyReason(reason) === 'evidence'),
+    blockers: withoutPrimary(sample.blockerReasons),
+    signals: withoutPrimary(sample.signalReasons),
   };
 };
 
@@ -805,32 +776,32 @@ const queueKindStyles: Record<QueueKind, string> = {
   blocking: 'border-red-200 bg-red-50 text-red-700',
   evidence: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   review: 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-ink-soft',
+  withheld: 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-muted',
 };
 
-const queueKindRank: Record<QueueKind, number> = {
-  blocking: 0,
-  review: 1,
-  evidence: 2,
-};
+const QUEUES_PER_DECISION_LANE = 4;
 
-const decisionLaneCopy: Record<QueueKind, { title: string; eyebrow: string; description: string }> =
-  {
-    blocking: {
-      title: 'Must Fix Before Promotion',
-      eyebrow: 'Repair queue',
-      description: 'Rows that need source-backed facts before they can safely move up.',
-    },
-    review: {
-      title: 'Operator Decision Needed',
-      eyebrow: 'Review signal',
-      description: 'Rows that need an explicit keep, suppress, merge, or defer decision.',
-    },
-    evidence: {
-      title: 'Promotion Evidence',
-      eyebrow: 'Evidence signal',
-      description: 'Positive signals operators can use when deciding whether a row is ready.',
-    },
-  };
+const decisionLaneCopy: Record<
+  DecisionLaneKind,
+  { title: string; eyebrow: string; description: string }
+> = {
+  blocking: {
+    title: 'Must Fix Before Promotion',
+    eyebrow: 'Repair queue',
+    description: 'Rows that need source-backed facts before they can safely move up.',
+  },
+  review: {
+    title: 'Operator Decision Needed',
+    eyebrow: 'Review signal',
+    description: 'Rows that need an explicit keep, suppress, merge, or defer decision.',
+  },
+  evidence: {
+    title: 'Promotion Evidence',
+    eyebrow: 'Evidence signal',
+    description:
+      'Positive evidence and enrichment signals. None of them holds a row back on its own.',
+  },
+};
 
 const queueDecisionPrompt = (reason: string): string => {
   switch (reason) {
@@ -845,7 +816,6 @@ const queueDecisionPrompt = (reason: string): string => {
       return 'Can official source prose support student-facing copy?';
     case 'source_backed_description':
       return 'Is this ready to promote from evidence to student-facing copy?';
-    case 'formalization_only':
     case 'application_source_only':
       return 'Should this stay capped, or is there evidence of a real entry route?';
     case 'archive_review':
@@ -1153,24 +1123,23 @@ const AdminOperatorBoard = () => {
 
   useLoadEffect(fetchBoard);
 
-  const topQueues = useMemo(
-    () =>
-      [...(board?.queues || [])]
-        .sort((a, b) => {
-          const aKind = a.kind || classifyReason(a.reason);
-          const bKind = b.kind || classifyReason(b.reason);
-          return queueKindRank[aKind] - queueKindRank[bKind] || b.count - a.count;
-        })
-        .slice(0, 10),
-    [board],
-  );
   const decisionLanes = useMemo(
     () =>
-      (['blocking', 'review', 'evidence'] as QueueKind[]).map((kind) => ({
+      (['blocking', 'review', 'evidence'] as DecisionLaneKind[]).map((kind) => ({
         kind,
-        queues: topQueues.filter((queue) => (queue.kind || classifyReason(queue.reason)) === kind),
+        queues: (board?.queues || [])
+          .filter((queue) => queue.kind === kind)
+          .sort((a, b) => b.count - a.count)
+          .slice(0, QUEUES_PER_DECISION_LANE),
       })),
-    [topQueues],
+    [board],
+  );
+  const withheldQueues = useMemo(
+    () =>
+      (board?.queues || [])
+        .filter((queue) => queue.kind === 'withheld')
+        .sort((a, b) => b.count - a.count),
+    [board],
   );
   const sourceLanes = useMemo(() => (board ? sourceReviewLanes(board) : []), [board]);
 
@@ -1774,10 +1743,7 @@ const AdminOperatorBoard = () => {
                         {queue.samples.length === 0
                           ? 'No samples'
                           : queue.samples.slice(0, 3).map((sample) => {
-                              const { blockers, signals } = splitReasons(
-                                sample.reasons,
-                                queue.reason,
-                              );
+                              const { blockers, signals } = splitReasons(sample, queue.reason);
 
                               return (
                                 <div key={sample.id} className="mb-3 last:mb-0">
@@ -1785,16 +1751,8 @@ const AdminOperatorBoard = () => {
                                     sample={sample}
                                     collection={queue.collection}
                                   />
-                                  <ReasonList
-                                    label="Likely blockers"
-                                    reasons={blockers}
-                                    tone="blocker"
-                                  />
-                                  <ReasonList
-                                    label="Evidence signals"
-                                    reasons={signals}
-                                    tone="signal"
-                                  />
+                                  <ReasonList label="Blockers" reasons={blockers} tone="blocker" />
+                                  <ReasonList label="Signals" reasons={signals} tone="signal" />
                                 </div>
                               );
                             })}
@@ -1811,6 +1769,52 @@ const AdminOperatorBoard = () => {
             );
           })}
         </div>
+
+        {withheldQueues.length > 0 && (
+          <div
+            className="mt-3 rounded-md border border-[var(--yr-line)] p-3"
+            aria-labelledby="correctly-withheld-heading"
+            role="group"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  No repair needed
+                </div>
+                <h5 id="correctly-withheld-heading" className="mt-1 font-semibold text-ink">
+                  Correctly Withheld
+                </h5>
+                <p className="mt-1 text-xs text-muted">
+                  Rows the product hides on purpose. They are not repair work, so they stay out of
+                  the lanes above.
+                </p>
+              </div>
+              <span
+                className={`shrink-0 rounded-md border px-2 py-0.5 text-xs font-semibold ${queueKindStyles.withheld}`}
+              >
+                {withheldQueues.reduce((sum, queue) => sum + queue.count, 0)}
+              </span>
+            </div>
+            <ul className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+              {withheldQueues.map((queue) => (
+                <li
+                  key={`${queue.collection}-${queue.reason}`}
+                  className="rounded-card bg-[var(--yr-panel-muted)] p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 text-xs text-muted">
+                      <span className="break-words">{queue.reason}</span>
+                      <span className="mx-1">·</span>
+                      <span className="capitalize">{queue.collection}</span>
+                    </div>
+                    <span className="shrink-0 text-sm font-semibold text-ink">{queue.count}</span>
+                  </div>
+                  <div className="mt-1 text-sm text-ink-soft">{queue.nextAction}</div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
 
       <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">

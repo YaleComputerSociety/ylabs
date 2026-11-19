@@ -5,6 +5,813 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-18: A Row Is Findable Under Its Lead's Stated Secondary-Appointment School (#6529)
+
+Decision (the manager, 2026-11-18, option b): a research row should be findable in the school filter under every school its lead holds a stated appointment in, not only the Primary one.
+The lead's own profile states each appointment on a card typed Primary, Secondary, Dual or Fully Joint.
+The Primary card alone sets `school` (#6252), and #5800's rule that `departments` come from the Primary appointment only stands.
+A Secondary, Dual or Fully Joint card in another catalog school is recorded as a separate reading, `statedAppointmentSchools`, which the org-unit canonicalization adds to `schools` only.
+`school` and `departments` are never derived from it, and an empty `school` is never filled from it.
+The reading is latest-wins, so a newer card replaces a stale one; a profile that drops the card emits nothing, so the earlier reading stays live (omission is not absence, as in #6160).
+Measured before the change (2026-11-18, stored captures): 28 served rows cite a `ysph.yale.edu` profile with a non-Primary card in another school, and 14 of them did not list that school in `schools`.
+
+## 2026-11-17: Captured Page Text Reaches A Model Only As Data (#6396)
+
+Decision (the manager, 2026-11-16, option A): every scraper model call carries one shared data preamble, applied by the model client (`utils/modelInputGuard.ts`, called from `postChatCompletion`), and every user message has sentences addressed to an AI agent removed before it leaves the process.
+The preamble and the filter sit deliberately OUTSIDE every prompt file and every cache key.
+Each prompt's sha256 keys a cache or a content gate (`*_PROMPT_HASH` in `scrapers/prompts/index.ts`), so a line added to each prompt would invalidate every cached reading at once and re-run the paid extraction lanes on their next pass, the #5076 trap.
+The preamble carries no extraction semantics, so a reading cached before it existed stays valid, and changing it never invalidates a cache.
+The frozen benchmark key (`snapshotBenchmarkMode.modelRequestKey`) is computed on the body as the caller built it, before the guard, which the model client hands the benchmark interceptor for the same reason, so frozen lane benchmarks keep replaying even for a row whose page text the guard changes.
+The filter is narrow on purpose: it removes a sentence only when it is addressed to a model (a conditional addressed to an AI, an instruction to disregard earlier instructions, or a note addressed to AI models), and never a quoted example or a sentence that is research about AI, which is common in this corpus.
+Local-Claude drafting packets get the same treatment where the repository builds them: the topic readings export filters each user message and carries the preamble, and `--print-writer-prompt` prints it first.
+The writer evidence file from `--capture-evidence` carries the preamble but keeps the captured text raw, because the writer's input hash is computed from it; a drafting harness that reads it directly must pass each snippet through `stripAiDirectedInstructions`.
+The card pass's `--capture-evidence` export (`CardRequest.evidenceTexts`) is not yet covered: it is a bare request array with no room for a preamble, and changing its shape would break card drafting already in flight, so until #6491 adds it a local card drafter must prepend `MODEL_INPUT_DATA_PREAMBLE` and strip each evidence text itself.
+Matching runs on NFKC-normalised text with invisible format characters removed and Greek and Cyrillic look-alike letters folded to Latin, and an address that wraps a line break takes its command with it.
+Accepted residuals, missed by design to keep precision: an instruction to disregard earlier instructions in the middle of a sentence, an address by a product name rather than as an AI, and a role prefix such as "Assistant:".
+The guard does not change any input hash, so it moves no cache key.
+A new model call cannot skip it, because `modelClientIsTheOnlyOpenAiCaller` already refuses any OpenAI call outside the shared client, and its per-path test now also requires the preamble and an absent planted instruction on every chat path.
+
+## 2026-11-16: A Matching Name Alone Never Folds Two Researcher Records (#6378)
+
+Decision (the manager, 2026-11-16): `researchers:dedupe-accountless-shells` never applies a fold whose only evidence is a matching name, with or without a department or a shared row, on the two paths below.
+The `name` arm, the last fallback in `decideShellMerge`, folds only when the shell's netid or ORCID agrees with the target's.
+The account-less cluster arm still groups records on a name plus a department, a name plus a live role on the same row, or a noisy spelling, but a name never joins two members for a fold: each part of a group that a shared verified page, a shared official profile, a cited official page or an agreeing netid or ORCID connects folds into its own survivor, and a member only a name ties to the rest stays unfolded.
+An identifier, rank or surname conflict anywhere in the group still refuses the whole group.
+The `shared-row` arm is unchanged: it folds a shell only into a stronger record that holds a role on the same live row, because a row lists its own lead twice only when two lanes minted that lead under two spellings, so the row is the join and the name only vetoes (#4911).
+A refused name-only candidate is listed in the dry-run report (`nameOnlyFoldCandidates`, `accountlessClusters.nameOnlyGroups`) for operator review, and the tool never applies it.
+
+Two different people can share a name and a department, and a fold is permanent once applied, so a name is a reason to look and never a reason to merge.
+On Development on 2026-11-16 the name arm's 2 candidates were already dropped downstream, one by the only-live-lead refusal and one by an operator's different-people verdict, and the cluster arm planned no fold, so the rule changes no current plan.
+The same change records the planning arm on every merge in the report, after a blind check of 10 planned merges could not tell from the report what joined them: they were 6 cited-official-page, 3 orcid-only-holder and 1 shared-row folds, none of them name-only.
+
+## 2026-11-16: Topics Read From A Page The Lead Filter Refuses Retire, While A Vanished Page Keeps Them (#6386)
+
+Decision (manager, 2026-11-16, option A): this narrows the #6127 rule that a person row the lead filter leaves with no page keeps its stored page-derived topics.
+On a person research row, #6127 (#6110, #6120) reads only the stored pages that name one of the row's leads.
+When that filter leaves no page, a stored `research-page-topics-derived` list whose own `sourceUrl` is one of the stored pages the filter excluded is stale, and it retires through `storedResearchAreasEvidenceRetired`; the row falls back to its other topic lanes.
+A list whose cited page is no longer stored at all keeps its topics, because silence is not absence.
+The distinction is between silence and refusal: a vanished or unread page says nothing, while a page still stored and refused by the lane as this person's evidence cannot be the evidence a list stands on.
+
+Measured on Development on 2026-11-16: 30 person rows had this shape, 16 of them served, and all 30 stored lists cite an excluded page, typically a school or department research landing page that never names the lead.
+A scoped dry run planned 27 changes (21 fall back to other lanes' topics, 6 empty), and a before-and-after visibility simulation found 0 tier changes.
+Before the apply, the manager required a blind check of 10 of the 27 asking whether the old topics were the person's own research; if most were, the filter rather than the topics is too strict, and the apply stops.
+
+## 2026-11-16: An Empty Topic Reading Keeps Only Lane Topics The Served Description States (#6360)
+
+Decision (the backlog agent's GO on the manager's behalf, 2026-11-16, option (ii)+): when the stored page-topic reading for a row's CURRENT input hash is empty, a `researchAreas` observation counts as evidence only if it comes from the description lane (`lab-microsite-description-llm`) and the row's stored served description states it.
+"States" means every content word of the topic appears, by stem and in any order, inside one prose sentence of the stored short or full description, so an inverted heading such as "Carcinoma, Hepatocellular" matches prose that says "hepatocellular carcinoma".
+A list line is never read, so a topic named only in a list is dropped: a line with two or more semicolons, or a line that does not end like a sentence and either opens with a short label and a colon ("Keywords:") or carries three or more commas.
+Other lanes' topic observations are not evidence on such a row, and the prose-derived fallback does not run, so a row with no grounded topic serves none.
+A row whose text has no reading yet keeps today's fallback unchanged.
+
+The narrowing runs on every resolve and writes no field, so it is derivation under the 2026-09-24 contract rather than repair.
+It reads the stored description, never the one this pass derives, so topics and description cannot chase each other across resolves.
+It sits in the materializer beside `withLabSiteDescriptionsNarrowedToResearch` rather than in `partitionResearchAreas`, because only the materializer sees the reading, the observation sources and the description.
+
+A re-read is not the fix: re-reading 19 empty rows returned 18 empty again, and three blind graders judged 17 of those 18 correctly empty.
+
+Three versions were blind-graded on 20 rows and 120 topics by three graders reading stored evidence only, then re-graded in full after the first round's single-line packet was found to truncate long evidence (5 of 120 topic verdicts moved, the ruling did not).
+
+| Version | What it serves on an empty reading | Precision | Recall | Passing rows left with no real topic |
+| --- | --- | --- | --- | --- |
+| (i) | every description-lane topic | 0.50 | 1.00 | 0 of 10 |
+| (ii) | topics derived from the description prose | 0.29 | 0.03 | 9 of 10 |
+| (ii)+ | description-lane topics the description states | 0.65 | 0.86 | 1 of 10 |
+
+Literal (ii) was rejected because the canonical phrase index matches almost nothing a real description says, so it strips nearly every real topic while keeping mostly generic ones.
+(i) keeps every real topic but serves as many wrong ones, the noise the empty reading was flagging.
+(ii)+ keeps most of (i)'s recall and cuts its noise by a third.
+Of the 263 served rows in scope, 96 serve no topic under (ii)+.
+Simulated read-only on Development by computing each row's visibility twice, once with its stored topics and once with its (ii)+ topics, 4 of the 263 move from `student_ready` to `operator_review`, all faculty research profiles whose card or body the gate judges against their topic list (`missing_card_description` and `public_description_invariant_failed`); the other 94 rows that gain a reason gain only the soft `missing_facet_signal`.
+The apply runs after a scoped gate dry run confirms that count.
+
+## 2026-11-16: An Official Center's Emeritus Section Marks A Lead Emeritus (#6162)
+
+This extends the 2026-11-11 #5835 entry to the Emeritus section of an official Yale center roster, and answers Q4 that the 2026-11-13 #6084 entry left open.
+Decision (5-agent consensus via the manager, 4 of 5, 2026-11-13, recorded on #6162; the owner may veto): a lead whom an official Yale center's roster lists under its Emeritus section is emeritus for the 2026-10-02 rule, exactly as if their department's official emeritus page listed them.
+The source is the section `centers-institutes-index` already records on each member observation (`currentStatus: emeritus` with its `sectionLabel`), read from a yale.edu page, and the lane reads it from stored observations without a fetch.
+Every #5835 constraint carries over unchanged.
+A fresh read of the person's own page wins: a listing whose own page states a current appointment is already recorded as current by the roster lane, and a lead whose stored title a live lane other than the Yale directory still asserts is left to that title.
+The listing is evidence about a lead only, recorded as `emeritusListedLeadIds` on rows the person already leads, and it never mints a row, an edge or a roster member.
+The member is bound to a person only by the identity evidence its own profile page states, or by a profile link exactly one live researcher holds under the listed name.
+The new evidence is the section alone: a center member-page title that holds only emeritus appointments still ends no center edge (#6084 Q6) and marks a lead only through the existing #6081 own-profile rule.
+The mark is a serve-time label, so it changes no row's tier; it ends no edge, which stays the #6084 two-read rule, and it is independent of the #6025 lead-change rules, which govern edges and are not built.
+
+## 2026-11-16: A Site's Stated Change Of Lead Is A Rule On Hold Until A Real Case Exists (#6025)
+
+Decision (manager, 2026-11-16).
+Two rules govern a row's own site stating that its lead changed.
+A past-tense, past-dated statement that a lead served "through <date>", on the row's own site and seen in two reads from distinct runs, ends that lead edge, dated, and is never a hide on its own.
+A row's last lead edge ends that way only when a successor is named in the same resolve; otherwise it is kept and reported for operator review (#6308).
+A stated current director becomes the lead only when the site names them as the unit's current director in a unit-scoped role line, never a career title (#2535), and the previous lead ended; otherwise they are a co-director and the existing lead stays.
+Both are derivations recomputed on every resolve, with no direct edge write and no lock.
+
+The rules are not built yet.
+Measured on Development from stored own-site page text, 15 served rows state a past-dated end in two runs, but a blind three-grader ballot found that 0 of the 10 gradable ones end the unit's own lead: every one is a career line about another unit.
+A rule whose every current match is a false positive adds risk without benefit, so the issue is parked and reopens when a real own-unit case appears; its comment lists the six test shapes a builder starts from.
+Until then, a lead a roster re-asserts after an operator ended it is corrected per row with an audited refusal of that lead claim, which persists across resolves, never with a direct edge detach.
+
+## 2026-11-16: The Dedupe Name Carry Is The One Sanctioned Direct Name Write (#6325)
+Decision (manager, 2026-11-16).
+`research-entity:dedupe-by-pi` keeps writing the plan's `canonicalName` onto the survivor's `name` and `displayName`, and this is the one direct `name`/`displayName` write a merge is allowed.
+It stays scoped as it is: only onto the planned canonical, never a never-demote swap's survivor, and only when the canonical's own name is a PI-derived `<PI> Lab` placeholder for the same lead (`comparablePiLabName`).
+The website carry was removed instead (#6323), because website evidence decides that field reliably.
+The same merge step also fills the survivor's description from its twins when the survivor holds no prose of its own, and consolidates `recentGrants`, `recentGrantCount` and `fundingAgencies`; those are separate merge consolidation, and this entry neither sanctions nor retires them.
+
+The derivation that would replace it was built and measured, and it does not pay.
+A merged-in twin's name could displace the survivor's own placeholder only when every survivor observation was a placeholder for its live lead and the twin's name passed every name guard, with the placeholder kept as a fallback-ranked candidate.
+A scoped `name`/`displayName` dry run over all 1,856 merged survivors on Development, diffed against the same run on unchanged code, planned 26 changes, and read by hand about 4 were better names.
+Three served rows would have taken a twin's link label ("Lab Website") as their name, about 20 were the lead's own name with initials, credentials or a spelling variant added, and earlier variants also renamed labs after a different person.
+Twin name evidence for this field is mostly noise, and each guard added to separate a real lab name from it uncovered another class, so no derivation is reliable enough to own the field.
+The handful of rows whose twin does state a better name are operator-judgement candidates, recorded by predicate on #6325, not lane work.
+
+## 2026-11-16: A Marked Official-Profile Backfill Title Read Counts As First-Hand (#6197)
+
+Decision (manager, 2026-11-16).
+This extends the #5578 rule that the newest fresh first-hand read of a researcher's own official page decides their title.
+An `official-profile-pi-backfill` title read counts as first-hand when the lane emits it for an identity-confirmed user and it carries `extraction.source: 'profileTitleBlock'`.
+The lane sets that marker only when the emitted title is the appointment in the contact-information field, the template verified in #6177.
+An unmarked read, from any other element, a JSON-LD `jobTitle` or a meta description, stays non-first-hand, because the lane cannot say which element it read.
+A keyed `visible-profile-bio-backfill` run now emits the page's title, while an unkeyed run emits exactly what it did before: no title and no new absence claim.
+Until the joint freshness rule (#6197, #5594) merges, the lane sets the marker only on a keyed `visible-profile-bio-backfill` run.
+A title from any other call site, the queued branch of an unkeyed full run included, stays unmarked, so no full-run read becomes first-hand under this entry.
+Once that rule merges, full-run marked reads may count with no further ruling.
+
+## 2026-11-13: A Lead's Person Row Folds Into Their Lab Only When It Is The Same Research (#6206)
+
+Decision (owner, 2026-11-13).
+A lab lead's own person-scoped row that shares the lab's website merges into the lab only when it describes the same research as the lab and nothing outside it; otherwise both rows stay.
+When they merge, the lab survives, any evidence only the person row carries moves to it, and the lead stays named on the lab card, so the person is still found through the lab (2026-10-21 decisions).
+Stored evidence does not witness "the same research": in a blind three-grader check, a person row whose text was all read from the lab's own site, and which cited nothing else but the person's profile, was graded the same research in one case and broader research in another, and topic overlap did not separate the two.
+So this is a per-row operator judgement after a blind check, not a lane rule.
+
+One lab stored twice on its own site does fold by lane rule: the two rows name the same lab, their own websites are one identity (`www.` folded), and exactly one row anchors, so the other has no lead or is led only by people of the anchor row (`subjectTwinAnchor` in `scripts/mergeSameLeadDuplicateGroupsCore.ts`).
+A twin led by anyone who neither leads nor belongs to the anchor never folds under it, and a pair the URL-identity lanes plan or quarantine is left to them.
+
+## 2026-11-13: A Lead's Ruled Rank Is A Signal, Not A Serve-Time Gate (#6266)
+
+Decision (five-agent consensus under the owner's 2026-11-13 delegation, 4 of 5 keeping the rows served).
+The gate stops holding a row at `operator_review` because every lead states only a rank the owner ruled cannot host; `lead_title_ruled_non_hosting_rank` stays on the row as a soft signal.
+The vote turned on the 2026-10-20 decision (#5407) that whether someone could host a student is a signal rather than a gate, and that a title is evidence for those parts, never the rule; that decision postdates the 2026-10-04 rank rule.
+The serve-time hold reused the archive stage's predicate, where refusing on doubt is fail-safe because an archive is irreversible; at serve time the same predicate withheld a row on doubt instead of keeping it, which inverts that.
+The archive stage keeps the rank rule unchanged, as do `lead_is_staff_of_served_lab` and the duplicate and shell arms.
+It surfaced when #6146 let the YSM lane refresh screened profiles' own titles: for 11 researchers the corrected title would have tripped the hold on the one row each solely leads, and none of those rows carries a hosted-undergraduates signal.
+Measured on Development, 2026-11-13, gate dry run over 4,153 research rows: 2 rows change tier, both from `operator_review` to `student_ready`, and both were held by this reason alone; 1 more row carries it and stays `suppressed` as a duplicate; 0 rows leave `student_ready`.
+
+## 2026-11-14: A Removal Needs Two Observations That Agree (#6264)
+
+Decision (ylabs-manager, 2026-11-14, via the backlog agent on #6264).
+This extends the #6258 rule, that a fetch which observed nothing is never evidence, to an observation that is real but unconfirmed.
+A removal or downgrade of a stored value needs two observations that agree, which is the gone-twice contract of #4729, #4840 and #4862.
+`removalConfirmation` in `server/src/services/sourceLinkRemovalConfirmation.ts` is the one rule the callers below read.
+A `404` or `410` confirms when a stored gone verdict and a fresh probe both report it.
+A host-level failure counts as gone only under all three of the manager's conditions.
+First, nothing `isNotObserved` covers ever counts: not our own pause, not an SSRF guard refusal (including the #6123 case of a campus-only host that resolves privately), not a budget or slot refusal, and not a transient transport error.
+Second, the two observations are the same class, a DNS negative under #2726 or a refused connection (`ECONNREFUSED`), and at least `CONNECTION_FAILURE_CONFIRMATION_GAP_MS` (six hours) apart.
+An unroutable network or host (`ENETUNREACH`, `EHOSTUNREACH`) never counts toward a removal, because it can mean this machine had no route, the lid-close and network-drop failure, so two such moments would confirm a host that never saw a request (ylabs-manager, 2026-11-14, on yale worker 6's review of #6282).
+Those codes are still `UNAVAILABLE` to link health, and its own verdicts and `DEAD_LINK_ERROR_CODES` are unchanged; only the removal rule reads them as no evidence.
+Third, the run report lists removals per host (`RemovalsByHost`), so a lapsed domain reads as one line with its count.
+A host that resolves only into private address space never counts, on either observation.
+Each class is recorded positively on the stored verdict, `connectionRefused` for a refused connection and `nameNotFound` for a DNS negative, because #6116 records a refused connection with no marker when the verdict it replaced was not live, so a missing marker cannot be read as DNS; `connectionLevelFailure` still marks all three connection codes for the backfill's own second-run hold.
+A verdict written before these fields existed, including one marked only by #6116's `confirmingConnectionFailureAt`, has no recorded class and holds as `class-unknown` until the next link-health sweep rewrites it.
+The callers are the field-retraction sole-holder screen (`probeRetractionValueLiveness`), where the lane's own absence reads are the first observation, so a `404`, a `410` or an answer that lands away from the requested page confirms on the probe alone; `clearDeadLabResearchHomes`; and `repairLegacyPersonPageUrls`.
+The last two need a stored gone verdict plus an agreeing probe, so a single `404` now reports as awaiting confirmation.
+`clearDeadLabResearchHomes` never clears on a host-level failure, because every URL it reads sits on one school host.
+The YSE faculty-directory lab-website removal already met the contract: its `assertsNoValueFor` is a lane read, and field retraction needs two such reads plus the probe above before anything clears.
+The single probe there only withdraws the row's lab identity, which stays fail-closed because link health drops the dead verdict once the row stops citing the URL, and waiting would re-mint the lab (#3452).
+The YSM faculty-directory removal is a read of an empty lab slot, so it was never a probe-only removal.
+`lab-site-lead-verification` treats a read whose landing page or members page answered a status other than `404` or `410`, or whose landing host failed at the host level, as partial, and a partial read may raise a stored lead verdict but never lower it (`partialReadWouldDowngrade`), the rule `lab-site-undergrad-invitation` already applies.
+`lanePageHealth`'s per-page withdrawal is unchanged and still needs a status on both observations.
+Measured on Development on 2026-11-14 before the change, no served value differed on any of these paths, so the change is preventive.
+It governs the first `lab-site-lead-verification` run after hold 3g (the 37 rows on #6258), the first per-lane field-retraction lift under hold 5, and the next run of each script.
+
+## 2026-11-13: A Fetch That Observed Nothing Is Never Evidence (#6258)
+
+Decision (backlog agent, 2026-11-13, challenge upheld on #6258).
+A failed fetch is evidence about a page only when the page or its host answered.
+`isNotObserved` in `server/src/scrapers/utils/notObserved.ts` is the one line every lane and script draws, and no lane may turn a failure it covers into a verdict, an absence, a retraction, a cleared field or a lowered confidence.
+Not observed: a request our own code refused before sending (a host pause, the request budget, a slot wait, an excluded host, a write lease, and every SSRF guard refusal except `unresolvable`), a timeout, a reset, a temporary DNS failure, an abort, and any error that carries neither an HTTP status nor a host-level code.
+Observed: any HTTP status, the four host-level codes `ENOTFOUND`, `ECONNREFUSED`, `EHOSTUNREACH` and `ENETUNREACH`, the guard's `unresolvable` refusal (a name the resolver confirmed absent after asking again, the same fact as `ENOTFOUND`, #2709), and a TLS verification code.
+An observation still passes each lane's own confirmation rule: #2725 for DNS, #2751 for a second attempt agreeing on a refused connection, and #6116 for a second run before a refused connection retires a live link.
+Only a `404` or `410` says a page is gone; a `403`, `429` or `5xx` is observed but says nothing about absence, so `clearDeadLabResearchHomes` and `repairLegacyPersonPageUrls` clear or replace a stored value on a probe only for one of those two statuses.
+A lane that falls back to a stored value on a non-observation counts the row as deferred rather than writing.
+A lane may still record what an observed status told it, so a throttled or erroring page is a reachability observation rather than a deferral; whether a throttle should also defer, and whether one unconfirmed probe may remove a value, are #6264's question.
+A redirect loop is an observation rather than a non-observation, because the host answered every hop, and #3135 keeps it as evidence that the cited address no longer serves the resource.
+`server/src/scrapers/__tests__/notObservedNeverEvidenceGuard.test.ts` scans `scrapers/`, `scripts/` and `services/`: a file that both fetches and writes an absence must call `isNotObserved` (or `isTransientFetchFailure`, which delegates to it) or carry a reviewed reason naming its own confirmation rule.
+A stored status-less `UNAVAILABLE` is left as it is, because it is how a confirmed DNS negative retires a domain (#2726).
+
+## 2026-11-13: Correctly Withheld Programs Are Not Repair Work (#6204)
+
+Decision (owner request, 2026-11-13).
+The `/analytics` Decision Lanes group `non_research_program` and `external_award_cycle_stale` as "Correctly Withheld", apart from "Must Fix Before Promotion", because they are verdicts that the row should be hidden rather than evidence still to find.
+A row carrying either reason counts only under it, so its other reasons, such as a missing application route, no longer count as must-fix work either.
+A blind check of stored captures on Development (3 graders, 2 of 3 agreeing) confirmed both buckets.
+For `external_award_cycle_stale`, 19 of 20 sampled rows were correctly withheld; the 20th states rolling applications, but it is also not research, so it stays withheld.
+For `non_research_program`, 17 of 20 were plainly not research, and the other 3 were funded creative or journalism projects; a 5-agent consensus on #6216 (5 of 5) kept those withheld, because the programs surface stays research funding under #4675 and the creative-practice decision covers directory faculty only.
+The counts are derived when the board is read and nothing is stored, so if a later lane change removes a verdict, the other reasons on that row count as repair work again without any write.
+A reason joins the group only after a blind sample confirms it the same way; `prize_for_completed_work` and the other suppression verdicts have not been sampled and stay where they are.
+The set is `CORRECTLY_WITHHELD_REASONS` in `server/src/services/adminOperatorBoardService.ts`.
+
+## 2026-11-13: A Refused Connection Retires A Live Link Only Once A Second Run Agrees (#6116)
+
+This refines the #2751 rule that a reachability failure confirmed by a second attempt retires a link, and leaves the #2726 DNS rule as it was.
+Decision (ylabs-manager, 2026-11-13, scope ruling for #6116): an `ECONNREFUSED`, `EHOSTUNREACH` or `ENETUNREACH` probe failure over a stored `HEALTHY` or `REDIRECTED` verdict keeps that verdict on the first run that sees it, and records `UNAVAILABLE` only when a later, different run sees the same failure.
+The two attempts inside one probe are seconds apart, and on the 2026-11-13 Development dry run a cited page on a public university host went `HEALTHY` to `UNAVAILABLE` with no status code, then answered `200` minutes later.
+`ENOTFOUND` stays immediate, because a confirmed DNS negative is how a retired domain retires, and `404`, `410` and every connection failure over a verdict other than `HEALTHY` or `REDIRECTED` are unchanged.
+`classifyProbeOutcome` and `DEAD_LINK_ERROR_CODES` are unchanged too: the probe still calls the link `UNAVAILABLE`, and only the backfill decides when that verdict may replace a live one.
+The pending failure is stored on the link-health entry itself, as `pendingConnectionFailureAt` holding the start of the run that saw it, beside `lastAttemptedAt`.
+That is the least new shape: link health keeps its probe history on that entry already and has no observation lane, so an observation would add a collection vocabulary and a reader for one fact.
+It is not a field a lock makes stick, because the backfill writes it, reads it and re-derives it from every probe, so running the pass twice is what produces the answer.
+A probe that reaches the host, with any HTTP status or a certificate result, drops the marker; a probe that reaches nothing, such as a timeout, a reset or a guard refusal, keeps it, because it observed nothing about the host.
+The marker names the run rather than the probe, so re-resolving within one run never confirms itself, and a `HEALTHY` verdict holding it is re-probed rather than carried by the 7-day sweep window, or the confirming run would never come.
+The confirming run must start at least six hours after the first (`CONNECTION_FAILURE_CONFIRMATION_GAP_MS`, ylabs-manager, 2026-11-13), because a resume minutes later is the same outage rather than a second observation; a failure inside the gap keeps the first time, a missing or unreadable time never confirms, and the `UNAVAILABLE` entry keeps both run starts as `pendingConnectionFailureAt` and `confirmingConnectionFailureAt` so the retirement is auditable.
+The confirming probe must also come at least six hours after the first probe, recorded as `pendingConnectionFailureProbedAt`, because a run can reach a URL hours after it starts, and two run starts six hours apart could otherwise bracket two failures minutes apart.
+The cost is that a host which really is gone is recorded gone at least six hours and one sweep later.
+A connect-time guard refusal is a non-observation and the stored verdict stands, so it is not held: the guard's connect-time lookup reports a private address as `EHOSTUNREACH` with its own refusal message, the probe now recognises that refusal and reports `ERR_SSRF_BLOCKED`, and only a genuine connect failure is held under the six-hour rule (e3 review of #6187, 2026-11-13); this closes #6150.
+
+## 2026-11-13: After A PI-Dedupe Merge, Re-Pointed Identity Readings Are The Survivor's Own (#6183)
+
+Decision (ylabs-manager, 2026-11-13).
+A PI-dedupe merge re-points the merged-in row's observations at the survivor's id, and for identity fields (`school`, `entityType`, `kind`, `inferredPiUserKey`, as well as `name` and `websiteUrl`) those re-pointed readings compete as the survivor's own, so a higher-confidence reading from the merged-in row can win.
+This is deliberate, and it is why `RELINK_ORIGIN_ATTRIBUTED_FIELDS` stays limited to prose: only description fields are attributed back to the page they were read from (#4741).
+Attributing identity back was measured before it was refused.
+A blind check of the rows it would change found the current resolution right in 27 of 31, the attribution right in 3, and 1 unsure.
+The change would have touched 18 or 52 served rows, depending on the scope, and changed no row's visibility.
+"Identity is the survivor's own" still governs readings that stay keyed to the merged-in row's own id after the merge (#6096's 36): `school` and `kind` never resolve onto the survivor through a merged-in-keyed reading, while `entityType` is admitted only when it corroborates an unbacked stored type and `inferredPiUserKey`/`inferredPiUserId` only when the merged-in row names the lead of a lead-less survivor.
+`researchEntityDedupeMergedInIdentityReadings.integration.test.ts` holds both halves through the real merge path, and its twin keeps the name `Fixture Twin Lab` on purpose: a type-neutral variant measurably lost the name control to the survivor's own name, so the name assertion holds independent of the leaked `entityType`.
+
+## 2026-11-13: A Profile's Home Department Is Its First Appointment, Never A Promoted Later One (#6070)
+
+Decision (ylabs-manager, 2026-11-13).
+The `ysm-faculty-directory` lane takes a person's `primaryDepartment` from the profile's first appointment, and only when the department catalog names it; a later, secondary appointment is never promoted in its place, an organization never counts, and with no catalog the lane emits no department.
+That is the same fail-closed stance the official-profile backfill takes for its department (#6099), so neither profile lane promotes a later unit.
+The Yale directory lane takes the same stance (#6129): emit fails closed with no catalog; resolve-time screens treat a missing catalog as screen-nothing, so an outage can never drive the shared clear (#6065).
+Promotion was measured before it was refused: 47 researchers in the #6049 class (Otolaryngology spellings excluded) had a non-catalog first entry and a catalog department later in the stored list, and a seeded blind sample of 15 of them was graded by three graders against each person's live profile, 2-of-3 deciding which candidate was the home department.
+The promoted later unit won 6, the first entry won 2, 6 were unsure (most pages did not state the appointment in readable text) and 1 had no majority, short of the 12 of 15 the manager set as the bar for keeping promotion.
+A researcher whose first appointment is a program or center therefore states no department from this lane, and another lane's department or the directory fill decides the field.
+
+## 2026-11-13: The Getting-Started Guide Is Offered On The Research Landing And On Mentor-First Programs (#6095)
+
+Decision (5-agent consensus 5/5, 2026-11-13, posted on #6095; the owner may veto).
+`/getting-started` was linked only from inside a research detail page, so a student who had not yet opened a profile, or who started on `/programs`, could not find the page that answers a newcomer's first questions.
+In the 2026-11-13 simulated-student round the persona who reached it from a profile called it the best moment of the visit, and another first-year never found it before choosing a program.
+It is now offered in two places before a profile, and only there.
+One question-phrased line, "New to research? How to get started", is on the un-searched `/research` landing at every width, for guests and signed-in students alike.
+Below 1280px it sits under the search box, outside the context paragraph that phones hide and outside the session slot, so it never changes that slot's reserved height (#4222, #5166).
+At 1280px and wider it sits under the profile count at the top of the results instead, because a 44px line in the sticky sidebar pushed it to 618px of content in 590px at 1280x720, past the no-scrollbar fit the owner chose in #5963.
+A program whose answer to "Do you need a mentor first?" is yes carries "Need a mentor? How to reach out to a professor" under that answer, in the dialog rather than on the card, so no link nests inside another.
+There is no nav item, because a nav label adds a choice to every page and sits behind the phone menu, and no dashboard entry.
+Neither link carries program data, so this is not the removed #1509 module.
+The student-journey smoke follows both links to the guide at 375px and 1440px.
+
+## 2026-11-13: A Search Says It Has Few Close Matches Only Where The Rerank Cache Measured It (#6094)
+
+Decision (five-agent consensus and ylabs-manager, 2026-11-13; the owner may veto): a search whose seeded rerank entry scores 3 or fewer rows of its served pool 2 or more carries `fewCloseMatches`, and `/research` says "Only a few close matches. Related results below." above the results.
+The notice never changes which rows are returned or their order.
+All five agents chose a notice over trimming, because prior decisions keep weak-but-real matches: #823 sets its hybrid cutoff low enough not to clip them, #3797 found that no absolute or relative score cutoff separates off-topic rows from real ones, and a thin but accurate row is never hidden.
+A cheap fitted similarity signal was measured and rejected: on 186 graded queries held out from the fit, 15 of its 31 firings were false alarms.
+The rule gated on the rerank cache's own measured relevance fired on 10 of 36 seeded Production queries, every one with 0 to 2 relevant rows in its top 10, with 0 false alarms.
+So it fires only from a seeded entry, never from a served, shadow or live-miss entry or from a guessed signal; `docs/search-rerank-cache.md` holds the contract.
+
+## 2026-11-13: A Center Roster's Emeritus Or Past Section Ends The Center Edge, And Omission Alone Retires Nothing (#6084)
+
+This extends the 2026-11-11 #5835 entry below to the Emeritus or Past section of an official Yale center roster; it does not apply #5835 unchanged, because a center section ends a membership edge where #5835 only labels a lead.
+Decision (5-agent consensus via the manager, 2026-11-13, posted on #6084; the owner may veto): `centers-institutes-index` records the section each listing sits under, and a listing under an Alumni, Former, Past, Previous, Retired or In Memoriam section, or under an Emeritus section, is positive evidence that the person is no longer a current member of that center.
+
+- **Emeritus section (3 of 5).** The listing ends the lane's current center edge as `HISTORICAL` and records the section label in `rosterProvenance.sectionLabel`.
+  The minority preferred keeping the edge with a label.
+  The person's own rows stay served and labelled under the 2026-10-02 emeritus rule (#4431), and the listing never mints a row, an edge or a roster member.
+  The #5835 rule that a fresh read of the person's own page as a current appointment wins is kept: an emeritus listing whose member page, read in the same run, states a current faculty appointment leaves the edge current.
+- **Past section, and former members stay unserved (Q1, 5 of 5).** A past listing ends the current edge as `HISTORICAL` the same way; the ended edge is not on the center's team, is not name-searchable, and is never a way in.
+- **Departed needs two reads (Q2, 5 of 5).** A person is departed only when two admitted reads in distinct runs list them under a past or emeritus section that was itself read to its end, after the last read that listed them as current.
+  One read withholds the edge's refresh and ends nothing, and a later current listing revives the edge through the ordinary upsert.
+- **Omission is not evidence (Q3, 5 of 5, #2647).** A person a contract read lists in no section is omitted, and an omitted claim retires only when the person's own page witnesses a departure (`personPageDeparture.ts`); otherwise it is held and counted as omitted-unwitnessed.
+  A listing under a past section that was not read to its end is omitted, never departed.
+- **A profile title alone ends nothing (Q6, 4 of 5).** A member-page `profileTitle` that holds only emeritus appointments never ends a center edge without a section that says so.
+
+Q4 (a center section as an official emeritus listing for `emeritusListedLeadIds`) and Q5 were not decided, so the change writes no `emeritusListedLeadIds`.
+Only `centers-institutes-index` adopts the contract; `bbs-research-track`, `center-affiliation-roster` and every snapshot written before the contract keep the plain two-read absence rule.
+The existing freeze guards cover departed and witnessed-omitted claims together, so a center whose whole roster flips to a past section freezes.
+Measured read-only on Development on 2026-11-13 from stored titles only, as a floor: 96 live edges this lane wrote sit on served center rows for people a stored title marks emeritus or former.
+This is a stored-data change: it is done when two lane re-runs in distinct runs, the verdict dry run, a scoped materialize and a served re-read have run on Development.
+`docs/research-data-pipeline.md` owns the mechanics.
+
+## 2026-11-13: The Permanent-Resident Citizenship Option Includes Programs Open To Both Groups (#6092)
+
+This extends the 2026-11-12 citizenship entry below (#5299), whose stated-first order, "Doesn't say" divider and per-option counts are unchanged.
+Decision (2026-11-13, triage on #6092): the "Open to U.S. permanent residents, or not stated" option matches a program whose stated citizenship carries the permanent-resident value, or carries both "U.S. citizens are eligible" and "Non-U.S. citizens are eligible", because a program stated open to both groups is open to a permanent resident.
+A program stated open to non-U.S. citizens only does not match, because "international students only" programs commonly exclude permanent residents, so the rule stays conservative even though no served program had that shape when it was measured.
+The U.S. and non-U.S. options still match only their own stated value.
+This is a serve-time mapping: the stored values and the citizenship parser are unchanged, and one definition of which stated values satisfy an option (`server/src/utils/programCitizenshipOptions.ts`) drives the filter, the per-option counts and their "says" split, and the journey harness, so an option's two counts still add up to what applying it returns.
+Measured read-only on Development on 2026-11-13: 132 served programs state both groups, 5 state U.S. citizens and permanent residents, 4 state U.S. citizens only, 61 state nothing, and 0 state non-U.S. citizens only, so the option's "say they are open" count rises from 4 to the programs carrying either shape.
+
+## 2026-11-13: Lab-Site Lead Statements Count Only When Anchored To The Row (#5962)
+
+`lab-site-lead-verification` reads a lead statement (a person named with a lead title or a subject phrase such as "led by" or "overseen by") for or against an attached lead only when the statement is anchored to the row: its sentence names the row as subject, a qualified title names the row, or a bare title sits in a person card on the row's own page.
+The 60-character lead-role window it replaces could not tell which entity a phrase was about, so a "labs led by" sentence on a division page contradicted a lab's own PI and co-directors of one center contradicted each other.
+An anchored statement or a non-lead listing may overturn a presence confirmation, which fixes the #5979 hand-check defect of a postdoc confirmed because the team page names them (now `LISTED_IN_NON_LEAD_ROLE`).
+An anchored statement naming the lead confirms them first (`NAMED_AS_ROW_LEAD` when no presence arm did), so co-leads never contradict each other, and the namesake check keeps its position and inputs, so the gate's `NAMESAKE` set cannot move.
+The manager refused a rule 1b that would contradict a lead the anchored statements leave out, because an omission is never evidence (#2647); the cost is 2 correct gold-v4 contradictions, attached directors of one multi-director center whose site names only its other directors, which stay `UNSTATED`.
+Measured on the frozen gold-v4 pages: leads 9 confirmed, 1 contradicted, 28 unstated (before: 9, 3, 26), confirmed precision 9/9 and contradicted precision 1/1 against the agent-majority labels, with two replays giving one fingerprint.
+A blind 3-agent re-grade of the 12 replayable #5979 defect labels agreed with the single-agent hand-check on 10 and moved 2 to can't-tell, among them the row whose page says another person oversees the lab while listing the attached lead as its faculty contact, which therefore stays confirmed; on the 10 scorable labels confirmed precision moves from 9/10 to 9/9 and the one contradiction is right.
+The defect set measures precision on the defect predicate and never lane precision.
+Hand-grading every old-versus-new flip on a no-write frozen crawl of the lane's own page reads found 20 of the first 27 new contradictions wrong on its first 580 rows, so the rules carry guards measured on that crawl: a name read from a title must be shown to be a person, a lead the site already names is overturned only by a sentence or a row-qualified title, a lead listed under any lead word is never contradicted, a non-lead listing must sit among other people's cards and read as a short rank, and alumni, news, event and publication pages are skipped.
+On the full crawl (all 812 rows that are not faculty research profiles, 783 reachable, 1,023 judged leads) the final rules flip 11 leads: 8 new contradictions (6 correct, 2 can't tell, 0 wrong), 1 correct new confirmation, and the 2 accepted gold-v4 losses.
+A new `CONTRADICTED` verdict is a lead-edge input: the `leadEdges` resolve ends a lead edge with no recorded source when the site contradicts it (#6006), and 5 of the 8 new contradictions on that crawl are on such edges, all 5 graded correct: three core facility rows whose pages name a different director, and two labs whose people pages list the attached lead as a current or former postdoc.
+
+## 2026-11-12: Browse Folds Its Undergraduate Filters Into One "Undergrads" Group That Matches All Ticked Options (#5963)
+
+This replaces the three undergraduate toggles of #5362 and #5441.
+Decision (coordinator, 2026-11-12, posted on #5963): one group titled "Undergrads" holds "Taking undergrads now" (the welcomes signal), "Has had undergrads before" (the hosted signal) and "Advises undergrad research" (the mentors signal, hinted "e.g. supervised senior theses"), and the "Works with undergrads" umbrella is removed.
+In a cold simulated test of ten students, the current labels could not be told apart, with "Works with" and "Welcomes" the most confused pair, while all ten picked the right option from the proposed labels, of which only the mentors one was reworded afterwards, to name the advising students asked about.
+Ticking several keeps the existing server semantics, which match all ticked options, and the group says so, because 8 of the 10 students already expected ticking more to narrow.
+Each option shows the count ticking it would leave under the current selection, from the existing facet mechanism.
+The card and detail badges take the same words, so a filter and the badge it returns read alike: "Taking undergrads now" ("Taking undergrads now, recruiting" for the `actively_hiring` level, keeping the #5484 rule that both levels start with the filter's words), "Has had undergrads" and "Advises undergrad research" (coordinator, 2026-11-12).
+The owner kept #5449, no sidebar scrollbar at 1280x720, and kept the group open by default, so the wide sidebar compacts instead: 28px rows, the helper line and the advises hint as info tips, and tighter gaps, which brought the sidebar from 666px to 566px of a 590px budget on Development data (owner, 2026-11-12).
+The stored signals are unchanged; the server gained only a `mentorsUndergrads` request filter and facet on the index field #5603 already declared filterable, and it still accepts `worksWithUndergrads`, which an old link no longer ticks.
+All three options always show once their counts arrive, and an option whose count is 0 stays in place, unavailable but focusable, with a tip saying why (owner, 2026-11-13, #6203).
+The tip wording depends on what drove the count to zero, because a student can only widen what they narrowed: "None match your other filters. Remove a filter to see more." when another filter or an Undergrads option is active, and "None match this search." when only a query is active (owner, 2026-11-13, relayed on #6261 after a peer review found the first wording false on a query-only page).
+A zero with neither a query nor a filter active is the served total, which the student cannot widen at all, so that state shows no tip and says only its count (owner, 2026-11-13: final, no tip).
+An option whose count never arrives (an absent facet key, not a zero) stays hidden as it did before #6203, because an absent key is a server or loading state rather than a fact about the corpus (2026-11-13, following the existing behaviour).
+The tip replaces the "Missing evidence is not proof there is none." note rather than joining it: the owner answered on 2026-11-13 that the note is dropped, which overrode an earlier request to keep both.
+The sidebar stays at the 566px the line above records, inside the same budget, because the tip sits behind an info button there.
+
+## 2026-11-12: The v2 Written-Description Contract (#5961)
+
+Decision (coordinating session, 2026-11-12): items A to F of the design comment on #5961 are approved as designed, and this entry records the code half.
+The lab-site description lane (`lab-microsite-description-llm`) is no longer writer evidence; it stays a lead-ownership and website signal.
+The writer reads a page only when it names the row's lead, by the lane's own `descriptionPageNamesRowLead` rule (#4873).
+A served `fullDescription` whose provenance is that lane is served only when it is on the stored copy of the page it cites; otherwise the row falls back to its written body, then to the next ranked body that serves, and when nothing else serves it keeps its stored text, so an ungrounded body never empties the field or hides the row on its own.
+The writer prompt and the card prompt gain the rules the design names, and `WRITER_CONTRACT_VERSION` and `CARD_CONTRACT_VERSION` are bumped once each.
+Past work presented as current gets a prompt rule rather than a new deterministic refusal, because the existing flag's precision was too low to refuse on (finding 3 of the design comment).
+The re-draft is Claude-local only and is sequenced after the #5894 page-text re-capture; the bar before any apply is recorded on #5961.
+The mechanics are in `docs/research-data-pipeline.md` under "The v2 written-description contract".
+
+## 2026-11-12: A Card-Length Written Body Serves As Its Own Card (#5537)
+
+This refines the #4788 rule that a written body's card must not restate its body.
+Decision (ylabs-manager, 2026-11-12, option 1 "body-as-card" of the design comment on #5537): a written body that passes every content check and fits the card length limits satisfies the card requirement on both the serving and the student-visibility gate paths.
+The materializer stores such a body as its card only when no other card candidate is acceptable, and a body longer than a card still refuses a card that merely restates it.
+A copied body keeps today's behaviour, and the detail page already shows one description, so the text is not shown twice.
+Measured before building: of the 101 rows held out of the batch, 77 have a written body that fits as a browse card, and a blind two-grader check of 20 of them found 2 not useful, within the bar of at most 2.
+
+## 2026-11-12: The Program Citizenship Filter Lists Stated Rules First And Counts Both Groups (#5299)
+
+This refines the citizenship labels of #5235 and keeps the 2026-11-10 region entry below (#5533): citizenship still keeps programs that state no rule, and its options still say "or not stated".
+Decision (owner, 2026-11-12): option 4 of #5299, chosen over two separate options, because the merged filter is honest and the student's missing piece was which group a program is in.
+Under a citizenship filter, the board and the ranked search results list every program that states its rule first, then a "Doesn't say" divider holding the programs that state none, each group keeping the board's timing sections or the search's relevance order.
+Each citizenship option in the filter shows how many programs say they are open and how many don't say, as a description of the option rather than part of its name.
+Both counts come from the query the list itself runs, with the other filters and the text query applied and the citizenship clause replaced by that one option, the way `/research` counts a facet (#5101), so the two numbers add up to the total that applying the option returns.
+A text query is re-ranked for each option's own pool, because the ranking's close-match fallback depends on the pool.
+The server orders the stated programs first within the best matches and within the close matches and pages across the boundary, so a page never puts a program that does not say ahead of one that does, and it returns the selected filter's own split beside the per-option counts (`server/src/services/programCitizenshipCounts.ts`).
+The client, which loads the whole served list, draws the divider from the same rule the card uses to say "Not stated", an empty citizenship list.
+The quick filters narrow the list in the client after the server counted it, so the option counts are hidden while a quick filter is on rather than shown wrong.
+Measured on Development on 2026-11-11 over 173 served programs: the non-U.S. option reads 127 say they are open and 39 don't say, and applying it returns 166 rows, 127 of them before the divider.
+
+## 2026-11-12: Senior Essay Pages Are Served As Their Own Kind Of Department Guidance (#5298)
+
+This refines the 2026-10-01 entry below (#4285), which held senior-essay pages back from `/programs` and asked for each department's own research page "rather than the predicate widened".
+In the humanities and most social sciences the senior essay is the research a Yale undergraduate does, and its page is where the department explains how to work with an adviser, so holding it left those majors with no department guidance at all.
+The owner approved options 2 and 1 of #5298 together on 2026-11-12, kept Economics on its research-assistant program, and deferred the detail-page cue (option 4).
+
+Decided:
+
+- **A second guidance kind, earned separately.** `programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE'` is admitted when the page's own title (`sourcePageTitle`) names a senior essay, a senior project or a senior requirement, names no application, deadline, registration, form, prospectus, funding, grant, award, prize, fellowship, internship, summer, news, event or graduate audience, and the record states no deadline, opening date or accepting-applications evidence.
+  The research-guidance predicate is unchanged, so a requirement page is never called research guidance and no page can earn both kinds.
+  The programs gate admits it with its own reason, `department_senior_essay_guidance`.
+- **One section, two labels.** Both kinds are filed under "Department research guidance" on `/programs` and both are matched by the "Department guidance" quick filter.
+  The served `departmentResearchGuidance` flag stays true for both, so every guard that withholds application affordances covers both, and the served `departmentGuidanceKind` (`research` or `senior_essay`) names which label to show.
+  A senior-essay guide carries the badge "Senior essay guidance", "Not an application", no deadline or urgency banner, and the one action "Read the department's senior essay guidance".
+- **Re-point the lane where a department publishes a better page.** Earth and Planetary Sciences now reads its own research-opportunities page in place of its program overview, and Political Science and History, which publish no undergraduate research page, read their senior-essay pages.
+  The lane titles its senior-essay records "<Department> Senior Essay" (or Senior Project, or Senior Requirement) rather than calling them research.
+- **Economics stays on its research-assistant program.** Its senior-essay page is still read only for the course-credit route, not served as guidance.
+- **No detail-page cue yet.** Option 4 waits until coverage is measured on the served catalog.
+
+Measured on Development on 2026-11-11 as a write-free dry run: the lane run with every MongoDB write refused, the classifier and the programs gate evaluated over the stored rows with the lane's would-be values, and the served catalog read through `searchProgramsController` as a signed-out student.
+Before, 173 programs are served, 11 of them research guidance.
+After the lane run and a gate recompute, 12 more are admitted and none is withdrawn: 11 senior-essay guides (7 humanities, 3 social science, 1 science) and 1 research guide from the re-pointed Earth and Planetary Sciences page, so 185 programs and 23 guides.
+The existing 11 research guides keep their kind and tier, and the gate with the new code over the stored rows changes no tier.
+5 configured pages still earn neither kind: a labs list, two general undergraduate-program pages, a senior-essay registration form, and a capstone-faculty list.
+This is a stored-data change, delivered by a lane run and a programs gate recompute on Development and then a re-read of `/programs`.
+
+## 2026-11-13: A Lead Whose Own Profile Page Says Emeritus Is Emeritus (#6081)
+
+This extends the #5835 entry below: besides a department's emeritus page, the freshest first-hand read of the person's own profile page can mark a lead emeritus.
+A read counts as the person's own page when its source URL is one of their profile links, or when it is a roster member's profile title and the member's identity evidence (a netid or Yale email exactly one live researcher holds, with a name that agrees) names them.
+The freshest decisive read wins: an emeritus-only title marks the lead emeritus, and a newer read naming a current faculty appointment leaves them current, which keeps #5835's rule that a fresh read of the person's own page wins.
+The Yale directory's title never counts, and the profile lane's title read can only show a current appointment, never make a lead emeritus, because it still stores captured navigation menus on some school sites (#6177).
+A read counts only when the observation's own entity is the person, their netid-keyed user row or a row whose own profile URL is that page, so a colleague's card title on a shared page in the person's profile links never counts.
+The result is recorded in the same `emeritusListedLeadIds` field on the rows the person already leads, so it never mints a row, an edge or a roster member.
+It reads emeritus only: the deceased marker (#5721) is a separate signal that hides the row and wins, and an emeritus creative-practice lead is labelled the same way as any other.
+`skills/scrapers/SKILL.md` owns the mechanics.
+
+## 2026-11-11: A Lead Their Department Lists As Emeritus Is Emeritus (#5835)
+
+The coordinator decided that a lead whom their own department's official emeritus page lists, and whose own page is not freshly read as a current appointment, is emeritus for the 2026-10-02 rule below, so the row is labelled and claims no way in without current activity.
+A fresh read of the person's own page wins: a lead whose stored title a live lane other than the Yale directory still asserts is left to that title, because the directory's HR title is often the appointment held before retiring.
+The listing is evidence about a lead only, recorded as `emeritusListedLeadIds` on the rows the person already leads, and it never mints a row, an edge or a roster member.
+This narrows the 2026-10-02 entry's "no field is written": the derivation still writes nothing, and it now also reads that one stored field.
+`skills/scrapers/SKILL.md` owns the mechanics.
+
+## 2026-11-11: Creative-Practice Faculty Count For The Directory (#5537)
+
+The owner decided on 2026-11-11 (decision "creative include") that faculty whose work is creative practice, such as performance or composition, count for the directory.
+Rows for an initiative that is only a programme stay listed.
+After the description batch, the writer gets a creative-practice prompt of its own, frozen like the research prompt and checked on a small held-out set.
+Any biography-only or no-research detector must exempt creative practice.
+The discussion is recorded on #5537.
+
+## 2026-11-11: The Agent-Written Description Seed Ships On A Claim-Level Held-Out Bar (#5537)
+
+The owner decided on 2026-11-11 (decision "5537 C") that the Claude-agent description seed ships against a held-out bar taken from the council consensus: claim-level checks S1 and S2, graded by two judge families, with confidence bounds in place of a "0 worse" rule.
+In the owner's corrected reading, S1 is scored on new drafts only, and usefulness is read as non-inferiority.
+On the frozen 298-row held-out run, S1 was 2 of 258 and 1 of 258 (Clopper-Pearson upper bounds 2.77% and 2.14%, against a 3% bar).
+Served unsupported text fell to 8.1% from 22.5% and to 4.7% from 11.7% (p < 0.0001).
+Net usefulness was +16.4% (lower bound +11.7%) and +12.4% (lower bound +8.1%).
+The writer refused 13.4% of rows.
+The old served text on a refused row is left to a resolve-time body-retirement rule rather than to the seed; that rule did not ship, because its arms failed their blind precision checks (#5763).
+OpenAI stays the change-only writer for later evidence changes.
+In owner decision "G C" (2026-11-11), judge calibration against agent-cross-checked labels failed for both judges: S1 recall 50% and agreement 67.5% for the gpt-5 judge, and 90% and 82.5% for the Claude judge.
+For this batch only, the ship rests on the paired comparison: seed unsupported text of 4.7% to 8.1% against current text of 11.7% to 22.5% on both judges (p < 0.0001).
+The judges are recorded as uncalibrated, and the owner will spot-check about 10 items later.
+This is not a general waiver of judge calibration.
+The methodology is recorded on #5537.
+
+## 2026-11-11: Research Led By A Deceased Faculty Member Is Hidden (#5721)
+
+The owner decided that a row whose every current lead is marked deceased is hidden, permanently, and that showing such a row with a label is not a product option.
+The marker comes from the person's own official page, and the row follows it on every resolve.
+A row whose research continues under another current lead stays served, with that lead named in place of the deceased one.
+An ended sole appointment is a separate signal under `ENDED_APPOINTMENT_LEAD_MODE`, and it only observes until a blind sampled check clears it.
+`skills/scrapers/SKILL.md` owns the mechanics.
+
+## 2026-11-10: Every Current Member Is Found Through Their Row, Past The Display Cap (#5584)
+
+The owner decided on #5584 that a name search matches every current member of a row, not only the members within the detail page's display cap.
+This replaces the member-cap sentence of the 2026-10-21 entry below.
+The display caps are unchanged and the detail route serves no member past them.
+Showing every member (#5602) was closed as not planned on 2026-11-11, because every row over the cap is a center whose past-cap members are faculty edges the team section does not show at any count, so the detail route's single-member `?member=` append was removed with it.
+`skills/search-data/SKILL.md` owns the mechanics and the measurements.
+
+## 2026-11-10: Hosted, Welcomes And Mentors Each Take A Source Once, And Faculty Research Profiles Get All Three (#5362)
+
+The owner decided on 2026-11-10 that undergraduate evidence must reach faculty research profiles in every department, not only labs: on Development that day hosted evidence reached 289 of 710 served labs (41%) but 53 of 2,984 faculty research profiles (1.8%), and welcomes reached 69 labs (10%) but 9 profiles (0.3%).
+Each source entry feeds exactly one of three signals, decided by what the source says the undergraduate did.
+Hosted (in the past): the undergraduate worked inside the professor's research, as a roster or alumni entry, a research-assistant placement on the professor's project, or a summer or fellowship placement in the professor's own Yale lab.
+Welcomes (now): the professor or department says the professor is taking undergraduates now, such as an open research-opportunities list naming them.
+Mentors: the professor advised the undergraduate's own work, such as a senior essay, thesis or project, directed research, or a prize essay (#5551).
+A summer or fellowship placement in the professor's own Yale lab is hosted, once, and not also mentoring; this replaces the summer-program sentence of the #5551 entry below.
+The Cognitive Science senior essays and Earth and Planetary Sciences theses move from hosted to mentors, which on 2026-11-10 lowers hosted on faculty research profiles from 53 to about 22 until the new hosted sources land, since 31 of those 53 rested only on the two lists.
+A student finds faculty who take undergraduates through one "Works with undergraduates" browse control over the three signals, and each card still shows its own tag.
+None of the three is a row gate, and every one is derived from observations a deterministic lane wrote.
+Fellowship programs that publish no recipient list naming a mentor are not configured: STARS Summer, Dean's Research, Tetelman and Mellon Mays were checked once on 2026-11-10, had none, and credited 0 served rows, so their configs were retired.
+
+## 2026-11-10: Mentoring Undergraduates Is Its Own Signal, Read From One List Field (#5551, #5362)
+
+The owner decided on 2026-11-10 that a professor named as the adviser of a specific undergraduate's own work is its own signal, "Mentors undergrads", separate from "Has hosted undergraduates" and from "Welcomes undergrads", because y/labs is also used to find a thesis adviser or a mentor for a student's own project.
+Every undergraduate signal exists to tell a student which professors are receptive to mentoring them, and each official list feeds exactly one of the three, decided by what the list says the undergraduate did (owner ruling on #5362): advising the student's own essay, thesis, project, directed research or prize essay is mentors; working inside the professor's research, including a research-assistant placement and a summer or fellowship placement in the professor's own Yale lab, is hosted, counted once; a list of who is taking undergraduates now is welcomes.
+This supersedes the first version of this entry, which placed summer programs under mentoring.
+`UNDERGRAD_EVIDENCE_SIGNAL` in `server/src/models/storedVocabularies.ts` records the one signal each list feeds, and changing it requires the hosted and welcomes derivations of #5362 to agree.
+One deterministic lane, `official-undergrad-lists`, reads every list into one stored field, `undergradListEvidence`, through one identity resolver and one owner-review gate, and each signal's derivation reads only the entries of its own lists.
+A program director, committee member, general faculty pool, center-wide trainee list, graduate-student or postdoc mentor, or mentor at another institution does not count.
+An entry attaches only to a row the professor already leads: a list alone does not pass the directory test, so it never creates a row.
+Only the adviser is read from a list; student names, titles and topics are never stored.
+A source is served only after the owner has read a side-by-side sample of its identity matches, because an agent check of a sample is not a precision review.
+An email binds only when the researcher who holds it carries the name the list prints, because a project card's contact email can belong to someone else in the group; a name binds only when no second live researcher could carry it, and a list that names no department, or an interdisciplinary program such as Cognitive Science, must agree with the departments its advisers come from.
+A list of who is open to undergraduates now refuses a name-only match to a researcher whose title holds only emeritus appointments, because an active professor the database does not hold can share a name with an emeritus one whose row lists the same department.
+The Cognitive Science senior essays and EPS senior theses move from the fellowship-recipient lane, where they counted as hosted, to this lane's mentors lists.
+The fellowship lane no longer reads them, and because that lane emits only for rows it matches and silence retracts nothing, the entries it already stored are dropped on every resolve (#5591).
+Measured on Development on 2026-11-10, 65 rows store a `pastUndergradAdvisees` entry from those two programs and 63 of them store nothing else, so dropping the configs alone would leave 63 rows hosted on a mentors page with no lane able to reach the value again.
+The common-surname and duplicate-record guard of the name resolver refuses the most prolific CS advisers, which a department tie-break or a researcher merge would recover.
+
+## 2026-11-10: The Program Region Filter Returns Only Programs That Name The Region (#5533)
+
+This partly reverses #5235 for one facet: the region filter on `/programs` and the fellowships browse now returns only programs that state the chosen region.
+Decision (owner, 2026-11-10): region is stated-only because 142 of the 173 served programs on Development (82%) state no region, so under #5235 every region option returned 146 to 155 programs of which only 4 to 13 named that region, and the filter barely narrowed.
+Year of study, term, purpose and citizenship keep #5235 unchanged: a program that states no value stays under the filter, and the citizenship options still say "or not stated".
+Region was the outlier because the other facets are stated far more often (21 to 39 of 173 programs state none), and because a missing region rarely means "any region".
+The region tab says it shows only programs that name the region, and its options carry no "or not stated" wording; the result total is the same query, so the count matches what is served.
+The stated-only set is `PROGRAM_STATED_ONLY_FACET_FIELDS` in `server/src/utils/programFacetFilters.ts`, which both `searchFellowships` and the `journey:eval` filter-agreement cases read, so the invariant fails a not-stated row under region and a stated-different row under any filter.
+The cases also report the share of served rows that state no value per field as rates that never gate, so a facet drifting toward mostly not-stated is visible before it hollows out another filter.
+
+## 2026-11-10: PostHog Records Production Students' Clicks And Waits, Masked (#5492)
+
+This reverses the third-party half of the 2026-10-04 entry (#4754) for PostHog only; the Google Analytics tag stays removed and `client/src/__tests__/noGoogleAnalyticsGuard.test.ts` still fails if it returns.
+Decision (owner, 2026-11-10): option B of #5492, the browser SDK on PostHog Cloud US, with autocapture and session replay on, because the question is where students click and where they wait, which `analytics_events` cannot show.
+The owner accepted the change in privacy posture, on the condition that all text and every input is masked in replay, no input value is captured, and no netid is sent.
+GA4 was removed for three failures, and each is answered here.
+It loaded from the initial document before anything else; `posthog-js` is bundled from npm, fetched only after the app mounts and the session check answers, and is the no-external build, so it cannot load a script from PostHog and `script-src` stays `'self'`.
+It sent a persistent identifier to Google for every visitor; PostHog runs only for a signed-in student, keeps nothing in a cookie or browser storage (`persistence: 'memory'`), and receives no IP address once the project's "Discard client IP data" setting is on.
+Nothing read what it collected; the owner reads PostHog's replays, heatmaps and dead-click reports.
+
+Two owner choices, made on 2026-11-10, define who is measured and how they are named.
+1. Production only: PostHog runs only in the Production deploy, and never in Beta, local development, CI, or a session holding an active admin grant.
+The server decides, from positive evidence that it is Production rather than from the key alone: `isProductionWebRuntime` in `server/src/utils/posthogConfig.ts` requires a deployed runtime whose `MONGODBURL` names the `Prod` database, whose `MEILISEARCH_INDEX_PREFIX` is `prod`, and whose `SCRAPER_ENV` is not `beta`.
+Only then does the CSP open `connect-src` to the two PostHog origins and `GET /api/check` answer `productAnalytics: true`, and the client also refuses to start outside a production build or without a `phc_` key and the exact US host.
+2. Identity: PostHog receives only an opaque per-account ID, `accounts.productAnalyticsId`, a random version 4 UUID the server assigns on the account's first Production session check that PostHog may measure.
+It is generated rather than derived, so nothing outside the database can reverse it, and accounts are environment-local, so the ID never leaves Production by promotion either.
+The admin-only "PostHog ID Lookup" on `/analytics` (`GET /api/analytics/product-analytics-ids/:id`) resolves it to a netid, so the owner can see who a recording belongs to while the netid stays in the database.
+No netid, email or name is sent in any property: the client redacts the signed-in netid from every URL and string it sends, strips every query string and fragment, and allows one person property, a bucketed `user_type`.
+The owner also asked, on 2026-11-10, for named funnels and errors: every first-party journey event is sent to PostHog under its own name with only its bucketed enum payload and entity ids, and unhandled errors are captured with the same redaction.
+
+The safe configuration is pinned by tests rather than by review.
+`client/src/utils/__tests__/productAnalyticsPayload.test.ts` runs the real SDK against a capturing transport and fails if any typed value, page text, query, accessible label or the netid reaches an event or a recording, if a request or response body or header is recorded, or if anything is written to a cookie or browser storage.
+The same test fails if a person property other than the bucketed `user_type` or an identify event is sent, and `client/src/__tests__/posthogUsageGuard.test.ts` refuses a committed `phc_` key.
+`server/src/middleware/__tests__/securityHeaders.test.ts` pins the exact `connect-src` and `script-src` with PostHog on, and refuses a non-US, look-alike, port or path host, Beta, and local development.
+Turning PostHog on is an operational step and not part of the merge: the owner sets `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` on the Production web service only and redeploys.
+The `/privacy` page (#4157) names PostHog, the data it receives and its retention, and PostHog's retention is set no longer than the 1,095-day TTL on `analytics_events`.
+
+## 2026-11-10: A Stale Hiring Line Reads As A Welcome (#5524)
+
+The owner decided on 2026-11-10 that an undated "we are recruiting undergraduates" line on a page that has not been updated in over 18 months shows "Welcomes undergrads" rather than the stronger "recruiting now" badge.
+The opening is probably filled, but the page still invites students, and a standing welcome does not expire the way an opening does, so welcome lines are untouched.
+The age is the page's own stated "last updated" date, the only page-age signal measured to be both present and honest: across the 79 served invitation pages on Development on 2026-11-08, the HTTP `Last-Modified` header was the fetch date on all 43 pages that sent it, and 35 of the 38 copyright years were the current year.
+A line that names a future term stays an active opening.
+A dry run over the 83 Development rows holding an invitation on 2026-11-10 planned one downgrade under this rule, the page a graded sample had flagged as last updated in September 2024.
+
+## 2026-11-08: The Stronger Invitation Badge Reads "Welcomes Undergrads, Recruiting Now" (#5484)
+
+The `actively_hiring` invitation level is labelled "Welcomes undergrads, recruiting now" rather than "Actively hiring".
+Under the "Welcomes undergrads" filter, which lists that level first (#5456), two of six students in the 2026-11-08 browser-only simulated round read cards badged only "Actively hiring" as a mismatch with the filter and as paid work.
+The owner chose the new label on 2026-11-08 so both levels start with the filter's own words, and "recruiting" describes an opening the lab's page states without implying pay.
+The stored level, the filter label, the facet and the ranking are unchanged; only `ACTIVELY_HIRING_LABEL` in `client/src/utils/undergradInvitation.ts` moved, and the entries below keep the label they were written under.
+
+## 2026-11-08: A Named Undergraduate Research Adviser Counts As Hosting Only In A Lab Science (#5473)
+
+The owner decided on 2026-11-08 that a public page naming a faculty adviser beside an undergraduate's research project counts toward "Has hosted undergraduates" only for lab-based sciences.
+A humanities or social-science essay adviser is not evidence that a student was in the lab, so that pair sets no hosting evidence; it may feed the separate supervision claim from #3593, which this decision does not change.
+Earth and Planetary Sciences senior theses and STARS II symposium booklets count for every adviser they name.
+Cognitive Science senior essays count only when the matched adviser's own department is a lab science, named in `LAB_SCIENCE_ADVISER_DEPARTMENTS` (`server/src/scrapers/utils/labScienceAdviserRule.ts`): psychology, psychiatry, neuroscience, neurobiology, neurology, computer science and a few engineering and imaging units, and not linguistics or philosophy.
+The researcher's primary department decides when there is one, so a primary-Linguistics adviser whose row also lists Computer Science does not count; all of the adviser's departments are read only when no primary is recorded.
+For that page the department check accepts Cognitive Science or any department on the same list, because most of its advisers' rows name their home department rather than the program; identity is still guarded by requiring exactly one matching researcher.
+A pair the rule refuses is counted as `not-lab-science` in the `undergrad-fellowships-recipients` run notes rather than dropped silently.
+The lane stores a per-year count under the program name and no student name for these pages.
+A scoped Development dry run on 2026-11-08 read 634 adviser pairs, matched 290 of them to 92 existing lead rows, and 60 of those rows (36 faculty research profiles, 24 labs) carried no hosting evidence yet; a 15-pair page-checked sample across the three sources and a further 10-pair Cognitive Science sample were correct on every pair.
+
+## 2026-11-03: Actively Hiring Rows Lead The Welcomes Filter Instead Of Having Their Own (#5456)
+
+The owner asked on 2026-11-03 whether "Actively hiring" should be its own filter, and chose to list those rows first under "Welcomes undergrads" instead.
+A separate filter would often answer almost nothing: 19 of about 3,800 served rows on Development carried the hiring badge that day.
+The wide sidebar also had 9px of room left at 1280x720 (#5449).
+With the welcomes filter on and no sort the student chose, browse sorts on `undergradInvitationRank` (2 hiring, 1 welcomes, 0 neither, derived from the served badge) before the browse rank, and a text search moves hiring rows ahead within the pool that already cleared the relevance threshold, keeping relevance order inside each step.
+A search with no embedder, which Meilisearch paginates itself, keeps plain relevance order.
+A graded sample of the 19 hiring quotes against their pages on 2026-11-03 found 15 current, 1 whose page no longer carries the language, 1 on a page last updated in 2024, 1 uncertain on a site whose news ends in 2024, and 1 beside a passed apply-by date for a future term, which the 2026-10-18 rule already treats as an active opening.
+
+## 2026-10-29: Browse Can Filter To Research Whose Lab Page Welcomes Undergraduates (#5441)
+
+The owner asked on 2026-10-29 for a "Welcomes undergrads" filter beside "Hosted undergrads".
+This supersedes the 2026-10-02 rule that no browse filter offers a way in, for this one filter.
+The filter computes nothing: it repeats the invitation badge of #5288, which quotes what a lab's own page states, so it is held to the same evidence rule as the badge.
+Both steps of the badge count, "Actively hiring" and "Welcomes undergrads", because hiring is the stronger step of the same scale.
+The `welcomesUndergrads` index field is derived from `publicUndergradInvitation`, the predicate that decides whether the badge is served, when the index document is built, so the filter and the badge cannot disagree.
+Hosting in the past and welcoming now stay separate filters, because the owner treats them as different questions; with both on, a row must satisfy both.
+The toggle is hidden when no result carries the badge, unlike the hosted toggle's disabled zero state, because reaching out is the default for every Yale lab and "Welcomes undergrads (0)" would read as no lab taking undergraduates.
+That hiding is retired: since #6203 all three Undergrads options always show once their counts arrive, and an option at zero is unavailable in place rather than hidden, under the 2026-11-13 line in the #5963 entry above.
+Measured on Development on 2026-10-29 through the search route, 79 served rows carry an invitation badge, 19 "Actively hiring" and 60 "Welcomes undergrads", and none of them is an emeritus row whose way in is withheld.
+An emeritus row whose way in is withheld drops the badge at serve time, which the index cannot see, so such a row would match the filter without showing its badge; there are none today.
+Since #5620 the index builder reads the same serve-time emeritus decision, so such a row no longer matches the filter; measured on Development on 2026-11-10 before that fix, the filter returned 117 rows, every one serving the badge, and none of them emeritus-led.
+The defect that was live was on mentors rather than welcomes: 3 of the 590 rows under "Works with undergrads" were emeritus-led rows whose only mentoring was an advising-now entry the card withholds, and the same decision now keeps them out of `mentorsUndergrads` and `worksWithUndergrads`.
+
+## 2026-10-29: Students And Postdocs On A Lab's Roster Are Name-Searchable (#5442)
+
+The owner extended the 2026-10-21 decision below to every researcher a lab's official roster lists: postdocs, graduate students and undergraduates, current and past, are found through their lab by name, and staff are not.
+They are indexed in `memberNames`, apart from `professorNames`, so faculty-name ranking and the embedding text are unchanged.
+The card's matched-member line names the role the lab page lists them under, and the lab page highlights them, as it does a faculty member.
+The same whole-name rule applies, so a lone given name or surname matches nobody.
+
+## 2026-10-21: A Lab Member Is Found Through The Lab, And Every Card Names Its Lead
+
+A person whose research happens in someone else's lab is found through that lab rather than through a row of their own.
+A name search returns the lab, its card says "Matched a lab member: <name>", and the link opens the lab page scrolled to that member and highlighted.
+A person who leads their own research keeps their own row and is marked on the labs they only belong to; a lead is never marked on a row they lead.
+The match needs every query word to be a word of one non-lead faculty member's name on that row, so a topic word or a lone surname claims nobody.
+Only a faculty member the lab page's team section lists can match, meaning a fresh verified official roster row within the page's member cap, so the link always lands on a member the page shows.
+Search result cards also name their lead again: the card read the lead from `contactName`, which the public result never carries, so on Development 0 of 80 browse and search cards named a lead before this change.
+The lead name served is the public display name from the row's lead edges, the same one the detail page shows, never contact data.
+The lead name comes from the lead-name read every browse and search page already makes, so it adds no read.
+The member match makes one roster read for the returned page, and only when the query has at least two name words; a failed member read degrades the page rather than failing it (#3668).
+The owner chose this model after seeing it working on Development (#5426).
+
+## 2026-10-20: The Directory Lists Research People Lead At Yale; Hosting A Student Is A Signal (#5407)
+
+y/labs is a directory of research at Yale, so a person gets a row when they lead research at Yale now, and whether they could host a student is a signal rather than a gate.
+This applies the 2026-08-25 "Simple Directory First" decision to the lanes that mint faculty-research rows from profile text (`roster-bio-research-evidence`, `center-profile-research-rows`).
+The test has three parts: the profile states research the person does now, the research happens at Yale, and it is the person's own program rather than work inside someone else's lab, which shows through that lab's membership.
+A title is evidence for those parts, never the rule, so the lector exclusion added in #5391 is withdrawn.
+A person counts as already listed only through a lead edge, in any state, to a `LAB` or `FACULTY_RESEARCH_AREA` row, live or archived, or through an archived personal row in their name.
+A center, institute or initiative membership is an affiliation, not a listing: before this, such memberships covered 42 of the 43 people a lead-only rule would add, and the biography lane planned 1 row.
+Measured on Development on 2026-10-20, the corrected rule plans 42 rows with no duplicate of an existing or archived row, and an independent grader accepted 11, rejected 19 and was unsure of 12.
+A wording predicate that required an active-research sentence was tried and withdrawn: it dropped 4 accepted people and 3 already-approved rows while keeping 5 rejected ones, because the rejected people differ by appointment and program, not by phrasing.
+That difference is visible only by reading the profile, so it stays an operator judgement on each batch, and both lanes stay manual-only.
+
+## 2026-10-20: Derived Undergraduate Rosters Are Shown Without Per-Lab Review (#5413)
+
+The owner decided on 2026-10-20 that every research row answers three questions: whether it has hosted undergraduates, whether it welcomes them now, and, where it has hosted, which undergraduates its own pages name.
+A roster the lane derives from a row's own site, and that passes every publish check, is therefore served automatically, with no per-lab owner review; this supersedes the per-lab review rule of the 2026-10-14 entry below for derived rosters.
+A served derived roster that lists an undergraduate counts as hosting evidence, because the lane re-reads every row with a website on each run and withdraws a roster whose page loads but no longer yields it, so the roster cannot outlive its page, while a read that fails on every page keeps the last successful roster.
+Safety comes from the publish checks, hashed owner denials in `OWNER_DENIED_ROSTER_KEY_DIGESTS`, the `DERIVED_UNDERGRAD_ROSTERS_SERVE=false` kill switch (whose effect on the stored hosting flag and browse rank needs the browse-rank backfill and a search sync), and a fresh agent-graded sample of newly served lists, since the earlier precision figures were measured on the rows the parser was tuned on.
+
+## 2026-10-19: An Advisory Seat Is Not Center Membership
+
+The owner decided on 2026-10-19 that a seat on a center's advisory committee or scientific advisory board is not membership of that center.
+A read-only audit of the affiliations the deterministic affiliation lane archived when it replaced the model lane (#5296) found 27 of 49 were advisory seats the model lane had recorded as members.
+
+Decided:
+
+- **`center-affiliation-roster` keeps leaving advisory sections out**, and an advisory seat is never a reason to keep or restore an affiliation edge.
+
+A person the same page also lists under a membership heading is still listed through that listing, because the rule is about the advisory section, not the person.
+## 2026-10-19: The Roster Lane Withdraws A Row It No Longer Mints (#5380)
+
+The owner decided on 2026-10-19 that the department roster lane archives a row it minted earlier and no longer mints, when no other lane holds the row up.
+This narrows rule 3 of the 2026-09-24 #3359 entry, where an archive is operator judgement, to exclude this lane-owned case, on the #4110 precedent of the fellowships lane archiving its own mint.
+It is the lane's own claim being withdrawn, not a judgement about one row: the lane minted the row from a read that later proved wrong, and two complete reads now say it would not.
+Measured on Development on 2026-10-19: 299 of 1,177 live rows minted by `dept-faculty-roster` were not re-minted by the 2026-10-17 full run, and the person was re-read in 248 of them.
+Of those, 154 are `student_ready` on other lanes' evidence, and 44 school-wide public health rows held on `citations_identify_no_person` exist only because an August run read a shared giving page as every person's lab website (#2460); replaying the current lane on their profiles found nothing to mint for 43 and a 404 for 1.
+
+Decided:
+
+- **The lane says so; silence never does.**
+  A read records a row's key as `withdrawnEntityKeys` on the department's roster-health snapshot only when it fetched the person's own profile, the profile named the person, and the mint came back empty without a title refusal.
+  An unread or refused profile, a profile-only lane and a programme lane record nothing.
+- **Two admitted reads, a yield guard and a ceiling.**
+  A row is withdrawn only when the two newest complete, over-the-wire reads of its department both record it and neither minted it.
+  The department is frozen when its discovery or its count of profiles read fell below 0.75 of the previous admitted read, or when more than half of the live rows the read reached would be withdrawn at once.
+- **Any other evidence keeps the row.**
+  A served tier, a description, a website, a lead edge from another lane, a non-empty live observation from another lane, or a row merged into it each keep it; page-read bookkeeping, the lead-school inheritance derivation, and a website the roster lane itself still asserts do not.
+- **The lane reverses its own archive.**
+  A row archived for this reason is restored and rematerialized when an admitted read mints it again.
+- A withdrawn key counts as still listed for the faculty-departure lane, because the person is on the roster.
+
+## 2026-10-19: An Official Roster Address Is Enough To Create A Researcher
+
+The owner decided on 2026-10-19 that an official Yale roster or profile page printing a person's own `first.last@yale.edu` address is enough to create that researcher.
+This narrows #2776, which refused to mint for an alias-shaped `inferredPiUserKey` because the mint could stamp neither a netid nor an account and so left a person no lane could resolve back to.
+Measured on Development on 2026-10-19: of the 129 live research rows held on `missing_lead`, 93 carried a PI key with an address that no researcher, account or official profile link held, and the engine minted for none of them.
+
+Decided:
+
+- **Identity is matched before anything is minted, by the key's own address first and then the official profile page.**
+  The PI-key resolver follows the key's address, and failing that its official profile page, to its sole live holder even when the directory maps the alias to two netids, because both are per-person identifiers and the alias map is not.
+  The official-profile join also reads the page the engine itself stamps as `YALE_OFFICIAL`, not only a `/people/` or `/profile/` path, and two single-token names agree when they are the same name.
+- **A mint from an alias-shaped key requires every one of these, and each failure refuses with its own reason:** the key's own observed address is exactly `<alias>@yale.edu`; it is not a role or unit mailbox (#5332); the alias spells the name the roster prints, read with the nickname-aware comparator; no live researcher or account holds the address and no live researcher holds the official page; no other `user` key prints the address under a disagreeing name; #4388's rule that nobody else plausibly holds the name; and a live row names the key as its lead.
+- **The minted researcher carries `identifiers.email`, lowercased, and never the alias as a netid.**
+  The next pass resolves the key back to it by name, or by the address when the name is ambiguous, and a later netid twin folds into it, because an email holder is the directory-backed tier `researchers:dedupe-accountless-shells` folds toward.
+- A dry run over the 93 rows found 79 that mint; 9 are refused by an earlier rule (#4388, or no live row) and 5 because the alias spells another person than the roster name.
+
+## 2026-10-18: A Merged-In Loser's PI Attribution Names A Leadless Survivor's Lead (#5339)
+
+This narrows field class 1 of the 2026-09-28 #3609 entry, where the lead fields are the survivor's own.
+A merge leaves the roster that lists the person reading the loser's key, so a survivor whose own lanes state no PI had no live lead evidence at all and stayed on `missing_lead` behind a lead the merge itself established.
+Measured on Development on 2026-10-18: of 1,635 live survivors whose merged-in losers carry a live PI attribution, 109 state none of their own, 5 of them are held on `missing_lead`, and for 101 of the other 104 the loser's attribution resolves to the person the survivor's existing lead edge already names.
+
+Decided:
+
+- **A loser's `inferredPiUserKey` and `inferredPiUserId` reach the survivor only while the survivor states no PI attribution of its own and holds no lead lock.**
+  A survivor that states its own never takes a loser's, so a merge cannot put a second person beside the lead its own lane read; every other identity field stays the survivor's own.
+  The losers must also name one person, and that person must be the only lead the survivor already holds on a live `PI` or `DIRECTOR` edge from any lane, so neither a disagreeing pair of losers nor another lane's lead can end with two leads.
+  An attribution that resolves to an archived researcher names nobody who can lead, so it neither reaches the survivor nor counts as a second person; on Development the motivating row's loser carried a retired mailbox-shaped key beside the roster's current key.
+- **The person-mint gate counts a merged-in loser's attribution as its survivor's** only when the survivor's own merged read (`mergedSurvivorEvidence`) admits it, so locks, refusals and invalidated runs decide both the same way, because the archived loser was the only row naming the person and the mint refused it as a dead entity's word.
+- It is a derivation on every resolve: no field is written outside the ordinary projection and nothing is locked.
+
+## 2026-10-18: A Lab Page That Invites Undergraduates Earns A Quoted Badge (#5288)
+
+The owner chose a three-step scale for how strongly a lab invites undergraduates, with no badge at the default step.
+"Actively hiring" means the lab's own page says it is recruiting undergraduates now: "currently hiring", "actively recruiting", "we are looking for", "we have openings", "positions are available".
+"Welcomes undergrads" means the page explicitly asks undergraduates to get in touch: "we welcome undergraduates", "always looking for", "interested undergraduates should email", an RA form.
+Reaching out if interested is the norm for every Yale lab, so the default carries no badge and the constant reach-out prompt covers it.
+A row shows at most one badge, the higher step its own page supports, and the detail page shows the quote that backs it with its page.
+
+This is a narrow exception to the rule that the detail header carries no computed verdict or access-summary badge, not a reversal of it.
+Nothing is computed: the badge repeats what the lab's own page states, so it is never inferred from a roster, hosting history, a generic join page or "students welcome" wording.
+
+The `lab-site-undergrad-invitation` lane reads each lab site's home page and up to four linked join, people or opportunities pages, and makes no model call.
+`server/src/scrapers/utils/undergradInvitation.ts` judges each sentence that names undergraduates.
+It refuses closed or filled wording, past or roster lines, course, degree and program mentions, other groups' hiring, and awards.
+It also refuses lab-news welcomes of a cohort or a named person, a bio's own undergraduate years, a job ad's list of prior experience, and course-advising lines, because some of those sat beside a student's name.
+It also refuses a stated term that has passed ("Fall 2019 - Summer 2020", or a month and year), whether in the sentence or in a short heading block directly above it, while a future term ("positions will be available in Spring 2027") is an active opening even beside a past apply-by date, which the owner judged a typo and which is not served as a claim.
+The lane refuses a quote that three or more rows share, because that is a department or program page repeated across faculty rows rather than one lab's invitation, and it skips a page `quotePageIsAboutAnotherEntity` places on another entity.
+The shared count spans the stored live observations as well as the current run, so a narrow run cannot serve a program page, and a refused row asserts no value so a later run withdraws a quote an earlier one emitted.
+A row with an unreadable linked page states no absence, and emits an invitation found on the pages that loaded only when it is an active opening or the row has no live quote, because a transient fetch failure is not evidence that an invitation is gone or weaker.
+
+Measured by hand-reading in the session that built it: against 85 graded quotes from Development, the extractor agreed on every one, and against the full source pages of 80 graded rows it agreed on 77.
+The 3 misses are pages whose fetched HTML does not carry the text, and none was a wrong badge.
+Across 96 pages of profiles and lab sites with no invitation it flagged one, which was a real invitation the hand-read had missed.
+Those are the pages the rules were tuned on, so the precision of record is a fresh graded sample of served rows after the first Development run, recorded on #5288.
+A sample of 45 faculty profiles and 45 lab sites the undergraduate lane had not credited found no invitation, so coverage is bounded by what labs publish, not by the reader.
+
+## 2026-10-18: The Undergraduate Mention Quote Is No Longer Shown (#5309)
+
+Decision (owner, 2026-10-18): the detail page no longer shows the "Mentions undergraduate research" quote, and the API no longer serves `undergradEvidenceQuote` or `undergradEvidenceSourceUrl` on any route.
+This supersedes the 2026-10-12 and 2026-10-11 quote-display entries below.
+Measured on Development (2026-10-18), 117 rows showed a quote, and about 43 of them were an explicit invitation to undergraduates by the `textInvitesUndergraduates` detector.
+The rest were member bios, which the roster name list carries (#5039, #5278), or passing mentions of teaching or mentorship that a student cannot act on and that read as a claim the lab did not make.
+The quote is model output deciding what a student reads, which #5296 retires.
+"Has hosted undergraduate researchers" never read the quote (#3593), so no row loses the badge.
+The stored field, the lane that writes it and its admission guards stay, because an explicit invitation quote returns beside the badge designed in #5288.
+The `undergrad-evidence-quote-precision` journey case is retired with the quote rather than left passing over an empty population; its last measurement was 42/50 = 0.84.
+
+## 2026-10-18: Every Scraper Lane Is Deterministic; A Model Helps Only At Materialization (#5296)
+
+The owner decided that every scraper and lane is deterministic, because the work is web scraping and crawling and a web page is deterministic input.
+A lane fetches, crawls and parses with code and stores what the page says as cited observations, so the same page always produces the same observations.
+A language model may help only later, at materialization, and then under three rules: it reads stored observations only and never fetches, its answer is cached by an input hash so a re-run makes no new paid call, and its output is derived, labelled and re-derivable rather than written back as an observation.
+
+Four lanes called a model on 2026-10-18: `lab-microsite-undergrad-llm` (manual-only), `center-director-llm`, `center-affiliation-llm` and `lab-microsite-description-llm` (weekly sweep).
+Each is replaced one at a time and measured on a frozen page set against the lane it replaces before that lane is retired; #5296 holds the order.
+Since 2026-11-03 (#5455) all four are manual-only, so the weekly sweep runs no model-calling lane; `lab-microsite-description-llm` runs only by hand until the final description batch.
+
+The first replacement is the hosted-undergraduates badge.
+A reviewed official roster that lists an undergraduate now counts as hosting evidence (#5233), the extractor reads every undergraduate section and refuses non-Yale students (#5292, #5341), and 36 rosters the record-only derivation (#5294) built were checked against their pages and added to the allowlist (#5337, #5356), which holds 173 labs.
+Of 276 badged rows on Development, 171 rest on a roster, 20 on a fellowship recipient list and 85 on `lab-microsite-undergrad-llm` alone.
+The owner chose to keep those 85 served and freeze the lane rather than drop them: it is not run again, and each badge it holds gives way as a deterministic roster or recipient list covers the row.
+An agent-graded sample of 30 rows resting on that lane alone found the badge right on 25 of 29 gradable rows and the stored count right on 18, so the detail page states no advised count (#5260).
+
+## 2026-10-18: A Description That Narrates Its Own Sources Is Not A Research Statement (#5281)
+
+A served description must say what is studied and must not narrate its own sources (owner decision, 2026-10-12, #5020).
+A row with no research statement is held, while a thin but accurate research line still serves (owner decision, 2026-10-11).
+On 2026-10-18 the owner chose to hold one served faculty research row whose only text narrated its sources.
+That row is a class rather than a case, so `nonResearchBodyShape` in `server/src/utils/descriptionNonResearchBodyShape.ts` names `source-narration`: text that reports what a page, profile, site or listing says ("Course and department pages describe ...", "The profile lists ...", "The site focuses on ...") or opens on "According to ...".
+The quality bar refuses it for both the body and the card, and `cardStatesResearchItself` no longer counts such a card as stating the research, so it is never served in place of a body.
+A body that narrates its sources falls back to the row's research card as #5109 does for joining instructions and event narration, and a row with neither is held by the existing gate reasons.
+
+The text is refused only when every sentence narrates a source, so research prose that cites its page and then states the work keeps its body.
+The source document has to be the sentence's subject and has to be marked as a source, by a determiner, by a possessive name of up to four words, by a closed run of source qualifiers such as course, department or faculty, or by a bare "Pages" or "Profile" opening the sentence.
+So "studies how news sites report elections" is research about sites, and "quantum materials feature exotic states" is research about materials, rather than narration.
+
+Measured on Development on 2026-10-18: of 50,344 live description observations, 64 are source narration, all from `lab-microsite-undergrad-llm` (24 cards, 40 bodies).
+Walking all 3,706 served rows through `getResearchGroupDetail` with the old and new code, 5 served texts on 4 rows narrated their sources and only the one held by the owner's decision stopped serving at the route; 2 rows now serve their stored research card in place of the narrated text.
+The student-visibility gate dry run attributes 2 served rows becoming held, the owner's row and one whose card narrates its source site beside a body that describes the site's offerings, and 2 held rows becoming served through the existing card fallback; every other verdict change predates the fix.
+No text is written: the data operation is a gate apply on Development for those rows, and a rematerialize is not run because each affected row would wait on card synthesis, which another session owns.
+
+## 2026-10-18: Beta And Production Carry No Archived Research Rows (#5148)
+
+This supersedes the slim-tombstone entry below the same day: the owner chose live rows only over slim stubs, confirmed in both sessions that built them.
+A student-facing environment needs exactly two things from a merge: an old slug that redirects, and a saved plan that follows its lab.
+Both are facts about the survivor, so each live row carries `mergedFrom: [{ slug, entityId, mergedAt, archivedReason }]`, derived from Development's tombstones by one writer (the `survivor-alias-derivation` sweep stage) and re-derived by the Development-to-Beta copy at copy time, so no environment can hold a list older than the merges it no longer has rows for.
+The copy filters `research_entities` to live rows and drops the rows that hang off archived ones; Beta-to-Production copies Beta as is.
+The old-slug redirect falls back to `mergedFrom.slug`, `research-plans:retarget-merged` resolves an id no row carries through `mergedFrom.entityId`, and a saved plan on such an id reads as merged, or as retired when no survivor names it, since a serving environment cannot tell a retired row from a deleted one.
+This is not the retired redirect ledger: that was a second collection written beside the rows and it drifted, whereas `mergedFrom` is derived from the tombstones on every sweep and every copy.
+Development keeps its full archive, and the Beta-to-Development refresh still carries it back from the swap backup.
+Decision (owner, 2026-10-18): Development keeps its archive permanently, and deleting it (#5189) is not planned.
+The archive is working memory for the engine, not dead weight: it routes 191,965 observations filed under merged slugs to their survivors, refuses re-mints of merged duplicates, and stops 893 of the 1,644 retired rows from being minted again from their own stored observations (measured by `research-entity:measure-retired-remint`).
+Replacing those jobs would mean moving five key resolvers, merged-in evidence and benchmark replay onto `mergedFrom`, retiring stored observations, and adding lane refusals, to remove about 5,000 rows no student sees; Beta and Production already hold none.
+
+## 2026-10-18: Beta And Production Carry Slim Archived Tombstones (#5208)
+
+Development's engine needs every full archived row: re-scraped evidence for a merged duplicate routes to its survivor through the tombstone, and an archived slug is what stops the same duplicate being minted again (#3029).
+Beta and Production never mint or resolve evidence, and every serving path that reads an archived row reads only its id, slug, name, archive reason and `canonicalGroupId`, so copying 5,359 full archived rows and the signals, role assignments and relationships hanging off them shipped data no serving surface reads.
+Decision (owner, 2026-10-18): the Development-to-Beta copy reduces an archived row to that slim shape and leaves its dependent rows in Development, and Beta-to-Production copies Beta as is.
+A separate redirect map was rejected because the retired redirect ledger drifted from the rows it described (#3027); the slim row is still the tombstone, so there is one source of the mapping.
+Two consequences are enforced in code.
+The Beta-to-Development refresh carries Development's full archive back from the swap backup, because one plain refresh would otherwise replace it with slim rows.
+Plans are environment-local (#5092), so a merge recorded in Development can only carry Development's plans; each promotion's remote phase therefore runs `research-plans:retarget-merged` in the target, which moves a saved plan from a merged target to its live survivor.
+A saved plan on an archived target now reads as merged or retired rather than as held and returning.
+
+## 2026-10-18: Re-Expose The Hosted-Undergraduates Browse Filter (#5123)
+
+Five of six simulated student sessions on 2026-10-18 asked to filter `/research` by the "Has hosted undergraduate researchers" badge, which #1884 had removed as a control while the server kept the `hostsUndergrads` filter.
+The filter is the badge, not a way in: it reads the same historical predicate, `entityHasHostedUndergraduates`, so the 2026-10-02 rule that no browse filter offers a way in still holds.
+The index field is derived from that predicate when the index document is built rather than copied from the stored flag, so a writer that changes `pastUndergradAdvisees` or `currentUndergradCount` without recomputing the flag cannot make the filter and the badge disagree.
+Measured on Development on 2026-10-18, 227 served rows carry the badge and the stored flag, the index field and the served badge agreed on all 227.
+The control is a toggle in the filter rail and the mobile filter sheet, round-trips as `undergrad=1`, and shows its `hostsUndergrads` facet count, which is counted over the same population as the results (#5101).
+
+## 2026-10-18: Joining Instructions, Event Narration, Cut-Off Titles And Verb Chips Are Not Content (#5109)
+
+A served research summary says what a group studies.
+Two more body shapes passed the description quality bar and served as a row's summary although neither says that, so `nonResearchBodyShape` in `server/src/utils/descriptionNonResearchBodyShape.ts` names them and the quality bar refuses each for both the body and the card.
+
+- **`joining-instructions`**: a page's "prospective students" paragraph, saying who to contact, which program to apply to or where openings are posted.
+- **`event-narration`**: news about the group, meaning talks or keynotes given, awards received or papers accepted, with announcement filler such as "More details to come soon".
+
+Each is refused only when every sentence is of that kind, so research prose that closes with a joining line or mentions an award keeps its body.
+An event sentence must open on the event, within its first 60 characters, because later in a sentence the same words are usually a research object ("who wins awards") or one clause among several kinds of work.
+The resolver's quality demotion then falls back to the next admissible candidate, and when the row has none the serve path serves the row's research card as its body rather than withholding the row, because a thin but accurate description serves (2026-10-04); a card that states no research is not served in its place.
+
+Two fragment classes are refused at ingest, at materialize and at serve.
+A person title cut off at a dangling connective ("Professor of") is a fragment (`isTruncatedPersonTitle` in `server/src/utils/titleHygiene.ts`), so a complete title from another observation wins; the institute affiliates roster that produced it now reads the title the emphasised span starts and the sibling link or text completes.
+A method chip made only of verb forms from a closed research-verb lexicon, led by a third-person verb, or a bare evaluative adjective names no technique (`isBareVerbOrAdjectiveMethodLabel` in `server/src/utils/researchAreaLabelHygiene.ts`); the lexicon is closed because many gerunds and base forms ("modeling", "sequencing", "design") are technique nouns.
+
+Measured on Development on 2026-10-18 by walking all 3,706 served rows through `getResearchGroupDetail` with the old and new code: 3 served bodies changed, all 3 joining instructions or keynote narration, and each now serves the row's research text; 223 method chips left 150 rows, every one a verb, a verb-led clause or an evaluative adjective; 3 rows lost a cut-off lead title; no row stopped serving and no card changed.
+Across all live description observations the two shapes flag 6 texts, and across all live person title observations the fragment rule flags 37, all from one roster read.
+
+The method and description arms are serve-time.
+The stored body, the stored methods and the stored person title follow when the affected rows are next materialized.
+
+## 2026-10-17: A Person Who Leads An Organization Keeps Two Rows (#5283)
+
+Decision (owner, 2026-10-17, reaffirmed 2026-10-18): when a person directs or co-founds an organization (a program, collaborative, center, initiative or core), the directory keeps two rows, the person's own faculty research row and the organization's row with the person attached as its director.
+A person's row is never renamed and retyped into the organization they lead, however plainly their profile states the leadership.
+`profileLinkedHomeRefusal` in `official-profile-pi-backfill` enforces it at the write: on a person row (a grant shell, a key that names only the lead, or a row every other source calls faculty research) any home that is not lab-typed is refused, and the refusal states the refused name so resolve withdraws an adoption made before the guard reached the row.
+A lab-typed home is the person's own lab and is still adopted, and the organization's own row gets its director through the organization-director mode (#5093).
+Measured on Development on 2026-10-18 with the lane's research-home dry run over 2,000 rows: 6 rows planned an organization type, 5 of them person rows, and with the fix none does while the one organization-keyed row is unchanged.
+Before the fix, 14 live person rows carried an organization name and type this lane had written; the re-read refuses 10 of them and emits nothing for the other 4, so those adoptions stay live and are recorded on the issue.
+The owner approved three follow-ups on 2026-10-18, which carry the same rule past that one lane.
+`ysm-faculty-directory` reads the same lab slot and now names the row "<person> Faculty Research" unless the slot is lab-shaped (`isLabShapedResearchHome`), keeping the site as the row's website; on Development that re-plans 25 rows, and every linked page was read and is an organization, program, section, core, project, condition page or another person's lab.
+The materializer applies the rule to the profile lane's stored claims on every resolve (`server/src/scrapers/personRowOrganizationClaims.ts`): a read that typed a person row as anything but a lab is withdrawn, the lane's type counts only beside a name from the same read, and a row whose every source has withdrawn its organization name and type is re-derived as its lead's faculty research, or as a lab when another source still names it as one.
+A rematerialize dry run over the 313 live rows carrying the lane's type, or its name or type provenance, changed 8 rows, every one a person row the lane had retyped into an organization.
+
 ## 2026-10-17: Accounts Are Environment-Local (#5088)
 
 Decision (owner, 2026-10-17): Development, Beta and Production each keep their own `accounts`, made by sign-ins in that environment, and only the research corpus is shared by promotion.
@@ -48,12 +855,20 @@ A quote such as "contact [email redacted] and inquire about opportunities" hid a
 Decision (owner, 2026-10-14): the undergraduate quote fields (`undergradEvidenceQuote`, `undergradRoleEvidenceQuote`, `undergradConstraintQuote`, `contactInstructionsQuote`) keep the email addresses and phone numbers of the page they quote, and the detail page serves them as written.
 The owner first kept phone numbers redacted, then reversed that the same day for the same reason: the lab publishes them on the cited page.
 The model still reads contact-redacted page text, so the lane puts each address and number back from the quoted page after the model answers, and the prompt and its answer cache are unchanged.
-Descriptions, signal excerpts, logs and the search index keep redacting both.
+Logs, analytics and search queries, admin and user input, and config keep redacting both.
+The same owner decision extends to the rest of the scraped public text outside research descriptions (#5046): program and fellowship prose and link labels, signal excerpts, a row's ways in, grants, honors and funding agencies, course-credit evidence, and the search index's quote fields all keep the contact details their page publishes.
+Research descriptions (`shortDescription`, `fullDescription`) joined them with the #5537 description batch (Refs #5046): ingest (`sanitizeProseField`), projection, the description sanitizers, the public description and card serve paths and the search index's description fields keep the addresses and numbers their page publishes, and a description is no longer failed closed just because it states one.
+A legacy `[email redacted]` or `[phone redacted]` token still stored in older prose is still refused, because the page value it stood for is not on the row, and a contact block lifted from a profile header (a label such as `Phone:` beside a bare number, or a street address) is still dropped as page chrome.
+Model-written prose may repeat a contact its evidence publishes but never introduce one (`redactContactsAbsentFrom`): the coverage writer, the card synthesizer and the description backfill redact any address or number their source does not state.
+The model inputs stay redacted as #5041 decided, and the lab-site description extractor puts each address and number back from the page, sentence by sentence, before its verbatim grounding check (`proseWithPageContactsRestored`), which before this refused every copied sentence that carried a placeholder.
+Names, titles and labels that contain an address are still refused as malformed, and the stored `researchPageText` keeps redacting because nothing serves it.
+Two content rules that look like redaction stay, because they are about where a sentence belongs rather than hiding it: eligibility text drops a contact direction, which names who to ask rather than who may apply (#4177), and a profile bio drops leading contact chrome.
 A quote that carries a contact detail but states no instruction to use it is refused: it is a slice of a people page listing members with their own emails, such as an "Undergraduate Students" heading followed by names and addresses, not evidence of how to reach the lab (`quoteListsPeopleWithTheirContactDetails`).
 On Development that was 7 of the 12 quotes that had contacts restored, and the roster section, not the quote, is where a lab's undergraduates are listed.
 
 ## 2026-10-12: The Undergraduate Quote Shows Only On The Detail Page (#5022)
 
+Superseded on 2026-10-18 by "The Undergraduate Mention Quote Is No Longer Shown (#5309)".
 This narrows where the 2026-10-11 entry below renders a quote, and keeps everything else it decided.
 On the browse card the quote was the heaviest block, a label, up to 140 characters of quote and a source link, on about a third of cards, and it was the one item a student had to read and judge rather than scan.
 At 0.84 precision about one quote in six is wrong, which suits the surface where a student is evaluating one row closely more than the surface they skim.
@@ -62,6 +877,7 @@ The search response still carries `undergradEvidenceQuote`, because the `undergr
 
 ## 2026-10-11: The Browse Card Shows An Undergraduate Quote With Its Page, Not A Hosting Claim (#3569)
 
+Superseded on 2026-10-18 by "The Undergraduate Mention Quote Is No Longer Shown (#5309)".
 #3607 took the undergraduate badge off the browse card when #3569 measured its quotes at 18/50 = 0.36 badge precision (95% Wilson 0.24 to 0.50), because showing a quote then would have published model-written text with a citation attached.
 After #3592 required a stored quote to appear on a page the lane fetched, the 2026-09-29 like-for-like re-measure judged all 50 drawn served quotes and read 42/50 = 0.84 (0.71 to 0.92), with grounding 49/50.
 That is the middling case #3569 committed to in advance, where the badge carries its evidence rather than asserting, and the owner chose that option.
@@ -606,6 +1422,10 @@ This is a stored-data change: a served deadline moves only after the gate applie
 ## 2026-10-01: The Yale Fellowship Database Copy Of A Program Is The One Served (#4289)
 
 When a program has a copy in the Yale fellowship database and another lane's copy, the database record is the one served (#4289, owner decision).
+
+Narrowed 2026-11-17 (#6501, manager ruling): the database record wins only among copies that can be served on their own.
+A database copy that cannot be served never suppresses a mate that can; when no copy can be served, the database record is still the one kept.
+Measured on Development before the change: 1 of 60 duplicate groups changes its kept copy, and no group gains or loses a member.
 
 ## 2026-10-01: The Yale Fellowship Database Is An Official Source (#4284)
 
@@ -1285,6 +2105,7 @@ A stored column turns out to buy none of the prevention it was supposed to unloc
 
 `normalizeWebsiteUrlIdentityKey` drops only three things reversibly: the scheme, a leading `www.`, and a trailing slash.
 So the eight spellings that fold into a key can be enumerated and looked up against the stored `websiteUrl` directly.
+(#5638 adds a fourth, a trailing default document such as `index.aspx`, and the inverse enumerates those leaves too.)
 Measured on Development against the 101 entityKeys that actually reach the resolver, the enumeration finds all 32 folds a stored key would find and 0 that only a stored key would find.
 Corpus-wide the inverse recovers 1,756 of 1,763 live `websiteUrl` values; the 7 it cannot are 5 with a query string, 1 with a fragment, and 1 path-normalization case, and none of them is a resolver target.
 

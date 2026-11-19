@@ -2,6 +2,8 @@
  * Mongoose schema and model for fellowship/funding opportunity records.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
+import { registerHoldOverrideReasonGuard } from './holdOverrideReasonGuard';
 import { studentVisibilityFields } from './studentVisibility';
 import { sourceLinkHealthStatuses } from './storedVocabularies';
 
@@ -63,6 +65,7 @@ export const programKinds = [
   'TRAVEL_RESEARCH_GRANT',
   'SENIOR_THESIS_FUNDING',
   'DEPARTMENT_RESEARCH_GUIDE',
+  'DEPARTMENT_SENIOR_ESSAY_GUIDE',
   'RESEARCH_AWARD',
   'OTHER',
 ] as const;
@@ -357,6 +360,8 @@ fellowshipSchema.index(
   { unique: true, partialFilterExpression: { sourceKey: { $type: 'string' } } },
 );
 fellowshipSchema.index({ sourceName: 1, sourceLastVerifiedAt: -1 });
+
+registerHoldOverrideReasonGuard(fellowshipSchema);
 
 export const Fellowship = mongoose.model('Fellowship', fellowshipSchema);
 

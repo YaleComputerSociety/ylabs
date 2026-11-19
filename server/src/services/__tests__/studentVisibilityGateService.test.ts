@@ -15,6 +15,7 @@ vi.mock('../../models/visibilityReleaseQueueItem', async (importOriginal) => ({
 }));
 
 import {
+  buildNameOnlyVisibilityDedupeRows,
   buildStudentVisibilityGateApplyOps,
   evaluateStudentVisibilityGateLeadResolution,
   isProfileAreaDuplicateCounterpart,
@@ -30,6 +31,14 @@ import {
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
 import { sourceCoverageRegistry } from '../../scrapers/sourceCoverageRegistry';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
+import {
+  buildResearchEntityPiDedupePlan,
+  samePiDuplicateEntityIdsRestrictedToPiLed,
+} from '../../scripts/researchEntityPiDedupeCore';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 
 const safePlan = (
   overrides: Partial<StudentVisibilityGatePlan> = {},
@@ -782,6 +791,215 @@ describe('studentVisibilityGateService', () => {
     ]).toEqual(['atoz-owner']);
   });
 
+  describe('a wrong_owner refusal of a url ends its claim in a duplicate contest (#5858)', () => {
+    const contestedUrl = 'https://example.edu/lab/coastal-sediment/';
+    const siteOwner = {
+      _id: 'site-owner',
+      slug: 'coastal-sediment-lab',
+      name: 'Coastal Sediment Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: contestedUrl,
+    };
+    const refusal = (overrides: Record<string, unknown> = {}) => ({
+      valueKey: fieldValueRefusalKey('websiteUrl', contestedUrl),
+      rule: 'wrong_owner',
+      refusedBy: 'synthetic-operator',
+      refusedAt: new Date('2026-11-01T00:00:00Z'),
+      note: 'synthetic refusal',
+      ...overrides,
+    });
+    const citer = (refusals?: unknown[]) => ({
+      _id: 'refused-citer',
+      slug: 'coastal-sediment-staff-profile',
+      name: 'Coastal Sediment Staff Research',
+      entityType: 'LAB',
+      kind: 'lab',
+      sourceUrls: [contestedUrl],
+      ...(refusals ? { fieldValueRefusals: { websiteUrl: refusals } } : {}),
+    });
+    const groupedIds = (entities: any[]) =>
+      exactDuplicateUrlGroups(entities).map((group) =>
+        group.members.map((member: any) => member._id).sort(),
+      );
+
+    it('groups a row citing the site with the row that owns it when nothing is refused', () => {
+      expect(groupedIds([siteOwner, citer()])).toEqual([['refused-citer', 'site-owner']]);
+    });
+
+    it('does not group a row whose live wrong_owner refusal names the site it still cites', () => {
+      expect(groupedIds([siteOwner, citer([refusal()])])).toEqual([]);
+    });
+
+    it('keeps the pair grouped when the wrong_owner refusal was withdrawn', () => {
+      expect(
+        groupedIds([
+          siteOwner,
+          citer([refusal({ withdrawnAt: new Date('2026-11-05T00:00:00Z') })]),
+        ]),
+      ).toEqual([['refused-citer', 'site-owner']]);
+    });
+
+    it('keeps the pair grouped when the refusal carries a rule other than wrong_owner', () => {
+      expect(groupedIds([siteOwner, citer([refusal({ rule: 'confirmed_dead_page' })])])).toEqual([
+        ['refused-citer', 'site-owner'],
+      ]);
+    });
+  });
+
+  describe('a lead lab and a lead-less row carrying its name', () => {
+    const entities = [
+      {
+        _id: 'lead-lab',
+        slug: 'ysm-faculty-wren-ortolan',
+        name: 'Ortolan Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://ortolanlab.example.org',
+        sourceUrls: ['https://medicine.example.edu/profile/wren-ortolan/'],
+      },
+      {
+        _id: 'member-row',
+        slug: 'ysm-faculty-juno-vega',
+        name: 'Ortolan Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://www.ortolanlab.example.org/',
+        sourceUrls: [
+          'https://medicine.example.edu/profile/juno-vega/',
+          'https://www.ortolanlab.example.org/',
+        ],
+        fullDescription: 'Studies coastal sediment genomics with field sampling.',
+      },
+    ];
+    const leadsByEntityId = new Map([['lead-lab', [{ role: 'pi', userId: 'user-ortolan' }]]]);
+
+    it('holds the lead-less row as the duplicate rather than the lab its lead leads', () => {
+      const rows = buildNameOnlyVisibilityDedupeRows({ entities, leadsByEntityId });
+      const isPiLed = (userId: string, entityId: string) =>
+        userId === 'user-ortolan' && entityId === 'lead-lab';
+
+      expect(
+        samePiDuplicateEntityIdsRestrictedToPiLed(buildResearchEntityPiDedupePlan(rows), isPiLed),
+      ).toEqual(['member-row']);
+    });
+  });
+
+  describe('rows that only cite a shared center page (#6206 rule ii)', () => {
+    const sharedCenterUrl = 'https://fixturecenter.yale.edu/research/imaging-core/';
+    const labRow = (id: string, name: string, overrides: Record<string, unknown> = {}) => ({
+      _id: id,
+      slug: id,
+      name,
+      entityType: 'LAB',
+      studentVisibilityTier: 'student_ready',
+      fullDescription: `${name} studies a distinct question at Yale with its own team.`,
+      sourceUrls: [sharedCenterUrl],
+      ...overrides,
+    });
+    const leads = (pairs: Array<[string, string]>) =>
+      pairs.map(([researchEntityId, userId]) => ({ researchEntityId, userId }));
+
+    it('does not call rows with different leads and different names duplicates', () => {
+      const entities = [
+        labRow('lab-a', 'Fixture Imaging Lab'),
+        labRow('lab-b', 'Fixture Genomics Lab'),
+      ];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect([...selectExactUrlDuplicateRiskEntityIds(entities, leadRows)]).toEqual([]);
+    });
+
+    it('still calls rows that share a lead duplicates', () => {
+      const entities = [
+        labRow('lab-a', 'Fixture Imaging Lab'),
+        labRow('lab-b', 'Fixture Genomics Lab'),
+      ];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-a'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+
+    it('still holds a leadless row against a led one', () => {
+      const entities = [
+        labRow('lab-a', 'Fixture Imaging Lab'),
+        labRow('lab-b', 'Fixture Genomics Lab'),
+      ];
+
+      expect(
+        selectExactUrlDuplicateRiskEntityIds(entities, leads([['lab-a', 'user-a']])).size,
+      ).toBe(1);
+    });
+
+    it('still calls rows whose names agree duplicates, whatever their leads', () => {
+      const entities = [
+        labRow('lab-a', 'Fixture Imaging Lab'),
+        labRow('lab-b', 'The Fixture Imaging Laboratory'),
+      ];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+
+    it.each([
+      ['Fixture Imaging Lab', 'Fixture Imaging Labs'],
+      ['Center for Fixture Imaging', 'Fixture Imaging Center'],
+      ['Fixture Imaging Center', 'Fixture Imaging Centre'],
+      ['Fixture Imaging Centres', 'Fixture Imaging Centers'],
+      ['Fixture Imaging & Repair Lab', 'Fixture Imaging and Repair Lab'],
+    ])('still calls %s and %s duplicates whatever their leads', (aName, bName) => {
+      const entities = [labRow('lab-a', aName), labRow('lab-b', bName)];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+
+    it("leaves a person's own profile page to the usual contest", () => {
+      const profileUrl = 'https://medicine.yale.edu/profile/ana-fixture/';
+      const entities = [
+        labRow('lab-a', 'Ana Fixture Faculty Research', {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: [profileUrl],
+        }),
+        labRow('lab-b', 'Ben Placeholder Faculty Research', {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: [profileUrl],
+        }),
+      ];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+
+    it('leaves the contest to the usual rules when a row publishes the page as its own home', () => {
+      const entities = [
+        labRow('lab-a', 'Fixture Imaging Lab', { websiteUrl: sharedCenterUrl }),
+        labRow('lab-b', 'Fixture Genomics Lab'),
+      ];
+      const leadRows = leads([
+        ['lab-a', 'user-a'],
+        ['lab-b', 'user-b'],
+      ]);
+
+      expect(selectExactUrlDuplicateRiskEntityIds(entities, leadRows).size).toBe(1);
+    });
+  });
+
   describe("a director's profile cited by an organization and by the director's own row (#5085)", () => {
     const directorProfileUrl = 'https://medicine.yale.edu/profile/a-fixture-director/';
     const personRow = (overrides: Record<string, unknown> = {}) => ({
@@ -806,7 +1024,7 @@ describe('studentVisibilityGateService', () => {
       websiteUrl: 'https://medicine.yale.edu/psychiatry/research/fixture-mood/',
       sourceUrls: [
         directorProfileUrl,
-        'https://orcid.org/9999-9000-9999-9005',
+        `https://orcid.org/${SYNTHETIC_ORCID_1}`,
         'https://medicine.yale.edu/psychiatry/research/fixture-mood/',
       ],
       ...overrides,
@@ -831,7 +1049,7 @@ describe('studentVisibilityGateService', () => {
 
     it("treats the director's ORCID record as a person page too", () => {
       const entities = [
-        personRow({ sourceUrls: ['https://orcid.org/9999-9000-9999-9005'] }),
+        personRow({ sourceUrls: [`https://orcid.org/${SYNTHETIC_ORCID_1}`] }),
         organizationRow(),
       ];
 
@@ -1394,7 +1612,7 @@ describe('studentVisibilityGateService', () => {
     expect(isBlockingVisibilityReason('non_owner_grant_shell')).toBe(true);
     expect(isBlockingVisibilityReason('research_infrastructure_only')).toBe(true);
     expect(isBlockingVisibilityReason('non_research_entity')).toBe(true);
-    expect(isBlockingVisibilityReason('formalization_only')).toBe(true);
+    expect(isBlockingVisibilityReason('formalization_only')).toBe(false);
     expect(isBlockingVisibilityReason('missing_lead')).toBe(true);
     expect(isBlockingVisibilityReason('missing_card_description')).toBe(true);
     expect(isBlockingVisibilityReason('lab_name_org_type_mismatch')).toBe(true);
@@ -1566,7 +1784,7 @@ describe('studentVisibilityGateService', () => {
     expect(deps.updateRecordVisibility.mock.calls[0][3]).toEqual({ timestamps: false });
   });
 
-  it('routes formalization-only programs to review exception instead of source repair', async () => {
+  it('queues a formalization-only program on its real blockers, not on formalization_only (#6219)', async () => {
     const deps = {
       updateRecordVisibility: vi.fn().mockResolvedValue(undefined),
       upsertOpenQueueItem: vi.fn().mockResolvedValue(undefined),
@@ -1598,8 +1816,8 @@ describe('studentVisibilityGateService', () => {
     expect(deps.upsertOpenQueueItem).toHaveBeenCalledWith(
       expect.objectContaining({
         collection: 'programs',
-        blockerReasons: ['formalization_only', 'application_source_only'],
-        repairStage: 'review_exception',
+        blockerReasons: ['application_source_only'],
+        repairStage: 'source_description',
       }),
     );
   });

@@ -84,6 +84,11 @@
       "query": "qzxjvmw not a research topic",
       "note": "The legitimate zero-result path. An empty result must be distinguishable from a failure, and must not come back degraded.",
       "expectNoResults": true
+    },
+    {
+      "query": "zqvxkt research topics not",
+      "note": "A word no row carries plus only frame words: once the unmatched word is dropped (#5193), the frame words must not become the whole search (#5532).",
+      "expectNoResults": true
     }
   ]
 }

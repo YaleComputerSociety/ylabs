@@ -361,6 +361,80 @@ describe('classifyProgram', () => {
   });
 });
 
+describe('mentor matching needs the program to state it (#6455)', () => {
+  it('reads a summer research program whose page states no mentor placement as a program to apply to', () => {
+    const classification = classifyProgram({
+      title: 'Synthetic Summer Research Program',
+      competitionType: 'Summer Undergraduate Research Program',
+      description:
+        'A ten-week summer research program in the synthetic sciences with a stipend and housing for undergraduates.',
+    });
+    expect(classification).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      programKind: 'STRUCTURED_PROGRAM',
+      entryMode: 'APPLY_TO_PROGRAM',
+      mentorMatching: false,
+    });
+    expect(classification.bestNextStep).not.toMatch(/mentor/i);
+  });
+
+  it('reads mentor placement the stored page text states even when the served prose does not', () => {
+    expect(
+      classifyProgram({
+        title: 'Synthetic Summer Research Program',
+        competitionType: 'Summer Undergraduate Research Program',
+        description: 'A ten-week summer research program in the synthetic sciences.',
+        fullSourceDescription:
+          'Each student will be matched with the laboratory of a research mentor for the summer.',
+      }),
+    ).toMatchObject({
+      programKind: 'MENTOR_MATCHING',
+      entryMode: 'DIRECT_FACULTY_MATCHING',
+      mentorMatching: true,
+    });
+  });
+
+  it.each([
+    'Each participant works closely with a Yale faculty member on an independent project.',
+    'Students conduct research in the lab of a Yale faculty member for ten weeks.',
+    'Interns carry out a project under the direction of a principal investigator.',
+    'Each student will join a host laboratory for the summer.',
+    'Participants are assigned to research groups in the department.',
+    'Students are paired with a faculty mentor.',
+    'Each scholar is placed in a faculty lab.',
+  ])('reads mentor placement in %j', (sentence) => {
+    expect(
+      classifyProgram({
+        title: 'Synthetic Summer Research Program',
+        competitionType: 'Summer Undergraduate Research Program',
+        description: sentence,
+      }),
+    ).toMatchObject({ programKind: 'MENTOR_MATCHING', mentorMatching: true });
+  });
+
+  it('does not read a peer cohort or the research itself as mentor placement', () => {
+    expect(
+      classifyProgram({
+        title: 'Synthetic Summer Research Program',
+        competitionType: 'Summer Undergraduate Research Program',
+        description:
+          'Students work closely with each other in a cohort and present their research at a closing symposium.',
+      }),
+    ).toMatchObject({ programKind: 'STRUCTURED_PROGRAM', mentorMatching: false });
+  });
+
+  it('names a research mentor rather than a faculty one when it matches', () => {
+    const classification = classifyProgram({
+      title: 'Synthetic Summer Research Program',
+      competitionType: 'Summer Undergraduate Research Program',
+      description: 'Students will be assigned a graduate student mentor for the summer.',
+    });
+    expect(classification.bestNextStep).toBe(
+      'Apply to the summer research program; admitted students are matched with a research mentor.',
+    );
+  });
+});
+
 describe('classifyProgram internship identity (#2925)', () => {
   it('keeps a travel fund whose purpose list merely permits an internship out of the internship category', () => {
     expect(
@@ -610,6 +684,57 @@ describe('classifyProgram internship identity (#2925)', () => {
       ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
     });
 
+    it('reads a page titled as a senior essay as senior essay guidance, a way in (#5298)', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Senior Essay',
+          sourcePageTitle: 'The Senior Essay',
+          description: 'Majors write a senior essay with a faculty adviser over the senior year.',
+        }),
+      ).toMatchObject({
+        programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+        programRole: 'STARTS_RESEARCH',
+        entryMode: 'CONTACT_FACULTY',
+        studentFacingCategory: 'Senior essay guidance',
+        undergraduateOnly: true,
+      });
+    });
+
+    it('does not read senior essay guidance from the lane-authored record title alone (#5298)', () => {
+      expect(classifyProgram({ title: 'Fixture Studies Senior Essay' }).programKind).not.toBe(
+        'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+      );
+    });
+
+    it('does not read a senior essay page that states an application cycle as guidance (#5298)', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Senior Essay',
+          sourcePageTitle: 'Senior Essay',
+          deadline: new Date('2099-02-01T00:00:00Z'),
+        }).programKind,
+      ).not.toBe('DEPARTMENT_SENIOR_ESSAY_GUIDE');
+    });
+
+    it('keeps a senior essay funding page as funding rather than guidance (#5298)', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Senior Essay Grants',
+          sourcePageTitle: 'Senior Essay Grants',
+          description: 'Grants fund the research costs of a senior essay.',
+        }).programKind,
+      ).toBe('SENIOR_THESIS_FUNDING');
+    });
+
+    it('does not read a senior essay registration form as guidance (#5298)', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Senior Essay',
+          sourcePageTitle: 'Senior Essay Instructions and Registration Form',
+        }).programKind,
+      ).not.toBe('DEPARTMENT_SENIOR_ESSAY_GUIDE');
+    });
+
     it('does not read a guidance page that states an application cycle as a guide (#4285)', () => {
       expect(
         classifyProgram({
@@ -827,6 +952,20 @@ describe('classifyProgram senior research funding reads its mentor requirement o
   );
 
   it.each([
+    'A letter of recommendation from your Yale faculty advisor outlining support of the research project and commitment to mentoring the student.',
+    'The letter should demonstrate the commitment of the faculty advisor to support the student efforts as described in the abstract of proposed activities.',
+    'Ask for a faculty advisor reference stipulating the importance for your study, research, language programs, or travel.',
+  ])(
+    'reads an adviser letter tied to the project as a requirement (#5229): %s',
+    (applicationInformation) => {
+      expect(
+        classifyProgram({ title: 'Fixture Memorial Fund', applicationInformation })
+          .requiresMentorBeforeApply,
+      ).toBe(true);
+    },
+  );
+
+  it.each([
     'It is the applicant’s responsibility to see that the complete application, including letter of recommendation and transcripts, reaches us by the deadline.',
     'Students will also need to provide a letter of recommendation written by a Yale faculty member.',
     'A letter of recommendation from a faculty member who knows you well.',
@@ -853,6 +992,68 @@ describe('classifyProgram senior research funding reads its mentor requirement o
         classifyProgram({ title: 'Fixture Memorial Fund', applicationInformation })
           .requiresMentorBeforeApply,
       ).toBe(false);
+    }
+  });
+});
+
+describe('classifyProgram reads a program that excludes Yale students as out of scope (#5242)', () => {
+  it('sends a summer program that says Yale students are not eligible to archive review', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Graduating seniors, graduate students, and Yale students are not eligible.',
+      }),
+    ).toMatchObject({ studentFacingCategory: 'Archive / review', programKind: 'OTHER' });
+  });
+
+  it('keeps a program that only limits one Yale benefit', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Yale students are not eligible for program housing but may apply.',
+      }).studentFacingCategory,
+    ).not.toBe('Archive / review');
+  });
+
+  it('keeps a program that only closes one benefit to Yale students', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Open to all undergraduates. Program housing is not open to Yale students.',
+      }).studentFacingCategory,
+    ).not.toBe('Archive / review');
+  });
+
+  it('does not read an exclusion of one Yale school as excluding every Yale student', () => {
+    for (const eligibility of [
+      'Open to GSAS doctoral students. Yale College students are not eligible.',
+      'Open to GSAS doctoral students. Yale undergraduate students are not eligible.',
+    ]) {
+      expect(
+        classifyProgram({
+          title: 'Fixture Graduate Research Fellowship',
+          description: 'A research fellowship in the environmental sciences.',
+          eligibility,
+        }).studentFacingCategory,
+      ).not.toBe('Archive / review');
+    }
+  });
+
+  it('keeps a Yale-only program that says non-Yale students are not eligible', () => {
+    for (const eligibility of [
+      'Open to Yale College juniors; non-Yale students are not eligible.',
+      'Open to Yale College juniors; non Yale students are not eligible.',
+    ]) {
+      expect(
+        classifyProgram({
+          title: 'Fixture Summer Undergraduate Research Program',
+          description: 'A summer research program in the environmental sciences.',
+          eligibility,
+        }).studentFacingCategory,
+      ).not.toBe('Archive / review');
     }
   });
 });

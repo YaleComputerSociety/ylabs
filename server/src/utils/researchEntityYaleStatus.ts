@@ -6,9 +6,11 @@ const MAX_HUMAN_LIFESPAN_YEARS = 120;
 const NAME_LIFESPAN_ANYWHERE_RE = /((?:18|19|20)\d{2})\s*[-‒–—―−]\s*((?:19|20)\d{2})/;
 
 const IN_MEMORIAM_URL_PATH_RE = /\bin-memoriam\b|\bobituar(?:y|ies)\b/i;
-const IN_MEMORIAM_TEXT_RE = /\bin memoriam\b|\bpassed away\b/i;
+// A memorial page heading runs straight into the lifespan once markup is stripped
+// ("In Memoriam1945-2026"), so the marker ends at the last letter, not a word boundary.
+const IN_MEMORIAM_TEXT_RE = /\bin\s+memoriam(?!\p{L})|\bpassed\s+away\b/iu;
 
-export type ResearchEntityYaleStatusReason = 'deceased' | 'departed';
+export type ResearchEntityYaleStatusReason = 'deceased' | 'departed' | 'lead_departed';
 
 export interface ResearchEntityYaleStatusSignal {
   yaleStatusCache: 'departed';
@@ -115,6 +117,17 @@ export const hasRecordedClosureEvidence = (
     PERMANENTLY_CLOSED_SUPPRESSION_REASON,
   );
 
+export const RESEARCH_INFRASTRUCTURE_ONLY_SUPPRESSION_REASON = 'research_infrastructure_only';
+
+/**
+ * Readers match these markers anywhere in the reason text, so a free-text writer
+ * must never let one appear inside an unrelated reason.
+ */
+export const SUBSTRING_READ_SUPPRESSION_MARKERS = [
+  PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+  RESEARCH_INFRASTRUCTURE_ONLY_SUPPRESSION_REASON,
+] as const;
+
 export const SUPPRESSION_REASON_FIELD = 'studentVisibilitySuppressionReason';
 
 export function suppressionReasonList(value: unknown): string[] {
@@ -167,12 +180,26 @@ export function suppressionReasonIsWritable(
   return !lockedFields.includes(SUPPRESSION_REASON_FIELD);
 }
 
+/**
+ * `leadPageDeparture` is what every current lead's own official page says (#5721). A
+ * departed lead follows the existing departure semantics. A deceased lead hides the row
+ * through the same deceased signal the row's own markers raise, which is an owner decision:
+ * research led by a deceased faculty member is not served.
+ */
 export function deriveResearchEntityYaleStatus(
   entity: Record<string, any> | null | undefined,
 ): ResearchEntityYaleStatusSignal | null {
   if (!entity) return null;
   if (researchEntityHasDeceasedLead(entity) || hasInMemoriamMarker(entity)) {
     return { yaleStatusCache: 'departed', activeAtYaleCache: false, reason: 'deceased' };
+  }
+  if (entity.leadPageDeparture === 'deceased') {
+    return { yaleStatusCache: 'departed', activeAtYaleCache: false, reason: 'deceased' };
+  }
+  // Its own reason, not the roster reconciler's `departed`, which nothing clears: a lead-page
+  // departure is derived, so it lifts when its evidence goes.
+  if (entity.leadPageDeparture === 'departed') {
+    return { yaleStatusCache: 'departed', activeAtYaleCache: false, reason: 'lead_departed' };
   }
   // A recorded closure is re-derived on every pass, exactly as the deceased
   // markers are, so the departure survives re-materialization instead of being

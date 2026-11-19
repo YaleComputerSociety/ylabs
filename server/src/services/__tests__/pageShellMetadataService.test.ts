@@ -23,6 +23,7 @@ const dependencies = (
     slug === SERVED_SLUG ? SERVED_ROW : null,
   ),
   readArchivedCanonicalSlug: vi.fn(async () => null),
+  readRenamedSlug: vi.fn(async () => null),
   lookupTimeoutMs: 50,
   cache: createPageShellResolutionCache(),
   lookupLimiter: createPageShellLookupLimiter(),
@@ -92,6 +93,20 @@ describe('resolvePageShell', () => {
     });
   });
 
+  it('redirects the previous slug of a renamed row temporarily to its current page', async () => {
+    const resolution = await resolvePageShell(
+      '/research/previous-slug',
+      CLIENT_KEY,
+      dependencies({ readRenamedSlug: async () => SERVED_SLUG }),
+    );
+
+    expect(resolution).toEqual({
+      kind: 'redirect',
+      status: 302,
+      location: `/research/${SERVED_SLUG}`,
+    });
+  });
+
   it('serves the unmodified shell when the lookup throws', async () => {
     const resolution = await resolvePageShell(
       `/research/${SERVED_SLUG}`,
@@ -149,6 +164,16 @@ describe('resolvePageShell', () => {
       kind: 'page',
       status: 200,
       head: { title: 'Programs & Fellowships', canonicalPath: '/programs' },
+    });
+    expect(await resolvePageShell('/getting-started', CLIENT_KEY, dependencies())).toEqual({
+      kind: 'page',
+      status: 200,
+      head: { title: 'How to get started in research', canonicalPath: '/getting-started' },
+    });
+    expect(await resolvePageShell('/privacy', CLIENT_KEY, dependencies())).toEqual({
+      kind: 'page',
+      status: 200,
+      head: { title: 'Privacy', canonicalPath: '/privacy' },
     });
   });
 

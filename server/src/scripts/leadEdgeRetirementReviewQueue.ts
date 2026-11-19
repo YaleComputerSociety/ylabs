@@ -21,6 +21,7 @@ import {
   type ReviewQueueEntity,
   type ReviewQueuePerson,
 } from './leadEdgeRetirementReviewQueueCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -150,7 +151,7 @@ async function main(): Promise<void> {
   const summary = summarizeLeadEdgeReviewQueue(queue);
 
   fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(
+  writeReportFileSync(
     output,
     JSON.stringify(
       {

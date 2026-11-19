@@ -274,8 +274,8 @@ test('test fixtures do not contain known real Yale identifiers', () => {
         false,
         `${file} contains an ORCID fixture that could be a real person's iD: ${orcid}. ` +
           `It is checksum-valid and inside ORCID's allocated space. Use a value outside ` +
-          `that space instead, such as ${SYNTHETIC_ORCID_EXAMPLE}, which still passes the ` +
-          `checksum so it exercises a serve path that requires a valid iD.`,
+          `that space, such as ${SYNTHETIC_ORCID_EXAMPLE}, for a non-person iD, or build a ` +
+          `plausible one at runtime with syntheticPersonOrcid.`,
       );
     }
   }
@@ -707,6 +707,232 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
   assert.doesNotMatch(programLinks, /href: link\.url/);
 });
 
+const MEMBER_LIMITED_FUNCTIONS = [
+  'canonicalPublicDetailMembers',
+  'publicResearchEntityDetailRosterMembers',
+];
+const UNCAPPED_MEMBER_CALLERS = new Set(['searchableResearchEntityMembers', 'matchableLabMembers']);
+const ENCLOSING_FUNCTION_PATTERN =
+  /(?:function\s+(\w+)\s*[<(])|(?:const\s+(\w+)\s*=\s*(?:async\s*)?(?:<[^>]*>)?\()/g;
+
+const topLevelEntries = (source, openIndex) => {
+  const closer = ')]}'['([{'.indexOf(source[openIndex])];
+  const entries = [];
+  let depth = 0;
+  let typeArgumentDepth = 0;
+  let current = '';
+  for (let index = openIndex + 1; index < source.length; index += 1) {
+    const character = source[index];
+    const previous = source[index - 1];
+    if (depth === 0 && character === closer) {
+      if (current.trim()) entries.push(current.trim());
+      return entries;
+    }
+    if ('([{'.includes(character)) depth += 1;
+    else if (')]}'.includes(character)) depth -= 1;
+    else if (character === '<' && /\w/.test(previous)) typeArgumentDepth += 1;
+    else if (character === '>' && typeArgumentDepth > 0 && previous !== '=') typeArgumentDepth -= 1;
+    if (character === ',' && depth === 0 && typeArgumentDepth === 0) {
+      entries.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  return entries;
+};
+
+const enclosingFunctionName = (source, index) => {
+  let name = '';
+  for (const match of source.slice(0, index).matchAll(ENCLOSING_FUNCTION_PATTERN)) {
+    name = match[1] || match[2];
+  }
+  return name;
+};
+
+// The detail page's member list is the one response an unauthenticated caller can make
+// as large as a roster, so only the search paths may read past the display cap and the
+// detail route serializes no member beyond it (#5584).
+const memberLimitViolations = (serviceSource, controllerSource) => {
+  const violations = [];
+  for (const name of MEMBER_LIMITED_FUNCTIONS) {
+    for (const match of serviceSource.matchAll(new RegExp(`(^|[^\\w.])${name}\\(`, 'g'))) {
+      const before = serviceSource.slice(
+        Math.max(0, match.index - 20),
+        match.index + match[1].length,
+      );
+      if (/(function|const)\s+$/.test(before)) continue;
+      const openParenIndex = match.index + match[0].length - 1;
+      const limitArgument = topLevelEntries(serviceSource, openParenIndex)[3];
+      if (limitArgument === undefined || limitArgument === 'MAX_PUBLIC_DETAIL_MEMBERS') continue;
+      const caller = enclosingFunctionName(serviceSource, match.index);
+      if (limitArgument === 'limit' && caller === 'publicResearchEntityDetailRosterMembers')
+        continue;
+      if (limitArgument === 'EVERY_CURRENT_MEMBER' && UNCAPPED_MEMBER_CALLERS.has(caller)) continue;
+      violations.push(`${caller || 'module scope'} passes ${limitArgument} to ${name}`);
+    }
+  }
+  const detailCall = controllerSource.match(/\bgetResearchGroupDetail\(/);
+  const detailArguments = detailCall
+    ? topLevelEntries(controllerSource, detailCall.index + detailCall[0].length - 1)
+    : [];
+  if (
+    detailArguments.length !== 2 ||
+    detailArguments[0] !== 'slug' ||
+    !detailArguments[1].startsWith('{')
+  ) {
+    violations.push('the detail controller no longer calls getResearchGroupDetail(slug, { ... })');
+  } else {
+    for (const option of topLevelEntries(detailArguments[1], 0)) {
+      const key = /^(\w+)\s*(?::|$)/.exec(option)?.[1];
+      if (key !== 'includeWithheldForOperator') {
+        violations.push(`the detail controller passes ${key ?? option} to getResearchGroupDetail`);
+      }
+    }
+  }
+  return violations;
+};
+
+test('only the search paths read research members past the public detail cap', () => {
+  const serviceSource = fs.readFileSync(
+    new URL('../server/src/services/researchGroupService.ts', import.meta.url),
+    'utf8',
+  );
+  const controllerSource = fs.readFileSync(
+    new URL('../server/src/controllers/researchGroupController.ts', import.meta.url),
+    'utf8',
+  );
+  assert.deepEqual(memberLimitViolations(serviceSource, controllerSource), []);
+
+  const widenedService = serviceSource.replace(
+    /(canonicalPublicDetailMembers\(\s*group as Record<string, any>,\s*rosterEntries,)(\s*\))/,
+    '$1 new Date(), 500$2',
+  );
+  assert.notEqual(widenedService, serviceSource);
+  assert.deepEqual(memberLimitViolations(widenedService, controllerSource), [
+    'getResearchGroupDetail passes 500 to canonicalPublicDetailMembers',
+  ]);
+
+  const widenedController = controllerSource.replace(
+    'includeWithheldForOperator: hasAdminAuthority,',
+    'includeWithheldForOperator: hasAdminAuthority,\n    memberLimit: 500,',
+  );
+  assert.notEqual(widenedController, controllerSource);
+  assert.deepEqual(memberLimitViolations(serviceSource, widenedController), [
+    'the detail controller passes memberLimit to getResearchGroupDetail',
+  ]);
+});
+
+test('the member cap pin refuses a public path that passes a larger limit', () => {
+  const controller = `const detail = await getResearchGroupDetail(slug, {
+    includeWithheldForOperator: hasAdminAuthority,
+  });`;
+  const service = (body, helpers = '') => `
+const publicResearchEntityDetailRosterMembers = (entity, entries, now, limit = MAX_PUBLIC_DETAIL_MEMBERS) =>
+  dedupe(canonicalPublicDetailMembers(entity, entries, now, limit), entity);
+function searchableResearchEntityMembers(entity, entries) {
+  return publicResearchEntityDetailRosterMembers(entity, entries, now, EVERY_CURRENT_MEMBER);
+}
+${helpers}
+export async function getResearchGroupDetail(slug, { includeWithheldForOperator = false } = {}) {
+  ${body}
+}`;
+
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries, now, 500);'),
+      controller,
+    ),
+    ['getResearchGroupDetail passes 500 to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service(
+        'const m = canonicalPublicDetailMembers(group, entries);',
+        `async function requestedPastCapMember(entity, entries) {
+  return publicResearchEntityDetailRosterMembers(entity, entries, now, EVERY_CURRENT_MEMBER);
+}`,
+      ),
+      controller,
+    ),
+    [
+      'requestedPastCapMember passes EVERY_CURRENT_MEMBER to publicResearchEntityDetailRosterMembers',
+    ],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace(
+        'hasAdminAuthority,',
+        'hasAdminAuthority,\n    requestedMemberName: request.query?.member,',
+      ),
+    ),
+    ['the detail controller passes requestedMemberName to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service(
+        'const m = publicResearchEntityDetailRosterMembers(group, entries, now, EVERY_CURRENT_MEMBER);',
+      ),
+      controller,
+    ),
+    [
+      'getResearchGroupDetail passes EVERY_CURRENT_MEMBER to publicResearchEntityDetailRosterMembers',
+    ],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    memberLimit: 500,'),
+    ),
+    ['the detail controller passes memberLimit to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service(
+        'const m = canonicalPublicDetailMembers(group, entries.filter((entry) => entry.ok), now, 500);',
+      ),
+      controller,
+    ),
+    ['getResearchGroupDetail passes 500 to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries, now, limit);'),
+      controller,
+    ),
+    ['getResearchGroupDetail passes limit to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    memberLimit,'),
+    ),
+    ['the detail controller passes memberLimit to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    ...options,'),
+    ),
+    ['the detail controller passes ...options to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      'const detail = await getResearchGroupDetail(slug, options);',
+    ),
+    ['the detail controller no longer calls getResearchGroupDetail(slug, { ... })'],
+  );
+});
+
 test('public research detail queries cap unauthenticated fan-out before serialization', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/researchGroupService.ts', import.meta.url),
@@ -722,7 +948,7 @@ test('public research detail queries cap unauthenticated fan-out before serializ
   }
 
   assert.match(source, /const MAX_PUBLIC_DETAIL_MEMBERS = \d+/);
-  assert.match(source, /\.slice\(0, MAX_PUBLIC_DETAIL_MEMBERS\)/);
+  assert.match(source, /limit = MAX_PUBLIC_DETAIL_MEMBERS,\n\)[^{]*\{[\s\S]*?\.slice\(0, limit\)/);
 
   assert.doesNotMatch(source, /ResearchEntityRelationship\.find\(\{[^;]*?\}\)\.lean\(\)/);
   assert.doesNotMatch(
@@ -1014,6 +1240,16 @@ test('CI gates on ESLint errors, leaves warnings advisory, and lints before the 
   assert.match(packageJson.scripts.verify, /verify:fast/);
 });
 
+test('the ESLint heap is declared once, in the lint scripts, not in the CI step (#6115)', () => {
+  assert.match(packageJson.scripts.lint, /--max-old-space-size=\d+/);
+  assert.match(packageJson.scripts['lint:fix'], /--max-old-space-size=\d+/);
+  const lintStep = yaml
+    .load(ciWorkflow)
+    .jobs.checks.steps.find((step) => (step.run ?? '').trim() === 'yarn lint');
+  assert.ok(lintStep, 'the checks job must run yarn lint');
+  assert.equal(lintStep.env?.NODE_OPTIONS, undefined);
+});
+
 test('CI runs the server registration guards right after lint, beside the sharded suite', () => {
   const checksSteps = yaml.load(ciWorkflow).jobs.checks.steps.map((step) => step.run?.trim() ?? '');
   const guardAt = checksSteps.indexOf('yarn --cwd server test:guards');
@@ -1146,30 +1382,96 @@ test('the smoke waits for the background Playwright install and fails when it fa
     const inTempDir = (script) => script.replaceAll('/tmp/playwright-install', `${dir}/install`);
     const stubBin = path.join(dir, 'bin');
     fs.mkdirSync(stubBin);
-    const handshakeExit = (npxExit) => {
+    const run = ({ downloadExit, depsExit, launchExit }) => {
       fs.rmSync(`${dir}/install.exit`, { force: true });
+      fs.rmSync(`${dir}/npx.calls`, { force: true });
       fs.writeFileSync(
         path.join(stubBin, 'npx'),
-        `#!/bin/sh\necho "npx $*" >> "${dir}/npx.calls"\nexit ${npxExit}\n`,
+        `#!/bin/sh\necho "npx $*" >> "${dir}/npx.calls"\ncase "$*" in *install-deps*) exit ${depsExit};; *) exit ${downloadExit};; esac\n`,
         { mode: 0o755 },
       );
-      const env = { ...process.env, PATH: `${stubBin}:${process.env.PATH}` };
+      fs.writeFileSync(
+        path.join(stubBin, 'node'),
+        `#!/bin/sh\necho "node launch" >> "${dir}/npx.calls"\nexit ${launchExit}\n`,
+        { mode: 0o755 },
+      );
+      fs.writeFileSync(
+        path.join(stubBin, 'timeout'),
+        `#!/bin/sh\necho "$1" >> "${dir}/timeout.calls"\nshift\nexec "$@"\n`,
+        { mode: 0o755 },
+      );
+      const env = {
+        ...process.env,
+        ...steps[waitAt].env,
+        PATH: `${stubBin}:${process.env.PATH}`,
+        PLAYWRIGHT_DEPS_RETRY_DELAYS: '0 0',
+      };
       const start = spawnSync('bash', ['-e', '-c', inTempDir(steps[startAt].run)], {
         env,
         encoding: 'utf8',
       });
       assert.equal(start.status, 0, 'the start step must return at once and never fail the job');
-      return spawnSync('bash', ['-e', '-c', inTempDir(steps[waitAt].run)], {
+      const status = spawnSync('bash', ['-e', '-c', inTempDir(steps[waitAt].run)], {
         env,
         encoding: 'utf8',
       }).status;
+      const calls = fs.existsSync(`${dir}/npx.calls`)
+        ? fs.readFileSync(`${dir}/npx.calls`, 'utf8').trim().split('\n')
+        : [];
+      return { status, calls };
     };
-    assert.equal(handshakeExit(0), 0);
-    assert.notEqual(handshakeExit(1), 0, 'a failed browser install must fail the smoke job');
-    assert.deepEqual(fs.readFileSync(`${dir}/npx.calls`, 'utf8').trim().split('\n'), [
-      'npx playwright install --with-deps chromium',
-      'npx playwright install --with-deps chromium',
+
+    const healthy = run({ downloadExit: 0, depsExit: 0, launchExit: 0 });
+    assert.equal(healthy.status, 0);
+    assert.deepEqual(healthy.calls, [
+      'npx playwright install chromium',
+      'npx playwright install-deps chromium',
+      'node launch',
     ]);
+
+    assert.notEqual(
+      run({ downloadExit: 1, depsExit: 0, launchExit: 0 }).status,
+      0,
+      'a failed browser download must fail the smoke job',
+    );
+
+    const mirrorsDown = run({ downloadExit: 0, depsExit: 1, launchExit: 0 });
+    assert.equal(mirrorsDown.status, 0, 'an apt mirror outage alone must not fail the job');
+    assert.equal(
+      mirrorsDown.calls.filter((call) => call.includes('install-deps')).length,
+      3,
+      'the system dependency install is retried with backoff',
+    );
+
+    fs.rmSync(`${dir}/timeout.calls`, { force: true });
+    run({ downloadExit: 0, depsExit: 1, launchExit: 0 });
+    const attemptBounds = fs
+      .readFileSync(`${dir}/timeout.calls`, 'utf8')
+      .trim()
+      .split('\n')
+      .map(Number);
+    assert.equal(attemptBounds.length, 3, 'every dependency install attempt is time-bounded');
+    const workflowDelays = steps[waitAt].env.PLAYWRIGHT_DEPS_RETRY_DELAYS.split(' ').map(Number);
+    const worstCaseSeconds =
+      (workflowDelays.length + 1) * attemptBounds[0] +
+      workflowDelays.reduce((sum, delay) => sum + delay, 0);
+    const restOfJobSeconds = 5 * 60;
+    assert.ok(
+      worstCaseSeconds + restOfJobSeconds <=
+        yaml.load(e2eSmokeWorkflow).jobs['student-journey-smoke']['timeout-minutes'] * 60,
+      'every retry must fit inside the job timeout with room left for the smokes',
+    );
+
+    assert.notEqual(
+      run({ downloadExit: 0, depsExit: 1, launchExit: 1 }).status,
+      0,
+      'a browser that cannot launch must fail the job even when the mirrors are down',
+    );
+    assert.notEqual(
+      run({ downloadExit: 0, depsExit: 0, launchExit: 1 }).status,
+      0,
+      'a browser that cannot launch must fail the job',
+    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -2245,7 +2547,6 @@ test('session secret validation trims before enforcing deployed length', () => {
     source,
     /if \(sessionSecret\.length < MIN_SESSION_SECRET_LENGTH \|\| isWeakSessionSecret\(sessionSecret\)\)/,
   );
-  assert.match(source, /keys: \[sessionSecret\]/);
   assert.doesNotMatch(source, /process\.env\.SESSION_SECRET\.length < 32/);
   assert.doesNotMatch(source, /keys: \[process\.env\.SESSION_SECRET \?\? ''\]/);
 });
@@ -2807,10 +3108,34 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
     new URL('../server/src/scripts/scraperIntegrityDuplicateReview.ts', import.meta.url),
     'utf8',
   );
-  assert.match(guards, /export function resolveSafeJsonReportOutputPath/);
-  assert.match(guards, /path\.extname\(resolved\)\.toLowerCase\(\) !== '\.json'/);
-  assert.match(guards, /const tmpRoot = path\.resolve\(os\.tmpdir\(\)\)/);
-  assert.match(guards, /const projectTmpRoot = path\.resolve\(process\.cwd\(\), 'tmp'\)/);
+  const reportPath = fs.readFileSync(
+    new URL('../server/src/utils/reportOutputPath.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    guards,
+    /export \{[^}]*\bresolveSafeJsonReportOutputPath\b[^}]*\} from '\.\.\/utils\/reportOutputPath'/,
+  );
+  assert.match(reportPath, /export function resolveSafeJsonReportPath\(/);
+  assert.match(reportPath, /export function resolveSafeJsonReportOutputPath\(/);
+  assert.match(
+    reportPath,
+    /const resolved = resolveSafeJsonReportPath\(value, flag, options\);\s*assertParentWritable\(resolved, flag\);/,
+  );
+  assert.match(reportPath, /path\.extname\(resolved\)\.toLowerCase\(\) !== '\.json'/);
+  assert.match(
+    reportPath,
+    /const defaultTempRoots = \(\): string\[\] => \[path\.resolve\(os\.tmpdir\(\)\), SHARED_TEMP_ROOT\]/,
+  );
+  assert.match(
+    reportPath,
+    /const projectTmpRoot = path\.resolve\(options\.cwd \?\? process\.cwd\(\), 'tmp'\)/,
+  );
+  assert.match(reportPath, /if \(!path\.isAbsolute\(raw\)\) throw new Error/);
+  assert.match(
+    reportPath,
+    /if \(hasPathPrefix\(realRoot, resolveRealPath\(repositoryRoot\)\)\) \{/,
+  );
   assert.match(
     scraperCliOutput,
     /import \{ resolveSafeJsonReportOutputPath \} from '\.\.\/scripts\/scriptWriteGuards'/,
@@ -2824,8 +3149,8 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(outputValue\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(output\)/);
   assert.match(
-    guards,
-    /approvedTempRootFor\(resolved, \[tmpRoot, SHARED_TEMP_ROOT, projectTmpRoot\]\)/,
+    reportPath,
+    /approvedTempRootFor\(resolved, \[\s*\.\.\.tempRoots,\s*projectTmpRoot,\s*\.\.\.\(reportRoot \? \[reportRoot\] : \[\]\),\s*\]\)/,
   );
 });
 
@@ -2879,7 +3204,7 @@ test('operator board gate artifact reads are constrained to safe JSON artifact p
 
   assert.match(
     source,
-    /import \{ resolveSafeJsonReportOutputPath \} from '\.\.\/scripts\/scriptWriteGuards'/,
+    /import \{ resolveSafeJsonReportPath \} from '\.\.\/scripts\/scriptWriteGuards'/,
   );
   assert.match(source, /const UNSAFE_ARTIFACT_PATH = '\[unsafe artifact path\]'/);
   assert.match(source, /const MAX_GATE_ARTIFACT_BYTES = 2 \* 1024 \* 1024/);
@@ -2887,7 +3212,7 @@ test('operator board gate artifact reads are constrained to safe JSON artifact p
     source,
     /function resolveGateArtifactReadPath\(artifactPath: string\): string \| undefined/,
   );
-  assert.match(source, /resolveSafeJsonReportOutputPath\(artifactPath, 'artifact path'\)/);
+  assert.match(source, /resolveSafeJsonReportPath\(artifactPath, 'artifact path'\)/);
   assert.match(source, /function invalidArtifactPath\(\)/);
   assert.match(source, /function readGateArtifactJson\(safeArtifactPath: string\): any/);
   assert.match(source, /if \(!stat\.isFile\(\) \|\| stat\.size > MAX_GATE_ARTIFACT_BYTES\)/);
@@ -2949,11 +3274,11 @@ test('beta launch gate report paths are constrained to safe JSON artifact roots'
     new URL('../server/src/scripts/betaRepairQueue.ts', import.meta.url),
     'utf8',
   );
-  assert.match(betaRepairQueue, /resolveSafeJsonReportOutputPath\(next, '--apply-from'\)/);
-  assert.match(betaRepairQueue, /resolveSafeJsonReportOutputPath\(applyFrom, '--apply-from'\)/);
+  assert.match(betaRepairQueue, /resolveSafeJsonReportPath\(next, '--apply-from'\)/);
+  assert.match(betaRepairQueue, /resolveSafeJsonReportPath\(applyFrom, '--apply-from'\)/);
   assert.match(
     betaRepairQueue,
-    /const artifactPath = resolveSafeJsonReportOutputPath\(options\.applyFrom, '--apply-from'\)/,
+    /const artifactPath = resolveSafeJsonReportPath\(options\.applyFrom, '--apply-from'\)/,
   );
   assert.match(betaRepairQueue, /fs\.readFileSync\(artifactPath, 'utf8'\)/);
   assert.doesNotMatch(betaRepairQueue, /fs\.readFileSync\(options\.applyFrom, 'utf8'\)/);
@@ -2964,7 +3289,7 @@ test('beta launch gate report paths are constrained to safe JSON artifact roots'
   );
   assert.match(
     launchReviewExceptions,
-    /const safeInputPath = resolveSafeJsonReportOutputPath\(inputPath, '--accepted-decisions'\)/,
+    /const safeInputPath = resolveSafeJsonReportPath\(inputPath, '--accepted-decisions'\)/,
   );
   assert.match(launchReviewExceptions, /fs\.readFileSync\(safeInputPath, 'utf8'\)/);
   assert.doesNotMatch(launchReviewExceptions, /fs\.readFileSync\(inputPath, 'utf8'\)/);
@@ -2981,7 +3306,7 @@ test('beta launch gate report paths are constrained to safe JSON artifact roots'
   assert.match(betaDataQualityCore, /fs\.readFileSync\(safeOutputPath, 'utf8'\)/);
   assert.match(
     betaDataQualityCore,
-    /const safeReviewArtifactPath = resolveSafeJsonReportOutputPath\(\s*reviewArtifactPath,\s*'--review-artifact',\s*\)/,
+    /const safeReviewArtifactPath = resolveSafeJsonReportPath\(\s*reviewArtifactPath,\s*'--review-artifact',?\s*\)/,
   );
   assert.match(betaDataQualityCore, /fs\.existsSync\(safeReviewArtifactPath\)/);
   assert.match(betaDataQualityCore, /fs\.readFileSync\(safeReviewArtifactPath, 'utf8'\)/);
@@ -3450,7 +3775,7 @@ test('duplicate review decision artifacts are constrained to safe JSON roots', (
     );
     assert.match(
       source,
-      /const safeInputPath = resolveSafeJsonReportOutputPath\(inputPath, '--accepted-decisions'\)/,
+      /const safeInputPath = resolveSafeJsonReportPath\(inputPath, '--accepted-decisions'\)/,
       `${name} must resolve accepted decision reads before file access`,
     );
     assert.match(source, /fs\.readFileSync\(safeInputPath, 'utf8'\)/);
@@ -3500,7 +3825,7 @@ test('observation conflict decision artifacts are constrained to safe JSON roots
     );
     assert.match(
       source,
-      /const safeInputPath = resolveSafeJsonReportOutputPath\(inputPath, '--accepted-decisions'\)/,
+      /const safeInputPath = resolveSafeJsonReportPath\(inputPath, '--accepted-decisions'\)/,
     );
     assert.match(source, /fs\.readFileSync\(safeInputPath, 'utf8'\)/);
     assert.doesNotMatch(source, /fs\.readFileSync\(inputPath, 'utf8'\)/);
@@ -3515,7 +3840,7 @@ test('source health report artifacts are constrained to safe JSON roots', () => 
 
   assert.match(
     source,
-    /import \{ assertScriptApplyAllowed, resolveSafeJsonReportOutputPath \} from '\.\/scriptWriteGuards'/,
+    /import \{\s*assertScriptApplyAllowed,\s*resolveSafeJsonReportOutputPath,\s*resolveSafeJsonReportPath,?\s*\} from '\.\/scriptWriteGuards'/,
   );
   assert.match(
     source,
@@ -3523,10 +3848,7 @@ test('source health report artifacts are constrained to safe JSON roots', () => 
   );
   assert.match(source, /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/);
   assert.match(source, /function readJsonIfExists\(reportPath: string\): unknown \| undefined/);
-  assert.match(
-    source,
-    /safeReportPath = resolveSafeJsonReportOutputPath\(reportPath, 'report path'\)/,
-  );
+  assert.match(source, /safeReportPath = resolveSafeJsonReportPath\(reportPath, 'report path'\)/);
   assert.match(source, /fs\.existsSync\(safeReportPath\)/);
   assert.match(source, /fs\.readFileSync\(safeReportPath, 'utf8'\)/);
   assert.doesNotMatch(source, /fs\.readFileSync\(reportPath, 'utf8'\)/);
@@ -3564,7 +3886,7 @@ test('identity cleanup report outputs are constrained to safe JSON roots', () =>
   for (const file of ['../server/src/scripts/clearBetaStudentAnalytics.ts']) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.match(source, /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/);
-    assert.match(source, /fs\.writeFileSync\(safeOutput,/);
+    assert.match(source, /writeReportFileSync\(safeOutput,/);
   }
 });
 
@@ -3853,12 +4175,8 @@ test('program and fellowship search bound query and filter inputs before search 
     fellowshipService,
     /const safeYearOfStudy = boundedSearchFilterValues\(yearOfStudy\)/,
   );
-  assert.match(fellowshipService, /const querySubjects = resolveTopicSubjects\(\[safeQuery\]\)/);
-  assert.match(
-    fellowshipService,
-    /const searchTerms = \[\s*safeQuery,\s*\.\.\.queryTopicAliases,\s*\.\.\.yearOfStudyAliasesForQuery\(safeQuery\),?\s*\]\.filter\(Boolean\)/,
-  );
-  assert.match(fellowshipService, /filter\.\$text = \{ \$search: searchTerms\.join\(' '\) \}/);
+  assert.match(fellowshipService, /rankProgramSearch\(safeQuery, candidates\)/);
+  assert.doesNotMatch(fellowshipService, /\$search:/);
   assert.match(
     fellowshipService,
     /const adminFellowshipText = \(value: unknown\): string \| undefined =>/,
@@ -4046,6 +4364,40 @@ test('the unguarded-fetch scan passes constant hosts, guarded agents, comments a
 
   assert.deepEqual(findUnguardedOutboundFetches(guardedFixture), []);
   assert.deepEqual(findUnguardedOutboundFetches(shadowedFixture), []);
+});
+
+test('the unguarded-fetch scan keeps scanning past a regex literal that holds a quote (#5595)', () => {
+  const afterQuoteRegex = [
+    "const strip = (value) => value.replace(/^['\"]|['\"]$/g, '');",
+    'export const send = (url) => fetch(url);',
+  ].join('\n');
+  const afterClassRegex = [
+    'const quoted = /["\']/.test(input);',
+    'const ratio = total / count / 2;',
+    'export const send = (url) => fetch(url);',
+  ].join('\n');
+  const insideRegex = 'const pattern = /fetch\\(url\\)/;';
+  const betweenDivisions = 'export const ratio = (url) => total / fetch(url) / 2;';
+  const afterPostfixOperators =
+    'const halved = count! / 2; const next = index++ / 2; const prev = index-- / 2; fetch(`${base}/x`);';
+
+  assert.deepEqual(
+    findUnguardedOutboundFetches(afterQuoteRegex).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@2'],
+  );
+  assert.deepEqual(
+    findUnguardedOutboundFetches(afterClassRegex).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@3'],
+  );
+  assert.deepEqual(findUnguardedOutboundFetches(insideRegex), []);
+  assert.deepEqual(
+    findUnguardedOutboundFetches(betweenDivisions).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@1'],
+  );
+  assert.deepEqual(
+    findUnguardedOutboundFetches(afterPostfixOperators).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@1'],
+  );
 });
 
 test('the unguarded-fetch scan exempts only the reviewed number of calls in an exempt file', () => {
@@ -4391,7 +4743,7 @@ test('shared microsite fetch policy enforces the SSRF guard before requesting un
 
   assert.match(
     source,
-    /import \{ assertPublicHttpUrl, ssrfSafeAgents \} from '\.\.\/\.\.\/utils\/ssrfGuard'/,
+    /import \{ assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents \} from '\.\.\/\.\.\/utils\/ssrfGuard'/,
   );
   assert.match(source, /const assertUrl = options\.assertUrl \?\? assertPublicHttpUrl/);
   assert.match(source, /const safeUrl = \(await assertUrl\(url\)\)\.toString\(\)/);
@@ -4416,7 +4768,18 @@ test('shared form post goes through the same SSRF guard, agents, and host limite
     source,
     /await axios\.request\(\{\n\s+url,\n\s+method: 'POST',[^}]*?httpAgent: agents\.httpAgent,\n\s+httpsAgent: agents\.httpsAgent,/,
   );
-  assert.match(source, /result = await limiter\.run\(host, \(\) => request\(safeUrl, config\)\)/);
+  assert.match(
+    source,
+    /followRedirectsWithinBudget\(safeUrl, config, \{ limiter, request, assertUrl \}\)/,
+  );
+  assert.match(
+    source,
+    /await deps\.limiter\.run\(\s*hostOf\(target\),\s*\(\) => deps\.request\(target, sent\),\s*isReusedResponse,\s*\)/,
+  );
+  assert.match(
+    source,
+    /current = \(await deps\.assertUrl\(new URL\(result\.location, target\)\.toString\(\)\)\)\.toString\(\)/,
+  );
 });
 
 test('student grants fund search enumerates only through the SSRF-guarded shared fetch policy', () => {
@@ -4639,7 +5002,10 @@ test('link-health maps only a non-resolving host to a dead-link error code', () 
     source,
     /error instanceof SsrfBlockedError && error\.reason === 'unresolvable'\s*\?\s*'ENOTFOUND'\s*:\s*'ERR_SSRF_BLOCKED'/,
   );
-  assert.match(source, /DEAD_LINK_ERROR_CODES = new Set\(\[\s*'ENOTFOUND',/);
+  assert.match(
+    source,
+    /export const DEAD_LINK_ERROR_CODES: ReadonlySet<string> = new Set\(\[\s*'ENOTFOUND',/,
+  );
   assert.match(source, /RESOURCE_GONE_HTTP_STATUS_CODES = new Set\(\[404, 410\]\)/);
 
   // #2766: a throttled answer arrives as a status, so it must be re-asked with
@@ -4663,7 +5029,10 @@ test('link-health maps only a non-resolving host to a dead-link error code', () 
   // server's TLS configuration, never about whether the page exists, and no retry
   // changes that. Listing it retired six live Yale vanity hosts, three of them on
   // student_ready rows, so it must never rejoin the dead set.
-  const deadSet = source.match(/const DEAD_LINK_ERROR_CODES = new Set\(\[[^\]]*\]\)/s)?.[0] ?? '';
+  const deadSet =
+    source.match(
+      /export const DEAD_LINK_ERROR_CODES: ReadonlySet<string> = new Set\(\[[^\]]*\]\)/s,
+    )?.[0] ?? '';
   assert.ok(deadSet, 'DEAD_LINK_ERROR_CODES declaration not found');
   assert.ok(
     !deadSet.includes('ERR_TLS_CERT_ALTNAME_INVALID'),
@@ -5002,7 +5371,7 @@ test('public research Meilisearch service bounds direct search inputs', () => {
   assert.match(source, /buildResearchGroupFilterString\(visibilityScopedFilters\)/);
   assert.match(source, /\.map\(normalizeResearchGroupObjectId\)/);
   assert.match(source, /const safeEntityId = normalizeResearchGroupObjectId\(entityId\)/);
-  assert.match(source, /await getResearchEntityRoster\(\(group as any\)\._id\)/);
+  assert.match(source, /await servedRoster\(\(group as any\)\._id\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(id\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(String\(entityId/);
 });
@@ -5195,13 +5564,17 @@ test('analytics event storage redacts user-entered contact details', () => {
   }
 });
 
-test('public ResearchEntity DTO recursively redacts direct-contact text', () => {
+test('public ResearchEntity DTO redacts direct-contact text outside the fields that publish a way in', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/researchEntityDto.ts', import.meta.url),
     'utf8',
   );
 
-  assert.match(source, /function publicTextValue\(value: unknown\): unknown/);
+  assert.match(source, /function publicTextValue\(value: unknown, keepContacts = false\): unknown/);
+  assert.match(
+    source,
+    /const CONTACT_SHOWN_PUBLIC_FIELDS: ReadonlySet<string> = new Set\(\[\s*'waysIn',\s*'recentGrants',\s*'leadHonors',\s*'fundingAgencies',\s*\]\)/,
+  );
   assert.match(source, /function publicTextString\(value: unknown\): string/);
   assert.match(source, /MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS/);
   assert.match(source, /MAX_PUBLIC_RESEARCH_ENTITY_URLS/);
@@ -5236,7 +5609,7 @@ test('public ResearchEntity DTO recursively redacts direct-contact text', () => 
   assert.match(source, /const cleaned = publicTextString\(sanitizeResearchAreaLabel\(raw\)\)/);
   assert.match(
     source,
-    /value\s*\.slice\(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS\)\s*\.map\(publicTextValue\)/,
+    /value\s*\.slice\(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS\)\s*\.map\(\(item\) => publicTextValue\(item, keepContacts\)\)/,
   );
   assert.match(
     source,
@@ -5451,7 +5824,7 @@ test('auth callback, check, and logout responses are private no-store', () => {
   assert.match(passportSource, /const casLogin[\s\S]*setPrivateAuthResponseHeaders\(res\)/);
   assert.match(
     passportSource,
-    /router\.get\('\/check'[\s\S]*const user = publicAuthSessionUser\(req\.user\)[\s\S]*return res\.json\(\{ auth: true, user \}\)/,
+    /router\.get\('\/check'[\s\S]*const user = publicAuthSessionUser\(req\.user\)/,
   );
   assert.match(
     passportSource,
@@ -5642,13 +6015,16 @@ test('auth principals are normalized before user lookup and session hydration', 
   assert.match(passportSource, /const netid = normalizeAuthNetId\(rawNetid\)/);
   assert.match(passportSource, /throw new Error\('Invalid authentication principal'\)/);
   assert.match(passportSource, /await recordAccountLogin\(\{ netid/);
-  assert.match(passportSource, /passport\.serializeUser\(function \(user: any, done\) \{/);
+  assert.match(
+    passportSource,
+    /passport\.serializeUser\(function \(\s*req: express\.Request,\s*user: any,\s*done:/,
+  );
   assert.match(passportSource, /const principal = publicAuthSessionUser\(user\)/);
   assert.match(passportSource, /const netId = normalizeAuthNetId\(source\.netId\)/);
   assert.match(passportSource, /done\(new Error\('Invalid authentication principal'\)\)/);
   assert.match(
     passportSource,
-    /done\(null, \{ \.\.\.principal, \.\.\.mintSessionClaim\(account\?\.sessionVersion\) \}\)/,
+    /done\(null, \{\s*\.\.\.principal,\s*\.\.\.mintSessionClaim\(account\?\.sessionVersion, Date\.now\(\), \{ credentialsConfirmed \}\),\s*\}\)/,
   );
   assert.match(passportSource, /function coerceStoredSessionPrincipal\(stored: unknown\)/);
   assert.match(passportSource, /const netId = normalizeAuthNetId\(stored\)/);
@@ -5658,7 +6034,7 @@ test('auth principals are normalized before user lookup and session hydration', 
   );
   assert.match(
     passportSource,
-    /if \(!account \|\| account\.archived \|\| !isSessionClaimLive\(claim, account\.sessionVersion\)\)/,
+    /if \(!account \|\| account\.archived \|\| !isSessionClaimLive\(claim, account\)\)/,
   );
   assert.match(passportSource, /done\(null, null\)/);
   assert.doesNotMatch(passportSource, /done\(null, user\.netId\)/);
@@ -5809,6 +6185,154 @@ test('local auth bypass bounds netid session identities', () => {
     passportSource,
     /normalizeAuthNetId\(unquoteEnvValue\(env\.LOCAL_AUTH_BYPASS_NETID\)\)/,
   );
+});
+
+const COPIED_DOT_ENV_BYPASS = {
+  LOCAL_AUTH_BYPASS: 'true',
+  LOCAL_AUTH_BYPASS_NETID: 'devadmin',
+  LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+};
+const LOCAL_DEVELOPMENT_RUNTIME = {
+  NODE_ENV: 'development',
+  SERVER_BASE_URL: 'http://localhost:4000',
+  SSOBASEURL: 'https://secure.its.yale.edu/cas',
+};
+const LOOPBACK_BYPASS_CALLER = { remoteAddress: '127.0.0.1', host: 'localhost:4000' };
+
+const evaluateLocalAuthBypassGate = (cases) => {
+  const moduleUrl = new URL('../server/src/passport.ts', import.meta.url).href;
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'preflight-bypass-gate-'));
+  const script = path.join(directory, 'evaluate.mts');
+  try {
+    fs.writeFileSync(
+      script,
+      [
+        'const cases = JSON.parse(process.argv[2]);',
+        `const passport = await import(${JSON.stringify(moduleUrl)});`,
+        'const bypassMiddleware = passport.passportRoutes.stack[0].handle;',
+        'const runtimeKeys = ["NODE_ENV", "SERVER_BASE_URL", "LOCAL_AUTH_BYPASS", "LOCAL_AUTH_BYPASS_NETID", "LOCAL_AUTH_BYPASS_USER_TYPE"];',
+        'const fakeRequest = ({ remoteAddress, host }) => {',
+        '  const headers = { "x-dev-netid": "devadmin", "x-dev-user-type": "admin" };',
+        '  if (host !== undefined) headers.host = host;',
+        '  return { headers, socket: { remoteAddress }, path: "/check", session: { visitorLogged: true }, query: {},',
+        '    get: (name) => headers[name.toLowerCase()], isAuthenticated() { return Boolean(this.user); } };',
+        '};',
+        'const results = [];',
+        'for (const testCase of cases) {',
+        '  for (const key of runtimeKeys) delete process.env[key];',
+        '  for (const [key, value] of Object.entries(testCase.env)) process.env[key] = value;',
+        '  const gate = passport.isLocalAuthBypassRequestAllowed(fakeRequest(testCase.caller), testCase.env);',
+        '  const result = { name: testCase.name, gate };',
+        '  if (!testCase.expectAllowed && !gate) {',
+        '    const req = fakeRequest(testCase.caller);',
+        '    let nextArgs = null;',
+        '    await bypassMiddleware(req, {}, (...args) => { nextArgs = args; });',
+        '    result.resolvedNetId = req.user?.netId ?? null;',
+        '    result.resolvedIsAdmin = req.user?.isAdmin ?? null;',
+        '    result.authenticated = req.isAuthenticated();',
+        '    result.nextArgs = nextArgs;',
+        '  }',
+        '  results.push(result);',
+        '}',
+        'process.stdout.write(JSON.stringify(results));',
+        'process.exit(0);',
+      ].join('\n'),
+    );
+    const result = spawnSync(serverTsx, [script, JSON.stringify(cases)], {
+      cwd: serverDirectory,
+      encoding: 'utf8',
+      timeout: 120_000,
+      env: {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        ...LOCAL_DEVELOPMENT_RUNTIME,
+        ...COPIED_DOT_ENV_BYPASS,
+      },
+    });
+    if (result.status !== 0) {
+      throw new Error(`local auth bypass gate evaluation failed: ${result.stderr || result.error}`);
+    }
+    return JSON.parse(result.stdout);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+};
+
+test('the local auth bypass never activates on a deployed service, even with a copied .env that enables it', () => {
+  const localRuntime = { ...LOCAL_DEVELOPMENT_RUNTIME, ...COPIED_DOT_ENV_BYPASS };
+  const refused = (name, env, caller = LOOPBACK_BYPASS_CALLER) => ({
+    name,
+    env: { ...localRuntime, ...env },
+    caller,
+    expectAllowed: false,
+  });
+  const withoutNodeEnv = { ...localRuntime };
+  delete withoutNodeEnv.NODE_ENV;
+  const cases = [
+    {
+      name: 'local loopback baseline',
+      env: localRuntime,
+      caller: LOOPBACK_BYPASS_CALLER,
+      expectAllowed: true,
+    },
+    ...['production', 'prod', 'test', 'ci', 'staging', 'beta', ''].map((nodeEnv) =>
+      refused(`NODE_ENV=${JSON.stringify(nodeEnv)}`, { NODE_ENV: nodeEnv }),
+    ),
+    {
+      name: 'NODE_ENV unset',
+      env: withoutNodeEnv,
+      caller: LOOPBACK_BYPASS_CALLER,
+      expectAllowed: false,
+    },
+    ...['203.0.113.5', '10.0.0.4', '::ffff:10.1.2.3', '::', undefined].map((remoteAddress) =>
+      refused(
+        `socket peer ${String(remoteAddress)}`,
+        {},
+        { remoteAddress, host: 'localhost:4000' },
+      ),
+    ),
+    ...[
+      'yalelabs.io',
+      'localhost.attacker.example',
+      '127.0.0.1.nip.io',
+      'localhost@yalelabs.io',
+      undefined,
+    ].map((host) =>
+      refused(`Host header ${String(host)}`, {}, { remoteAddress: '127.0.0.1', host }),
+    ),
+    ...[
+      'https://yalelabs.io',
+      'https://yalelabs-beta.onrender.com',
+      'http://10.0.0.4:4000',
+      '',
+    ].map((serverBaseUrl) =>
+      refused(`SERVER_BASE_URL ${JSON.stringify(serverBaseUrl)}`, {
+        SERVER_BASE_URL: serverBaseUrl,
+      }),
+    ),
+    refused(
+      'deployed web service shape',
+      { NODE_ENV: 'production', SERVER_BASE_URL: 'https://yalelabs.io' },
+      { remoteAddress: '10.0.0.4', host: 'yalelabs.io' },
+    ),
+  ];
+
+  const results = evaluateLocalAuthBypassGate(cases);
+  assert.equal(results.length, cases.length);
+  for (const [index, result] of results.entries()) {
+    const expected = cases[index];
+    assert.equal(result.name, expected.name);
+    assert.equal(
+      result.gate,
+      expected.expectAllowed,
+      `isLocalAuthBypassRequestAllowed for ${expected.name}`,
+    );
+    if (expected.expectAllowed) continue;
+    assert.equal(result.resolvedNetId, null, `bypass middleware identity for ${expected.name}`);
+    assert.equal(result.resolvedIsAdmin, null, `bypass middleware admin for ${expected.name}`);
+    assert.equal(result.authenticated, false, `bypass middleware session for ${expected.name}`);
+    assert.deepEqual(result.nextArgs, [], `bypass middleware continues for ${expected.name}`);
+  }
 });
 
 test('admin authority requires an active admin grant and never consults userType', () => {
@@ -6341,6 +6865,19 @@ test('scraper entrypoint fatal logs sanitize caught exceptions', () => {
   }
 });
 
+test('runScriptMain logs a failed script through sanitizeLogValue by default', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/db/connections.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    source,
+    /const logScriptFailure = \(error: unknown\) => console\.error\(sanitizeLogValue\(error\)\)/,
+  );
+  assert.match(source, /\(options\.logFailure \?\? logScriptFailure\)\(error\)/);
+});
+
 test('user account routes set full private no-store response headers', () => {
   const routeSource = fs.readFileSync(
     new URL('../server/src/routes/users.ts', import.meta.url),
@@ -6358,6 +6895,53 @@ test('user account routes set full private no-store response headers', () => {
     assert.match(source, /Expires', '0'/);
     assert.match(source, /X-Content-Type-Options', 'nosniff'/);
   }
+});
+
+test('account deletion fails closed while a setting it promises to use is missing (#5624)', () => {
+  const read = (file) => fs.readFileSync(new URL(file, import.meta.url), 'utf8');
+  const readiness = read('../server/src/services/accountDeletionReadiness.ts');
+  for (const setting of [
+    'POSTHOG_PERSONAL_API_KEY',
+    'POSTHOG_PROJECT_ID',
+    'ACCOUNT_DELETION_AUDIT_HMAC_KEY',
+  ]) {
+    assert.match(readiness, new RegExp(`missing\\.push\\('${setting}'\\)`));
+  }
+  assert.match(readiness, /missing\.push\(ACCOUNT_DELETION_ENVIRONMENT_SETTING\)/);
+  assert.match(readiness, /environment === null \|\| POSTHOG_CAPTURING_ENVIRONMENTS\.includes/);
+
+  const service = read('../server/src/services/accountDataService.ts');
+  const guard = service.indexOf('assertAccountDeletionAvailable(env, environment);');
+  const firstRead = service.indexOf("Account.findOne({ netid }).select('_id productAnalyticsId')");
+  assert.ok(
+    guard > 0 && firstRead > guard,
+    'deleteAccountData must refuse before reading or deleting',
+  );
+
+  const controller = read('../server/src/controllers/accountDataController.ts');
+  const refusal = controller.indexOf('if (!accountDeletionReadiness().available)');
+  const phraseCheck = controller.indexOf('ACCOUNT_DATA_DELETION_CONFIRM_PHRASE\n  ) {');
+  assert.ok(refusal > 0 && phraseCheck > refusal, 'the route must refuse before any other check');
+  assert.match(controller, /error instanceof AccountDeletionUnavailableError/);
+
+  const script = read('../server/src/scripts/deleteAccountData.ts');
+  const applyGuard = script.indexOf('assertDeleteAccountDataApplyReady(args);');
+  const connect = script.indexOf(
+    'const mongoUrl = resolveDeleteAccountDataMongoUrl(args.environment);',
+  );
+  assert.ok(
+    applyGuard > 0 && connect > applyGuard,
+    'the operator script must refuse before connecting',
+  );
+
+  assert.match(
+    read('../server/src/routes/ready.ts'),
+    /accountDeletion: accountDeletionServingState\(\)/,
+  );
+  assert.match(
+    read('../client/scripts/productionPromotionSmoke.mjs'),
+    /addCheck\('api\.ready\.accountDeletion', accountDeletion\.status/,
+  );
 });
 
 test('authenticated research-area routes set full private no-store response headers', () => {

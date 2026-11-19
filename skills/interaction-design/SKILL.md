@@ -49,6 +49,8 @@ This is the interaction-design reason the visibility gate exists, not just a dat
 The browse and search card (`ResearchHomeCard` compact variant) carries its scent in this order: the name as the profile link, then the kind, department and school on one line, then the lead, then the description, then the topics, then any access signal.
 A served undergraduate quote is left to the detail page, because it is the one item a student has to read and judge rather than scan (`docs/decisions.md`, 2026-10-12).
 The kind is omitted when the title already names it, so "Wu Lab" never reads "Lab · ...", while a faculty row titled with a person's name reads "Faculty research · ...".
+Under an active School filter every card names the selected school, because that filter matches any value of the multi-valued `schools` field (#5179).
+A row whose primary school is the selected one keeps that school on its line even when departments would crowd it out, and a row that matches only through a secondary appointment adds a line reading "Also in <school>" under it.
 The description ends at the last whole sentence that fits about 200 characters (`client/src/utils/cardSummary.ts`) rather than at a line clamp, so a card never stops mid-sentence unless no sentence fits.
 The card has no separate "View profile" action, because the title already names the destination and the whole card opens it.
 
@@ -74,6 +76,13 @@ Working memory holds roughly four to seven chunks (Miller's Law, and the more mo
 
 - Anything a student needs in order to compare two labs must be visible on both cards at once.
 If they have to open both and remember the first, the comparison surface is the fix, not a better card.
+The dashboard Compare dialog (`ResearchHomeComparison.tsx`) is that surface, and it leads with the two facts students compare on: undergraduate evidence (the browse card's undergraduate badges in the browse card's order, led by "Taking undergrads now", then advised undergraduates and the cited quote, labelled exactly as the detail page labels it) and how to get involved, resolved through the detail page's own `resolveResearchDetailActionLinks` so the two surfaces cannot offer different ways in (#5106).
+It has no commitment or pay row, because those facts were retired rather than left unfilled (#3088).
+- A saved research card carries the same undergraduate badges, in the same order, as the browse card it was saved from, through one helper (`client/src/utils/undergraduateAccessStatus.ts`) that Compare shares, and the saved list serves the same welcome, invitation and advising predicates the browse index serves, so the shortlist never shows a weaker signal than the card a student acted on (#6088).
+- Both dashboard plan lists open most recently saved first, keyed on the plan's `createdAt`, so a fresh save lands on top (#5168).
+A row saved again after the undo window keeps its first save time, a known limit accepted over adding a stored `savedAt`.
+Above each list a stage filter, with a "Waiting to hear back" preset (Contacted and Applied on saved research, Applied alone on watched programs), and a sort select ("Recently saved", "Stage", and on programs "Deadline") are held in `?stage=` and `?sort=` for the active tab and cleared on a tab switch (`client/src/utils/dashboardPlanListView.ts`).
+A row whose stage changes under a filter stays on screen until the filter changes, so the select the student just used never vanishes from under focus.
 - **Hick's Law**: decision time grows with the number and complexity of options.
 Every filter added to the rail costs every student a little, and pays back only the students who use it.
 - Before adding a facet, check NN/g's test (`nngroup.com/articles/filters-vs-facets/`): faceted navigation costs interface work *and* metadata on every row forever, so confirm the dimension is one students actually sort by.
@@ -89,11 +98,18 @@ Shneiderman's fourth rule asks for dialogs that yield closure: a beginning, a mi
 Saving that silently succeeds leaves the task open, and the Zeigarnik effect means an unresolved task keeps costing attention.
 - Shneiderman's sixth rule and Nielsen's third: give an obvious way back.
 Every filter is reversible, and the reversal has to be as reachable as the application.
+A filter applies only when the student commits to it: a pick from an open list, or Enter after typing or arrowing on a closed select.
+Enter applies; leaving the field keeps the applied value, so a keyboard student tabbing past a filter never starts a search they did not ask for (#5489).
 - **No dead ends.**
 Every surface, including an empty result set and an error, offers a next step.
 `ResearchZeroResultRecovery` is this principle implemented; treat it as the pattern rather than the exception.
 A question about getting in ("research for freshmen", "paid summer research") is answered by `/programs`, not by the research corpus, so `/research` links the same query there (`ResearchProgramsHandoff`, #4369): on every empty search, and above results when `queryCarriesProgramsIntent` matches.
 It is a link rather than a redirect, so a real research query that happens to say "summer" is never taken away from the student, and it carries no program data, so it cannot become the removed #1509 module again.
+The general "can I join, what is a PI, what do I write" questions have one answer for every row, so they live on one generic page, `/getting-started`, rather than in per-entity text (#5099).
+A student can reach it before opening any profile from two places only: one question-phrased line on the un-searched `/research` landing, at every width and for guests and signed-in students alike (under the search box below 1280px, and under the profile count at the top of the results from 1280px, so the sticky sidebar keeps its fit), and a link under a program's "Do you need a mentor first?" answer when the program requires a mentor (#6095).
+There is deliberately no nav item and no dashboard entry, because a nav label adds a choice to every page and sits behind the phone menu that students did not open early.
+Every detail page's "How to get involved" block ends with a link to it, including the minimal block a page shows when its lead card is the only way in, and a principal investigator heading carries a one-line explanation that links to its PI section.
+The page states only advice that holds for any group and points to Yale College's own mentor advice and the programs board for the rest.
 
 A caution specific to this product.
 That component tells the student "This is a data coverage gap, not proof that the department has no undergraduate research."
@@ -119,6 +135,7 @@ Below that a student stays in flow; above it they start context-switching.
 - A spinner needs a show-delay of roughly 150 to 300ms and a minimum display of 300 to 500ms, or a fast response makes it flash.
 - The **peak-end rule** says an experience is judged by its best moment and its last one, not its average.
 The last moment in this product is usually the contact step, so that is the moment worth over-investing in.
+The detail page's reach-out default line is that investment: one discipline-aware sentence opening "How to get involved" that tells a student emailing the lead is normal and what to put in the email, pointing at the contact the page already renders rather than adding a route (#5297, rules in `docs/product-context.md` CTA Vocabulary).
 
 ## 8. Questions this product has not answered
 
@@ -126,7 +143,7 @@ These are open, and they are open because only a student can close them.
 Do not invent an answer and encode it.
 
 - **Does search lead, or does browse?**
-`/research` currently asserts both: a serif "Find a Yale lab that fits you." over a search box whose Search button, pressed while empty, only shows a hint ("Type a topic, professor, or lab to search."), above a grid that is already populated.
+`/research` currently asserts both: a serif "Find Yale research that fits you." over a search box whose Search button, pressed while empty, only shows a hint ("Type a topic, professor, or lab to search."), above a grid that is already populated.
 The page tells the student to search and simultaneously demonstrates that browsing works.
 One of those should lead.
 - **What does a student scan first on a card?**
@@ -144,7 +161,10 @@ So the badge is off the browse card again, and it is off for the right reason th
 It came back on 2026-10-11 in the form the threshold called for.
 After #3592 kept only quotes found on a fetched page, the re-measure read 0.84 (0.71 to 0.92), which is middling rather than high, so the card shows the quote itself under "Mentions undergraduate research" with the page it is quoted from, and the student judges it.
 The label says less than the old one on purpose: only half the correct quotes show undergraduates were hosted, so "Has hosted undergraduate researchers" stays reserved for roster and advisee evidence (`docs/decisions.md`, 2026-10-11).
+On 2026-10-20 that badge was shortened to "Hosted undergrads" and given the same check as the two invitation badges, while student-project and contact signals stay pills (#5405).
+On 2026-11-12 every undergraduate badge took the browse filter's own words: "Taking undergrads now" (with ", recruiting" for an active opening), "Has had undergrads" and "Advises undergrad research" (#5963).
 On 2026-10-12 the quote left the card for the detail page, where it reads at full width below the topics, because on the card it was the heaviest block and the one a student could not scan (#5022).
+On 2026-10-18 the owner removed the quote from the detail page too (#5309): of 117 shown, about 43 were explicit invitations, and the rest were member bios that belong in the roster list or passing mentions a student cannot act on.
 
 Three lessons for this file, which is why this entry is long.
 

@@ -9,6 +9,7 @@ import type { ObservationInput, ScraperContext } from '../types';
 
 const SITE_URL = 'https://quillcircuits.example.org/';
 const LAB_NAME = 'Quill Neural Circuits Lab';
+const LEAD_CONFIRMING_SITE_URL = 'https://quill.example.org/';
 
 const RESEARCH_PROSE =
   'The laboratory studies how cortical circuits encode sensory expectation, combining two-photon imaging in behaving mice with computational models of predictive coding to explain how learned priors reshape perception. ';
@@ -97,6 +98,7 @@ describe('the microsite lane emits the page-stated lab name on every description
 
   it('emits the name when no description is usable', async () => {
     const { emitted, valueOf } = await runLane({
+      url: LEAD_CONFIRMING_SITE_URL,
       html: newsFeedHtml('News | Yale'),
       extraction: extraction({}),
     });
@@ -107,6 +109,7 @@ describe('the microsite lane emits the page-stated lab name on every description
 
   it('emits the name once when the model description is adopted', async () => {
     const { emitted } = await runLane({
+      url: LEAD_CONFIRMING_SITE_URL,
       html: newsFeedHtml(LAB_NAME).replace('<ul>', `<div>${RESEARCH_PROSE}</div><ul>`),
       extraction: extraction({ fullDescription: RESEARCH_PROSE.trim() }),
     });
@@ -291,5 +294,23 @@ describe('the microsite lane emits the page-stated lab name on every description
 
     expect(valueOf('name')).toBeUndefined();
     expect(valueOf('displayName')).toBeUndefined();
+  });
+
+  it('reads og:site_name as the page name only on the site root (#5618)', () => {
+    const context = (sourceUrl: string) => ({
+      sourceUrl,
+      entityKey: 'directory-faculty-fixture-person',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      knownPersonSurnames: NO_SURNAME_ROSTER,
+    });
+    const html = newsFeedHtml('Regional council news');
+
+    expect(pageStatedLabNameObservations(extraction({}), context(SITE_URL), html)).not.toHaveLength(
+      0,
+    );
+    expect(
+      pageStatedLabNameObservations(extraction({}), context(`${SITE_URL}north-council`), html),
+    ).toHaveLength(0);
   });
 });

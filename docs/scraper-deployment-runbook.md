@@ -80,19 +80,26 @@ Typical development write:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  yarn --cwd server scrape run --source <source-name> --limit 10 --use-cache --auto-materialize --output /tmp/ylabs-<source-name>-write-report.json
+  yarn --cwd server scrape run --source <source-name> --apply --limit 10 --use-cache --auto-materialize --output /tmp/ylabs-<source-name>-write-report.json
 ```
 
 Rules:
 
+- `scrape run` and `scrape materialize` write only when the command line carries `--apply` and the environment grants `ALLOW_NON_PROD_SCRAPER_WRITES` (#5842).
+  Without `--apply` the command is a dry run, `--dry-run` stays accepted as an explicit dry run, and the environment permission without `--apply` is refused before the CLI connects, so a `.env` alone can never turn a dry run into a write.
+  Every run and materialize prints one banner line before any network or database work: `WILL WRITE to <database>` or `DRY RUN: nothing will be written (<reason>)`.
+  A `scrape run` dry run's banner goes on to say that observations and entities stay untouched while the run bookkeeping row, and with `--use-cache` the fetch snapshots, are still recorded.
+
 - Use `--use-cache` only outside production.
 - Every non-`--release` CLI run already sends conditional requests through the disk-backed HTTP validator cache (`server/src/scrapers/utils/httpValidatorCache.ts`, #3557), so an unchanged page costs a `304` instead of a full download while the lane still parses and emits it.
   It writes nothing to Mongo, unlike `--use-cache`.
-  Knobs: `SCRAPER_HTTP_CACHE=off` disables it, `SCRAPER_HTTP_CACHE_DIR` moves it (default under `$XDG_CACHE_HOME`, else `~/.cache`, at `ylabs/scraper-http-cache`), and `SCRAPER_HTTP_CACHE_MAX_MB` bounds it (default 512).
-  Read `fetchMetrics.httpCache` on the `ScrapeRun` for `revalidations`, `notModified`, `bytesSaved`, and `bytesDownloaded`.
+  Knobs: `SCRAPER_HTTP_CACHE=off` disables it, `SCRAPER_HTTP_CACHE_DIR` moves it (default under `$XDG_CACHE_HOME`, else `~/.cache`, at `ylabs/scraper-http-cache`), and `SCRAPER_HTTP_CACHE_MAX_MB` bounds it (default 1024, gzipped, with no host holding more than a fifth once eviction runs; kept at 1 GiB while this machine's disk is tight). A page verified with its origin within `SCRAPER_HTTP_CACHE_REUSE_HOURS` (default 12, on for every non-release CLI run) is answered from disk with no request, including one served with `max-age=0` or `Pragma: no-cache`, which is intended because only our own verification time decides; prefix a page-text re-capture, or any run that must read every page fresh, with `SCRAPER_HTTP_CACHE_REUSE_HOURS=0` (#6212).
+  Read `fetchMetrics.httpCache` on the `ScrapeRun` for `revalidations`, `notModified`, `reused`, `bytesSaved`, and `bytesDownloaded`.
 - Start with `--limit`, `--only`, `--since`, or source-specific caps.
 - Use `--output <path>` on `yarn --cwd server scrape run` when a bounded dry-run or write should produce a saved report artifact. If a run was already completed without `--output`, use `yarn --cwd server scrape report --run <scrapeRunId> --output <path>`. Saved scraper CLI artifacts include command, target `environment`, `db`, parsed `options`, and the command-specific report payload.
-- Use `yarn --cwd server scrape materialize --run <scrapeRunId> --dry-run --output <path>` for a saved materialization review artifact before any standalone materialization write. Standalone write materialization requires `--confirm-materialize` in addition to the existing environment write guards. The materialize artifact includes the materialization result, optional visibility-gate result, ScrapeRun report, command, target `environment`, `db`, and parsed `options`.
+- Use `yarn --cwd server scrape materialize --run <scrapeRunId> --dry-run --output <path>` for a saved materialization review artifact before any standalone materialization write. Standalone write materialization requires `--apply --confirm-materialize` in addition to the existing environment write guards. The materialize artifact includes the materialization result, optional visibility-gate result, ScrapeRun report, command, target `environment`, `db`, and parsed `options`.
+  The dry run's `created`, `updated` and `skipped` are the counts the apply of the same input reports, and `changedPathsByEntityType` lists the paths each entity type would change; after an apply, a second dry run must report `updated: 0`, apart from roster-member and relationship rows, which count every planned row as updated. `changedPathsByEntityType` covers only each row's main field write: it omits a research row's follow-on membership, access-signal, browse-rank, lead-inheritance and fold writes, and every roster-member and relationship row, so it is not a complete list of what the apply writes (see "Materialization is run-scoped" in `docs/research-data-pipeline.md`, #6075).
+  Add `--only-fields=<paths>` to write only named researcher paths on the run's `user` rows; it requires `--output`, skips every other entity type, mint, run reconciliation and the visibility gate, and lists the dropped paths per key (see "A user materialize scoped to named researcher fields" in `docs/research-data-pipeline.md`).
 - Do not promote a source while materialization errors are nonzero or conflicts are unexplained.
 
 ### 2. Beta Staging
@@ -110,11 +117,13 @@ Development held 5,291 terms with 638 approved as of 2026-08-29; Beta held none.
 Preparation, from the Beta Render shell:
 
 ```bash
-SCRAPER_ENV=beta yarn --cwd server beta:readiness --confirm-beta-backup --output /tmp/ylabs-beta-readiness.json
+SCRAPER_ENV=beta yarn --cwd server beta:readiness --output /tmp/ylabs-beta-readiness.json
 ```
 
 The command is read-only: it reports the Mongo target, source metadata presence, and canonical migration residue, and it exits non-zero whenever any gate is blocked, so a script that runs it stops on a failed gate.
-Pass `--confirm-beta-backup` only once a Beta backup or restore point exists; the backup gate reports `ready` because the operator said so.
+The gate does not report on a Beta backup, because no Beta restore point exists yet: the Development-to-Beta mirror keeps no copy of what it replaces, and the off-cluster dump that would provide one is #4148.
+The `--confirm-beta-backup` flag and the `betaBackup` row it marked `ready` were removed because they verified nothing (#5556); passing the flag now fails as an unknown argument.
+`yarn promote:beta` still requires `--backup-ref`, but only as the operator's recorded acknowledgement: pass a real backup reference, or `none-acknowledged` while no off-cluster Beta backup exists, and the promotion log records it as stated without checking it (`docs/data-refresh-runbook.md`, "What `yarn promote:beta` does").
 Source metadata is not seeded on Beta: the Development-to-Beta refresh copies the `sources` collection with the rest of the corpus.
 
 Once the refresh has landed, rebuild the Beta search index with the guarded reindex in [`meilisearch-reindex-runbook.md`](./meilisearch-reindex-runbook.md), which refuses an empty Mongo target or a mismatched index prefix before it clears anything:
@@ -211,7 +220,7 @@ yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app
 SMOKE_COOKIE='<operator-session-cookie>' yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false
 ```
 
-When `beta:data-quality --include-samples` reports `sourceHealthWarnings`, use each queue item's `nextCommand` to write the latest scraper report for that source. Those commands are read-only and point at `/tmp/ylabs-scraper-reports/<source>-<runId>.json`.
+When `beta:data-quality --include-samples` reports `sourceHealthWarnings`, use each queue item's `nextCommand` to write the latest scraper report for that source. Those commands are read-only and point at `/tmp/ylabs-scraper-reports/<source>-<runId>.json`; create that directory first with `mkdir -p /tmp/ylabs-scraper-reports`, because `--output` refuses a report directory that does not exist.
 
 Do not run production copy commands or retention `--apply` until the packet is complete.
 

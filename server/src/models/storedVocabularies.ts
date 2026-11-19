@@ -27,6 +27,57 @@ export const descriptionGroundingVerdicts = [
 ] as const;
 export type DescriptionGroundingVerdict = (typeof descriptionGroundingVerdicts)[number];
 
+export const undergradInvitationLevels = ['actively_hiring', 'welcomes_undergrads'] as const;
+
+export const undergradListSources = [
+  'cs-senior-projects',
+  'cs-directed-research',
+  'tobin-research-assistantships',
+  'economics-senior-essay-advisers',
+  'psychology-research-opportunities',
+  'wu-tsai-undergraduate-fellows',
+  'physics-open-research-opportunities',
+  'english-senior-essays',
+  'english-creative-writing-projects',
+  'political-science-senior-essay-prizes',
+  'german-senior-essays',
+  'yibs-summer-research-fellows',
+  'cognitive-science-senior-essays',
+  'eps-senior-theses',
+  'theater-performance-studies-senior-projects',
+] as const;
+export type UndergradListSource = (typeof undergradListSources)[number];
+
+export type UndergradEvidenceSignal = 'mentors' | 'hosted' | 'welcomes';
+
+/**
+ * Which one undergraduate tag each list feeds, decided by what the list says the
+ * undergraduate did (owner ruling on #5362, 2026-11-10): advised on the student's own work
+ * is mentors, worked inside the professor's research is hosted, open now is welcomes.
+ * Changing a row here also requires the #5362 hosted and welcomes lanes to agree.
+ */
+export const UNDERGRAD_EVIDENCE_SIGNAL: Record<UndergradListSource, UndergradEvidenceSignal> = {
+  'cs-senior-projects': 'mentors',
+  'cs-directed-research': 'mentors',
+  'economics-senior-essay-advisers': 'mentors',
+  'english-senior-essays': 'mentors',
+  'english-creative-writing-projects': 'mentors',
+  'political-science-senior-essay-prizes': 'mentors',
+  'german-senior-essays': 'mentors',
+  'cognitive-science-senior-essays': 'mentors',
+  'eps-senior-theses': 'mentors',
+  'theater-performance-studies-senior-projects': 'mentors',
+  'tobin-research-assistantships': 'hosted',
+  'wu-tsai-undergraduate-fellows': 'hosted',
+  'yibs-summer-research-fellows': 'hosted',
+  'psychology-research-opportunities': 'welcomes',
+  'physics-open-research-opportunities': 'welcomes',
+};
+
+export const undergradListEntryKinds = ['advised', 'open'] as const;
+export type UndergradListEntryKind = (typeof undergradListEntryKinds)[number];
+export type UndergradInvitationLevel = (typeof undergradInvitationLevels)[number];
+
 export const labSiteLeadVerdicts = ['CONFIRMED', 'CONTRADICTED', 'UNSTATED'] as const;
 export type LabSiteLeadVerdict = (typeof labSiteLeadVerdicts)[number];
 
@@ -34,11 +85,16 @@ export const labSiteLeadMatchReasons = [
   'OFFICIAL_PROFILE_LINK',
   'NAMED_ON_PAGE',
   'SURNAME_IN_SITE_URL',
+  'NAMED_AS_ROW_LEAD',
   'NONE',
 ] as const;
 export type LabSiteLeadMatchReason = (typeof labSiteLeadMatchReasons)[number];
 
-export const labSiteLeadContradictionShapes = ['NAMESAKE', 'NAMED_AS_LEAD'] as const;
+export const labSiteLeadContradictionShapes = [
+  'NAMESAKE',
+  'NAMED_AS_LEAD',
+  'LISTED_IN_NON_LEAD_ROLE',
+] as const;
 export type LabSiteLeadContradictionShape = (typeof labSiteLeadContradictionShapes)[number];
 
 export const labSiteVerificationStates = [
@@ -114,6 +170,10 @@ export const scrapeRunInterruptionReasons = [
   'heartbeat_stale',
   'legacy_abandoned',
   'stalled',
+  'lease_lost',
+  'lease_renewal_failed',
+  'lease_no_progress',
+  'lease_refused',
 ] as const;
 export type ScrapeRunInterruptionReason = (typeof scrapeRunInterruptionReasons)[number];
 
@@ -204,3 +264,6 @@ export type LoginSignalBucket = (typeof loginSignalBuckets)[number];
 export const officialRosterUndergraduateStatuses = ['current', 'past'] as const;
 export type OfficialRosterUndergraduateStatus =
   (typeof officialRosterUndergraduateStatuses)[number];
+
+export const officialRosterConfigOrigins = ['static', 'derived'] as const;
+export type OfficialRosterConfigOrigin = (typeof officialRosterConfigOrigins)[number];

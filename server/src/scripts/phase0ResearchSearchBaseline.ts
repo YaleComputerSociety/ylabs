@@ -1,4 +1,3 @@
-import { constants as fsConstants } from 'fs';
 import fs from 'fs';
 import path from 'path';
 import { performance } from 'perf_hooks';
@@ -31,7 +30,8 @@ import {
   type Phase0ResearchSearchBaselineReport,
   type Phase0ResearchSearchSample,
 } from './phase0ResearchSearchBaselineCore';
-import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { resolveSafeJsonReportPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -357,22 +357,10 @@ export function writePhase0ResearchSearchBaseline(
   report: Phase0ResearchSearchBaselineReport,
   outputValue: string,
 ): { output: string; sha256: string; bytes: number } {
-  const output = resolveSafeJsonReportOutputPath(outputValue);
+  const output = resolveSafeJsonReportPath(outputValue);
   assertPrivateArtifactParent(output);
   const body = `${JSON.stringify(report, null, 2)}\n`;
-  const noFollow = fsConstants.O_NOFOLLOW || 0;
-  const fd = fs.openSync(
-    output,
-    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | noFollow,
-    0o600,
-  );
-  try {
-    fs.writeFileSync(fd, body, { encoding: 'utf8' });
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  fs.chmodSync(output, 0o600);
+  writeReportFileSync(output, body, { exclusive: true });
   return {
     output,
     sha256: createHash('sha256').update(body).digest('hex'),

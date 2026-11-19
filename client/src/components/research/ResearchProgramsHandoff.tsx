@@ -1,3 +1,4 @@
+import { echoedQuery } from '../../utils/echoedQuery';
 import { Link } from 'react-router-dom';
 
 import { programsSearchHref } from '../../utils/researchProgramsHandoff';
@@ -15,7 +16,7 @@ const ResearchProgramsHandoff = ({ query }: ResearchProgramsHandoffProps) => (
       to={programsSearchHref(query)}
       className="yr-link yr-focus-ring -mb-3 mt-1 flex min-h-11 w-fit items-center rounded-control font-semibold underline"
     >
-      Search programs and fellowships for &lsquo;{query.trim()}&rsquo;
+      Search programs and fellowships for &lsquo;{echoedQuery(query)}&rsquo;
     </Link>
   </div>
 );

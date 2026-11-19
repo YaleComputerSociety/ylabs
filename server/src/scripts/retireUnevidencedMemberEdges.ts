@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -17,6 +16,7 @@ import {
   type UnevidencedMemberEdgeEntityInput,
   type UnevidencedMemberEdgeInput,
 } from './retireUnevidencedMemberEdgesCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
 
   console.log(JSON.stringify(report, null, 2));
   if (options.output) {
-    fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`Saved report to ${options.output}`);
   }
   await mongoose.disconnect();

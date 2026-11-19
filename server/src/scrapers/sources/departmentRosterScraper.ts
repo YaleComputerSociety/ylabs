@@ -24,8 +24,15 @@
  * `--only` (filter by deptKey, e.g. `--only econ,mcdb`).
  */
 import axios from 'axios';
+import { Observation } from '../../models/observation';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import { imageElementSource } from '../utils/imageElementSource';
+import {
+  subjectProfileOrcid,
+  subjectProfileStatesNoOrcid,
+} from '../utils/rosterMemberIdentityEvidence';
+import { wordpressAuthorProfileBiography } from '../utils/wordpressAuthorProfile';
 import type { AnyNode } from 'domhandler';
 import {
   buildFetchAttemptMetrics,
@@ -43,8 +50,32 @@ import {
   type LabUrlEvidenceLoader,
   type LabUrlIsUnusable,
 } from '../utils/labUrlEvidence';
-import { normalizeOrcid } from '../../utils/orcid';
+import {
+  coLedGroupSiteFor,
+  loadCoLedSiteIndex,
+  type CoLedSiteIndex,
+  type CoLedSiteIndexLoader,
+  type LabUrlIsCoLedGroupSite,
+} from '../utils/coLedGroupSites';
+import {
+  decideLegacyKeyAdoption,
+  loadLegacyKeyRows,
+  type LegacyKeyRowLoader,
+} from '../rosterLegacyKeyAdoption';
+import {
+  DEGREE_TOKENS,
+  isDegreeToken,
+  ROSTER_NAME_NORMALIZER_LEGACY_TOKENS,
+} from '../../utils/degreeTokens';
+import {
+  decideRosterAttach,
+  loadRosterOwnerKeyRows,
+  rosterHostOfUrl,
+  type RosterOwnerKeyRow,
+  type RosterOwnerKeyRowLoader,
+} from '../rosterOwnerKeyRows';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { isPersonNamePostNominalToken } from '../../utils/personNameHygiene';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type {
@@ -54,29 +85,41 @@ import type {
   ObservationInput,
   ScraperFetchMetric,
 } from '../types';
+import type { ObservationRefusedValue } from '../observationRefusals';
 import {
   isLikelyPersonSpecificYaleEmail,
+  isRoleOrUnitMailbox,
   netidFromEmail,
   isPhotoSceneDescription,
   normalizeName,
   normalizeNameKeepingCaption,
   slugify,
   splitName,
+  yaleUnitMailboxTokens,
 } from '../utils/scraperHelpers';
+import { asYaleNetid } from '../../utils/yaleNetid';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
-import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
+import {
+  isInProfilePublicityRegion,
+  isInProfileRelatedLinksList,
+} from '../utils/profilePublicityRegions';
+import { rosterProfileSubjectEmail } from '../utils/rosterProfileSubjectEmail';
+import { pageStatesNoEmailAddress } from '../utils/pageStatesNoEmailAddress';
 import {
   isMeshIndexedProfileUrl,
   withoutMeshNonSubjectDescriptors,
 } from '../utils/meshNonSubjectDescriptors';
 import {
+  isCoursePageUrl,
   isInstitutionalAdvancementUrl,
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
   isOffsiteInstitutionPersonProfileUrl,
+  isPatientCarePageUrl,
   isPostingPageUrl,
   isPersonProfileOrDirectoryUrl,
   isSharedPeopleRosterUrl,
+  isStagingSiteUrl,
 } from '../../utils/researchHomeWebsiteUrl';
 import { personIdentityTokens } from '../../utils/researchHomeNameIdentityAuthority';
 import {
@@ -99,7 +142,22 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
-import { orgUnitMatchKey } from '../orgUnitCanonicalization';
+import { isTruncatedPersonTitle } from '../../utils/titleHygiene';
+import {
+  getOrgUnitCanonicalizer,
+  orgUnitMatchKey,
+  type OrgUnitCanonicalizer,
+} from '../orgUnitCanonicalization';
+import {
+  silentRosterPagesAssertingHome,
+  silentRosterPagesNote,
+  type RosterTitleTally,
+} from '../silentRosterDirectories';
+import {
+  rosterHomeDepartmentStatement,
+  rosterTitleSectionParenthetical,
+  type RosterTitleUnit,
+} from '../rosterHomeDepartmentStatement';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
   ROSTER_LANE_FAILED_READ_STATUSES,
@@ -112,6 +170,8 @@ import {
   mintedDescriptionOf,
   mintsNoResearchEntityAsTeachingAppointment,
   ownsNoResearchEntityByTitle,
+  statesAnyFacultyAppointment,
+  titleStatesOnlyAStaffRole,
 } from './yaleDirectoryScraper';
 import {
   rosterEntryIdentityKey,
@@ -122,8 +182,12 @@ import { runWithBoundedConcurrency } from '../utils/boundedConcurrency';
 import { evidenceAssertsALab } from '../utils/labClaimEvidence';
 import { labNameStatedForPerson, statedLabNameClaimsAnotherPerson } from '../utils/statedLabName';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
+import { hostnameIsWithin } from '../../utils/yaleHost';
+import { personNameKey } from '../rekeyedPersonKeyPlan';
+import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKeyRetirement';
+import { isLabDirectoryListingUrl } from '../laneRefusedWebsiteUrl';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 
 /**
@@ -222,6 +286,26 @@ export function htmlLaneStatus(
   return walk.distinctEntries.length === 0 ? 'empty' : 'ok';
 }
 
+const ROSTER_BARREN_STATUSES = new Set(['empty', 'extractor-error', 'rendered-extractor-error']);
+
+/**
+ * What each department roster yielded in this run, for the cross-run barren-unit check
+ * (#3876, #6423). A department this run did not read (a failed fetch, a `--limit` skip)
+ * is left out, because an omitted unit is inconclusive and a zero is barren.
+ */
+export function rosterUnitYields(
+  perDept: ReadonlyArray<Pick<LaneRead, 'deptKey' | 'status' | 'count'>>,
+): Record<string, number> {
+  const yields: Record<string, number> = {};
+  for (const dept of perDept) {
+    const readSomething = dept.status === 'partial-read' && dept.count > 0;
+    if (dept.status === 'ok' || readSomething || ROSTER_BARREN_STATUSES.has(dept.status)) {
+      yields[dept.deptKey] = dept.count;
+    }
+  }
+  return yields;
+}
+
 /**
  * How many roster lanes read at once.
  *
@@ -256,9 +340,36 @@ const ROSTER_SYNTHESIZED_DESCRIPTION_CONFIDENCE = 0.5;
 const ROSTER_PROFILE_DESCRIPTION_CONFIDENCE = 0.55;
 const STATED_LAB_NAME_CONFIDENCE = 0.8;
 
+export const ROSTER_LAB_WEBSITE_CLASSIFIER = 'dept-faculty-roster-lab-website';
+// Bump when a change to the profile lab-link rules refuses links an earlier version admitted, so
+// field retraction can tell this read's refusal from the older read that asserted the link (#5803).
+export const ROSTER_LAB_WEBSITE_CLASSIFIER_VERSION = 1;
+
+export type LabUrlRefusalReason =
+  | 'publicity_region_link'
+  | 'path_word_without_website_signal'
+  | 'national_laboratory'
+  | 'institutional_advancement'
+  | 'map_or_publicity_page'
+  | 'posting_course_care_or_listing_page'
+  | 'own_site_directory_page'
+  | 'offsite_person_profile'
+  | 'generic_lab_directory';
+
+export interface LabUrlRefusal {
+  url: string;
+  reason: LabUrlRefusalReason;
+}
+
 /** Minimal structured row produced by every per-department extractor. */
 export interface FacultyEntry {
   name: string;
+  /**
+   * The listing's text before the name normalizer ran, kept only when an earlier version
+   * of the normalizer's credential list reads it differently, so the lane can still derive
+   * the key that version minted (#5969).
+   */
+  nameAsListed?: string;
   /**
    * The name this row's slug and user key were first derived from, when the listing's
    * readable name differs from it. Identity continuity: re-keying an existing row
@@ -276,8 +387,19 @@ export interface FacultyEntry {
   profileUrl?: string;
   /** Title / position string ("Sterling Professor of …") if present. */
   title?: string;
+  /** Set when `title` came from the person's profile page rather than the listing. */
+  titleFromProfilePage?: boolean;
   /** Email address if present (used to derive netid). */
   email?: string;
+  /**
+   * What this run can say about the person's email when `email` is absent (#5711).
+   *
+   * `empty` is a positive claim: the person's own profile page was read and states no
+   * address of any kind, and the roster card yielded none. `refused` says an address
+   * was seen and withheld, which is the opposite of the page having dropped one.
+   * Absent means no claim. Only `empty` may reach `assertsNoValueFor: ['email']`.
+   */
+  emailSlotAttestation?: 'empty' | 'refused';
   /** External lab / personal website URL discovered on the listing. */
   labUrl?: string;
   /**
@@ -298,8 +420,21 @@ export interface FacultyEntry {
    * `departmentRosterLabSlotAttestation.test.ts` enforces by scanning this file.
    */
   labSlotAttestation?: 'empty' | 'refused';
+  /** The candidate lab links the profile read saw and declined, each with the rule that declined it (#5803). */
+  labUrlRefusals?: LabUrlRefusal[];
+  /**
+   * Set when the profile presented `labUrl` as its own labelled website button, with the
+   * title of the lab card the button sits in (#5819).
+   */
+  labWebsiteButton?: { cardTitle: string };
   /** ORCID extracted from an official Yale profile page. */
   orcid?: string;
+  /**
+   * `empty` is a positive claim that the person's own profile was read, named them, and its
+   * subject node states no ORCID of any kind (#5991). Only `empty` may reach
+   * `assertsNoValueFor: ['orcid']`; a page whose ORCID the reader refused claims nothing.
+   */
+  orcidSlotAttestation?: 'empty';
   /** Short bio or research summary extracted from an official Yale profile page. */
   bio?: string;
   /** Grounded research-home description deterministically extracted from the PI's official profile page (#481 lever). */
@@ -318,6 +453,12 @@ export interface FacultyEntry {
   imageUrl?: string;
   /** A lab the person's own official profile says that person leads (#4468). */
   statedLabName?: string;
+  /**
+   * Whether this run read the person's own official profile page: `read` only when the
+   * page was fetched and named the roster person, which is what lets an empty mint
+   * withdraw a row this lane minted earlier (#5380).
+   */
+  profileReadOutcome?: 'read' | 'refused' | 'unread';
 }
 
 /** Context passed to each per-department extractor for URL resolution and logging. */
@@ -368,6 +509,24 @@ export interface DeptConfig {
    * the person's real department is left to resolve from a better source.
    */
   affiliatesOnly?: boolean;
+  /**
+   * When true, `deptName` names a center or program the catalog does not hold as a department
+   * (Stem Cell Center, West Campus Institutes, the Physician Associate Program), or a catalog
+   * department whose page states no one's appointment (`namesCatalogDepartment`), so the person's
+   * `primaryDepartment` is withheld and nothing else changes: membership, the `departments`
+   * label, the roster-health snapshot, withdrawn keys and roster-bio minting read the lane
+   * exactly as before (#6071). Narrower than `affiliatesOnly`, which also withholds the label
+   * and roster-bio minting, and than `crossListedProgramme`, which rank-gates rows and
+   * publishes no snapshot.
+   */
+  withholdsHomeDepartment?: boolean;
+  /**
+   * Set beside `withholdsHomeDepartment` when `deptName` is a catalog department whose page
+   * withholds only because it states no one's appointment (#6299). The name stays in the title
+   * vocabulary, so a title on another roster that names it first still withholds that roster's
+   * department.
+   */
+  namesCatalogDepartment?: boolean;
   /**
    * When true, this page is a school's own whole-faculty directory rather than a
    * department roster, so `deptName` names the school and there is no department
@@ -649,7 +808,7 @@ function yaleEmailFromElement(
   const mailtoMatch = decoded.match(/mailto:([a-z0-9._%+-]+@yale\.edu)/i);
   if (mailtoMatch) return mailtoMatch[1].toLowerCase();
 
-  return decoded.match(/\b[a-z0-9._%+-]+@yale\.edu\b/i)?.[0]?.toLowerCase();
+  return decoded.match(/(?<![a-z0-9._%+-])[a-z0-9._%+-]+@yale\.edu\b/i)?.[0]?.toLowerCase();
 }
 
 /**
@@ -802,7 +961,9 @@ export const csRenderedExtractor: FacultyExtractor = (html, ctx) => {
     if (!/\/faculty\/|\/profile\/|people|directory/i.test(href)) return;
     if (!/^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+)+/.test(text)) return;
 
-    const name = normalizeName(text.replace(/\s*,?\s*(Ph\.?D\.?|M\.?D\.?)$/i, ''));
+    const { name, ...listedName } = rosterListedName(
+      text.replace(/\s*,?\s*(Ph\.?D\.?|M\.?D\.?)$/i, ''),
+    );
     const key = `${name}:${href}`;
     if (!name || seen.has(key)) return;
     seen.add(key);
@@ -820,6 +981,7 @@ export const csRenderedExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl: absolutize(href, ctx.pageUrl),
       title,
       email,
@@ -846,7 +1008,7 @@ export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
     if (!isRecord(page) || !Array.isArray(page.facultyMembers)) continue;
     for (const member of page.facultyMembers) {
       if (!isRecord(member)) continue;
-      const name = normalizeName(stringValue(member.name) || '');
+      const { name, ...listedName } = rosterListedName(stringValue(member.name) || '');
       if (!name) continue;
       const url = stringValue(member.url);
       const profileUrl = url ? absolutize(url, ctx.pageUrl) : undefined;
@@ -861,6 +1023,7 @@ export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
           : undefined;
       out.push({
         name,
+        ...listedName,
         profileUrl,
         title,
         labUrl,
@@ -888,7 +1051,7 @@ export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
   $('a.stories-item').each((_i, el) => {
     const card = $(el);
     const heading = card.find('h3').first();
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(
         heading
           .contents()
@@ -905,6 +1068,7 @@ export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl,
       title,
       ...(imageUrl ? { imageUrl } : {}),
@@ -912,6 +1076,45 @@ export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
   });
 
   return out;
+};
+
+const FACULTY_SECTION_HEADING = /\b(?:professors?|lecturers?|instructors?)\b/i;
+
+const singularSectionTitle = (heading: string): string => heading.replace(/s$/, '');
+
+/**
+ * An engineering department faculty page: the stories cards, then any named section
+ * ("<rank>s") that lists people in content columns as a name and an email, with no card
+ * (#6423). The section heading is the only title the page states for those people.
+ */
+export const engineeringDepartmentFacultyExtractor: FacultyExtractor = (html, ctx) => {
+  const cards = chemEnvFacultyExtractor(html, ctx);
+  const $ = cheerio.load(html);
+  const columnEntries: FacultyEntry[] = [];
+  let sectionHeading = '';
+  $('h2, .content-columns').each((_i, el) => {
+    const node = $(el);
+    if (el.tagName === 'h2') {
+      sectionHeading = cleanText(node.text());
+      return;
+    }
+    if (!FACULTY_SECTION_HEADING.test(sectionHeading)) return;
+    node.children('[class^="content"]').each((_j, column) => {
+      const cell = $(column);
+      const { name, ...listedName } = rosterListedName(cleanText(cell.find('h3').first().text()));
+      if (!name) return;
+      const email = (cell.find('a[href^="mailto:"]').first().attr('href') || '')
+        .replace(/^mailto:/i, '')
+        .trim();
+      columnEntries.push({
+        name,
+        ...listedName,
+        title: singularSectionTitle(sectionHeading),
+        ...(email ? { email } : {}),
+      });
+    });
+  });
+  return [...cards, ...columnEntries];
 };
 
 /**
@@ -931,7 +1134,7 @@ export const directoryListingCardExtractor: FacultyExtractor = (html, ctx) => {
   $('.directory-listing-card').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.directory-listing-card__heading-link').first();
-    const name = normalizeName(cleanText(nameLink.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text()));
     if (!name) return;
 
     const profileHref = nameLink.attr('href') || '';
@@ -946,6 +1149,7 @@ export const directoryListingCardExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl,
       title,
       email,
@@ -975,7 +1179,7 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
   $('.reference-card').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.reference-card__heading-link').first();
-    const name = normalizeName(cleanText(nameLink.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text()));
     const href = nameLink.attr('href') || '';
     if (!name || !href) return;
 
@@ -988,6 +1192,7 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       ...(labUrl ? {} : { labSlotAttestation: 'refused' as const }),
       profileUrl: destinationUrl,
       title,
@@ -1017,7 +1222,7 @@ export const facultyLabsTableExtractor: FacultyExtractor = (html, ctx) => {
     const link = first.find('a[href]').first();
     const linkText = cleanText(link.text());
     // A trailing asterisk is a roster footnote marker, not part of the name.
-    const name = normalizeName(linkText.replace(/\*+$/, ''));
+    const { name, ...listedName } = rosterListedName(linkText.replace(/\*+$/, ''));
     const href = link.attr('href') || '';
     if (!name || !href) return;
 
@@ -1030,6 +1235,7 @@ export const facultyLabsTableExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       ...(isPersonProfileOrDirectoryUrl(destinationUrl)
         ? { profileUrl: destinationUrl, labSlotAttestation: 'refused' as const }
         : { labUrl: destinationUrl }),
@@ -1103,7 +1309,7 @@ export const artPeopleListExtractor: FacultyExtractor = (html, ctx) => {
       .each((_j, el) => {
         const link = $(el).find('a[href]').first();
         const href = link.attr('href') || '';
-        const name = normalizeName(cleanText(link.find('p').first().text()));
+        const { name, ...listedName } = rosterListedName(cleanText(link.find('p').first().text()));
         if (!name || !href) return;
 
         const destinationUrl = absolutize(href, ctx.pageUrl);
@@ -1125,6 +1331,7 @@ export const artPeopleListExtractor: FacultyExtractor = (html, ctx) => {
         }
         byUrl.set(destinationUrl, {
           name,
+          ...listedName,
           profileUrl: destinationUrl,
           title,
           labUrl,
@@ -1184,12 +1391,15 @@ export const dramaWhoWeAreExtractor: FacultyExtractor = (html, ctx) => {
   const addEntry = (anchor: cheerio.Cheerio<AnyNode>, container: cheerio.Cheerio<AnyNode>) => {
     const postId = bioPostIdFromAttribute(anchor.attr('data-bio-id'));
     if (!postId || byPostId.has(postId)) return;
-    const name = normalizeName(cleanText(anchor.text()) || cleanText(anchor.attr('data-name')));
+    const { name, ...listedName } = rosterListedName(
+      cleanText(anchor.text()) || cleanText(anchor.attr('data-name')),
+    );
     if (!name) return;
     const title = cleanText(container.find('.role').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(container, ctx.pageUrl);
     byPostId.set(postId, {
       name,
+      ...listedName,
       profileUrl: absolutize(`/?p=${postId}`, ctx.pageUrl),
       title,
       ...(imageUrl ? { imageUrl } : {}),
@@ -1234,7 +1444,7 @@ export const viewsTableRowExtractor: FacultyExtractor = (html, ctx) => {
     if (!nameCell.length) return;
 
     const nameLink = nameCell.find('a.username, a').first();
-    const name = normalizeName(cleanText(nameLink.text() || nameCell.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text() || nameCell.text()));
     if (!name) return;
 
     const profileHref = nameLink.attr('href') || '';
@@ -1246,6 +1456,7 @@ export const viewsTableRowExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl,
       title,
       email,
@@ -1271,7 +1482,7 @@ export const profileGridItemExtractor: FacultyExtractor = (html, ctx) => {
 
   $('.profile-grid-item').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(card.find('.profile-grid-item__name--link').first().text()),
     );
     if (!name) return;
@@ -1292,7 +1503,7 @@ export const profileGridItemExtractor: FacultyExtractor = (html, ctx) => {
       ctx.pageUrl,
     );
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1312,7 +1523,7 @@ export const nodeTeaserFacultyExtractor: FacultyExtractor = (html, ctx) => {
   $('article.node-teaser--faculty').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.node-teaser__heading a').first();
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(nameLink.text() || card.find('.node-teaser__heading').first().text()),
     );
     if (!name) return;
@@ -1322,7 +1533,7 @@ export const nodeTeaserFacultyExtractor: FacultyExtractor = (html, ctx) => {
     const title = cleanText(card.find('.node-teaser__job-title').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.node-teaser__image').first(), ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1344,7 +1555,7 @@ export const jacksonProfileComponentExtractor: FacultyExtractor = (html, ctx) =>
   $('article.profile--component').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.profile__content h3 a, .profile__content h3').first();
-    const name = normalizeName(cleanText(nameLink.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text()));
     if (!name) return;
 
     const profileHref = card.find('.profile__content h3 a').first().attr('href') || '';
@@ -1352,7 +1563,7 @@ export const jacksonProfileComponentExtractor: FacultyExtractor = (html, ctx) =>
     const title = cleanText(card.find('.profile-positions').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.profile__media').first(), ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1370,7 +1581,7 @@ export const lawPersonListingExtractor: FacultyExtractor = (html, ctx) => {
 
   $('article.node--type-person').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(card.find('.field--name-title').first().text() || card.find('h3 a').first().text()),
     );
     if (!name) return;
@@ -1380,7 +1591,7 @@ export const lawPersonListingExtractor: FacultyExtractor = (html, ctx) => {
     const title = cleanText(card.find('.field--name-field-title').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1398,7 +1609,7 @@ export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
 
   $('.node-faculty-directory').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(card.find('.field-name-faculty-firstname-lastname').first().text()),
     );
     if (!name) return;
@@ -1417,7 +1628,7 @@ export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
       ) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.field-name-field-photo').first(), ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1440,7 +1651,7 @@ const nameFromPeopleSlug = (about: string): string => {
     .filter(Boolean)
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
     .join(' ');
-  return normalizeName(titleCased);
+  return normalizeRosterName(titleCased);
 };
 
 export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
@@ -1451,8 +1662,10 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
     const card = $(el);
     const about = card.attr('about') || card.find('a[href*="/people/"]').first().attr('href') || '';
     const altText = cleanText(card.find('img[alt]').first().attr('alt') || '');
-    const headingName = normalizeName(cleanText(card.find('.card-content h2').first().text()));
-    const altName = isPhotoSceneDescription(altText) ? '' : normalizeName(altText);
+    const headingText = cleanText(card.find('.card-content h2').first().text());
+    const headingName = normalizeRosterName(headingText);
+    const captionFreeAltText = normalizeRosterName(altText);
+    const altName = isPhotoSceneDescription(captionFreeAltText) ? '' : captionFreeAltText;
     const name = headingName || altName || nameFromPeopleSlug(about);
     if (!name) return;
     const firstKeyedName = normalizeNameKeepingCaption(altText) || nameFromPeopleSlug(about);
@@ -1473,6 +1686,7 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedNameFields(headingName ? headingText : altName ? altText : ''),
       ...(identityName ? { identityName } : {}),
       profileUrl,
       title,
@@ -1482,6 +1696,43 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
 
   return out;
 };
+
+/**
+ * The title on a YIBS affiliate row. The emphasised span is usually the whole title,
+ * followed by a comma and the unit ("Professor of Ecology, Yale School of the
+ * Environment"), but on many rows it is only the start of one, with the rest outside the
+ * emphasis: a linked department ("Professor of" + "Molecular, Cellular, and Developmental
+ * Biology") or the rank after a chair name ("Oastler" + "Professor of Biogeochemistry").
+ * When the span neither ends nor is followed by a separator, the text after it on the same
+ * line completes the title: plain text or further emphasis up to the next separator, and a
+ * link whole, because a department name can carry commas, but only while the title still
+ * dangles at a connective, so a complete title is never joined to a lab-site link.
+ */
+const TITLE_CONTINUATION_TAGS = new Set(['a', 'b', 'em', 'i', 'span', 'strong']);
+
+function fieldCollectionPersonTitle(
+  $: cheerio.CheerioAPI,
+  emphasis: cheerio.Cheerio<AnyNode>,
+): string | undefined {
+  const emphasised = cleanText(emphasis.text());
+  if (!emphasised) return undefined;
+  let title = emphasised;
+  let node = emphasis.get(0)?.nextSibling ?? null;
+  while (node && !/[,;]$/.test(title)) {
+    if (node.type === 'tag' && !TITLE_CONTINUATION_TAGS.has(node.name)) break;
+    if (node.type === 'tag' && node.name === 'a' && !isTruncatedPersonTitle(title)) break;
+    const isText = node.type === 'text';
+    const text = cleanText($(node).text());
+    if (text) {
+      if (/^[,;]/.test(text)) break;
+      const kept = isText ? text.split(/[,;]/)[0] : text;
+      title = cleanText(`${title} ${kept}`);
+      if (isText && kept !== text) break;
+    }
+    node = node.nextSibling;
+  }
+  return title.replace(/[,;]\s*$/, '') || undefined;
+}
 
 /**
  * Legacy Drupal field-collection person rows, used by the YIBS faculty-affiliates
@@ -1499,18 +1750,42 @@ export const fieldCollectionPersonExtractor: FacultyExtractor = (html, ctx) => {
     const card = $(el);
     const desc = card.find('.field-name-field-person-description').first();
     const nameLink = desc.find('h3 a').first();
-    const name = normalizeName(cleanText(nameLink.text() || desc.find('h3').first().text()));
+    const { name, ...listedName } = rosterListedName(
+      cleanText(nameLink.text() || desc.find('h3').first().text()),
+    );
     if (!name) return;
 
     const href = nameLink.attr('href') || '';
     const profileUrl = /^https?:\/\//i.test(href) ? href : undefined;
-    const title = cleanText(desc.find('p em').first().text()).replace(/[,;]\s*$/, '') || undefined;
+    const title = fieldCollectionPersonTitle($, desc.find('p em').first());
     const imageUrl = imageUrlFromElement(
       card.find('.field-name-field-person-photo').first(),
       ctx.pageUrl,
     );
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+  });
+
+  return out;
+};
+
+export const wordpressUsersListExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('#grid__users-member .grid__user').each((_i, el) => {
+    const card = $(el);
+    const { name, ...listedName } = rosterListedName(
+      cleanText(card.find('.grid__user__title').first().text()),
+    );
+    if (!name) return;
+
+    const href = card.find('a.grid__user__link').first().attr('href') || '';
+    const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
+    const title = cleanText(card.find('.grid__user__job-title').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(card.find('.grid__user__image').first(), ctx.pageUrl);
+
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1559,10 +1834,14 @@ function isPersonNameShaped(name: string): boolean {
  * Returns undefined when the leading segment does not look like a personal name so a
  * generic listing/section title cannot overwrite a reliable slug-derived placeholder.
  */
+const WORDPRESS_AUTHOR_ARCHIVE_TITLE_SUFFIX = /,\s*Author at\s.+$/i;
+
 function personNameFromProfileHtml($: cheerio.CheerioAPI): string | undefined {
   const raw =
     $('meta[property="og:title"]').attr('content') || cleanText($('title').first().text());
-  const leading = cleanText(raw).split(/\s+[|–—-]\s+/)[0];
+  const leading = cleanText(raw)
+    .split(/\s+[|–—-]\s+/)[0]
+    .replace(WORDPRESS_AUTHOR_ARCHIVE_TITLE_SUFFIX, '');
   if (!leading || !isPersonNameShaped(leading)) return undefined;
   return leading;
 }
@@ -1583,13 +1862,19 @@ export const facultyThumbnailExtractor: FacultyExtractor = (html, ctx) => {
     const href = card.find('a.blank-link, a[href*="/faculty/"]').first().attr('href') || '';
     if (!/\/faculty\/\d+-/.test(href)) return;
 
-    const name = normalizeName(nameFromFacultySlug(href));
+    const { name, ...listedName } = rosterListedName(nameFromFacultySlug(href));
     if (!name) return;
 
     const profileUrl = absolutize(href, ctx.pageUrl);
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
 
-    out.push({ name, namePlaceholder: true, profileUrl, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({
+      name,
+      ...listedName,
+      namePlaceholder: true,
+      profileUrl,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
   });
 
   return out;
@@ -2034,6 +2319,8 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://filmstudies.yale.edu/people/faculty',
     paginated: false,
     extractor: viewsTableRowExtractor,
+    withholdsHomeDepartment: true,
+    namesCatalogDepartment: true,
   },
   {
     deptKey: 'spanish-portuguese',
@@ -2221,6 +2508,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: profileGridItemExtractor,
     officialProfileOnly: true,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'physician-associate-program',
@@ -2229,6 +2517,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://medicine.yale.edu/pa/profession/meet-the-team/',
     paginated: false,
     extractor: profileGridItemExtractor,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'som',
@@ -2313,6 +2602,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://westcampus.yale.edu/about-us/faculty',
     paginated: false,
     extractor: referenceCardExtractor,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'art',
@@ -2363,6 +2653,18 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://yibs.yale.edu/people/faculty-affiliates',
     paginated: false,
     extractor: fieldCollectionPersonExtractor,
+    officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
+  {
+    deptKey: 'fds',
+    deptName: 'Foundations of Data Science',
+    schoolName: 'Yale Institute for Foundations of Data Science',
+    url: 'https://fds.yale.edu/people/',
+    paginated: false,
+    extractor: wordpressUsersListExtractor,
+    // Measured 2026-10-18 (#5282): minting planned 67 rows and every one was for a person
+    // the corpus already covers, 58 of them through a row that person leads.
     officialProfileOnly: true,
     affiliatesOnly: true,
   },
@@ -2723,9 +3025,11 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'applied-mathematics',
     deptName: 'Applied Mathematics',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    url: 'https://applied.math.yale.edu/people/faculty',
+    url: 'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
     paginated: false,
-    extractor: viewsTableRowExtractor,
+    extractor: engineeringDepartmentFacultyExtractor,
+    withholdsHomeDepartment: true,
+    namesCatalogDepartment: true,
   },
   {
     deptKey: 'history-science-medicine-public-health',
@@ -2734,6 +3038,8 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://hshm.yale.edu/people/faculty',
     paginated: false,
     extractor: viewsTableRowExtractor,
+    withholdsHomeDepartment: true,
+    namesCatalogDepartment: true,
   },
   {
     deptKey: 'judaic-studies',
@@ -2836,6 +3142,9 @@ function absolutize(href: string, base: string): string {
   }
 }
 
+const usableRosterTitle = (title: string | undefined): string | undefined =>
+  title && !isTruncatedPersonTitle(title) ? title : undefined;
+
 function cleanText(value: string | undefined | null): string {
   return String(value || '')
     .replace(/\s+/g, ' ')
@@ -2850,23 +3159,8 @@ function hostnameOf(url: string): string {
   }
 }
 
-function firstImageUrlFromSrcset(value: string | undefined | null): string | undefined {
-  const first = String(value || '')
-    .split(',')
-    .map((part) => part.trim().split(/\s+/)[0])
-    .find(Boolean);
-  return first || undefined;
-}
-
 function imageUrlFromElement(node: cheerio.Cheerio<any>, baseUrl: string): string | undefined {
-  const img = node.find('img').first();
-  if (!img.length) return undefined;
-  const src =
-    img.attr('src') ||
-    img.attr('data-src') ||
-    firstImageUrlFromSrcset(img.attr('srcset')) ||
-    firstImageUrlFromSrcset(img.attr('data-srcset')) ||
-    '';
+  const src = imageElementSource(node);
   return src ? absolutize(src, baseUrl) : undefined;
 }
 
@@ -2900,10 +3194,24 @@ function stripTopicLabelPrefix(value: string): string {
   return stripResearchSectionLabelPrefix(value);
 }
 
+/**
+ * The medical and public-health schools' "Research at a Glance" tiles print each topic beside a
+ * researcher-count link and a publications link (#6438). The topic is read from the tile's own
+ * keyword element; any topic that still carries that chrome is refused whole, never trimmed,
+ * because a count glued to a topic's own digits ("COVID-1915 YSM Researchers") cannot be
+ * separated in text.
+ */
+const PROFILE_TOPIC_TILE_CHROME =
+  /\b(?:YS(?:M|PH)|YCC)\s+Researchers?\b|View\s*(?:\d+\s*)?Related\s+Publications?/i;
+const PROFILE_TOPIC_TILE = '.profile-details-interest';
+const PROFILE_TOPIC_TILE_KEYWORD = '.profile-details-interest__keyword';
+const PROFILE_TOPIC_TILE_LIST = '.profile-details-interests-glance';
+
 function isTopicLabelChrome(value: string): boolean {
   const cleaned = cleanText(value);
   if (!cleaned) return true;
   if (/:$/.test(cleaned)) return true;
+  if (PROFILE_TOPIC_TILE_CHROME.test(cleaned)) return true;
   return (
     isResearchSectionLabel(cleaned) ||
     isProseNotTopicPhrase(cleaned) ||
@@ -3109,6 +3417,19 @@ export function linkTextIsASentence(text: string): boolean {
   return words.length >= 6 && trimmed.endsWith('.') && !TEXT_ENDING_IN_WEBSITE_LABEL.test(trimmed);
 }
 
+const URL_SHAPED_TEXT = /^(?:https?:\/\/)?[\w-]+(?:\.[\w-]+)+(?:[/?#]\S*)?$/i;
+
+/**
+ * An organization's landing page is often served at `/homepage.html`, so a path word speaks
+ * for the destination only when the link says nothing of its own. Link text that names a
+ * foundation or a lecture series is judged by its label alone, which is how a bio's link to
+ * an event became its author's research website (#5619).
+ */
+export function linkTextDescribesNothing(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed === '' || URL_SHAPED_TEXT.test(trimmed);
+}
+
 /** A DOI resolves to a publication, which is never a person's research website (#5050). */
 function isDoiUrl(url: URL): boolean {
   return /(?:^|\.)doi\.org$/i.test(url.hostname) || /\/doi\//i.test(url.pathname);
@@ -3120,11 +3441,28 @@ function isCollapsedWidgetLink(link: cheerio.Cheerio<any>): boolean {
   return (link.attr('tabindex') || '').trim() === '-1';
 }
 
+const PROFILE_WEBSITE_BUTTON_LABEL =
+  /^(?:(?:visit|view|go to)\s+)?(?:(?:my|the)\s+)?(?:(?:personal|lab|laboratory|research|group)\s+(?:web\s?site|home\s?page|web\s?page|page|site)|web\s?site|home\s?page)$/i;
+
+function isProfileWebsiteButton(link: cheerio.Cheerio<any>): boolean {
+  return (
+    isInProfileRelatedLinksList(link) &&
+    PROFILE_WEBSITE_BUTTON_LABEL.test(link.text().replace(/\s+/g, ' ').trim())
+  );
+}
+
+function profileLabCardTitle(link: cheerio.Cheerio<any>): string {
+  const card = link.closest('[class*="profile-details-lab"]');
+  if (card.length === 0) return '';
+  const title = card.find('[class*="profile-details-lab__title"]').first().text();
+  if (title) return cleanText(title);
+  const cardArticle = card.closest('article[aria-label]');
+  if (cardArticle.find('h1, .person-title').length > 0) return '';
+  return cleanText(cardArticle.attr('aria-label') || '');
+}
+
 function isSiteChromeLink(link: cheerio.Cheerio<any>): boolean {
   if (isCollapsedWidgetLink(link)) return true;
-  // A news or media item is ordinary in-tab page content, so neither the tab-order
-  // test above nor the chrome containers below can see it (#3184).
-  if (isInProfilePublicityRegion(link)) return true;
   return (
     link.closest(
       [
@@ -3163,24 +3501,6 @@ function scholarProfileUrlFromHref(href: string, baseUrl: string): string | unde
   } catch {
     return undefined;
   }
-}
-
-function extractOrcidFromHtml($: cheerio.CheerioAPI): string | undefined {
-  const candidates: string[] = [];
-  $('a[href*="orcid.org"], a[href^="orcid:"]').each((_i, el) => {
-    const href = $(el).attr('href') || '';
-    const text = $(el).text();
-    candidates.push(href, text);
-  });
-  const bodyText = $('body').text();
-  const matches = bodyText.match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
-  candidates.push(...matches);
-
-  for (const candidate of candidates) {
-    const normalized = normalizeOrcid(candidate);
-    if (normalized) return normalized;
-  }
-  return undefined;
 }
 
 function isHeadingTag(node: cheerio.Cheerio<any>): boolean {
@@ -3270,8 +3590,21 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI, meshIndexed: bo
     '[class*="interests"]',
   ];
 
+  $(PROFILE_TOPIC_TILE_KEYWORD).each((_i, el) => {
+    const keyword = cleanText($(el).text());
+    if (keyword && !isTopicLabelChrome(keyword)) values.push(keyword);
+  });
+
   for (const selector of selectors) {
     $(selector).each((_i, el) => {
+      const node = $(el);
+      if (
+        node.is(PROFILE_TOPIC_TILE_LIST) ||
+        node.closest(`${PROFILE_TOPIC_TILE_LIST}, ${PROFILE_TOPIC_TILE}`).length > 0 ||
+        node.find(PROFILE_TOPIC_TILE).length > 0
+      ) {
+        return;
+      }
       const text = elementTextWithChildSeparators($, el);
       values.push(...splitTopicText(text, separators));
     });
@@ -3289,6 +3622,40 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI, meshIndexed: bo
   return uniqueStrings(interests).slice(0, 20);
 }
 
+/**
+ * A single-page roster reads every row's profile before it emits anything, which on the largest
+ * medicine-school page is tens of minutes with nothing logged or written, and an idle watchdog
+ * reads that as a hang. So the lane prints a counts-only line at whichever of these comes first.
+ */
+export const ROSTER_PROFILE_PROGRESS_EVERY = 50;
+export const ROSTER_PROFILE_PROGRESS_INTERVAL_MS = 60_000;
+
+export function rosterProfileProgress(
+  deptKey: string,
+  total: number,
+  log: ScraperContext['log'],
+  now: () => number = Date.now,
+): { beforeRow: () => void } {
+  let rowsStarted = 0;
+  let rowsSinceLine = 0;
+  let lastLineAt = now();
+  return {
+    beforeRow() {
+      const rowsFinished = rowsStarted;
+      rowsStarted += 1;
+      if (rowsFinished === 0) return;
+      rowsSinceLine += 1;
+      const due =
+        rowsSinceLine >= ROSTER_PROFILE_PROGRESS_EVERY ||
+        now() - lastLineAt >= ROSTER_PROFILE_PROGRESS_INTERVAL_MS;
+      if (!due) return;
+      log(`[${deptKey}] read ${rowsFinished} of ${total} roster row(s) so far`);
+      rowsSinceLine = 0;
+      lastLineAt = now();
+    },
+  };
+}
+
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
@@ -3301,7 +3668,6 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -3333,7 +3699,6 @@ async function fetchDeptData(
     axios.post(safeDataUrlText, body, {
       timeout: FETCH_TIMEOUT_MS,
       headers: {
-        'User-Agent': USER_AGENT,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       maxRedirects: 5,
@@ -3361,10 +3726,14 @@ export function profileEnrichmentFromHtml(
     | 'profileUrl'
     | 'name'
     | 'email'
+    | 'emailSlotAttestation'
     | 'labUrl'
     | 'labSlotAttestation'
+    | 'labUrlRefusals'
+    | 'labWebsiteButton'
     | 'title'
     | 'orcid'
+    | 'orcidSlotAttestation'
     | 'bio'
     | 'researchInterests'
     | 'topics'
@@ -3378,9 +3747,6 @@ export function profileEnrichmentFromHtml(
   const $ = cheerio.load(html);
   const canonicalUrl = canonicalProfileUrlFromHtml($, profileUrl);
 
-  const emailHref = $('a[href^="mailto:"]').first().attr('href') || '';
-  const email = emailHref ? emailHref.replace(/^mailto:/i, '').trim() : undefined;
-
   const title =
     $(
       '[class*="professional-title"], [class*="person-title"], [class*="job-title"], [class*="position"], [class*="header-info__title"], [class*="workday-title"]',
@@ -3391,9 +3757,16 @@ export function profileEnrichmentFromHtml(
       .trim() || undefined;
 
   let labUrl: string | undefined;
-  // Set only where a link cleared WEBSITE_SIGNAL and a guard then declined it, so a
-  // link that was never a candidate leaves the slot claimable as empty (#3135).
+  let labWebsiteButton: FacultyEntry['labWebsiteButton'];
+  // Set wherever a candidate link was seen and declined, including a website-named
+  // path whose label names something else (#5819), so only a page that offered no
+  // candidate leaves the slot claimable as empty (#3135).
   let labUrlCandidateRefused = false;
+  const labUrlRefusals: LabUrlRefusal[] = [];
+  const refuseCandidate = (url: string | undefined, reason: LabUrlRefusalReason) => {
+    labUrlCandidateRefused = true;
+    if (url) labUrlRefusals.push({ url, reason });
+  };
   const scholarCandidateProfileUrls: string[] = [];
   const profileHost = (() => {
     try {
@@ -3406,6 +3779,20 @@ export function profileEnrichmentFromHtml(
   $('a[href]').each((_i, el) => {
     const link = $(el);
     if (isSiteChromeLink(link)) return;
+    // A news or media item is ordinary in-tab page content, so neither the tab-order
+    // test nor the chrome containers in isSiteChromeLink can see it (#3184). A link with a
+    // website signal in the person's own related-links list is still a candidate the page
+    // carries, so declining it is a refusal rather than an empty slot (#5819, #3135).
+    if (isInProfilePublicityRegion(link) && !isProfileWebsiteButton(link)) {
+      if (isInProfileRelatedLinksList(link) && WEBSITE_SIGNAL.test(link.text())) {
+        const relatedHref = link.attr('href') || '';
+        refuseCandidate(
+          relatedHref ? absolutize(relatedHref, profileUrl) : undefined,
+          'publicity_region_link',
+        );
+      }
+      return;
+    }
 
     const href = link.attr('href') || '';
     if (!href || /^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
@@ -3423,35 +3810,57 @@ export function profileEnrichmentFromHtml(
       scholarCandidateProfileUrls.push(scholarUrl);
       return;
     }
-    if (parsed.hostname.toLowerCase().includes('orcid.org')) return;
-    if (labUrl) return;
+    if (hostnameIsWithin(parsed.hostname, 'orcid.org')) return;
+    const text = link.text().replace(/\s+/g, ' ').trim();
+    if (labUrl) {
+      if (
+        !labWebsiteButton &&
+        PROFILE_WEBSITE_BUTTON_LABEL.test(text) &&
+        normalizeUrlForDedupe(absolute) === normalizeUrlForDedupe(labUrl)
+      ) {
+        labWebsiteButton = { cardTitle: profileLabCardTitle(link) };
+      }
+      return;
+    }
     if (normalizeUrlForDedupe(absolute) === normalizeUrlForDedupe(canonicalUrl)) return;
 
-    const text = link.text().replace(/\s+/g, ' ').trim();
     const aria = link.attr('aria-label') || '';
     const titleAttr = link.attr('title') || '';
     const visibleTextSignal = linkTextIsASentence(text) ? '' : text;
     const attributeSignal = UMBRELLA_ORGANIZATION_TEXT.test(text) ? '' : `${aria} ${titleAttr}`;
     if (isDoiUrl(parsed)) return;
     const labelSignal = `${visibleTextSignal} ${attributeSignal} ${parsed.hostname}`;
+    const pathNamesAWebsite = /\b(?:website|homepage)\b/i.test(parsed.pathname);
     const hasWebsiteSignal =
       WEBSITE_SIGNAL.test(labelSignal) ||
       (WEBSITE_SIGNAL.test(parsed.pathname) && pathNamesALab(parsed.pathname)) ||
-      /\b(?:website|homepage)\b/i.test(parsed.pathname);
-    if (!hasWebsiteSignal || NATIONAL_LABORATORY_TEXT.test(`${text} ${aria} ${titleAttr}`)) return;
+      (linkTextDescribesNothing(text) && pathNamesAWebsite);
+    if (!hasWebsiteSignal) {
+      if (pathNamesAWebsite) refuseCandidate(absolute, 'path_word_without_website_signal');
+      return;
+    }
+    if (NATIONAL_LABORATORY_TEXT.test(`${text} ${aria} ${titleAttr}`)) {
+      refuseCandidate(absolute, 'national_laboratory');
+      return;
+    }
     if (isInstitutionalAdvancementUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'institutional_advancement');
       return;
     }
     // The signal is exactly what a Locations card's `aria-label="Get <Name> Lab
     // directions"` spells, so this destination has to be judged on its own shape
     // rather than on the words the page wraps it in (#3184).
     if (isMapOrDirectionsUrl(absolute) || isInstitutionalPublicityPageUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'map_or_publicity_page');
       return;
     }
-    if (isPostingPageUrl(absolute)) {
-      labUrlCandidateRefused = true;
+    if (
+      isPostingPageUrl(absolute) ||
+      isCoursePageUrl(absolute) ||
+      isPatientCarePageUrl(absolute) ||
+      isLabDirectoryListingUrl(absolute)
+    ) {
+      refuseCandidate(absolute, 'posting_course_care_or_listing_page');
       return;
     }
 
@@ -3459,28 +3868,32 @@ export function profileEnrichmentFromHtml(
     const isProfileSite = profileHost && candidateHost === profileHost;
     const isDirectoryPath = /\/(people|person|profile|faculty|directory)\//i.test(parsed.pathname);
     if (isProfileSite && isDirectoryPath) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'own_site_directory_page');
       return;
     }
     if (isOffsiteInstitutionPersonProfileUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'offsite_person_profile');
       return;
     }
 
     if (isGenericLabDirectoryUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'generic_lab_directory');
       return;
     }
     labUrl = absolute;
+    if (PROFILE_WEBSITE_BUTTON_LABEL.test(text)) {
+      labWebsiteButton = { cardTitle: profileLabCardTitle(link) };
+    }
   });
 
   const researchInterests = extractResearchInterestsFromHtml(
     $,
     isMeshIndexedProfileUrl(canonicalUrl),
   );
-  const bio = extractBioFromHtml($);
+  const bio = wordpressAuthorProfileBiography($) ?? extractBioFromHtml($);
   const officialProse = extractGroundedProfileDescription(html);
   const declaredName = personNameFromProfileHtml($);
+  const email = rosterProfileSubjectEmail($, declaredName);
   const statedLabName = declaredName
     ? labNameStatedForPerson({
         text: visibleDescriptionTextWithLineBreaks(html),
@@ -3494,10 +3907,16 @@ export function profileEnrichmentFromHtml(
     profileSourceUrl: canonicalUrl,
     name: declaredName,
     email,
+    ...(!email && pageStatesNoEmailAddress($) ? { emailSlotAttestation: 'empty' as const } : {}),
     title,
     labUrl,
     ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
-    orcid: extractOrcidFromHtml($),
+    ...(labUrlRefusals.length > 0 ? { labUrlRefusals } : {}),
+    ...(labWebsiteButton ? { labWebsiteButton } : {}),
+    orcid: declaredName ? subjectProfileOrcid($, declaredName) : undefined,
+    ...(declaredName && subjectProfileStatesNoOrcid($, declaredName)
+      ? { orcidSlotAttestation: 'empty' as const }
+      : {}),
     bio,
     researchHomeDescription: officialProse?.fullDescription,
     researchHomeShortDescription: officialProse?.shortDescription || undefined,
@@ -3552,7 +3971,59 @@ function mergedLabSlotAttestation(
   return undefined;
 }
 
-function mergeProfileEnrichment(
+/**
+ * An `empty` email claim needs the profile page to state no address and the roster card
+ * to have yielded none; a refusal from either side wins, as it does for the lab slot.
+ */
+function mergedEmailSlotAttestation(
+  entry: Pick<FacultyEntry, 'email' | 'emailSlotAttestation'>,
+  enrichment: Pick<Partial<FacultyEntry>, 'email' | 'emailSlotAttestation'>,
+): FacultyEntry['emailSlotAttestation'] {
+  if (entry.email || enrichment.email) return undefined;
+  if (entry.emailSlotAttestation === 'refused') return 'refused';
+  return enrichment.emailSlotAttestation === 'empty' ? 'empty' : undefined;
+}
+
+/**
+ * The links this read declined, as field-retraction refusals of `websiteUrl` (#5803). A link the
+ * read went on to assert is never also refused. When the read is filed under a page other than
+ * the one an admitted link is filed under (a lab-less read is filed under the profile, an
+ * admitted link under the roster listing), the refusal names that listing page as
+ * `assertedUnder`, which retraction honours only if the same run read it.
+ */
+export function rosterLabUrlRefusedValues(
+  refusals: readonly LabUrlRefusal[] | undefined,
+  assertedLabUrl: string | undefined,
+  pages: { witnessPage: string; admittedLinkPage: string },
+): ObservationRefusedValue[] {
+  const asserted = assertedLabUrl ? normalizeUrlForDedupe(assertedLabUrl) : '';
+  const assertedUnder =
+    pages.admittedLinkPage && pages.admittedLinkPage !== pages.witnessPage
+      ? pages.admittedLinkPage
+      : undefined;
+  return (refusals ?? [])
+    .filter((refusal) => normalizeUrlForDedupe(refusal.url) !== asserted)
+    .map((refusal) => ({
+      field: 'websiteUrl',
+      value: refusal.url,
+      reason: refusal.reason,
+      classifier: ROSTER_LAB_WEBSITE_CLASSIFIER,
+      classifierVersion: ROSTER_LAB_WEBSITE_CLASSIFIER_VERSION,
+      ...(assertedUnder ? { assertedUnder } : {}),
+    }));
+}
+
+function mergedLabUrlRefusals(
+  ...lists: Array<readonly LabUrlRefusal[] | undefined>
+): LabUrlRefusal[] | undefined {
+  const byUrl = new Map<string, LabUrlRefusal>();
+  for (const refusal of lists.flatMap((list) => list ?? [])) {
+    if (!byUrl.has(refusal.url)) byUrl.set(refusal.url, refusal);
+  }
+  return byUrl.size > 0 ? [...byUrl.values()] : undefined;
+}
+
+export function mergeProfileEnrichment(
   entry: FacultyEntry,
   enrichment: Partial<
     Pick<
@@ -3560,10 +4031,14 @@ function mergeProfileEnrichment(
       | 'profileUrl'
       | 'name'
       | 'email'
+      | 'emailSlotAttestation'
       | 'labUrl'
       | 'labSlotAttestation'
+      | 'labUrlRefusals'
+      | 'labWebsiteButton'
       | 'title'
       | 'orcid'
+      | 'orcidSlotAttestation'
       | 'bio'
       | 'researchInterests'
       | 'topics'
@@ -3576,19 +4051,35 @@ function mergeProfileEnrichment(
     >
   >,
 ): FacultyEntry {
-  const resolvedName =
-    entry.namePlaceholder && enrichment.name ? normalizeName(enrichment.name) : entry.name;
+  const enrichedName = entry.namePlaceholder && enrichment.name ? enrichment.name : '';
+  const resolvedName = enrichedName ? normalizeRosterName(enrichedName) : entry.name;
   return {
     ...entry,
+    ...(enrichedName && resolvedName
+      ? { nameAsListed: undefined, ...listedNameFields(enrichedName) }
+      : {}),
     name: resolvedName || entry.name,
     namePlaceholder: entry.namePlaceholder && resolvedName === entry.name ? true : undefined,
     profileUrl: enrichment.profileUrl || entry.profileUrl,
     profileSourceUrl: enrichment.profileSourceUrl || entry.profileSourceUrl,
-    title: entry.title || enrichment.title,
+    title: usableRosterTitle(entry.title) || usableRosterTitle(enrichment.title),
+    titleFromProfilePage: usableRosterTitle(entry.title)
+      ? entry.titleFromProfilePage
+      : Boolean(usableRosterTitle(enrichment.title)),
     email: entry.email || enrichment.email,
+    emailSlotAttestation: mergedEmailSlotAttestation(entry, enrichment),
     labUrl: entry.labUrl || enrichment.labUrl,
+    labWebsiteButton:
+      !entry.labUrl ||
+      (enrichment.labUrl &&
+        normalizeUrlForDedupe(enrichment.labUrl) === normalizeUrlForDedupe(entry.labUrl))
+        ? enrichment.labWebsiteButton
+        : entry.labWebsiteButton,
     labSlotAttestation: mergedLabSlotAttestation(entry, enrichment),
+    labUrlRefusals: mergedLabUrlRefusals(entry.labUrlRefusals, enrichment.labUrlRefusals),
     orcid: entry.orcid || enrichment.orcid,
+    orcidSlotAttestation:
+      entry.orcid || enrichment.orcid ? undefined : enrichment.orcidSlotAttestation,
     bio: entry.bio || enrichment.bio,
     researchHomeDescription: entry.researchHomeDescription || enrichment.researchHomeDescription,
     researchHomeShortDescription:
@@ -3741,9 +4232,12 @@ export function profileBelongsToRosterPerson(args: {
  * and a profile refused as someone else's page is a refusal (#3135, #2647).
  */
 function withUnreadProfileSlot(entry: FacultyEntry, outcome: 'unread' | 'refused'): FacultyEntry {
-  if (entry.labUrl) return entry;
-  if (outcome === 'refused') return { ...entry, labSlotAttestation: 'refused' };
-  return entry.labSlotAttestation === 'empty' ? { ...entry, labSlotAttestation: undefined } : entry;
+  const marked: FacultyEntry = { ...entry, profileReadOutcome: outcome };
+  if (entry.labUrl) return marked;
+  if (outcome === 'refused') return { ...marked, labSlotAttestation: 'refused' };
+  return entry.labSlotAttestation === 'empty'
+    ? { ...marked, labSlotAttestation: undefined }
+    : marked;
 }
 
 export async function enrichEntryFromOfficialProfile(
@@ -3785,7 +4279,7 @@ export async function enrichEntryFromOfficialProfile(
       );
       return withUnreadProfileSlot(entry, 'refused');
     }
-    return mergeProfileEnrichment(entry, enrichment);
+    return { ...mergeProfileEnrichment(entry, enrichment), profileReadOutcome: 'read' };
   } catch (err: any) {
     log(`[profile] fetch failed: ${sanitizeLogValue(err)}`);
     return withUnreadProfileSlot(entry, 'unread');
@@ -3803,13 +4297,23 @@ export async function enrichEntryFromOfficialProfile(
 function withoutInadmissibleLabWebsite(entry: FacultyEntry): FacultyEntry {
   if (
     !entry.labUrl ||
-    !(isOffsiteInstitutionPersonProfileUrl(entry.labUrl) || isPostingPageUrl(entry.labUrl))
+    !(
+      isOffsiteInstitutionPersonProfileUrl(entry.labUrl) ||
+      isPostingPageUrl(entry.labUrl) ||
+      isCoursePageUrl(entry.labUrl) ||
+      isPatientCarePageUrl(entry.labUrl)
+    )
   ) {
     return entry;
   }
   // Stripping a value the page still carries is a refusal, so the slot must stop
   // being claimable as empty even if an earlier parse attested it (#3135).
-  return { ...entry, labUrl: undefined, labSlotAttestation: 'refused' };
+  return {
+    ...entry,
+    labUrl: undefined,
+    labWebsiteButton: undefined,
+    labSlotAttestation: 'refused',
+  };
 }
 
 export function withoutAnotherRosterPersonsStatedLab(
@@ -3846,16 +4350,92 @@ const labUrlIdentity = (url: string): string => fieldValueRefusalKey('websiteUrl
 export function withoutSharedGroupWebsites<T extends { entry: FacultyEntry; personKey: string }>(
   items: readonly T[],
 ): T[] {
-  const peopleByUrl = new Map<string, Set<string>>();
+  const sharersByUrl = new Map<string, Map<string, FacultyEntry>>();
   for (const { entry, personKey } of items) {
     if (!entry.labUrl) continue;
     const key = labUrlIdentity(entry.labUrl);
-    peopleByUrl.set(key, (peopleByUrl.get(key) ?? new Set()).add(personKey));
+    const sharers = sharersByUrl.get(key) ?? new Map<string, FacultyEntry>();
+    sharersByUrl.set(key, sharers.set(personKey, entry));
   }
   return items.map((item) => {
     const url = item.entry.labUrl;
-    if (!url || (peopleByUrl.get(labUrlIdentity(url))?.size ?? 0) < 2) return item;
-    return { ...item, entry: { ...item.entry, labUrl: undefined, labSlotAttestation: 'refused' } };
+    const sharers = url ? sharersByUrl.get(labUrlIdentity(url)) : undefined;
+    if (!sharers || sharers.size < 2) return item;
+    if (profileClaimsSharedLabAsOwn(item, sharers)) return item;
+    return {
+      ...item,
+      entry: {
+        ...item.entry,
+        labUrl: undefined,
+        labWebsiteButton: undefined,
+        labSlotAttestation: 'refused',
+      },
+    };
+  });
+}
+
+/**
+ * A lab's members link their PI's lab from their own profiles, so a lab site the roster
+ * lists for several people is still the PI's when the PI's profile presents it as a
+ * labelled lab-website button and either the button's lab card names the person, or
+ * every other sharer's stated title owns no research row (#5819). Measured on Development
+ * on 2026-11-11, that was how 5 served rows lost the website their own profile labels.
+ */
+function profileClaimsSharedLabAsOwn(
+  item: { entry: FacultyEntry; personKey: string },
+  sharers: ReadonlyMap<string, FacultyEntry>,
+): boolean {
+  const button = item.entry.labWebsiteButton;
+  if (!button) return false;
+  const nameTokens = identityTokens(normalizeRosterName(item.entry.name));
+  const familyNameTokens = nameTokens.length > 1 ? nameTokens.slice(1) : nameTokens;
+  const cardTitleTokens = identityTokens(button.cardTitle);
+  if (familyNameTokens.some((token) => cardTitleTokens.includes(token))) return true;
+  if (ownsNoResearchEntityByTitle(item.entry.title)) return false;
+  return [...sharers]
+    .filter(([personKey]) => personKey !== item.personKey)
+    .every(([, sharer]) => ownsNoResearchEntityByTitle(sharer.title));
+}
+
+function rosterUnitMailboxTokens(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  sourceUrl: string,
+): Set<string> {
+  return yaleUnitMailboxTokens(
+    [dept.url, sourceUrl, entry.profileUrl, entry.profileSourceUrl],
+    [dept.deptKey, dept.deptName],
+  );
+}
+
+function normalizedRosterEmail(email: string | undefined): string {
+  return String(email || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^mailto:/, '');
+}
+
+/**
+ * An address the roster prints for two different people is an office's, not either
+ * person's, whatever its shape: a staff netid on every profile page passes the netid
+ * shape test, and keying both people by it collapses them into one user key, so the
+ * second is dropped as a duplicate of the first. Refused for every sharer, and decided
+ * before any person key is minted from it.
+ */
+export function withoutSharedRosterEmails<T extends { entry: FacultyEntry }>(
+  items: readonly T[],
+): T[] {
+  const peopleByEmail = new Map<string, Set<string>>();
+  for (const { entry } of items) {
+    const email = normalizedRosterEmail(entry.email);
+    if (!email) continue;
+    const person = rosterIdentityNameSlug(entry) || entry.name;
+    peopleByEmail.set(email, (peopleByEmail.get(email) ?? new Set()).add(person));
+  }
+  return items.map((item) => {
+    const email = normalizedRosterEmail(item.entry.email);
+    if (!email || (peopleByEmail.get(email)?.size ?? 0) < 2) return item;
+    return { ...item, entry: { ...item.entry, email: undefined, emailSlotAttestation: 'refused' } };
   });
 }
 
@@ -3864,7 +4444,7 @@ const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
   'materials-science': 'meng-matsci',
 };
 
-function namespacedDeptKey(deptKey: string): string {
+export function namespacedDeptKey(deptKey: string): string {
   return SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE[deptKey] || deptKey;
 }
 
@@ -3935,16 +4515,241 @@ function programmeRosterRowIsRejectableFromRosterAlone(entry: FacultyEntry): boo
   return Boolean(entry.title?.trim()) && !programmeRosterRowStatesFacultyRank(entry);
 }
 
+type RosterUserType = 'faculty' | 'staff';
+
+function rosterUserType(entry: FacultyEntry, dept: DeptConfig): RosterUserType | undefined {
+  if (titleStatesOnlyAStaffRole(entry.title)) return 'staff';
+  if (!dept.crossListedProgramme || statesFacultyAppointment(entry.title)) return 'faculty';
+  return undefined;
+}
+
+/**
+ * `userType` is latest-wins for this lane, so the lane emits one typing per key per run, after
+ * every roster lane has finished: concurrent lanes inserting rival typings for one key would
+ * each supersede the other and leave the key with none. A staff typing never replaces a faculty
+ * one: it loses to a faculty typing from any roster this run read, and is dropped for a key the
+ * lane holds a live title stating a faculty appointment, so a run that reads only the staff
+ * listing cannot undo the faculty listing an earlier run read. The cross-run evidence is the
+ * title rather than the typing, because a stored faculty typing may be the page-default stamp
+ * #5750 retires.
+ */
+function holdUserTypingForRunEnd(
+  observations: ObservationInput[],
+  entityKey: string,
+  facultyTitledUserKeys: Set<string>,
+  typingByUserKey: Map<string, ObservationInput>,
+): ObservationInput[] {
+  const typing = observations.find((o) => o.field === 'userType');
+  if (!typing) return observations;
+  const staffBesideFaculty =
+    typing.value === 'staff' &&
+    (typingByUserKey.get(entityKey)?.value === 'faculty' || facultyTitledUserKeys.has(entityKey));
+  if (!staffBesideFaculty) typingByUserKey.set(entityKey, typing);
+  return observations.filter((o) => o !== typing);
+}
+
+export interface HeldRosterTitle {
+  observation: ObservationInput;
+  fromProfilePage: boolean;
+  fromHomeDepartmentRoster: boolean;
+}
+
+export type RosterTitleOutcome =
+  | 'profile'
+  | 'listing'
+  | 'home-department-listing'
+  | 'withheld-beside-stored-profile-read'
+  | 'conflicting-profile-reads'
+  | 'conflicting-listings'
+  | 'withheld-beside-live-faculty-title';
+
+const distinctTitleValues = (held: readonly HeldRosterTitle[]): string[] => [
+  ...new Set(held.map((title) => String(title.observation.value).replace(/\s+/g, ' ').trim())),
+];
+
+const soleTitle = (held: readonly HeldRosterTitle[]): HeldRosterTitle | undefined =>
+  held.length > 0 && distinctTitleValues(held).length === 1 ? held[0] : undefined;
+
+// The materializer keeps this lane's newest title read for a user, so emitting each config's read
+// as it arrived let the last config win (#5801 cause 2) and let a listing replace the lane's own
+// profile read (cause 3).
+// A faculty-appointment listing outranks a staff one, as for typing. Emitting nothing on
+// ambiguity is deliberate: it leaves the stored title standing.
+// Across runs the same rank applies: a later scoped run that reads only a staff listing must not
+// replace the faculty appointment the lane already holds live, the way `userType` is spared
+// (#6345). A profile read still wins, and a key whose faculty title is no longer live takes the
+// staff listing, because then nothing first-hand states the appointment any more.
+export function pickRosterTitleForRunEnd(
+  held: readonly HeldRosterTitle[],
+  hasStoredProfileRead: boolean,
+  hasLiveFacultyTitle = false,
+): { observation?: ObservationInput; outcome: RosterTitleOutcome } {
+  const pick = pickRosterTitleWithinRun(held, hasStoredProfileRead);
+  if (
+    hasLiveFacultyTitle &&
+    pick.observation &&
+    pick.outcome !== 'profile' &&
+    !statesAnyFacultyAppointment(String(pick.observation.value))
+  ) {
+    return { outcome: 'withheld-beside-live-faculty-title' };
+  }
+  return pick;
+}
+
+function pickRosterTitleWithinRun(
+  held: readonly HeldRosterTitle[],
+  hasStoredProfileRead: boolean,
+): { observation?: ObservationInput; outcome: RosterTitleOutcome } {
+  const profileReads = held.filter((title) => title.fromProfilePage);
+  if (profileReads.length > 0) {
+    const sole =
+      soleTitle(profileReads) ?? soleTitle(profileReads.filter((t) => t.fromHomeDepartmentRoster));
+    return sole
+      ? { observation: sole.observation, outcome: 'profile' }
+      : { outcome: 'conflicting-profile-reads' };
+  }
+  if (hasStoredProfileRead) return { outcome: 'withheld-beside-stored-profile-read' };
+  const sole = soleTitle(held);
+  if (sole) return { observation: sole.observation, outcome: 'listing' };
+  const facultyListings = held.filter((title) =>
+    statesAnyFacultyAppointment(String(title.observation.value)),
+  );
+  const contenders = facultyListings.length > 0 ? facultyListings : held;
+  const soleContender = soleTitle(contenders);
+  if (soleContender) return { observation: soleContender.observation, outcome: 'listing' };
+  const homeListing = soleTitle(contenders.filter((title) => title.fromHomeDepartmentRoster));
+  return homeListing
+    ? { observation: homeListing.observation, outcome: 'home-department-listing' }
+    : { outcome: 'conflicting-listings' };
+}
+
+function holdUserTitleForRunEnd(
+  observations: ObservationInput[],
+  entityKey: string,
+  dept: DeptConfig,
+  titlesByUserKey: Map<string, HeldRosterTitle[]>,
+): ObservationInput[] {
+  const title = observations.find((o) => o.field === 'title');
+  if (!title) return observations;
+  titlesByUserKey.set(entityKey, [
+    ...(titlesByUserKey.get(entityKey) ?? []),
+    {
+      observation: { ...title, entityKey },
+      fromProfilePage: title.extraction?.source === 'profileTitleBlock',
+      fromHomeDepartmentRoster: assertsHomeDepartment(dept),
+    },
+  ]);
+  return observations.filter((o) => o !== title);
+}
+
+export type ProfileTitledUserKeyLoader = (entityKeys: string[]) => Promise<Set<string>>;
+
+export async function loadUserKeysWithALiveProfileTitle(
+  entityKeys: string[],
+): Promise<Set<string>> {
+  const wanted = [...new Set(entityKeys.filter(Boolean))];
+  if (wanted.length === 0 || !mongooseConnectionWasOpened()) return new Set();
+  const titles = await Observation.find(
+    {
+      sourceName: 'dept-faculty-roster',
+      entityType: 'user',
+      entityKey: { $in: wanted },
+      field: 'title',
+      superseded: false,
+      'extraction.source': 'profileTitleBlock',
+      'rollback.rolledBackAt': { $exists: false },
+    },
+    { entityKey: 1 },
+  ).lean<Array<{ entityKey?: string }>>();
+  return new Set(
+    titles.map((title) => title.entityKey).filter((key): key is string => Boolean(key)),
+  );
+}
+
+export type FacultyTitledUserKeyLoader = (entityKeys: string[]) => Promise<Set<string>>;
+
+export async function loadUserKeysWithALiveFacultyTitle(
+  entityKeys: string[],
+): Promise<Set<string>> {
+  const wanted = [...new Set(entityKeys.filter(Boolean))];
+  if (wanted.length === 0 || !mongooseConnectionWasOpened()) return new Set();
+  const titles = await Observation.find(
+    {
+      sourceName: 'dept-faculty-roster',
+      entityType: 'user',
+      entityKey: { $in: wanted },
+      field: 'title',
+      superseded: false,
+    },
+    { entityKey: 1, value: 1 },
+  ).lean<Array<{ entityKey?: string; value?: unknown }>>();
+  return new Set(
+    titles
+      .filter(
+        (title) =>
+          title.entityKey &&
+          typeof title.value === 'string' &&
+          !isTruncatedPersonTitle(title.value) &&
+          statesAnyFacultyAppointment(title.value),
+      )
+      .map((title) => title.entityKey as string),
+  );
+}
+
+function rosterAttestsNoEmail(entry: FacultyEntry): boolean {
+  return (
+    !entry.email && entry.profileReadOutcome === 'read' && entry.emailSlotAttestation === 'empty'
+  );
+}
+
+function rosterAttestsNoOrcid(entry: FacultyEntry): boolean {
+  return (
+    !entry.orcid && entry.profileReadOutcome === 'read' && entry.orcidSlotAttestation === 'empty'
+  );
+}
+
+export function rosterAbsenceClaims(entry: FacultyEntry): string[] {
+  return [
+    ...(rosterAttestsNoEmail(entry) ? ['email'] : []),
+    ...(rosterAttestsNoOrcid(entry) ? ['orcid'] : []),
+  ];
+}
+
+export const assertsHomeDepartment = (dept: DeptConfig): boolean =>
+  !dept.affiliatesOnly &&
+  !dept.schoolWideDirectory &&
+  !dept.crossListedProgramme &&
+  !dept.withholdsHomeDepartment;
+
+/** The department names a roster title can name, so a title naming another one first is read. */
+export function rosterDepartmentVocabulary(configs: Iterable<DeptConfig>): Set<string> {
+  const names = new Set<string>();
+  for (const config of [...DEFAULT_DEPT_CONFIGS, ...configs]) {
+    if (assertsHomeDepartment(config) || config.namesCatalogDepartment) {
+      names.add(config.deptName);
+    }
+  }
+  return names;
+}
+
+export interface RosterHomeDepartmentContext {
+  departmentNames: Iterable<string>;
+  classifyUnit?: (parenthetical: string) => RosterTitleUnit;
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
   sourceUrl: string,
+  homeDepartment?: RosterHomeDepartmentContext,
 ): { observations: ObservationInput[]; entityKey: string } {
-  const cleaned = normalizeName(entry.name);
-  const { first, last } = splitName(cleaned);
-  const personEmail = isLikelyPersonSpecificYaleEmail(entry.email, cleaned)
-    ? entry.email
-    : undefined;
+  const cleaned = normalizeRosterName(entry.name);
+  const { first, last } = splitName(withoutTrailingPostNominals(cleaned));
+  const personEmail =
+    isLikelyPersonSpecificYaleEmail(entry.email, cleaned) &&
+    !isRoleOrUnitMailbox(entry.email, rosterUnitMailboxTokens(entry, dept, sourceUrl))
+      ? entry.email
+      : undefined;
   const netid = netidFromEmail(personEmail);
   const slug = rosterIdentityNameSlug(entry);
   const entityKeyNamespace = namespacedDeptKey(dept.deptKey);
@@ -3958,22 +4763,53 @@ function entryToUserObservations(
   };
   const obs: ObservationInput[] = [];
 
-  if (netid) obs.push({ ...rosterBase, field: 'netid', value: netid });
+  const statedNetid = asYaleNetid(netid);
+  if (statedNetid) obs.push({ ...rosterBase, field: 'netid', value: statedNetid });
   if (first) obs.push({ ...rosterBase, field: 'fname', value: first });
   if (last) obs.push({ ...rosterBase, field: 'lname', value: last });
-  if (!dept.crossListedProgramme || statesFacultyAppointment(entry.title)) {
-    obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
+  const titleBase = entry.titleFromProfilePage ? profileBase : rosterBase;
+  const userType = rosterUserType(entry, dept);
+  if (userType) {
+    obs.push({
+      ...(userType === 'staff' ? titleBase : rosterBase),
+      field: 'userType',
+      value: userType,
+    });
   }
   if (!dept.affiliatesOnly && !dept.schoolWideDirectory) {
-    if (!dept.crossListedProgramme) {
-      obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
+    if (!dept.crossListedProgramme && !dept.withholdsHomeDepartment) {
+      const statement = rosterHomeDepartmentStatement({
+        deptName: dept.deptName,
+        title: entry.title,
+        departmentNames: homeDepartment?.departmentNames ?? rosterDepartmentVocabulary([dept]),
+        classifyUnit: homeDepartment?.classifyUnit,
+      });
+      if (statement.kind === 'assert') {
+        obs.push({ ...rosterBase, field: 'primaryDepartment', value: statement.value });
+      }
     }
     obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
   }
   if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
-  if (entry.title) obs.push({ ...profileBase, field: 'title', value: entry.title });
+  if (usableRosterTitle(entry.title)) {
+    obs.push({
+      ...titleBase,
+      field: 'title',
+      value: entry.title,
+      ...(entry.titleFromProfilePage
+        ? { extraction: { source: 'profileTitleBlock' as const } }
+        : {}),
+    });
+  }
   if (entry.profileUrl) {
-    obs.push({ ...profileBase, field: 'profileUrls', value: { departmental: entry.profileUrl } });
+    obs.push({
+      ...profileBase,
+      field: 'profileUrls',
+      value: { departmental: entry.profileUrl },
+      ...(rosterAbsenceClaims(entry).length > 0
+        ? { assertsNoValueFor: rosterAbsenceClaims(entry) }
+        : {}),
+    });
   }
   if (entry.imageUrl) obs.push({ ...profileBase, field: 'imageUrl', value: entry.imageUrl });
   if (entry.labUrl) obs.push({ ...profileBase, field: 'website', value: entry.labUrl });
@@ -4002,7 +4838,7 @@ function entryToUserObservations(
 }
 
 function isLikelyExplicitLabWebsite(entry: FacultyEntry): boolean {
-  return evidenceAssertsALab(normalizeName(entry.name), entry.labUrl);
+  return evidenceAssertsALab(normalizeRosterName(entry.name), entry.labUrl);
 }
 
 /**
@@ -4059,6 +4895,7 @@ export function rosterResearchEntityMint(
   sourceUrl: string,
   ownerEntityKey: string,
   labUrlIsUnusable: LabUrlIsUnusable = () => false,
+  labUrlIsCoLedGroupSite: LabUrlIsCoLedGroupSite = () => false,
 ): { observations: ObservationInput[]; refusedByTitle: boolean } {
   const observations = entryToResearchEntityObservationsUnscreened(
     entry,
@@ -4066,6 +4903,7 @@ export function rosterResearchEntityMint(
     sourceUrl,
     ownerEntityKey,
     labUrlIsUnusable,
+    labUrlIsCoLedGroupSite,
   );
   // The screen sits at this choke point rather than at the one call site, so a
   // future caller cannot mint a research row for somebody who owns no research. A roster
@@ -4080,6 +4918,27 @@ export function rosterResearchEntityMint(
     return { observations: [], refusedByTitle: true };
   }
   return { observations, refusedByTitle: false };
+}
+
+/**
+ * The row this lane minted for the person earlier and no longer mints, when this read
+ * is evidence of that (#5380).
+ *
+ * Only a read that fetched the person's own profile and found nothing to mint counts. An
+ * unread or refused profile says nothing, a title refusal is already recorded as still
+ * listed, and a profile-only or programme lane never mints at all, so none of those
+ * withdraws anything. Whether a live row exists, and whether another lane still holds
+ * evidence for it, is decided after the run by `rosterMintWithdrawal.ts`.
+ */
+export function rosterMintWithdrawnEntityKey(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  mint: { observations: readonly ObservationInput[]; refusedByTitle: boolean },
+): string {
+  if (dept.officialProfileOnly || dept.crossListedProgramme) return '';
+  if (mint.observations.length > 0 || mint.refusedByTitle) return '';
+  if (entry.profileReadOutcome !== 'read') return '';
+  return rosterResearchEntitySlug(entry, dept);
 }
 
 /**
@@ -4103,6 +4962,49 @@ export function rosterResearchEntitySlug(entry: FacultyEntry, dept: DeptConfig):
   return deptResearchEntitySlug(nameSlug, dept);
 }
 
+/**
+ * The slug this lane mints for a person whose roster row carries no identity name, so
+ * a one-time reslug of a row keyed by alt text lands on the key the lane emits next
+ * (#5808). A target that differed would leave the lane minting a second row.
+ */
+export function rosterResearchEntitySlugForPersonName(name: string, dept: DeptConfig): string {
+  return rosterResearchEntitySlug({ name }, dept);
+}
+
+/**
+ * The roster configs whose research-row slugs could carry the slug, longest namespace
+ * first, so a namespace that prefixes another (`music`, `school-of-music`) cannot claim
+ * the other's rows.
+ */
+export function rosterDeptConfigsForResearchEntitySlug(
+  slug: string,
+  configs: readonly DeptConfig[] = DEFAULT_DEPT_CONFIGS,
+): DeptConfig[] {
+  return configs
+    .filter((dept) => slug.startsWith(rosterResearchEntitySlugPrefix(dept)))
+    .sort(
+      (left, right) =>
+        rosterResearchEntitySlugPrefix(right).length - rosterResearchEntitySlugPrefix(left).length,
+    );
+}
+
+export function rosterResearchEntitySlugPrefix(dept: DeptConfig): string {
+  return `dept-${namespacedDeptKey(dept.deptKey)}-`;
+}
+
+export function rosterResearchEntitySlugPrefixForSlug(
+  slug: string,
+  configs: readonly DeptConfig[] = DEFAULT_DEPT_CONFIGS,
+): string {
+  const [config] = rosterDeptConfigsForResearchEntitySlug(slug, configs);
+  return config ? rosterResearchEntitySlugPrefix(config) : '';
+}
+
+function rosterHostForSlugPrefix(prefix: string, configs: readonly DeptConfig[]): string {
+  const config = configs.find((candidate) => rosterResearchEntitySlugPrefix(candidate) === prefix);
+  return config ? rosterHostOfUrl(config.url) : '';
+}
+
 export function rosterResearchEntitySlugForUserKey(userKey: string, dept: DeptConfig): string {
   const prefix = `dept:${namespacedDeptKey(dept.deptKey)}:`;
   if (!userKey.startsWith(prefix)) return '';
@@ -4110,16 +5012,121 @@ export function rosterResearchEntitySlugForUserKey(userKey: string, dept: DeptCo
   return nameSlug === 'unknown' ? '' : deptResearchEntitySlug(nameSlug, dept);
 }
 
+/**
+ * The key this lane minted for the entry under an earlier name normalizer, explicitly by
+ * version, so a later change to the credential list keeps writing to the row the old key
+ * holds instead of minting a second one (#5969).
+ */
+export function legacyRosterResearchEntitySlug(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  version: LegacyNormalizerVersion = 'v1',
+): string {
+  const legacyName = legacyRosterIdentityNameSlug(entry, version);
+  return deptResearchEntitySlug(legacyName || (entry.labUrl ? slugify(entry.labUrl) : ''), dept);
+}
+
+/** The person key the same earlier normalizer minted for an entry the lane keys by name. */
+export function legacyRosterOwnerKey(
+  ownerKey: string,
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  version: LegacyNormalizerVersion = 'v1',
+): string {
+  if (!ownerKey.startsWith('dept:')) return ownerKey;
+  const legacyName = legacyRosterIdentityNameSlug(entry, version);
+  return `dept:${namespacedDeptKey(dept.deptKey)}:${legacyName || 'unknown'}`;
+}
+
+type LegacyNormalizerVersion = keyof typeof ROSTER_NAME_NORMALIZER_LEGACY_TOKENS;
+
+function legacyRosterIdentityNameSlug(entry: FacultyEntry, version: LegacyNormalizerVersion) {
+  if (entry.identityName) return slugify(entry.identityName);
+  const listed = entry.nameAsListed ?? entry.name;
+  return slugify(normalizeName(listed, ROSTER_NAME_NORMALIZER_LEGACY_TOKENS[version]));
+}
+
+/** The roster lane's name normalizer, on the one credential list profile slugs share. */
+export function normalizeRosterName(name: string | undefined | null): string {
+  return normalizeName(name, DEGREE_TOKENS);
+}
+
+function listedNameFields(listed: string): Pick<FacultyEntry, 'nameAsListed'> {
+  const current = normalizeRosterName(listed);
+  const readsDifferentlyUnderAnEarlierList = Object.values(
+    ROSTER_NAME_NORMALIZER_LEGACY_TOKENS,
+  ).some((tokens) => normalizeName(listed, tokens) !== current);
+  return readsDifferentlyUnderAnEarlierList ? { nameAsListed: listed } : {};
+}
+
+function rosterListedName(listed: string): Pick<FacultyEntry, 'name' | 'nameAsListed'> {
+  return { name: normalizeRosterName(listed), ...listedNameFields(listed) };
+}
+
+const writtenAsACredential = (word: string): boolean =>
+  /\./.test(word) || /[a-z][A-Z]/.test(word) || (word.length > 1 && word === word.toUpperCase());
+
+const NAME_TOKENS_LEFT_AFTER_A_POST_NOMINAL = 2;
+
+const writtenWithACredentialCapital = (word: string): boolean =>
+  /\./.test(word) || /.\p{Lu}/u.test(word) || (word.length > 1 && word === word.toUpperCase());
+
+const isWrittenPostNominal = (word: string): boolean =>
+  (isDegreeToken(word) || isPersonNamePostNominalToken(word)) &&
+  writtenWithACredentialCapital(word);
+
+/**
+ * A name with its trailing degrees removed when no comma sets them off ("<given> <surname>
+ * MD PhD"), which the comma-run rules cannot see and `splitName` would read as the surname
+ * (#6035). Only the name observations read it, so the person key and the row slug, both
+ * minted from the normalized name, keep their continuity. A shouty all-caps name, or one
+ * that would be left with fewer than a given name and a surname, keeps every token.
+ */
+export function withoutTrailingPostNominals(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  const bare = (word: string) => word.replace(/[,;]+$/, '');
+  while (
+    words.length > NAME_TOKENS_LEFT_AFTER_A_POST_NOMINAL &&
+    /[a-z]/.test(words.slice(0, -1).join(' ')) &&
+    isWrittenPostNominal(bare(words[words.length - 1]))
+  ) {
+    words.pop();
+  }
+  return words.join(' ').replace(/[,;]+$/, '');
+}
+
+/**
+ * A roster entry whose lab link is a hosting provider's environment or a staging copy keeps no
+ * lab link, so the lane neither files it as the person's website nor mints a lab from it
+ * (#6432).
+ */
+export function withoutStagingSiteLabUrl(entry: FacultyEntry): FacultyEntry {
+  if (!entry.labUrl || !isStagingSiteUrl(entry.labUrl)) return entry;
+  const { labUrl: _stagingSite, ...rest } = entry;
+  return rest;
+}
+
+/**
+ * A roster entry whose given-name position holds a credential ("PhD <surname>") names no
+ * person, so the lane mints no person and no research row from it (#5969). A given name
+ * that is spelled like a credential but written as a name ("Ma", "Do") is a name and stays.
+ */
+export function rosterEntryGivenNameIsACredential(entry: FacultyEntry): boolean {
+  const words = normalizeRosterName(entry.name).split(/\s+/).filter(Boolean);
+  if (words.length < 2) return false;
+  return isDegreeToken(words[0]) && writtenAsACredential(words[0]);
+}
+
 function deptResearchEntitySlug(nameSlug: string, dept: DeptConfig): string {
   if (!nameSlug) return '';
-  return `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
+  return `${rosterResearchEntitySlugPrefix(dept)}${nameSlug}`.slice(0, 100);
 }
 
 /**
  * A scene alt text keeps its key only for a row the corpus already holds under it,
  * so an existing row is not re-keyed while a new one is never minted from a scene.
  */
-function withoutUnheldSceneIdentity(
+export function withoutUnheldSceneIdentity(
   entry: FacultyEntry,
   dept: DeptConfig,
   corpusRowsBySlug: ReadonlyMap<string, unknown>,
@@ -4130,8 +5137,15 @@ function withoutUnheldSceneIdentity(
   return rest;
 }
 
+function rosterEntryNameKey(entry: FacultyEntry): string {
+  const { first, last } = splitName(normalizeRosterName(entry.name));
+  return personNameKey(first, last);
+}
+
 function rosterIdentityNameSlug(entry: FacultyEntry): string {
-  return entry.identityName ? slugify(entry.identityName) : slugify(normalizeName(entry.name));
+  return entry.identityName
+    ? slugify(entry.identityName)
+    : slugify(normalizeRosterName(entry.name));
 }
 
 function entryToResearchEntityObservationsUnscreened(
@@ -4140,6 +5154,7 @@ function entryToResearchEntityObservationsUnscreened(
   sourceUrl: string,
   ownerEntityKey: string,
   labUrlIsUnusable: LabUrlIsUnusable = () => false,
+  labUrlIsCoLedGroupSite: LabUrlIsCoLedGroupSite = () => false,
 ): ObservationInput[] {
   // `isLikelyExplicitLabWebsite` reads the roster row. It cannot see what the
   // corpus has since decided about that URL, and a refusal is exactly the verdict
@@ -4148,11 +5163,15 @@ function entryToResearchEntityObservationsUnscreened(
   // `websiteUrl` while the name, kind, and `entityType` kept asserting the lab
   // (#3452). Withdrawal needs a positive verdict, never silence - see
   // `labUrlIsUnusableForResearchHome`.
-  const isExplicitLab =
+  const linksCoLedGroupSite = Boolean(entry.labUrl) && labUrlIsCoLedGroupSite(entry.labUrl!);
+  const linkAssertsLab =
     Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry) && !labUrlIsUnusable(entry.labUrl!);
+  const isExplicitLab = linkAssertsLab && !linksCoLedGroupSite;
   const profileCitationUrl = officialProfileCitationUrl(entry);
-  const statedLabName = profileCitationUrl ? entry.statedLabName : undefined;
-  const admittedOnlyByStatedLabName = !isExplicitLab && dept.emitPersonalResearchEntities === false;
+  const statedLabName =
+    profileCitationUrl && !linksCoLedGroupSite ? entry.statedLabName : undefined;
+  const admittedOnlyByStatedLabName =
+    !linkAssertsLab && dept.emitPersonalResearchEntities === false;
   if (admittedOnlyByStatedLabName && !statedLabName) return [];
   const labUrl = admittedOnlyByStatedLabName ? undefined : entry.labUrl;
 
@@ -4164,7 +5183,7 @@ function entryToResearchEntityObservationsUnscreened(
     (Boolean(statedLabName) || Boolean(groundedDescription) || topics.length > 0);
   if (!labUrl && !hasLabLessResearchEvidence) return [];
 
-  const cleanedName = normalizeName(entry.name);
+  const cleanedName = normalizeRosterName(entry.name);
   const slug = rosterResearchEntitySlug(entry, dept);
   if (!slug) return [];
   const entityName = cleanedName
@@ -4200,6 +5219,10 @@ function entryToResearchEntityObservationsUnscreened(
   // Only a positively attested empty slot is an absence. A refusal, and silence from
   // a parse that never looked, both leave the claim unmade (#3135, #2647).
   const labSlotIsEmpty = !entry.labUrl && entry.labSlotAttestation === 'empty';
+  const refusedValues = rosterLabUrlRefusedValues(entry.labUrlRefusals, labUrl, {
+    witnessPage: base.sourceUrl,
+    admittedLinkPage: sourceUrl,
+  });
 
   const observations: ObservationInput[] = [
     {
@@ -4207,6 +5230,7 @@ function entryToResearchEntityObservationsUnscreened(
       field: 'slug',
       value: slug,
       ...(labSlotIsEmpty ? { assertsNoValueFor: ['websiteUrl'] } : {}),
+      ...(refusedValues.length > 0 ? { refusedValues } : {}),
     },
     ...identityObservations,
     ...(dept.crossListedProgramme
@@ -4215,7 +5239,21 @@ function entryToResearchEntityObservationsUnscreened(
     ...(dept.affiliatesOnly || dept.schoolWideDirectory
       ? []
       : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
-    ...(labUrl ? [{ ...base, field: 'websiteUrl' as const, value: labUrl }] : []),
+    ...(labUrl
+      ? [
+          {
+            ...base,
+            field: 'websiteUrl' as const,
+            value: labUrl,
+            admittedUnder: [
+              {
+                classifier: ROSTER_LAB_WEBSITE_CLASSIFIER,
+                version: ROSTER_LAB_WEBSITE_CLASSIFIER_VERSION,
+              },
+            ],
+          },
+        ]
+      : []),
     {
       ...base,
       field: 'sourceUrls',
@@ -4279,7 +5317,54 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly renderedFetcher: RenderedFetcher | null = createScraplingRenderedFetcher(),
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
+    private readonly facultyTitledUserKeyLoader: FacultyTitledUserKeyLoader = loadUserKeysWithALiveFacultyTitle,
+    private readonly rosterOwnerKeyRowLoader?: RosterOwnerKeyRowLoader,
+    private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
+    private readonly legacyKeyRowLoader: LegacyKeyRowLoader = loadLegacyKeyRows,
+    private readonly orgUnitCanonicalizerLoader: () => Promise<OrgUnitCanonicalizer> = getOrgUnitCanonicalizer,
+    private readonly profileTitledUserKeyLoader: ProfileTitledUserKeyLoader = loadUserKeysWithALiveProfileTitle,
   ) {}
+
+  private orgUnitCanonicalizer?: Promise<OrgUnitCanonicalizer | undefined>;
+
+  private departmentVocabulary?: Set<string>;
+
+  /**
+   * The context the home-department emit reads. The catalog is loaded only for a title that
+   * attaches a parenthetical to the roster's department, so a run with no such title never reads it.
+   */
+  private async homeDepartmentContext(
+    entry: FacultyEntry,
+    dept: DeptConfig,
+  ): Promise<RosterHomeDepartmentContext> {
+    this.departmentVocabulary ??= rosterDepartmentVocabulary(this.configs);
+    const departmentNames = this.departmentVocabulary;
+    if (!rosterTitleSectionParenthetical(entry.title, dept.deptName)) return { departmentNames };
+    this.orgUnitCanonicalizer ??= this.orgUnitCanonicalizerLoader().catch(() => undefined);
+    const canonicalizer = await this.orgUnitCanonicalizer;
+    if (!canonicalizer) return { departmentNames };
+    const parent = canonicalizer.canonicalizeDepartments(dept.deptName).values[0] ?? dept.deptName;
+    return {
+      departmentNames,
+      classifyUnit: (parenthetical) => {
+        const { values, unmatched } = canonicalizer.canonicalizeDepartments(parenthetical);
+        const units = values.filter((value) => !unmatched.includes(value));
+        const section = units.find((value) =>
+          canonicalizer.parentDepartmentsFor(value).includes(parent),
+        );
+        if (section) return { kind: 'section', value: section };
+        return units.length ? { kind: 'other-unit' } : { kind: 'not-a-unit' };
+      },
+    };
+  }
+
+  private loadRosterOwnerKeyRows(): ReturnType<RosterOwnerKeyRowLoader> {
+    if (this.rosterOwnerKeyRowLoader) return this.rosterOwnerKeyRowLoader();
+    return loadRosterOwnerKeyRows(
+      (slug) => rosterResearchEntitySlugPrefixForSlug(slug, this.configs),
+      (prefix) => rosterHostForSlugPrefix(prefix, this.configs),
+    );
+  }
 
   /**
    * Read a roster page and record the attempt.
@@ -4354,8 +5439,24 @@ export class DepartmentRosterScraper implements IScraper {
     let totalLabs = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
     const seenUserKeys = new Set<string>();
+    const facultyTitledUserKeys = new Set<string>();
+    const typingByUserKey = new Map<string, ObservationInput>();
+    const profileTitledUserKeys = new Set<string>();
+    const titlesByUserKey = new Map<string, HeldRosterTitle[]>();
     const seenLabKeys = new Set<string>();
     const discoveredEntityKeysByDept = new Map<string, Set<string>>();
+    const withdrawnEntityKeysByDept = new Map<string, Set<string>>();
+    const profilesReadByDept = new Map<string, number>();
+    const rekeyReads = new RekeyedPersonReads(this.name);
+    let rosterOwnerKeyRowsRead: ReturnType<RosterOwnerKeyRowLoader> | undefined;
+    const rosterOwnerKeyRows = () => (rosterOwnerKeyRowsRead ??= this.loadRosterOwnerKeyRows());
+    const rowsMintedThisRunByOwnerKey = new Map<string, RosterOwnerKeyRow>();
+    let coLedSitesRead: Promise<CoLedSiteIndex> | undefined;
+    const coLedSiteIndex = () => (coLedSitesRead ??= this.coLedSiteIndexLoader());
+    let attachedToExistingRow = 0;
+    const titleTallies = new Map<string, RosterTitleTally>();
+    let adoptedLegacyKeys = 0;
+    let refusedLegacyKeys = 0;
     const processEntries = async (
       entries: FacultyEntry[],
       dept: DeptConfig,
@@ -4378,14 +5479,16 @@ export class DepartmentRosterScraper implements IScraper {
 
       // Enriched before anything is emitted, because whether a website is one person's
       // or a group's is a fact about the whole roster, not about one row.
-      const enriched: Array<{ entry: FacultyEntry; personKey: string }> = [];
+      const admitted: Array<{ entry: FacultyEntry }> = [];
       const rosterSurnames: ReadonlySet<string> = new Set(
         entries
           .map((rosterEntry) => identityTokens(rosterEntry.name).at(-1))
           .filter((surname): surname is string => Boolean(surname)),
       );
+      const progress = rosterProfileProgress(dept.deptKey, entries.length, ctx.log);
       for (const rawEntry of entries) {
-        if (totalFaculty + enriched.length >= limit) {
+        progress.beforeRow();
+        if (totalFaculty + admitted.length >= limit) {
           truncatedByLimit = true;
           break;
         }
@@ -4405,20 +5508,94 @@ export class DepartmentRosterScraper implements IScraper {
           rosterSurnames,
         );
         if (dept.crossListedProgramme && !programmeRosterRowStatesFacultyRank(entry)) continue;
+        admitted.push({ entry });
+      }
+      const enriched: Array<{ entry: FacultyEntry; personKey: string }> = [];
+      for (const { entry } of withoutSharedRosterEmails(admitted)) {
         const personKey = entryToUserObservations(entry, dept, sourceUrl).entityKey;
         const userDedupeKey = `${dept.deptKey}:${personKey}`;
         if (seenUserKeys.has(userDedupeKey)) continue;
         seenUserKeys.add(userDedupeKey);
         enriched.push({ entry, personKey });
       }
+      const batchUserKeys = enriched.flatMap(({ entry, personKey }) => [
+        personKey,
+        legacyRosterOwnerKey(personKey, entry, dept),
+      ]);
+      for (const key of await this.facultyTitledUserKeyLoader(batchUserKeys)) {
+        facultyTitledUserKeys.add(key);
+      }
+      for (const key of await this.profileTitledUserKeyLoader(batchUserKeys)) {
+        profileTitledUserKeys.add(key);
+      }
+      const rekeyedSlugs = enriched.flatMap(({ entry }) => {
+        const current = rosterResearchEntitySlug(entry, dept);
+        const legacy = legacyRosterResearchEntitySlug(entry, dept);
+        return legacy && legacy !== current ? [current, legacy] : [];
+      });
+      const legacyKeyRows = rekeyedSlugs.length
+        ? await this.legacyKeyRowLoader(rekeyedSlugs)
+        : new Map();
 
-      for (const { entry } of withoutSharedGroupWebsites(enriched)) {
-        const { observations: userObs, entityKey } = entryToUserObservations(
-          entry,
+      for (const { entry: listedEntry } of withoutSharedGroupWebsites(enriched)) {
+        const entry = withoutStagingSiteLabUrl(listedEntry);
+        if (rosterEntryGivenNameIsACredential(entry)) {
+          const withdrawnKey = rosterMintWithdrawnEntityKey(entry, dept, {
+            observations: [],
+            refusedByTitle: false,
+          });
+          if (withdrawnKey && !dept.crossListedProgramme) {
+            const deptWithdrawn = withdrawnEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
+            deptWithdrawn.add(withdrawnKey);
+            withdrawnEntityKeysByDept.set(dept.deptKey, deptWithdrawn);
+          }
+          if (!dept.crossListedProgramme && entry.profileReadOutcome === 'read') {
+            profilesReadByDept.set(dept.deptKey, (profilesReadByDept.get(dept.deptKey) ?? 0) + 1);
+          }
+          continue;
+        }
+        const currentSlug = rosterResearchEntitySlug(entry, dept);
+        const legacySlug = legacyRosterResearchEntitySlug(entry, dept);
+        const tally = titleTallies.get(dept.deptKey) ?? {
+          deptKey: dept.deptKey,
+          assertsHomeDepartment: assertsHomeDepartment(dept),
+          entries: 0,
+          untitled: 0,
+        };
+        tally.entries += 1;
+        if (!entry.title?.trim()) tally.untitled += 1;
+        titleTallies.set(dept.deptKey, tally);
+        const { observations: currentUserObs, entityKey: currentOwnerKey } =
+          entryToUserObservations(
+            entry,
+            dept,
+            sourceUrl,
+            await this.homeDepartmentContext(entry, dept),
+          );
+        const legacyOwnerKey = legacyRosterOwnerKey(currentOwnerKey, entry, dept);
+        const adoption = decideLegacyKeyAdoption({
+          currentSlug,
+          legacySlug,
+          ownerKey: currentOwnerKey,
+          legacyOwnerKey,
+          rowsBySlug: legacyKeyRows,
+        });
+        const entityKey = adoption.kind === 'adopt' ? adoption.ownerKey : currentOwnerKey;
+        const refusalWithholdsNewPersonKey =
+          adoption.kind === 'refuse' && legacyOwnerKey !== currentOwnerKey;
+        const typedUserObs = refusalWithholdsNewPersonKey
+          ? []
+          : entityKey === currentOwnerKey
+            ? currentUserObs
+            : currentUserObs.map((observation) => ({ ...observation, entityKey }));
+        const userObs = holdUserTitleForRunEnd(
+          holdUserTypingForRunEnd(typedUserObs, entityKey, facultyTitledUserKeys, typingByUserKey),
+          entityKey,
           dept,
-          sourceUrl,
+          titlesByUserKey,
         );
         await ctx.emit(userObs);
+        rekeyReads.recordPerson(typedUserObs);
         observations += userObs.length;
 
         const mint = dept.officialProfileOnly
@@ -4428,10 +5605,61 @@ export class DepartmentRosterScraper implements IScraper {
               dept,
               sourceUrl,
               entityKey,
-              labUrlUnusabilityFor(labUrlEvidenceBySlug, rosterResearchEntitySlug(entry, dept)),
+              labUrlUnusabilityFor(labUrlEvidenceBySlug, currentSlug),
+              coLedGroupSiteFor(await coLedSiteIndex(), currentSlug, {
+                email: entry.email,
+                profileUrl: officialProfileCitationUrl(entry),
+              }),
             );
-        const labObs = mint.observations;
+        if (adoption.kind === 'adopt') {
+          mint.observations = mint.observations.map((observation) => ({
+            ...observation,
+            entityKey: adoption.legacySlug,
+            entityId: adoption.entityId,
+            ...(observation.field === 'slug' ? { value: adoption.legacySlug } : {}),
+          }));
+          adoptedLegacyKeys++;
+        } else if (adoption.kind === 'refuse') {
+          mint.observations = [];
+          refusedLegacyKeys++;
+        }
+        const ownSlug = adoption.kind === 'adopt' ? adoption.legacySlug : currentSlug;
+        const attach =
+          mint.observations.length > 0 && !dept.crossListedProgramme
+            ? decideRosterAttach({
+                ownerKey: entityKey,
+                ownSlug,
+                ownRosterPrefix: rosterResearchEntitySlugPrefix(dept),
+                personName: entry.identityName || entry.name,
+                rowsByOwnerKey: await rosterOwnerKeyRows(),
+                mintedThisRun: rowsMintedThisRunByOwnerKey,
+              })
+            : { targetSlug: ownSlug, reason: 'mint-own' as const };
+        const attachedSlug = attach.targetSlug !== ownSlug ? attach.targetSlug : '';
+        const labObs = attachedSlug ? [] : mint.observations;
         const labKey = labObs[0]?.entityKey;
+        if (attachedSlug) {
+          attachedToExistingRow++;
+          const appointmentObs = mint.observations
+            .filter((observation) => observation.field === 'departments')
+            .map((observation) => ({ ...observation, entityKey: attachedSlug }));
+          if (appointmentObs.length > 0) {
+            await ctx.emit(appointmentObs);
+            observations += appointmentObs.length;
+          }
+          const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
+          deptDiscovered.add(attachedSlug);
+          deptDiscovered.add(ownSlug);
+          discoveredEntityKeysByDept.set(dept.deptKey, deptDiscovered);
+        } else if (labObs.length > 0 && labKey && !rowsMintedThisRunByOwnerKey.has(entityKey)) {
+          rowsMintedThisRunByOwnerKey.set(entityKey, {
+            id: '',
+            slug: labKey,
+            rosterPrefix: rosterResearchEntitySlugPrefix(dept),
+            mintedFromRosterHost: rosterHostOfUrl(dept.url),
+            leadPrimaryIdentityUrls: [],
+          });
+        }
         if (labObs.length > 0 && labKey && !seenLabKeys.has(labKey)) {
           seenLabKeys.add(labKey);
           await ctx.emit(labObs);
@@ -4459,17 +5687,38 @@ export class DepartmentRosterScraper implements IScraper {
           typeof labKey === 'string' && labKey
             ? labKey
             : mint.refusedByTitle
-              ? rosterResearchEntitySlug(entry, dept)
-              : '';
+              ? currentSlug
+              : adoption.kind === 'refuse'
+                ? adoption.legacySlug
+                : '';
         if (discoveredKey && !dept.crossListedProgramme) {
           const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
           deptDiscovered.add(discoveredKey);
           discoveredEntityKeysByDept.set(dept.deptKey, deptDiscovered);
         }
+        if (!dept.crossListedProgramme && entry.profileReadOutcome === 'read') {
+          profilesReadByDept.set(dept.deptKey, (profilesReadByDept.get(dept.deptKey) ?? 0) + 1);
+        }
+        const withdrawnKey =
+          attachedSlug || adoption.kind === 'refuse'
+            ? ''
+            : rosterMintWithdrawnEntityKey(entry, dept, mint);
+        if (withdrawnKey) {
+          const deptWithdrawn = withdrawnEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
+          deptWithdrawn.add(withdrawnKey);
+          withdrawnEntityKeysByDept.set(dept.deptKey, deptWithdrawn);
+        }
         faculty++;
         totalFaculty++;
       }
 
+      rekeyReads.recordListingRead(sourceUrl, {
+        complete: !truncatedByLimit,
+        names: entries.map((rosterEntry, index) => ({
+          nameKey: rosterEntryNameKey(rosterEntry),
+          identity: `${sourceUrl}#${index}`,
+        })),
+      });
       return { faculty, labs, observations, truncatedByLimit };
     };
 
@@ -4654,6 +5903,29 @@ export class DepartmentRosterScraper implements IScraper {
     const laneConcurrency = Number.isFinite(limit) ? 1 : resolveRosterLaneConcurrency();
     await runWithBoundedConcurrency(htmlLanes, laneConcurrency, runSelectedLane);
     await runWithBoundedConcurrency(renderedLanes, 1, runSelectedLane);
+    const heldTypings = [...typingByUserKey.values()];
+    if (heldTypings.length > 0) {
+      await ctx.emit(heldTypings);
+      totalObs += heldTypings.length;
+    }
+    const titleOutcomes = new Map<RosterTitleOutcome, number>();
+    const heldTitles: ObservationInput[] = [];
+    for (const [entityKey, held] of titlesByUserKey) {
+      const { observation, outcome } = pickRosterTitleForRunEnd(
+        held,
+        profileTitledUserKeys.has(entityKey),
+        facultyTitledUserKeys.has(entityKey),
+      );
+      titleOutcomes.set(outcome, (titleOutcomes.get(outcome) ?? 0) + 1);
+      if (observation) heldTitles.push(observation);
+    }
+    if (heldTitles.length > 0) {
+      await ctx.emit(heldTitles);
+      totalObs += heldTitles.length;
+    }
+    if (titlesByUserKey.size > 0) {
+      ctx.log('Run-end roster titles', Object.fromEntries(titleOutcomes));
+    }
 
     const laneOutcomes = outcomeByIndex.filter(
       (outcome): outcome is LaneOutcome => outcome !== null,
@@ -4718,6 +5990,12 @@ export class DepartmentRosterScraper implements IScraper {
       const discoveredEntityKeys = Array.from(
         discoveredEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
       ).sort();
+      const discoveredKeySet = new Set(discoveredEntityKeys);
+      const withdrawnEntityKeys = Array.from(
+        withdrawnEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
+      )
+        .filter((key) => !discoveredKeySet.has(key))
+        .sort();
       // A department whose page was not read in this run is not authoritative
       // about who its roster lists, whatever its lane status says. This is the
       // half of #3251 that was real: the snapshot asserted "this is who the
@@ -4740,6 +6018,9 @@ export class DepartmentRosterScraper implements IScraper {
           complete: entityAuthoritative,
           discoveredCount: discoveredEntityKeys.length,
           discoveredEntityKeys,
+          mintWithdrawalRecorded: true,
+          withdrawnEntityKeys,
+          profilesRead: profilesReadByDept.get(deptResult.deptKey) ?? 0,
           read: {
             pagesRead: deptResult.pagesRead,
             readMode: deptResult.readMode,
@@ -4757,18 +6038,28 @@ export class DepartmentRosterScraper implements IScraper {
       totalObs += rosterHealthObservations.length;
     }
 
+    const rekeyed = await settleRekeyedPersonReads(rekeyReads, ctx);
     const summary = perDept
       .map((d) => `${d.deptKey}=${d.status === 'ok' ? d.count : d.status}`)
       .join(', ');
     ctx.log(
       `Emitted ${totalObs} observations across ${totalFaculty} faculty / ${totalLabs} labs (${summary})`,
     );
+    if (adoptedLegacyKeys > 0 || refusedLegacyKeys > 0) {
+      ctx.log(
+        `${adoptedLegacyKeys} roster entries kept writing to the row their earlier key holds, ${refusedLegacyKeys} refused to mint beside an unmatched earlier-key row (#5969)`,
+      );
+    }
+    if (attachedToExistingRow > 0) {
+      ctx.log(
+        `${attachedToExistingRow} roster entries attached to the person's existing row on another roster instead of minting a second row (#5969)`,
+      );
+    }
 
-    const breakageStatuses = new Set(['empty', 'extractor-error', 'rendered-extractor-error']);
-    const brokenSources = perDept.filter((d) => breakageStatuses.has(d.status));
+    const brokenSources = perDept.filter((d) => ROSTER_BARREN_STATUSES.has(d.status));
     if (brokenSources.length > 0) {
       ctx.log(
-        `WARNING: ${brokenSources.length} configured roster source(s) fetched but yielded no faculty - likely a site migration or renamed layout; re-verify the URL and extractor: ${brokenSources
+        `WARNING: ${brokenSources.length} configured roster source(s) fetched a roster page that yielded no faculty - likely a site migration or renamed layout; re-verify the URL and extractor: ${brokenSources
           .map((d) => `${d.deptKey}(${d.status})`)
           .join(', ')}`,
       );
@@ -4783,6 +6074,10 @@ export class DepartmentRosterScraper implements IScraper {
           .join(', ')}`,
       );
     }
+    const silentPagesNote = silentRosterPagesNote(
+      silentRosterPagesAssertingHome([...titleTallies.values()]),
+    );
+    if (silentPagesNote) ctx.log(silentPagesNote);
     const partialSources = perDept.filter((d) => d.status === 'partial-read');
     if (partialSources.length > 0) {
       ctx.log(
@@ -4795,7 +6090,9 @@ export class DepartmentRosterScraper implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: totalFaculty + totalLabs,
-      notes: `Departments: ${summary}`,
+      notes: rekeyed.note ? `Departments: ${summary}; ${rekeyed.note}` : `Departments: ${summary}`,
+      ...(rekeyed.partialFailure ? { partialFailures: [rekeyed.partialFailure] } : {}),
+      metrics: { unitYields: rosterUnitYields(perDept) },
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }

@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import { Researcher, isValidOrcid } from '../models/researcher';
+import { isPlausiblePersonOrcid } from '../utils/orcid';
 import {
   isRosterIdentityBasis,
+  protectedRoleEdgeFor,
   pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
   roleAssignmentReattachWrite,
@@ -16,11 +18,19 @@ import {
   reviewStatusForLegacyMembership,
   roleStateForLegacyMembership,
 } from '../models/canonicalRoleMapping';
+import { noteResearcherSearchInputChange } from '../services/researcherLinkedSearchResync';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import { escapeRegex } from '../utils/regex';
 import { canonicalPersonName } from './utils/personNameCasing';
+import { givenNamesEquivalent } from './utils/piNameMatch';
 import { looksLikeYaleNetid } from '../utils/yaleNetid';
+import {
+  currentDirectoryRemovalMintGuard,
+  REMOVED_BY_REQUEST,
+  researcherIsRemovedByRequest,
+  type DirectoryRemovalMintGuard,
+} from '../services/directoryRemovalMintGuard';
 
 const toObjectId = (value: unknown): mongoose.Types.ObjectId | undefined => {
   if (value instanceof mongoose.Types.ObjectId) return value;
@@ -44,7 +54,7 @@ const normalizedNetid = (value: unknown): string | undefined => {
 
 const normalizedOrcid = (value: unknown): string | undefined => {
   const orcid = trimmed(value).toUpperCase();
-  return orcid && isValidOrcid(orcid) ? orcid : undefined;
+  return orcid && isValidOrcid(orcid) && isPlausiblePersonOrcid(orcid) ? orcid : undefined;
 };
 
 const ORGANIZATIONAL_MAILBOX_LOCAL_PARTS = new Set<string>([
@@ -382,6 +392,17 @@ async function mintResearcherForIdentityNetid(
   }
 }
 
+type ResearcherResolution = mongoose.Types.ObjectId | undefined | typeof REMOVED_BY_REQUEST;
+
+const listedDirectoryRemovalPerson = (identity: CanonicalMemberIdentity, profileUrl?: string) => ({
+  identifiers: {
+    netid: trimmed(identity.netid),
+    email: trimmed(identity.email),
+    orcid: trimmed(identity.orcid),
+  },
+  profileLinks: profileUrl ? [{ url: profileUrl }] : [],
+});
+
 async function resolveOrCreateResearcherId(
   identity: CanonicalMemberIdentity,
 ): Promise<mongoose.Types.ObjectId | undefined> {
@@ -471,7 +492,46 @@ async function adoptNoisyNameOnlyResearcherId(
   const adoptedId = toObjectId((adopted as { _id?: unknown } | undefined)?._id);
   if (!adoptedId) return undefined;
   await Researcher.updateOne({ _id: adoptedId }, { $set: { displayName } });
+  if ((adopted as { displayName?: unknown }).displayName !== displayName) {
+    await noteResearcherSearchInputChange(adoptedId);
+  }
   return adoptedId;
+}
+
+/**
+ * A name-only record the researcher fold already merged is archived, so the live lookups above
+ * miss it and the listing would mint a fresh copy of the same person, which the next fold merges
+ * again while the listing keeps ending the survivor's edge (#6019). The fold is identity evidence
+ * the name lookup lacks, so the listing follows it to the survivor, when every folded record of
+ * that name points at the same live survivor. Every folded record is compared, never a capped
+ * read, because one disagreeing record past a cap would join the listing to a guess (#6052).
+ */
+async function liveSurvivorOfFoldedNamesake(
+  displayName: string,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  const survivorIds = new Set(
+    (
+      (await Researcher.distinct('dedupedIntoResearcherId', {
+        displayName,
+        archived: true,
+        dedupedIntoResearcherId: { $ne: null },
+      })) as unknown[]
+    ).map(String),
+  );
+  if (survivorIds.size !== 1) return undefined;
+  const survivor = await Researcher.findOne({
+    _id: toObjectId([...survivorIds][0]),
+    archived: { $ne: true },
+  })
+    .select('_id')
+    .lean();
+  return toObjectId((survivor as { _id?: unknown } | null)?._id);
+}
+
+export async function foldSurvivorOfListedName(
+  listedName: string,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  return liveSurvivorOfFoldedNamesake(nameOnlyResolutionName(listedName));
 }
 
 async function findOrCreateNameOnlyResearcherId(
@@ -486,6 +546,8 @@ async function findOrCreateNameOnlyResearcherId(
   if (existingNameOnly) return toObjectId((existingNameOnly as { _id?: unknown })._id);
   const adopted = await adoptNoisyNameOnlyResearcherId(displayName);
   if (adopted) return adopted;
+  const survivor = await liveSurvivorOfFoldedNamesake(displayName);
+  if (survivor) return survivor;
   try {
     const created = await Researcher.create({ displayName, profileLinks: [], archived: false });
     return toObjectId(created._id);
@@ -498,9 +560,23 @@ async function findOrCreateNameOnlyResearcherId(
   }
 }
 
+/**
+ * The person key name-only resolution serializes on. Department-roster shells share it so two
+ * spellings of one person never materialize at once either (#5555); changing it changes both.
+ */
+export function nameOnlyResolutionName(displayName: string): string {
+  return canonicalPersonName(sanitizePersonName(displayName) ?? displayName);
+}
+
+/**
+ * Resolves on the sanitized name, the same form adoption compares stored names against, so
+ * a noisy spelling of a stored clean name reaches that researcher instead of minting a
+ * second one (#5539), and every spelling of one person shares one lock.
+ */
 async function resolveOrCreateNameOnlyResearcherId(
-  displayName: string,
+  incomingDisplayName: string,
 ): Promise<mongoose.Types.ObjectId | undefined> {
+  const displayName = nameOnlyResolutionName(incomingDisplayName);
   const previous = nameOnlyResolutionLocks.get(displayName) ?? Promise.resolve(undefined);
   const current = previous
     .catch(() => undefined)
@@ -530,34 +606,130 @@ async function liveResearcherId(
   return toObjectId((live as { _id?: unknown } | null)?._id);
 }
 
+const IDENTIFIED_RESEARCHER_FILTER = {
+  archived: { $ne: true },
+  $or: [
+    { 'identifiers.netid': { $exists: true, $nin: [null, ''] } },
+    { 'identifiers.orcid': { $exists: true, $nin: [null, ''] } },
+  ],
+};
+
+const variantNameTokens = (value: unknown): string[] =>
+  canonicalPersonName(trimmed(value))
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\./g, '')
+    .split(/[\s-]+/)
+    .filter(Boolean);
+
 /**
- * Whether a name-only mint under this display name would stand beside a researcher who
- * already carries an identity (a netid or an ORCID) under the same name.
- *
- * The comparison is the one the mint and the accountless-shell dedupe both make, the
- * canonical display name compared without case or spacing, so the answer here is exactly
- * whether the mint would produce a row that dedupe folds back by name (#3802).
+ * Whether two names are one person under a foldable variant: the same surname and the same
+ * first given name with only a middle initial or middle name added or dropped, the same name
+ * written with and without a hyphen, or a given name `givenNamesEquivalent` accepts as the same
+ * (Kate and Katherine, not two strangers who share a surname). Two different given names under
+ * one surname are never a variant (#5923: the broad first-name shape matched one
+ * listing against 41 people).
+ */
+export function isFoldableNameVariant(left: unknown, right: unknown): boolean {
+  const a = variantNameTokens(left);
+  const b = variantNameTokens(right);
+  if (a.length < 2 || b.length < 2) return false;
+  const spacedA = canonicalPersonName(trimmed(left)).toLowerCase().replace(/\s+/g, ' ');
+  const spacedB = canonicalPersonName(trimmed(right)).toLowerCase().replace(/\s+/g, ' ');
+  if (spacedA === spacedB) return false;
+  if (spacedA.replace(/[\s-]+/g, '') === spacedB.replace(/[\s-]+/g, '')) return true;
+  if (a[a.length - 1] !== b[b.length - 1]) return false;
+  if (!givenNamesEquivalent(a[0], b[0])) return false;
+  return middleNamesCompatible(a.slice(1, -1), b.slice(1, -1));
+}
+
+const middleTokenCompatible = (left: string, right: string): boolean =>
+  left === right ||
+  (left.length === 1 && right.startsWith(left)) ||
+  (right.length === 1 && left.startsWith(right));
+
+const middleNamesCompatible = (left: string[], right: string[]): boolean => {
+  const [shorter, longer] = left.length <= right.length ? [left, right] : [right, left];
+  return shorter.every((token, i) => middleTokenCompatible(token, longer[i]));
+};
+
+const LATIN_ACCENTED_LETTERS = '\u00C0-\u024F';
+const COMBINING_MARKS = '\u0300-\u036f';
+
+const surnameSuffixPattern = (surname: string): RegExp => {
+  const letters = Array.from(surname).map(
+    (letter) => `[${escapeRegex(letter)}${LATIN_ACCENTED_LETTERS}][${COMBINING_MARKS}]*`,
+  );
+  return new RegExp(`(?:^|[\\s-])${letters.join('[\\s-]?')}\\s*$`, 'i');
+};
+
+/**
+ * Whether a researcher who already carries an identity (a netid or an ORCID) holds this name,
+ * exactly or as a foldable variant. The exact comparison is the one the mint and the
+ * accountless-shell dedupe both make, the canonical display name compared without case or
+ * spacing, so a mint it refuses is one dedupe would fold back by name (#3802). The variant arm
+ * refuses the twins a roster lane would otherwise mint under a middle initial, a hyphenation or
+ * a nickname of an identified person (#5923).
  */
 export async function identifiedResearcherHoldsDisplayName(displayName: unknown): Promise<boolean> {
   const tokens = canonicalPersonName(trimmed(displayName)).split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return false;
   const namesake = await Researcher.findOne({
     displayName: new RegExp(`^\\s*${tokens.map(escapeRegex).join('\\s+')}\\s*$`, 'i'),
-    archived: { $ne: true },
-    $or: [
-      { 'identifiers.netid': { $exists: true, $nin: [null, ''] } },
-      { 'identifiers.orcid': { $exists: true, $nin: [null, ''] } },
-    ],
+    ...IDENTIFIED_RESEARCHER_FILTER,
   })
     .select('_id')
     .lean();
-  return Boolean(namesake);
+  if (namesake) return true;
+  const surname = variantNameTokens(tokens[tokens.length - 1]).join('');
+  if (!surname || surname.length < 2) return false;
+  const sameSurname = (await Researcher.find({
+    displayName: surnameSuffixPattern(surname),
+    ...IDENTIFIED_RESEARCHER_FILTER,
+  })
+    .select('displayName')
+    .lean()) as Array<{ displayName?: unknown }>;
+  return sameSurname.some((holder) => isFoldableNameVariant(displayName, holder.displayName));
+}
+
+export async function resolveOrCreateResearcherIdUnlessRemoved(
+  identity: CanonicalMemberIdentity,
+  guard: DirectoryRemovalMintGuard,
+  profileUrl?: string,
+): Promise<ResearcherResolution> {
+  if (guard.refusesPerson(listedDirectoryRemovalPerson(identity, profileUrl))) {
+    return REMOVED_BY_REQUEST;
+  }
+  const personId =
+    (await liveResearcherId(identity.resolvedPersonId)) ??
+    (await resolveOrCreateResearcherId(identity));
+  if (!personId) return undefined;
+  return (await researcherIsRemovedByRequest(guard, personId, profileUrl))
+    ? REMOVED_BY_REQUEST
+    : personId;
+}
+
+export async function canonicalMemberIsRemovedByRequest(
+  identity: CanonicalMemberIdentity,
+  personId: mongoose.Types.ObjectId,
+  profileUrl?: string,
+): Promise<boolean> {
+  const guard = await currentDirectoryRemovalMintGuard();
+  return (
+    guard.refusesPerson(listedDirectoryRemovalPerson(identity, profileUrl)) ||
+    (await researcherIsRemovedByRequest(guard, personId, profileUrl))
+  );
 }
 
 export async function resolveOrCreateResearcherIdForIdentity(
   identity: CanonicalMemberIdentity,
 ): Promise<mongoose.Types.ObjectId | undefined> {
-  return resolveOrCreateResearcherId(identity);
+  const resolution = await resolveOrCreateResearcherIdUnlessRemoved(
+    identity,
+    await currentDirectoryRemovalMintGuard(),
+  );
+  return resolution === REMOVED_BY_REQUEST ? undefined : resolution;
 }
 
 export async function resolveCanonicalResearcherId(
@@ -603,7 +775,10 @@ export type CanonicalMembershipOutcome =
   | 'refused-organizational-mailbox'
   | 'refused-person'
   | 'refused-upsert-shape'
-  | 'refused-duplicate-key';
+  | 'refused-duplicate-key'
+  | 'refused-operator-ended'
+  | 'refused-disputed-edge'
+  | typeof REMOVED_BY_REQUEST;
 
 /**
  * The fields a membership write governs, compared through a pre-image because
@@ -669,11 +844,18 @@ export async function writeCanonicalMembership(
     ? 'CANONICAL_SOURCE_REFERENCE'
     : undefined;
   const reviewStatus = reviewStatusForLegacyMembership(facts, state, resolution);
+  const guard = await currentDirectoryRemovalMintGuard();
 
   try {
-    const personId =
-      (await liveResearcherId(identity.resolvedPersonId)) ??
-      (await resolveOrCreateResearcherId(identity));
+    const personId = await resolveOrCreateResearcherIdUnlessRemoved(
+      identity,
+      guard,
+      trimmed(facts.rosterProvenance?.profileUrl) || undefined,
+    );
+    if (personId === REMOVED_BY_REQUEST) {
+      guard.recordRefusal();
+      return refused(REMOVED_BY_REQUEST);
+    }
     if (!personId) return refused('refused-person');
 
     const upsert = buildCanonicalRoleAssignmentUpsert(personId, entityObjectId, facts.legacyRole, {
@@ -685,6 +867,9 @@ export async function writeCanonicalMembership(
       rosterProvenance: facts.rosterProvenance,
     });
     if (!upsert) return refused('refused-upsert-shape');
+    const protectedEdge = await protectedRoleEdgeFor(upsert.filter);
+    if (protectedEdge === 'operator-ended') return refused('refused-operator-ended');
+    if (protectedEdge === 'disputed') return refused('refused-disputed-edge');
     const filter = await pinRoleAssignmentUpsertToLiveEdge(upsert.filter);
     const reattach = roleAssignmentReattachWrite(filter, reviewStatus);
     const before = await RoleAssignment.findOne(filter)
@@ -751,6 +936,11 @@ export async function adoptUnprovenancedRoleAssignments(
 ): Promise<number> {
   const entityObjectId = toObjectId(researchEntityId);
   if (!entityObjectId || !trimmed(adoption.sourceName)) return 0;
+  const guard = await currentDirectoryRemovalMintGuard();
+  if (await researcherIsRemovedByRequest(guard, adoption.personId)) {
+    guard.recordRefusal();
+    return 0;
+  }
   const edges = (await RoleAssignment.find({
     personId: adoption.personId,
     'target.kind': 'RESEARCH_ENTITY',

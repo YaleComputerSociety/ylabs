@@ -7,6 +7,7 @@ import {
   formatSourceLabel,
   getPathwayTypeLabel,
   parseQueryInterpretationChips,
+  schoolFilterCardContext,
 } from '../researchDiscoveryAdapters';
 import type { ResearchEntity } from '../../types/researchEntity';
 
@@ -188,6 +189,74 @@ describe('buildGroupedSearchResults', () => {
         }),
       ),
     ).toBe('Therapeutic Radiology · School of Medicine');
+  });
+
+  describe('schoolFilterCardContext', () => {
+    const SEAS = 'School of Engineering & Applied Science';
+    const jointAppointment = entity({
+      departments: ['Biomedical Engineering', 'Psychiatry'],
+      school: 'School of Medicine',
+      schools: ['School of Medicine', SEAS],
+    });
+    const contextFor = (row: ResearchEntity, filteredSchool?: string) =>
+      schoolFilterCardContext(row, filteredSchool, buildResearchHomeContextLine(row));
+
+    it('leaves a card unchanged when no School filter is active', () => {
+      expect(contextFor(jointAppointment)).toEqual({
+        contextLine: 'Biomedical Engineering · Psychiatry · School of Medicine',
+        alsoInSchool: '',
+      });
+      expect(contextFor(jointAppointment, '  ')).toEqual({
+        contextLine: 'Biomedical Engineering · Psychiatry · School of Medicine',
+        alsoInSchool: '',
+      });
+    });
+
+    it('says "Also in" when the row matches only through a secondary appointment', () => {
+      expect(contextFor(jointAppointment, SEAS)).toEqual({
+        contextLine: 'Biomedical Engineering · Psychiatry · School of Medicine',
+        alsoInSchool: `Also in ${SEAS}`,
+      });
+    });
+
+    it('adds nothing when the primary school already names the filtered school', () => {
+      expect(contextFor(jointAppointment, 'school of  medicine')).toEqual({
+        contextLine: 'Biomedical Engineering · Psychiatry · School of Medicine',
+        alsoInSchool: '',
+      });
+    });
+
+    it('keeps the primary school visible when departments would crowd it out', () => {
+      const crowded = entity({
+        departments: ['Computer Science', 'Economics', 'Statistics & Data Science'],
+        school: SEAS,
+      });
+      expect(buildResearchHomeContextLine(crowded)).not.toContain(SEAS);
+      expect(contextFor(crowded, SEAS)).toEqual({
+        contextLine: `Computer Science · Economics · ${SEAS}`,
+        alsoInSchool: '',
+      });
+    });
+
+    it('reads the schools[] fallback as the primary school when the scalar is empty', () => {
+      const fallback = entity({ departments: ['Computer Science'], school: '', schools: [SEAS] });
+      expect(contextFor(fallback, SEAS)).toEqual({
+        contextLine: `Computer Science · ${SEAS}`,
+        alsoInSchool: '',
+      });
+    });
+
+    it('claims no membership the served row does not carry', () => {
+      const unrelated = entity({ departments: ['Nursing'], school: 'School of Nursing' });
+      expect(contextFor(unrelated, SEAS)).toEqual({
+        contextLine: 'Nursing · School of Nursing',
+        alsoInSchool: '',
+      });
+      expect(schoolFilterCardContext(undefined, SEAS, '')).toEqual({
+        contextLine: '',
+        alsoInSchool: '',
+      });
+    });
   });
 
   it('adds profile links when contact emails identify Yale netids and exposes lab context', () => {

@@ -2,7 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { vi } from 'vitest';
+import mongoose from 'mongoose';
+import { afterEach, vi } from 'vitest';
+import { resetHostPauseStateForTests } from '../scrapers/utils/hostPauseState';
 import { applyMongoMemoryLaunchBudget } from './mongoMemoryLaunchBudget';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -67,10 +69,27 @@ export const applyEnvironmentFence = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   // A suite must never join, or become, the machine-wide host slot broker a live scrape on
   // the same machine is using; a suite that tests the broker re-enables it in a private directory.
   env.SCRAPER_MACHINE_HOST_SLOTS = 'off';
+  // A suite that installs the scraper fetch hooks must never reuse or store a body in the
+  // machine's shared validator cache; a suite that tests the cache points it at its own directory.
+  env.SCRAPER_HTTP_CACHE = 'off';
+  env.DEV_WRITE_LEASE = 'off';
+  delete env.YLABS_REPORT_ROOT;
   return env;
 };
 
-const INERT_FENCED_VALUE = 'ylabs-hermetic-fence';
+// The inert value must never be a writable path: a fenced key read as a file path, such as
+// SCRAPER_REQUEST_LOG, resolved the bare name against the child's cwd and created
+// `server/ylabs-hermetic-fence`, which a gate documentation step then committed (#6278). An
+// absolute path under a directory that does not exist fails to open instead.
+export const INERT_FENCED_VALUE = '/nonexistent-ylabs-hermetic-fence/ylabs-hermetic-fence';
+
+// Keys whose empty value is the explicit "off", so a fenced child never even tries to open them.
+const OFF_IN_FENCED_CHILD: Record<string, string> = {
+  SCRAPER_REQUEST_LOG: '',
+  // An operator's report root would add an approved --output root to every child, and the inert
+  // fenced value is not a directory, so it would refuse every child's report path instead.
+  YLABS_REPORT_ROOT: '',
+};
 
 /**
  * The environment a suite must hand `spawn` when it drives a real CLI. Module
@@ -88,7 +107,7 @@ const INERT_FENCED_VALUE = 'ylabs-hermetic-fence';
 export const hermeticChildEnvironment = (overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => {
   const child = applyEnvironmentFence({ ...process.env });
   for (const key of fencedEnvironmentKeys()) child[key] = INERT_FENCED_VALUE;
-  return { ...child, ...UNREACHABLE_BACKEND_VALUES, ...overrides };
+  return { ...child, ...UNREACHABLE_BACKEND_VALUES, ...OFF_IN_FENCED_CHILD, ...overrides };
 };
 
 const searchFence = vi.hoisted(() => {
@@ -150,3 +169,16 @@ vi.mock('../utils/meiliClient', () => ({
 applyEnvironmentFence(process.env);
 
 applyMongoMemoryLaunchBudget();
+
+/**
+ * A suite left on mongoose's defaults ran a connection mode production never uses, and paid for
+ * it: connecting made every model its imports registered build its collection and indexes, so the
+ * one index a suite needed queued behind the whole corpus schema (#5709, #5722). A suite that
+ * relies on an index now builds it explicitly, so the reliance is visible in the suite. This sets
+ * mongoose directly rather than importing db/connections, because a module imported here is shared
+ * with every suite and would defeat a suite's own mock of that module.
+ */
+mongoose.set('autoIndex', false);
+mongoose.set('autoCreate', false);
+
+afterEach(() => resetHostPauseStateForTests());

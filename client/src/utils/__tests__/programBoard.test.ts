@@ -3,7 +3,13 @@ import {
   cardAwardLabel,
   isOpenToFirstYears,
   programBoardSectionOf,
+  citizenshipFilterOptionLabel,
   programCardFacts,
+  PROGRAM_FACET_NOT_STATED_NOTE,
+  PROGRAM_REGION_FILTER_NOTE,
+  citizenshipDoesntSayDescription,
+  citizenshipOptionCountsLabel,
+  programStatesCitizenship,
 } from '../programBoard';
 import { getFellowshipCycleStatus } from '../fellowshipCycle';
 import { createFellowship } from '../createFellowship';
@@ -58,6 +64,29 @@ describe('programBoardSectionOf', () => {
   });
 });
 
+describe('programCardFacts states a citizenship restriction (#5130)', () => {
+  it('names a U.S.-only program on its card', () => {
+    expect(programCardFacts(served({ citizenshipStatus: ['U.S. citizens are eligible'] }))).toEqual(
+      ['U.S. citizens only'],
+    );
+  });
+
+  it('names a non-U.S.-only program on its card', () => {
+    expect(
+      programCardFacts(served({ citizenshipStatus: ['Non-U.S. citizens are eligible'] })),
+    ).toEqual(['Non-U.S. citizens only']);
+  });
+
+  it('says nothing on the card for an open or not-stated program', () => {
+    for (const citizenshipStatus of [
+      ['U.S. citizens are eligible', 'Non-U.S. citizens are eligible'],
+      [],
+    ]) {
+      expect(programCardFacts(served({ citizenshipStatus }))).toEqual([]);
+    }
+  });
+});
+
 describe('programCardFacts', () => {
   it('states the award and that a mentor comes first', () => {
     expect(
@@ -83,6 +112,10 @@ describe('cardAwardLabel', () => {
     expect(cardAwardLabel('up to $500')).toBe('up to $500');
   });
 
+  it('keeps a served award whose sign and separators lengthened it on the card', () => {
+    expect(cardAwardLabel('Up to $5,000 per semester')).toBe('Up to $5,000 per semester');
+  });
+
   it('keeps a long award sentence off the card rather than truncating it', () => {
     expect(cardAwardLabel('maximum amount around $2,500; smaller amounts typical')).toBeNull();
     expect(cardAwardLabel('')).toBeNull();
@@ -95,5 +128,58 @@ describe('isOpenToFirstYears', () => {
       true,
     );
     expect(isOpenToFirstYears(served({ yearOfStudy: ['Junior'] }))).toBe(false);
+  });
+});
+
+describe('citizenshipFilterOptionLabel says the option keeps not-stated programs (#5235)', () => {
+  it('labels each stored citizenship value with what the filter returns', () => {
+    expect(citizenshipFilterOptionLabel('Non-U.S. citizens are eligible')).toBe(
+      'Open to non-U.S. citizens, or not stated',
+    );
+    expect(citizenshipFilterOptionLabel('U.S. citizens are eligible')).toBe(
+      'Open to U.S. citizens, or not stated',
+    );
+  });
+});
+
+describe('the region filter note says it returns only programs that name the region (#5533)', () => {
+  it('never tells a student that not-stated programs are included under region', () => {
+    expect(PROGRAM_REGION_FILTER_NOTE).not.toMatch(/not state|included/i);
+    expect(PROGRAM_REGION_FILTER_NOTE).toMatch(/only programs that name this region/i);
+    expect(PROGRAM_FACET_NOT_STATED_NOTE).toMatch(/do not state this are included/i);
+  });
+});
+
+describe('citizenship split copy (#5299)', () => {
+  it("counts says-open and doesn't-say with singular and plural wording", () => {
+    expect(citizenshipOptionCountsLabel({ says: 126, doesntSay: 38 })).toBe(
+      "126 say they are open, 38 don't say",
+    );
+    expect(citizenshipOptionCountsLabel({ says: 1, doesntSay: 1 })).toBe(
+      "1 says it is open, 1 doesn't say",
+    );
+    expect(citizenshipOptionCountsLabel({ says: 0, doesntSay: 0 })).toBe(
+      "0 say they are open, 0 don't say",
+    );
+  });
+
+  it("names every chosen citizenship in the doesn't-say description", () => {
+    expect(
+      citizenshipDoesntSayDescription([
+        'U.S. citizens are eligible',
+        'Non-U.S. citizens are eligible',
+        'U.S. permanent residents are eligible',
+      ]),
+    ).toContain('whether U.S. citizens, non-U.S. citizens, or U.S. permanent residents can apply');
+  });
+
+  it('treats a missing or empty citizenship list as not stated, like the card does', () => {
+    expect(programStatesCitizenship({ citizenshipStatus: [] })).toBe(false);
+    expect(programStatesCitizenship({ citizenshipStatus: undefined as unknown as string[] })).toBe(
+      false,
+    );
+    expect(programStatesCitizenship({ citizenshipStatus: ['U.S. citizens are eligible'] })).toBe(
+      true,
+    );
   });
 });

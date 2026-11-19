@@ -13,12 +13,15 @@
  *   PIs and lab-existence signals we'd otherwise miss.
  *
  * Strategy (mirrors the parallel NIH scraper):
- *   1. Page through "Yale University" awards from `dateStart` (default 5 years
- *      ago) using `awardeeName="Yale University"` (quoted = exact phrase) and
- *      offset/rpp pagination. Stop on an empty page.
+ *   1. Page through "Yale University" awards ending on or after `expDateStart`
+ *      (default 5 years ago) using `awardeeName="Yale University"` (quoted = exact
+ *      phrase) and offset/rpp pagination. Stop on an empty page. The window is on
+ *      the end date, so an award that started earlier and is still running is read.
  *   2. Group awards by PI (`piFirstName` + `piLastName`).
  *   3. For each PI, resolve an unambiguous canonical Researcher by exact or conservative
- *      prefix matching, then the one existing research row the canonical resolver
+ *      prefix matching. When the name is ambiguous, the NSF PI email is an identity
+ *      witness: it must equal, case-insensitively, the stored email of exactly one
+ *      ambiguous candidate. Then take the one existing research row the canonical resolver
  *      names for them. A grant proves that a person is funded, never that a row
  *      should exist, so every other outcome is counted by reason and mints nothing
  *      (#3145, #3561).
@@ -38,7 +41,10 @@ import {
   resolveCanonicalResearchHomeForResearcher,
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
-import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
+import {
+  resolveResearcherIdForPersonName,
+  type ResearcherNameCandidate,
+} from '../../services/researcherPersonNameResolver';
 import { slugify, splitName } from '../utils/scraperHelpers';
 import { grantAwardIdentity } from '../utils/grantAwardIdentity';
 import {
@@ -49,15 +55,20 @@ import {
 } from '../utils/grantEnrichmentTarget';
 import { fetchGrantWindowPage } from '../utils/grantWindowPageFetch';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
+import {
+  creditedGrantInvestigator,
+  mergeGrantInvestigators,
+  type GrantInvestigator,
+} from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { awardDateOfCalendarDay } from '../../utils/awardCalendarDay';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const NSF_API_URL = 'https://api.nsf.gov/services/v1/awards.json';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
+export const NSF_API_URL = 'https://api.nsf.gov/services/v1/awards.json';
 const FETCH_TIMEOUT_MS = 30_000;
 const PAGE_SIZE = 25; // NSF API max
 const MAX_PAGES = 200; // safety cap (5000 awards) — well above current ~400
@@ -143,6 +154,7 @@ export interface RecentGrantRecord {
   dollarAmount?: number;
   url: string;
   role: 'pi' | 'copi';
+  investigators?: GrantInvestigator[];
 }
 
 // ---------------------------------------------------------------------------
@@ -161,8 +173,7 @@ export function parseNsfDate(s: string | undefined | null): Date | undefined {
     .match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return undefined;
   const [_all, mm, dd, yyyy] = m;
-  const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-  return Number.isFinite(d.getTime()) ? d : undefined;
+  return awardDateOfCalendarDay(Number(yyyy), Number(mm), Number(dd));
 }
 
 /**
@@ -349,10 +360,39 @@ export async function findUserForPi(
 }
 
 export type NsfPiUserResolution =
-  { status: 'matched'; userId: string } | { status: 'absent' } | { status: 'ambiguous' };
+  | { status: 'matched'; userId: string; witnessEmail?: string }
+  | { status: 'absent' }
+  | { status: 'ambiguous' };
+
+function wholeEmailAddress(value: string | undefined): string | undefined {
+  const address = (value ?? '').trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+$/.test(address) ? address : undefined;
+}
+
+function emailWitnessedCandidate(
+  candidates: ResearcherNameCandidate[],
+  awardEmails: Array<string | undefined>,
+): { userId: string; email: string } | undefined {
+  const witnesses = new Set(awardEmails.map(wholeEmailAddress).filter(Boolean));
+  if (witnesses.size === 0) return undefined;
+  const witnessed = candidates.flatMap((candidate) => {
+    const stored = wholeEmailAddress(candidate.identifiers?.email);
+    return stored !== undefined && witnesses.has(stored)
+      ? [{ userId: String(candidate._id), email: stored }]
+      : [];
+  });
+  return witnessed.length === 1 ? witnessed[0] : undefined;
+}
+
+export function emailWitnessedCandidateId(
+  candidates: ResearcherNameCandidate[],
+  awardEmails: Array<string | undefined>,
+): string | undefined {
+  return emailWitnessedCandidate(candidates, awardEmails)?.userId;
+}
 
 export async function resolveUserForPi(
-  pi: { firstName?: string; lastName?: string },
+  pi: { firstName?: string; lastName?: string; emails?: Array<string | undefined> },
   deps: FederalPiResolverDeps = {},
 ): Promise<NsfPiUserResolution> {
   const first = (pi.firstName || '').trim();
@@ -360,7 +400,15 @@ export async function resolveUserForPi(
   if (!last) return { status: 'absent' };
   const resolveResearcherId = deps.resolveResearcherId ?? resolveResearcherIdForPersonName;
   const resolution = await resolveResearcherId([first, last].filter(Boolean).join(' '));
-  if (resolution.status === 'ambiguous') return { status: 'ambiguous' };
+  if (resolution.status === 'ambiguous') {
+    const witnessed = emailWitnessedCandidate(
+      resolution.ambiguousCandidates ?? [],
+      pi.emails ?? [],
+    );
+    return witnessed
+      ? { status: 'matched', userId: witnessed.userId, witnessEmail: witnessed.email }
+      : { status: 'ambiguous' };
+  }
   if (resolution.status !== 'matched' || !resolution.researcherId) return { status: 'absent' };
   return { status: 'matched', userId: resolution.researcherId.toString() };
 }
@@ -371,11 +419,11 @@ export async function resolveUserForPi(
 
 async function fetchPage(
   offset: number,
-  dateStart: string,
+  expDateStart: string,
   useCache: boolean,
   sourceName: string,
 ): Promise<{ awards: NsfAward[]; totalCount?: number }> {
-  const cacheKey = `awards:dateStart=${dateStart}:offset=${offset}:rpp=${PAGE_SIZE}`;
+  const cacheKey = `awards:expDateStart=${expDateStart}:offset=${offset}:rpp=${PAGE_SIZE}`;
   if (useCache) {
     const cached = await getCached<{ awards: NsfAward[]; totalCount?: number }>(
       sourceName,
@@ -385,7 +433,7 @@ async function fetchPage(
   }
   const params: Record<string, string> = {
     awardeeName: AWARDEE_QUERY,
-    dateStart,
+    expDateStart,
     offset: String(offset),
     rpp: String(PAGE_SIZE),
     printFields: PRINT_FIELDS,
@@ -394,7 +442,7 @@ async function fetchPage(
     axios.get(NSF_API_URL, {
       params,
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
     }),
   );
   const r = (res.data?.response ?? {}) as {
@@ -419,7 +467,7 @@ export function buildResearchEntityObservations(
   existingRowSlug: string,
 ): ObservationInput[] {
   return buildRowObservations(
-    group.awards.map((award) => ({ award, role: 'pi' as const })),
+    group.awards.map((award) => ({ award, role: 'pi' as const, researcherId: piUserId })),
     piUserId,
     existingRowSlug,
   );
@@ -428,6 +476,7 @@ export function buildResearchEntityObservations(
 export interface CreditedAward {
   award: NsfAward;
   role: 'pi' | 'copi';
+  researcherId?: string;
 }
 
 export function buildRowObservations(
@@ -436,12 +485,19 @@ export function buildRowObservations(
   existingRowSlug: string,
 ): ObservationInput[] {
   const byIdentity = new Map<string, RecentGrantRecord>();
-  for (const { award, role } of credited) {
+  for (const { award, role, researcherId } of credited) {
     const record = awardToRecord(award, role);
     const identity = record && grantAwardIdentity(record);
     if (!record || !identity) continue;
     const held = byIdentity.get(identity);
-    if (!held || (held.role === 'copi' && role === 'pi')) byIdentity.set(identity, record);
+    const credit = researcherId ? [creditedGrantInvestigator(researcherId, role === 'pi')] : [];
+    const kept = !held || (held.role === 'copi' && role === 'pi') ? record : held;
+    byIdentity.set(
+      identity,
+      held?.investigators || credit.length > 0
+        ? { ...kept, investigators: mergeGrantInvestigators(held?.investigators, credit) }
+        : kept,
+    );
   }
   const records = [...byIdentity.values()];
   const top = sortGrantsByRecency(records).slice(0, MAX_GRANTS_PER_PI);
@@ -492,18 +548,23 @@ export interface NsfAwardScraperDeps {
   resolveResearcherId?: typeof resolveResearcherIdForPersonName;
   /** Override the page fetcher (used in tests to avoid hitting NSF). */
   fetchPage?: typeof fetchPage;
-  /** Override the lookback start date (default: today minus 5 years). */
-  dateStart?: string;
+  /** Override the earliest award end date (default: today minus 5 years). */
+  expDateStart?: string;
   researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
   sleep?: (ms: number) => Promise<void>;
 }
 
-export function defaultDateStart(referenceDate: Date = new Date()): string {
+export function defaultExpDateStart(referenceDate: Date = new Date()): string {
   const d = new Date(referenceDate);
   d.setFullYear(d.getFullYear() - DEFAULT_LOOKBACK_YEARS);
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${mm}/${dd}/${d.getFullYear()}`;
+}
+
+export function awardEndsInWindow(award: NsfAward, windowStart: Date | undefined): boolean {
+  const end = parseNsfDate(award.expDate);
+  return !windowStart || !end || end.getTime() >= windowStart.getTime();
 }
 
 export class NsfAwardScraper implements IScraper {
@@ -513,7 +574,7 @@ export class NsfAwardScraper implements IScraper {
   constructor(private readonly deps: NsfAwardScraperDeps = {}) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
-    const dateStart = this.deps.dateStart ?? defaultDateStart(ctx.options.referenceDate);
+    const expDateStart = this.deps.expDateStart ?? defaultExpDateStart(ctx.options.referenceDate);
     const resolverDeps: FederalPiResolverDeps = {
       resolveResearcherId: this.deps.resolveResearcherId,
     };
@@ -526,7 +587,7 @@ export class NsfAwardScraper implements IScraper {
     }
     const limit = limitOption ?? Infinity;
 
-    ctx.log(`Fetching NSF awards for "Yale University" since ${dateStart}`);
+    ctx.log(`Fetching NSF awards for "Yale University" ending on or after ${expDateStart}`);
 
     // 1. Page through all Yale awards.
     const awards: NsfAward[] = [];
@@ -544,7 +605,7 @@ export class NsfAwardScraper implements IScraper {
       let offset = NSF_FIRST_OFFSET;
       for (let page = 0; page < MAX_PAGES; page++) {
         const outcome = await fetchGrantWindowPage(
-          () => fetcher(offset, dateStart, ctx.options.useCache, this.name),
+          () => fetcher(offset, expDateStart, ctx.options.useCache, this.name),
           { label: `NSF page at offset ${offset}`, sleep: this.deps.sleep, log: ctx.log },
         );
         if (outcome.status === 'failed') {
@@ -607,13 +668,18 @@ export class NsfAwardScraper implements IScraper {
       };
     }
 
+    const windowStart = parseNsfDate(expDateStart);
+    const awardsInWindow = awards.filter((award) => awardEndsInWindow(award, windowStart));
+    const endedBeforeWindow = awards.length - awardsInWindow.length;
+
     // 2. Group by PI, and by each co-PI NSF records at a Yale address.
-    const groups = groupAwardsByPi(awards);
-    const coPi = groupAwardsByYaleCoPi(awards);
+    const groups = groupAwardsByPi(awardsInWindow);
+    const coPi = groupAwardsByYaleCoPi(awardsInWindow);
     ctx.log(`Grouped into ${groups.length} distinct PIs and ${coPi.groups.length} Yale co-PIs`);
 
     const attach = emptyGrantAttachTally();
     const coPiAttach = emptyGrantAttachTally();
+    let emailWitnessedPis = 0;
     const rows = new Map<string, { researcherIds: Set<string>; credited: CreditedAward[] }>();
     const credit = async (
       group: PiAwardsGroup,
@@ -621,15 +687,26 @@ export class NsfAwardScraper implements IScraper {
       tally: ReturnType<typeof emptyGrantAttachTally>,
     ) => {
       const person = await resolveUserForPi(
-        { firstName: group.piFirstName, lastName: group.piLastName },
+        {
+          firstName: group.piFirstName,
+          lastName: group.piLastName,
+          emails: role === 'pi' ? group.awards.map((award) => award.piEmail) : [],
+        },
         resolverDeps,
       );
+      const witnessEmail = person.status === 'matched' ? person.witnessEmail : undefined;
+      if (witnessEmail) emailWitnessedPis++;
+      const awards = witnessEmail
+        ? group.awards.filter((award) => wholeEmailAddress(award.piEmail) === witnessEmail)
+        : group.awards;
       const target = await resolveGrantEnrichmentTarget(person, researchHomeResolver);
       countGrantAttach(tally, target);
       if (target.status !== 'enrich') return;
       const row = rows.get(target.slug) ?? { researcherIds: new Set<string>(), credited: [] };
       row.researcherIds.add(target.researcherId);
-      row.credited.push(...group.awards.map((award) => ({ award, role })));
+      row.credited.push(
+        ...awards.map((award) => ({ award, role, researcherId: target.researcherId })),
+      );
       rows.set(target.slug, row);
     };
     for (const group of groups) await credit(group, 'pi', attach);
@@ -644,7 +721,9 @@ export class NsfAwardScraper implements IScraper {
     }
 
     const notes =
-      `Yale NSF awards: ${windowCounts}; PIs: ${groups.length}; ${grantAttachSummary(attach)}; ` +
+      `Yale NSF awards: ${windowCounts}; ${endedBeforeWindow} ended before ${expDateStart} and dropped; ` +
+      `PIs: ${groups.length}; ${emailWitnessedPis} ambiguous PI name(s) settled by the NSF PI email; ` +
+      `${grantAttachSummary(attach)}; ` +
       `co-PI entries: ${coPi.tally.yaleAddressed} at a Yale address, ${coPi.tally.otherAddressed} refused (another address), ` +
       `${coPi.tally.unaddressed} refused (no address); Yale co-PIs: ${coPi.groups.length}; ` +
       `co-PI ${grantAttachSummary(coPiAttach)}; ${rows.size} distinct row(s) enriched`;

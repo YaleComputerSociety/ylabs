@@ -74,6 +74,18 @@ describe('parseReuProgramPage', () => {
     expect(candidate?.termOfAward).toContain('Summer');
   });
 
+  it('reads rising years from the program prose as the admitted year of study', () => {
+    const html = `
+      <main>
+        <h1>Fixture Summer Undergraduate Research in Environmental Science</h1>
+        <p>A ten-week NSF REU summer research program in environmental science at Yale.</p>
+        <p>Rising juniors and seniors from 4-year colleges and universities are eligible to apply.</p>
+      </main>
+    `;
+    const candidate = parseReuProgramPage(html, mathUrl, 'Yale', referenceDate);
+    expect(candidate?.yearOfStudy).toEqual(['Sophomore', 'Junior']);
+  });
+
   it('extracts a summer research program that does not use the REU acronym', () => {
     const candidate = parseReuProgramPage(
       mathSummerHtml,
@@ -99,6 +111,43 @@ describe('parseReuProgramPage', () => {
     expect(candidate?.description ?? '').not.toContain('fixture-reu@astro.example.edu');
     const observations = candidateToObservations(candidate!);
     expect(observations.some((observation) => observation.field === 'contactEmail')).toBe(false);
+  });
+
+  it('persists the program page text it read as source evidence, without a raw email (#6402)', () => {
+    const candidate = parseReuProgramPage(
+      astronomyReuHtml,
+      astronomyUrl,
+      'Yale Department of Astronomy',
+      referenceDate,
+    );
+    const source = candidateToObservations(candidate!).find(
+      (observation) => observation.field === 'fullSourceDescription',
+    );
+    expect(typeof source?.value).toBe('string');
+    expect(String(source?.value)).toContain(String(candidate?.eligibility ?? '').slice(0, 40));
+    expect(String(source?.value)).not.toContain('fixture-reu@astro.example.edu');
+  });
+
+  it('redacts a mid-sentence contact email from the stored page text (#6402)', () => {
+    const midSentenceEmail = 'fixture.office@example.edu';
+    const candidate = parseReuProgramPage(
+      astronomyReuHtml.replace(
+        '<h2>Eligibility</h2>',
+        `<p>Write to ${midSentenceEmail} with questions about housing and stipends.</p><h2>Eligibility</h2>`,
+      ),
+      astronomyUrl,
+      'Yale Department of Astronomy',
+      referenceDate,
+    );
+    const source = String(
+      candidateToObservations(candidate!).find(
+        (observation) => observation.field === 'fullSourceDescription',
+      )?.value ?? '',
+    );
+    expect(source).toContain('Open to sophomores and juniors majoring in physics or astronomy.');
+    expect(source).not.toContain(midSentenceEmail);
+    expect(source).not.toMatch(/fixture\.office|fixture-reu/);
+    expect(source).not.toMatch(/@/);
   });
 
   it('rejects a non-Yale source page (source citations must be Yale-owned)', () => {

@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import axios from 'axios';
 import { ResearchEntity } from '../models/researchEntity';
 import {
   LAB_UNDERGRAD_SYSTEM_PROMPT,
@@ -10,6 +9,7 @@ import {
 } from '../scrapers/sources/labMicrositeUndergradLLMExtractor';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { connectScriptMongo } from '../db/connections';
+import { postChatCompletion } from '../utils/modelClient';
 
 const DEFAULT_MODELS = ['gpt-4o-mini', 'gpt-5-mini'];
 const QUOTE_FIELDS = [
@@ -79,9 +79,11 @@ async function callModel(
   userPrompt: string,
   apiKey: string,
 ): Promise<CallResult> {
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'scraper-llm-model-ab-harness',
+    apiKey: apiKey,
+    timeoutMs: 60_000,
+    body: {
       model,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -90,11 +92,7 @@ async function callModel(
       response_format: LAB_UNDERGRAD_RESPONSE_FORMAT,
       ...openAiChatSampling(model),
     },
-    {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 60_000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   const usage = response.data?.usage ?? {};
   return {

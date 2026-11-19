@@ -1,20 +1,17 @@
+import { NEW_YORK_TIME_ZONE, newYorkCalendarDateFormatter } from './newYorkDate';
+
 /**
  * Program dates are stated in New Haven time, so they render in America/New_York for
  * every reader. Mirrors `server/src/utils/programDeadlineInstant.ts`: a stated time has
  * minute precision, so a deadline ending in `:59.999` stated no time, and an opening at
  * New York midnight reads the same as its date alone.
  */
-export const PROGRAM_TIME_ZONE = 'America/New_York';
+export const PROGRAM_TIME_ZONE = NEW_YORK_TIME_ZONE;
 const PROGRAM_TIME_ZONE_LABEL = 'ET';
 
 export type ProgramDateBoundary = 'deadline' | 'opens';
 
-const calendarDateFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: PROGRAM_TIME_ZONE,
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-});
+const calendarDateFormatter = newYorkCalendarDateFormatter;
 
 const shortDateFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: PROGRAM_TIME_ZONE,
@@ -151,6 +148,14 @@ export const formatShortProgramDate = (
 
 export const formatProgramCalendarDate = (date: Date): string => calendarDateFormatter.format(date);
 
+export const formatProjectedProgramDate = (
+  value: string | null | undefined,
+  fallback = 'Date not specified',
+): string => {
+  const date = parseProgramDate(value);
+  return date ? calendarDateFormatter.format(date) : fallback;
+};
+
 export const programStatedClockLabel = (deadline: Date): string | null =>
   isDateOnlyProgramDeadline(deadline)
     ? null
@@ -166,4 +171,30 @@ export const newYorkCalendarDateParts = (
 export const newYorkClockParts = (date: Date): { hour: number; minute: number } => {
   const { hour, minute } = newYorkWallClock(date);
   return { hour, minute };
+};
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const newYorkDayNumber = (instant: Date): number => {
+  const { year, month, day } = newYorkWallClock(instant);
+  return Date.UTC(year, month - 1, day) / MS_PER_DAY;
+};
+
+/**
+ * Calendar days from today to the deadline's day in New York: 0 when it is due today.
+ * Rounding up a millisecond difference counted a deadline later in the day as one more
+ * day than the calendar shows (#5158).
+ */
+export const newYorkCalendarDaysUntil = (deadline: Date, now: Date = new Date()): number =>
+  newYorkDayNumber(deadline) - newYorkDayNumber(now);
+
+const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export const programTextDateLabel = (value: string | null | undefined): string | null => {
+  const match = CALENDAR_DATE.exec(value ?? '');
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return formatProgramCalendarDate(
+    newYorkInstant({ year: Number(year), month: Number(month), day: Number(day), hour: 12 }),
+  );
 };

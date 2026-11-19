@@ -1,6 +1,10 @@
 import { servedCitationIsWithheld } from './servedCitationPolicy';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
+import {
+  undergradInvitationLevels,
+  type UndergradInvitationLevel,
+} from '../models/storedVocabularies';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
   MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS,
@@ -26,12 +30,8 @@ import {
 } from '../utils/researchHomeCardSummary';
 import {
   isDisallowedResearchEntitySourceUrl,
-  isInstitutionalPublicityPageUrl,
-  isMapOrDirectionsUrl,
-  isMultiTenantAcademicHostRootUrl,
-  isPostingPageCitedAsResearchWebsite,
-  isPressOrNewsHostUrl,
-  isUmbrellaPageCitedByPerson,
+  isWithheldResearchWebsiteUrl,
+  withoutUncreditedCreditOnlyCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
@@ -42,16 +42,18 @@ import {
 } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
-import { entityHasHostedUndergraduates } from './hostedUndergraduates';
+import { sourceLinkHealthKey, sourceLinkScheme } from './sourceLinkHealth';
 import {
-  isModelSearchNote,
-  RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
-  UNDERGRAD_MICROSITE_LANE,
-} from '../scrapers/undergradEvidenceQuoteValidation';
+  entityHasHostedUndergraduates,
+  withoutAdviseeProgramsMovedToMentors,
+} from './hostedUndergraduates';
 import {
-  quotePageIsAboutAnotherEntity,
-  quoteStatesAnUndergraduateAccessFact,
-} from '../scrapers/undergradQuoteRelevance';
+  entityHasUndergradListSignal,
+  entityMentorsUndergraduates,
+  publicUndergradListEvidence,
+} from './undergradListEvidenceServing';
+import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
+import { quotePageIsAboutAnotherEntity } from '../scrapers/undergradQuoteRelevance';
 import { quoteListsPeopleWithTheirContactDetails } from '../scrapers/contactInstructionQuoteAdmission';
 import {
   MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
@@ -85,6 +87,7 @@ export interface PublicResearchEntitySourceLinkHealth {
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
   httpsLandingUrl?: string;
+  httpsSpellingUrl?: string;
 }
 
 export interface PublicResearchEntityDto extends Record<string, unknown> {
@@ -363,6 +366,10 @@ export function publicSourceLinkHealthArray(
     const httpsLandingUrl = publicHttpUrl(
       (entry as { httpsLandingUrl?: unknown })?.httpsLandingUrl,
     );
+    const httpsSpellingUrl = publicHttpsSpellingOf(
+      url,
+      (entry as { httpsSpellingUrl?: unknown })?.httpsSpellingUrl,
+    );
     return [
       {
         url,
@@ -373,9 +380,22 @@ export function publicSourceLinkHealthArray(
         ...(privateAddressHost === true ? { privateAddressHost: true } : {}),
         ...(tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
         ...(httpsLandingUrl ? { httpsLandingUrl } : {}),
+        ...(httpsSpellingUrl ? { httpsSpellingUrl } : {}),
       },
     ];
   });
+}
+
+/**
+ * A stored `httpsSpellingUrl` is served only as what it claims to be: the `https:`
+ * spelling of this entry's own plain-HTTP URL, same host, path and query (#5639).
+ */
+function publicHttpsSpellingOf(entryUrl: string, value: unknown): string | undefined {
+  const spelling = publicHttpUrl(value);
+  if (!spelling) return undefined;
+  if (sourceLinkScheme(entryUrl) !== 'http:' || sourceLinkScheme(spelling) !== 'https:')
+    return undefined;
+  return sourceLinkHealthKey(spelling) === sourceLinkHealthKey(entryUrl) ? spelling : undefined;
 }
 
 /**
@@ -515,6 +535,50 @@ export function publicFellowshipRecipients(value: unknown): PublicFellowshipReci
     .slice(0, MAX_PUBLIC_FELLOWSHIP_RECIPIENTS);
 }
 
+export interface PublicUndergradInvitation {
+  level: UndergradInvitationLevel;
+  quote: string;
+  sourceUrl: string;
+}
+
+export function publicUndergradInvitation(
+  value: unknown,
+  group: Parameters<typeof quotePageIsAboutAnotherEntity>[1],
+): PublicUndergradInvitation | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { level, quote, sourceUrl } = value as Record<string, unknown>;
+  if (!undergradInvitationLevels.includes(level as UndergradInvitationLevel)) return undefined;
+  if (typeof quote !== 'string' || !quote.trim()) return undefined;
+  const servedUrl = publicHttpUrl(sourceUrl);
+  if (!servedUrl || quotePageIsAboutAnotherEntity(servedUrl, group)) return undefined;
+  if (quoteListsPeopleWithTheirContactDetails(quote)) return undefined;
+  return {
+    level: level as UndergradInvitationLevel,
+    quote: quote.trim().slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH),
+    sourceUrl: servedUrl,
+  };
+}
+
+type UndergradInvitationHolder = Parameters<typeof quotePageIsAboutAnotherEntity>[1] & {
+  undergradInvitation?: unknown;
+  undergradListEvidence?: unknown;
+  wayInWithheld?: unknown;
+};
+
+export const servedUndergradInvitationLevel = (
+  group: UndergradInvitationHolder,
+): UndergradInvitationLevel | undefined =>
+  group.wayInWithheld === true
+    ? undefined
+    : publicUndergradInvitation(group.undergradInvitation, group)?.level;
+
+export const entityWelcomesUndergraduates = (
+  group: UndergradInvitationHolder,
+  reviewedSources?: ReadonlySet<string>,
+): boolean =>
+  servedUndergradInvitationLevel(group) !== undefined ||
+  entityHasUndergradListSignal(group, 'welcomes', reviewedSources);
+
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'shortDescription',
   'fullDescription',
@@ -523,7 +587,8 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'school',
   'schools',
   'currentUndergradCount',
-  'undergradEvidenceQuote',
+  'undergradInvitation',
+  'undergradListEvidence',
   'pastUndergradAdvisees',
   'fellowshipRecipients',
   'recentGrants',
@@ -542,25 +607,41 @@ export interface PublicResearchEntityDtoOptions {
   includeOperatorFields?: boolean;
   forList?: boolean;
   leadMemberNames?: readonly string[];
+  /**
+   * The hosting verdict read from the whole row, for a caller that narrowed away one of
+   * its inputs before building the DTO: the detail route withholds `rosterEnrichment`
+   * (#5232).
+   */
+  hasHostedUndergraduates?: boolean;
 }
 
 const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants', 'leadHonors']);
 
-const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn', 'undergradEvidenceQuote']);
+const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn', 'undergradInvitation']);
 
-function publicTextValue(value: unknown): unknown {
+const CONTACT_SHOWN_PUBLIC_FIELDS: ReadonlySet<string> = new Set([
+  'waysIn',
+  'recentGrants',
+  'leadHonors',
+  'fundingAgencies',
+]);
+
+function publicTextValue(value: unknown, keepContacts = false): unknown {
   if (typeof value === 'string') {
-    return redactDirectContactInfo(value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH));
+    const bounded = value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
+    return keepContacts ? bounded : redactDirectContactInfo(bounded);
   }
   if (Array.isArray(value)) {
-    return value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS).map(publicTextValue);
+    return value
+      .slice(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS)
+      .map((item) => publicTextValue(item, keepContacts));
   }
   if (value && typeof value === 'object' && !(value instanceof Date)) {
     const source = value as Record<string, unknown>;
     return Object.fromEntries(
       Object.keys(source)
         .slice(0, MAX_PUBLIC_RESEARCH_ENTITY_OBJECT_KEYS)
-        .map((key) => [key, publicTextValue(source[key])]),
+        .map((key) => [key, publicTextValue(source[key], keepContacts)]),
     );
   }
   return value;
@@ -569,6 +650,21 @@ function publicTextValue(value: unknown): unknown {
 /**
  * Public DTO for the canonical ResearchEntity API.
  */
+function servedNameFields(
+  group: Record<string, any>,
+  served: Record<string, any>,
+): { name: string; displayName: string | undefined } {
+  return {
+    name:
+      publicResearchEntityName(served.name) ||
+      servedPersonScopedDisplayName(group, served.displayName),
+    displayName:
+      group.displayName === undefined
+        ? undefined
+        : servedPersonScopedDisplayName(group, served.displayName),
+  };
+}
+
 export function toPublicResearchEntityDto(
   group: Record<string, any>,
   options: PublicResearchEntityDtoOptions = {},
@@ -600,13 +696,7 @@ function derivePublicResearchEntityDto(
     _id: id,
     id,
     slug: publicTextString(group.slug || ''),
-    name:
-      publicResearchEntityName(served.name) ||
-      servedPersonScopedDisplayName(group, served.displayName),
-    displayName:
-      group.displayName === undefined
-        ? undefined
-        : servedPersonScopedDisplayName(group, served.displayName),
+    ...servedNameFields(group, served),
     kind,
     entityKind: kind,
     entityType,
@@ -625,7 +715,9 @@ function derivePublicResearchEntityDto(
     if (options.forList && LIST_TRIMMED_DETAIL_ONLY_FIELDS.has(field)) continue;
     if (wayInWithheld && WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD.has(field)) continue;
     if (isCurrentFundingField(field)) {
-      if (currentFunding[field] !== undefined) dto[field] = publicTextValue(currentFunding[field]);
+      if (currentFunding[field] !== undefined) {
+        dto[field] = publicTextValue(currentFunding[field], CONTACT_SHOWN_PUBLIC_FIELDS.has(field));
+      }
       continue;
     }
     if (field === 'shortDescription') {
@@ -637,14 +729,7 @@ function derivePublicResearchEntityDto(
     if (group[field] !== undefined) {
       if (field === 'website' || field === 'websiteUrl') {
         const url = publicHttpUrl(group[field]);
-        const ownedByThisEntity =
-          !isMultiTenantAcademicHostRootUrl(url, hostOwnerIdentity) &&
-          !isUmbrellaPageCitedByPerson(url, hostOwnerIdentity) &&
-          !isPressOrNewsHostUrl(url) &&
-          !isMapOrDirectionsUrl(url) &&
-          !isInstitutionalPublicityPageUrl(url) &&
-          !isPostingPageCitedAsResearchWebsite(url, hostOwnerIdentity);
-        if (url && ownedByThisEntity) dto[field] = url;
+        if (url && !isWithheldResearchWebsiteUrl(url, hostOwnerIdentity)) dto[field] = url;
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {
@@ -665,21 +750,19 @@ function derivePublicResearchEntityDto(
         dto[field] = String(served[field] || '');
         continue;
       }
-      if (field === 'undergradEvidenceQuote') {
-        const provenance = group.fieldProvenance?.undergradEvidenceQuote;
-        const fromMicrositeLane = provenance?.sourceName === UNDERGRAD_MICROSITE_LANE;
-        const withheld =
-          isModelSearchNote(group[field]) ||
-          quoteListsPeopleWithTheirContactDetails(group[field]) ||
-          provenance?.sourceName === RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE ||
-          (fromMicrositeLane &&
-            (!quoteStatesAnUndergraduateAccessFact(group[field]) ||
-              quotePageIsAboutAnotherEntity(provenance?.sourceUrl, group)));
-        if (!withheld) {
-          dto[field] = String(group[field]).slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
-          const quoteSourceUrl = publicHttpUrl(provenance?.sourceUrl);
-          if (quoteSourceUrl) dto.undergradEvidenceSourceUrl = quoteSourceUrl;
-        }
+      if (field === 'undergradListEvidence') {
+        const evidence = publicUndergradListEvidence(group[field], { wayInWithheld });
+        if (evidence.length > 0) dto[field] = evidence;
+        continue;
+      }
+      if (field === 'pastUndergradAdvisees') {
+        const advisees = withoutAdviseeProgramsMovedToMentors(group[field]);
+        if (advisees.length > 0) dto[field] = advisees;
+        continue;
+      }
+      if (field === 'undergradInvitation') {
+        const invitation = publicUndergradInvitation(group[field], group);
+        if (invitation) dto[field] = invitation;
         continue;
       }
       if (field === 'currentUndergradCount') {
@@ -698,11 +781,19 @@ function derivePublicResearchEntityDto(
         dto[field] = publicResearchAreaArray(served[field]);
         continue;
       }
-      dto[field] = publicTextValue(group[field]);
+      dto[field] = publicTextValue(group[field], CONTACT_SHOWN_PUBLIC_FIELDS.has(field));
     }
   }
 
-  if (entityHasHostedUndergraduates(group)) dto.hasUndergradHostingEvidence = true;
+  if (options.hasHostedUndergraduates ?? entityHasHostedUndergraduates(group)) {
+    dto.hasUndergradHostingEvidence = true;
+  }
+  if (entityWelcomesUndergraduates(group)) {
+    dto.welcomesUndergrads = true;
+  }
+  if (entityMentorsUndergraduates(group)) {
+    dto.mentorsUndergrads = true;
+  }
   Object.assign(dto, servedCreativePracticeFlag(creativePractice));
 
   // The browse card is the same line `shortDescription` above carries, because both
@@ -732,15 +823,21 @@ function derivePublicResearchEntityDto(
     dto.sourceLinkHealth = publicSourceLinkHealthArray(group.sourceLinkHealth);
   }
 
+  const servedPayload = {
+    ...dto,
+    shortDescription: dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
+  };
+  dto.sourceUrls = withoutUncreditedCreditOnlyCitations(
+    dto.sourceUrls,
+    group.fieldProvenance,
+    servedPayload,
+    group,
+  );
   if (group.sourceFieldContributions !== undefined) {
     dto.sourceFieldContributions = publicSourceFieldContributionsArray(
       group.sourceFieldContributions,
       group.sourceLinkHealth,
-      {
-        ...dto,
-        shortDescription:
-          dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
-      },
+      servedPayload,
     );
   }
 
@@ -783,6 +880,7 @@ function derivePublicResearchEntityDto(
  */
 export interface ResearchEntitySearchAliasOptions extends PublicResearchEntityDtoOptions {
   leadMemberNamesByEntityId?: ReadonlyMap<string, readonly string[]>;
+  matchedMemberNameByEntityId?: ReadonlyMap<string, { name: string; role: string }>;
   identityLeadDirectorEntityIds?: ReadonlySet<string>;
   leadMemberNamesUnavailable?: boolean;
   emeritusWayInByEntityId?: ReadonlyMap<
@@ -837,6 +935,70 @@ export function researchEntityListServedSource(
   );
 }
 
+export interface ServedResearchEntityLeadContext {
+  leadMemberNames?: readonly string[];
+  leadMemberNamesUnavailable?: boolean;
+  identityLeadDirectsOrganization?: boolean;
+  emeritusWayIn?: Pick<EmeritusWayInDecision, 'emeritusLed' | 'wayInWithheld'>;
+}
+
+function servedSourceForLead(
+  row: Record<string, any>,
+  lead: ServedResearchEntityLeadContext,
+): Record<string, any> {
+  const hit = lead.identityLeadDirectsOrganization
+    ? { ...row, [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true }
+    : row;
+  return {
+    ...researchEntityListServedSource(hit, lead.leadMemberNames, lead.leadMemberNamesUnavailable),
+    ...servedEmeritusWayInFlags(lead.emeritusWayIn),
+  };
+}
+
+/** The served DTO of a row given its lead read, composed the way browse serves a hit. */
+export function toServedResearchEntityDto(
+  row: Record<string, any>,
+  lead: ServedResearchEntityLeadContext = {},
+  options: Omit<PublicResearchEntityDtoOptions, 'leadMemberNames'> = {},
+): PublicResearchEntityDto {
+  return toPublicResearchEntityDto(servedSourceForLead(row, lead), {
+    ...options,
+    leadMemberNames: lead.leadMemberNames,
+  });
+}
+
+export interface ServedResearchEntitySearchCopy {
+  name: string;
+  displayName: string | undefined;
+  shortDescription: string | undefined;
+  fullDescription: string | undefined;
+  methods: string[];
+}
+
+/**
+ * The copy the search index matches and ranks on, from the same sanitizer pass and name
+ * and method rules the DTO serves, so indexed copy cannot drift from served copy (#6390).
+ *
+ * `shortDescription` is the sanitized stored short rather than the DTO's card, because
+ * the card falls back to a summary built from the topics, and indexing that as prose
+ * would feed the topics back into their own coherence check.
+ */
+export function servedResearchEntitySearchCopy(
+  row: Record<string, any>,
+  lead: ServedResearchEntityLeadContext = {},
+): ServedResearchEntitySearchCopy {
+  const source = servedSourceForLead(row, lead);
+  const { served, topics } = servedCopyAndTopics(source, lead.leadMemberNames);
+  return {
+    ...servedNameFields(source, served),
+    shortDescription:
+      typeof served.shortDescription === 'string' ? served.shortDescription : undefined,
+    fullDescription:
+      typeof served.fullDescription === 'string' ? served.fullDescription : undefined,
+    methods: source.methods === undefined ? [] : publicMethodsArray(source.methods, topics.served),
+  };
+}
+
 export function addResearchEntitySearchAliases<T extends { hits: Record<string, any>[] }>(
   result: T,
   options: ResearchEntitySearchAliasOptions = {},
@@ -845,6 +1007,7 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
 } {
   const {
     leadMemberNamesByEntityId,
+    matchedMemberNameByEntityId,
     identityLeadDirectorEntityIds,
     leadMemberNamesUnavailable,
     emeritusWayInByEntityId,
@@ -855,16 +1018,24 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
     (result.hits || []).map((hit) => {
       const hitKey = String(hit?._id || hit?.id || '');
       const leadMemberNames = leadMemberNamesByEntityId?.get(hitKey);
-      const servedHit = identityLeadDirectorEntityIds?.has(hitKey)
-        ? { ...hit, [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true }
-        : hit;
-      return toPublicResearchEntityDto(
-        {
-          ...researchEntityListServedSource(servedHit, leadMemberNames, leadMemberNamesUnavailable),
-          ...servedEmeritusWayInFlags(emeritusWayInByEntityId?.get(hitKey)),
-        },
-        { ...listOptions, leadMemberNames },
-      );
+      const leadName = leadMemberNames?.[0];
+      const matchedMember = matchedMemberNameByEntityId?.get(hitKey);
+      return {
+        ...toServedResearchEntityDto(
+          hit,
+          {
+            leadMemberNames,
+            leadMemberNamesUnavailable,
+            identityLeadDirectsOrganization: identityLeadDirectorEntityIds?.has(hitKey),
+            emeritusWayIn: emeritusWayInByEntityId?.get(hitKey),
+          },
+          listOptions,
+        ),
+        ...(leadName ? { leadName } : {}),
+        ...(matchedMember
+          ? { matchedMemberName: matchedMember.name, matchedMemberRole: matchedMember.role }
+          : {}),
+      };
     }),
   );
   const { hits: _hits, ...rest } = result;

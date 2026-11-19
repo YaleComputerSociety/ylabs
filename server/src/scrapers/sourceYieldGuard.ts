@@ -15,6 +15,7 @@ import type mongoose from 'mongoose';
 import { ScrapeRun } from '../models/scrapeRun';
 import { isManualOnlySweepSource } from './manualOnlySweepSources';
 import { isRetiredSourceName } from './sourceDispatch';
+import { effectiveObservationCount } from './effectiveObservationCount';
 import type { ScraperMetrics } from './types';
 
 export const BARREN_RUN_STREAK_FAILURE_THRESHOLD = 3;
@@ -25,6 +26,7 @@ export type RunYieldClass = 'productive' | 'barren' | 'inconclusive';
 export interface RunYieldFacts {
   status?: string;
   observationCount?: number;
+  storedObservationCountAtReconcile?: number;
   invalidated?: boolean;
   metrics?: ScraperMetrics;
   options?: { only?: unknown } | null;
@@ -56,10 +58,12 @@ function isEntityScopedRun(options?: RunYieldFacts['options']): boolean {
 }
 
 export function classifyRunYield(run: RunYieldFacts): RunYieldClass {
-  if (run.invalidated || run.status === 'running' || run.status === 'interrupted') {
-    return 'inconclusive';
-  }
-  if ((run.observationCount || 0) > 0) return 'productive';
+  if (run.invalidated || run.status === 'running') return 'inconclusive';
+  const written = effectiveObservationCount(run);
+  // An interrupted run's silence says nothing, but what it did write is proof the source
+  // yields, and a run killed mid-write often records 0 for writes it made (#6291).
+  if (run.status === 'interrupted') return written > 0 ? 'productive' : 'inconclusive';
+  if (written > 0) return 'productive';
   if (isEntityScopedRun(run.options)) return 'inconclusive';
   if (workPlannerSkippedEveryTarget(run.metrics)) return 'inconclusive';
   return 'barren';
@@ -201,7 +205,7 @@ export async function readPriorRunYieldFacts(args: {
     _id: { $ne: args.currentRunId },
   })
     .select(
-      'status observationCount invalidated metrics.workPlanner metrics.unitYields options.only',
+      'status observationCount storedObservationCountAtReconcile invalidated metrics.workPlanner metrics.unitYields options.only',
     )
     .sort({ startedAt: -1 })
     .limit(BARREN_RUN_HISTORY_SCAN_LIMIT)

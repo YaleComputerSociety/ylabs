@@ -11,7 +11,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 const LOCAL_PROFILE_DATABASE = 'ylabs_local';
 
-const PROFILES = {
+export const PROFILES = {
   local: {
     file: path.join(REPO_ROOT, 'server', '.env.local'),
     missingHint: 'Run yarn local:setup to create it.',
@@ -133,11 +133,36 @@ export function shadowedValues(profile, values) {
   );
 }
 
-export function run(argv = process.argv.slice(2)) {
-  const invocation = parseInvocation(argv);
-  const profile = PROFILES[invocation.profileName];
+export const SHELL_PRECEDENT_KEYS = Object.freeze([
+  'LOCAL_AUTH_BYPASS',
+  'LOCAL_AUTH_BYPASS_NETID',
+  'LOCAL_AUTH_BYPASS_USER_TYPE',
+]);
+
+export function shellPrecedentValues(processEnv) {
+  return Object.fromEntries(
+    SHELL_PRECEDENT_KEYS.filter((key) => processEnv[key] !== undefined).map((key) => [
+      key,
+      processEnv[key],
+    ]),
+  );
+}
+
+export function childEnvironment({ processEnv, profile, values }) {
+  return {
+    ...processEnv,
+    ...shadowedValues(profile, values),
+    ...values,
+    ...shellPrecedentValues(processEnv),
+    SCRAPER_ENV: profile.environment,
+    CONFIRM_PROD_SCRAPE: 'false',
+  };
+}
+
+export function profileChildEnvironment({ profileName, writesEnabled = false, processEnv }) {
+  const profile = PROFILES[profileName];
   if (!profile) {
-    throw new Error(`Unknown data profile "${invocation.profileName}". ${PROFILE_CHOICES}`);
+    throw new Error(`Unknown data profile "${profileName}". ${PROFILE_CHOICES}`);
   }
   if (!fs.existsSync(profile.file)) {
     const example = `${profile.file}.example`;
@@ -147,17 +172,11 @@ export function run(argv = process.argv.slice(2)) {
   }
 
   const values = dotenv.parse(fs.readFileSync(profile.file));
-  const { target } = validateProfileValues(invocation.profileName, values);
-  assertWritesAllowed(invocation.profileName, invocation.writesEnabled);
+  const { target } = validateProfileValues(profileName, values);
+  assertWritesAllowed(profileName, writesEnabled);
 
-  const childEnv = {
-    ...process.env,
-    ...shadowedValues(profile, values),
-    ...values,
-    SCRAPER_ENV: profile.environment,
-    CONFIRM_PROD_SCRAPE: 'false',
-  };
-  if (invocation.writesEnabled) {
+  const childEnv = childEnvironment({ processEnv, profile, values });
+  if (writesEnabled) {
     childEnv.ALLOW_NON_PROD_SCRAPER_WRITES = 'true';
   } else {
     delete childEnv.ALLOW_NON_PROD_SCRAPER_WRITES;
@@ -165,7 +184,7 @@ export function run(argv = process.argv.slice(2)) {
   if (profile.meiliIndexPrefix) {
     childEnv.MEILISEARCH_INDEX_PREFIX = profile.meiliIndexPrefix;
   }
-  if (invocation.profileName === 'beta-operator') {
+  if (profileName === 'beta-operator') {
     childEnv.MEILISEARCH_HOST = 'http://127.0.0.1:7700';
     childEnv.MEILISEARCH_API_KEY = 'local_development_master_key';
     delete childEnv.MEILISEARCH_SEARCH_API_KEY;
@@ -177,6 +196,16 @@ export function run(argv = process.argv.slice(2)) {
   delete childEnv.PROD_MONGODBURL;
   delete childEnv.ATLAS_RESTORE_POINT;
   delete childEnv.CONFIRM_LANE_A_COPY;
+  return { childEnv, target };
+}
+
+export function run(argv = process.argv.slice(2)) {
+  const invocation = parseInvocation(argv);
+  const { childEnv, target } = profileChildEnvironment({
+    profileName: invocation.profileName,
+    writesEnabled: invocation.writesEnabled,
+    processEnv: process.env,
+  });
 
   console.log(
     `Data profile: ${invocation.profileName}; Mongo target: ${target.host}/${target.database}; writes: ${invocation.writesEnabled ? 'enabled' : 'guarded dry-run'}`,

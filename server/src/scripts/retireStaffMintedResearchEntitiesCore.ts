@@ -200,7 +200,7 @@ function statesOnlyANonHostingTraineeRank(title: string | undefined | null): boo
 }
 
 const ADMINISTRATIVE_OBJECT =
-  /\b(?:career services?|(?:academic|student|faculty) affairs|financial (?:aid|strategy)|finance|administration|education technology|medical education|admissions|communications|alumni|human resources)\b/i;
+  /\b(?:career (?:services?|management)|(?:academic|student|faculty) affairs|student life|financial (?:aid|strategy|planning)|finance|administration|education technology|medical education|admissions|communications|alumni|human resources|foundation relations|gifts?)\b/i;
 
 /**
  * An office that runs a school rather than a research group: an administrative head noun
@@ -495,22 +495,4 @@ export function mintKeyIdentityFor(input: {
   };
 }
 
-export function officialProfileUrlSpellings(url: string): string[] {
-  const spellings = new Set([url]);
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return [...spellings];
-  }
-  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-  const path = parsed.pathname.replace(/\/+$/, '');
-  for (const scheme of ['https:', 'http:']) {
-    for (const prefix of ['', 'www.']) {
-      for (const slash of ['', '/']) {
-        spellings.add(`${scheme}//${prefix}${host}${path}${slash}${parsed.search}`);
-      }
-    }
-  }
-  return [...spellings];
-}
+export { officialProfileUrlSpellings } from '../scrapers/utils/officialProfileIdentityUrlKey';

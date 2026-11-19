@@ -10,6 +10,11 @@ const CAS_TICKET_PARAM = 'ticket';
 const CAS_SERVICE_PARAM = 'service';
 const CAS1_ACCEPTED = 'yes';
 const CAS1_REFUSED = 'no';
+const CAS_RENEW_PARAM = 'renew';
+const CAS_RENEW_VALUE = 'true';
+
+export const CAS_REAUTH_PARAM = 'reauth';
+export const CAS_REAUTH_VALUE = '1';
 
 export type CasLogin = { user: string };
 
@@ -32,6 +37,14 @@ export const presentedCasTicket = (req: express.Request): string | undefined => 
   return typeof ticket === 'string' && ticket.length > 0 ? ticket : undefined;
 };
 
+/**
+ * A sign-in that asks CAS for fresh credentials rather than an existing single sign-on
+ * session. The flag rides in our own URL, so it is part of the `service` both legs send,
+ * and a callback cannot claim it for a ticket CAS issued without it.
+ */
+export const requestsCasReauthentication = (req: express.Request): boolean =>
+  (req.query as Record<string, unknown> | undefined)?.[CAS_REAUTH_PARAM] === CAS_REAUTH_VALUE;
+
 const withoutTrailingSlashes = (value: string): string => value.replace(/\/+$/, '');
 
 const requestOrigin = (req: express.Request): string => `${req.protocol}://${req.host}`;
@@ -47,18 +60,27 @@ export const casServiceUrl = (req: express.Request, serverBaseURL?: string): str
   return service.href;
 };
 
-export const casLoginUrl = (ssoBaseURL: string, service: string): string => {
+export const casLoginUrl = (ssoBaseURL: string, service: string, renew = false): string => {
   const login = new URL(`${withoutTrailingSlashes(ssoBaseURL)}/login`);
-  login.search = new URLSearchParams({ [CAS_SERVICE_PARAM]: service }).toString();
+  const params = new URLSearchParams({ [CAS_SERVICE_PARAM]: service });
+  if (renew) params.set(CAS_RENEW_PARAM, CAS_RENEW_VALUE);
+  login.search = params.toString();
   return login.href;
 };
 
-export const casValidateUrl = (ssoBaseURL: string, ticket: string, service: string): string => {
+export const casValidateUrl = (
+  ssoBaseURL: string,
+  ticket: string,
+  service: string,
+  renew = false,
+): string => {
   const validate = new URL(`${withoutTrailingSlashes(ssoBaseURL)}/validate`);
-  validate.search = new URLSearchParams({
+  const params = new URLSearchParams({
     [CAS_TICKET_PARAM]: ticket,
     [CAS_SERVICE_PARAM]: service,
-  }).toString();
+  });
+  if (renew) params.set(CAS_RENEW_PARAM, CAS_RENEW_VALUE);
+  validate.search = params.toString();
   return validate.href;
 };
 
@@ -77,10 +99,11 @@ export async function validateCas1Ticket(
   ticket: string,
   service: string,
   timeoutMs: number,
+  renew = false,
 ): Promise<CasLogin> {
   let body: string;
   try {
-    const response = await fetch(casValidateUrl(ssoBaseURL, ticket, service), {
+    const response = await fetch(casValidateUrl(ssoBaseURL, ticket, service, renew), {
       headers: { accept: 'text/plain' },
       redirect: 'error',
       signal: AbortSignal.timeout(timeoutMs),
@@ -115,12 +138,13 @@ export class CasStrategy extends passport.Strategy {
   authenticate(req: express.Request): void {
     const service = casServiceUrl(req, this.serverBaseURL);
     const ticket = presentedCasTicket(req);
+    const renew = requestsCasReauthentication(req);
     if (!ticket) {
-      this.redirect(casLoginUrl(this.ssoBaseURL, service));
+      this.redirect(casLoginUrl(this.ssoBaseURL, service, renew));
       return;
     }
 
-    validateCas1Ticket(this.ssoBaseURL, ticket, service, this.validationTimeoutMs)
+    validateCas1Ticket(this.ssoBaseURL, ticket, service, this.validationTimeoutMs, renew)
       .then((login) => {
         this.verify(login, (err, user, info) => {
           if (err) {

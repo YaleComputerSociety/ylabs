@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { loadDirectoryRemovalMintGuard } from '../services/directoryRemovalMintGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import {
@@ -22,13 +23,13 @@ import {
   planDirectoryLeadAttachment,
   type VerifiedDirectoryPage,
 } from './attachDirectoryNamedLeadsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:attach-directory-named-leads';
-const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';
 const FETCH_SPACING_MS = 900;
 const THROTTLE_BACKOFF_MS = 8000;
 const THROTTLE_STATUSES = new Set([403, 429, 503]);
@@ -65,7 +66,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function fetchOnce(url: string): Promise<VerifiedDirectoryPage> {
   try {
     const response = await fetchPublicHttpUrl(url, {
-      headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
+      headers: { accept: 'text/html,application/xhtml+xml' },
     });
     if (response.status < 200 || response.status >= 300) {
       return { status: response.status, headingName: '' };
@@ -97,9 +98,10 @@ async function main() {
     mongoUrl: process.env.MONGODBURL,
   });
   await initializeConnections();
+  const removalGuard = await loadDirectoryRemovalMintGuard();
 
   const researchers = (await Researcher.find({ archived: { $ne: true } })
-    .select('_id displayName profileLinks')
+    .select('_id displayName identifiers profileLinks')
     .lean()) as any[];
   const researchersByName = new Map<string, any[]>();
   const claimedProfileKeys = new Set<string>();
@@ -152,6 +154,13 @@ async function main() {
     const matches = researchersByName.get(comparableName(plan.personName)) ?? [];
     if (matches.length > 1) {
       refusedByAmbiguousResearcher.push(entityId);
+      continue;
+    }
+    if (
+      removalGuard.refusesPerson(matches[0]) ||
+      removalGuard.refusesPerson({ profileLinks: [{ url: plan.profileUrl }] })
+    ) {
+      removalGuard.recordRefusal();
       continue;
     }
     planned.push({
@@ -245,6 +254,7 @@ async function main() {
     plannedMints: planned.filter((row) => !row.existingResearcherId).length,
     plannedAttachmentsToExisting: planned.filter((row) => row.existingResearcherId).length,
     refusedByAmbiguousResearcher: refusedByAmbiguousResearcher.length,
+    refusedAsRemovedByRequest: removalGuard.refusals,
     minted,
     attachedToExisting,
     promotedToStudentReady: promoted,
@@ -258,7 +268,7 @@ async function main() {
   if (args.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
   console.log(JSON.stringify(report, null, 2));
   await mongoose.disconnect();

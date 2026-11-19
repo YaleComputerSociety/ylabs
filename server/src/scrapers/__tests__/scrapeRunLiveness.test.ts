@@ -101,6 +101,32 @@ describe('startScrapeRunHeartbeat (#3595)', () => {
     expect(beat.mock.calls[0]).toEqual(['run-1', expect.any(Date)]);
   });
 
+  it('sends the write counters with every beat once they are wired (#6269)', async () => {
+    vi.useFakeTimers();
+    const beat = vi.fn().mockResolvedValue({ matched: true });
+    let written = 0;
+    const heartbeat = startScrapeRunHeartbeat(
+      {
+        runId: 'run-1',
+        sourceName: 'fixture-source',
+        intervalMs: 100,
+        writeCounts: () => ({ observationCount: written, entitiesObserved: written }),
+      },
+      { beat },
+    );
+
+    written = 40;
+    await vi.advanceTimersByTimeAsync(100);
+    written = 75;
+    await vi.advanceTimersByTimeAsync(100);
+    heartbeat.stop();
+
+    expect(beat.mock.calls.map(([, , counts]) => counts)).toEqual([
+      { observationCount: 40, entitiesObserved: 40 },
+      { observationCount: 75, entitiesObserved: 75 },
+    ]);
+  });
+
   it('reports once when the row was closed by something else', async () => {
     vi.useFakeTimers();
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -147,7 +173,8 @@ describe('startScrapeRunHeartbeat stall window (#5086)', () => {
 
   function startWithProgressClock(onStall = vi.fn()) {
     vi.useFakeTimers();
-    let lastProgressAtMs = Date.now();
+    const startedAt = Date.now();
+    let lastProgressAtMs = startedAt;
     const beat = vi.fn().mockResolvedValue({ matched: true });
     const heartbeat = startScrapeRunHeartbeat(
       {
@@ -162,7 +189,7 @@ describe('startScrapeRunHeartbeat stall window (#5086)', () => {
     const progress = () => {
       lastProgressAtMs = Date.now();
     };
-    return { beat, heartbeat, onStall, progress };
+    return { beat, heartbeat, onStall, progress, startedAt };
   }
 
   it('keeps heartbeating a run that keeps making progress, long past the window', async () => {
@@ -179,8 +206,7 @@ describe('startScrapeRunHeartbeat stall window (#5086)', () => {
   });
 
   it('stops heartbeating and reports the stall once the window passes with no progress', async () => {
-    const startedAt = Date.now();
-    const { beat, onStall } = startWithProgressClock();
+    const { beat, onStall, startedAt } = startWithProgressClock();
 
     await vi.advanceTimersByTimeAsync(WINDOW_MS);
     expect(beat).toHaveBeenCalledTimes(WINDOW_MS / INTERVAL_MS);

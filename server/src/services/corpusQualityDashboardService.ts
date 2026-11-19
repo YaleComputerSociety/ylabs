@@ -38,6 +38,7 @@ export const CORPUS_QUALITY_SNAPSHOT_ONLY_METRICS = [
   'browseCardSixWordsOrFewer',
   'fullDescriptionIsBiography',
   'publicDescriptionInvariantFails',
+  'personTitleFromSiteChromeReading',
   'hasTopic',
   'topicTotal',
   'noResearchWebsiteAndNoTopics',

@@ -7,6 +7,7 @@ Never write a value, a host, a password, a key, or a connection string here, and
 The repository declares no Render blueprint, so the Render dashboard is the only place the live configuration exists.
 `scripts/deployment-inventory.test.mjs` fails when code under `server/src`, `client/src`, `client/scripts`, or `scripts/` reads an environment variable name that this page does not mention, so a new variable cannot ship without an entry.
 That test proves a name is listed, not that the dashboard holds it, so a rebuild still reads each service's settings against the tables below.
+`server/src/db/__tests__/requestServingEntryPoints.test.ts` classifies every service in the table below as request-serving or a script for the Development write guard (#5871), and fails on a service it does not know, including one a future Render blueprint declares.
 
 Incident response, including how to rotate every secret named here, is owned by [the incident runbook](./incident-runbook.md).
 
@@ -16,9 +17,9 @@ Incident response, including how to rotate every secret named here, is owned by 
 | ------- | ---- | ------ | ------------ | ----- |
 | Beta web service | Staging API and client, `ylabs-gr4v.onrender.com` | `beta` | The server bundle, which also serves `client/dist` | Auto-deploys on every push to `beta`. |
 | Production web service | Production API and client, `yalelabs.onrender.com`, custom domain `yalelabs.io` | `main` | The same, built from `main` | Auto-deploys on every push to `main`, which is a promotion merge or a hotfix. |
-| Meilisearch private service | Search index, reachable only inside Render at `http://<meili-private-service>:7700` | none | The Meilisearch image | Holds `MEILI_MASTER_KEY`. Each environment's indexes are namespaced by prefix (`beta_*`, `prod_*`). |
-| Beta operator service | Render cron job that exists so a one-off job can run `promote:remote-phase` for Beta | `beta` | `true`, on a schedule that never matters, such as `0 0 1 1 *` | Same region as the private Meilisearch (Ohio). Owned by `docs/data-refresh-runbook.md` ("What to set up once"). |
-| Production operator service | The same for Production | `main` | The same | Holds the only stored copy of the Production write key. |
+| Meilisearch private service | Search index, reachable only inside Render at `http://<meili-private-service>:7700` | none | `docker.io/getmeili/meilisearch:v1.54.3`, pinned, auto-deploy off | Holds `MEILI_MASTER_KEY`. Each environment's indexes are namespaced by prefix (`beta_*`, `prod_*`). Upgrading is a deliberate tag change (`docs/meilisearch-reindex-runbook.md`, "The pinned Meilisearch version"). |
+| Beta operator service (`ylabs-beta-operator`) | Render cron job that exists so a one-off job can run `promote:remote-phase` for Beta | `beta`, auto-deploy off; `promote:beta` deploys it at the head when it is behind | `true`, on the schedule `0 0 1 1 *` | Same region as the private Meilisearch (Ohio). Holds the only stored copy of the Beta reindex key. Owned by `docs/data-refresh-runbook.md` ("What to set up once"). |
+| Production operator service (`ylabs-prod-operator`) | The same for Production | `main`, auto-deploy off; `promote:production` deploys it at the head when it is behind | The same | Holds the only stored copy of the Production reindex key. |
 | `ylabs-scraper` | Weekly Development sweep cron job, and the one-off jobs `yarn ops:sweep` starts | `beta`, but each run clones `beta` HEAD itself | `deploy/sweep-runner/Dockerfile` and its `entrypoint.sh` | Virginia (US East), Docker, `4c-8g`. The build filter is `deploy/sweep-runner/**`, `server/package.json`, `server/yarn.lock`, `package.json` and `.yarnrc.yml`, so the image rebuilds only when its toolchain or the entrypoint changes and its own copy of the code is routinely older than `beta`. Owned by `docs/data-refresh-runbook.md` ("Render Cron Job Settings"). |
 
 The repository does not record whether Beta and Production share one Meilisearch private service or run one each.
@@ -55,7 +56,9 @@ A Render service is therefore a deployed runtime whatever `NODE_ENV` says, unles
 | Variable | Required | What breaks without it | Secret |
 | -------- | -------- | ---------------------- | ------ |
 | `MONGODBURL` | Yes | Boot fails: `initializeConnections` throws `MONGODBURL is required` and the process exits 1. It must name the environment's own database, which `yarn --cwd server database:verify-names --serving <beta\|production>` checks without connecting. | Yes |
-| `SESSION_SECRET` | Yes | Boot fails in `server/src/app.ts` when it is shorter than 32 characters, has fewer than 8 distinct characters, or contains a weak word such as `secret` or `production`. Changing it signs every user out (#4484). | Yes |
+| `SESSION_SECRET` | Yes | Boot fails in `server/src/app.ts` when it is shorter than 32 characters, has fewer than 8 distinct characters, or contains a weak word such as `secret` or `production`. Changing it alone signs every user out; see `SESSION_SECRET_PREVIOUS` for a rotation that does not. | Yes |
+| `SESSION_SECRET_PREVIOUS` | No | Set only during a routine rotation, to the secret being replaced: `server/src/utils/sessionSigningKeys.ts` adds it as a verify-only key, so older cookies keep working and are re-signed with `SESSION_SECRET`. Unset, nothing changes. Boot fails when it equals `SESSION_SECRET` or is weak on a deployed runtime. Remove it 30 days after the rotation, and never set it to a leaked secret (`docs/incident-runbook.md`). | Yes |
+| `DIRECTORY_REMOVAL_KEY` | No | The HMAC key for directory removal entries (#4160, `server/src/utils/directoryRemovalDigest.ts`), at least 32 characters, and the same value in every environment because entries are copied between them. Unset while `directory_removals` is empty, nothing changes. Unset while entries exist, the matcher (`server/src/services/directoryRemovalMatcher.ts`) cannot tell a removed person from anyone else, so it withholds every person name on a deployed runtime and leaves names unfiltered on a loopback development server, a scrape, materialize or attach run that consults the list refuses (`skills/scrapers/SKILL.md`), and the student visibility gate refuses to run (`docs/directory-removal.md`). `DIRECTORY_REMOVAL_KEY_FILE` names a file holding the key instead, for a laptop that must keep it out of `server/.env`, which `scripts/new-agent-worktree.sh` copies into every agent worktree; set only one of the two. | Yes |
 | `TRUSTED_PROXY_CIDRS` | Yes | Boot fails when it is empty, and an entry wider than IPv4 `/8`, IPv6 `/29`, or IPv4-mapped `/104` refuses startup (`server/src/utils/trustedProxyCidrs.ts`). A wrong but valid list puts callers in the wrong rate-limit bucket instead of failing. | No |
 | `SSOBASEURL` | Yes | Boot fails unless it is an HTTPS URL with no credentials, query, fragment, or private host. | No |
 | `SERVER_BASE_URL` | Yes | The same checks. It is also the CAS callback base, so a wrong value breaks login. | No |
@@ -63,7 +66,7 @@ A Render service is therefore a deployed runtime whatever `NODE_ENV` says, unles
 | `MEILISEARCH_INDEX_PREFIX` | Yes | Boot fails in a deployed runtime. The value is `beta` or `prod`, with no trailing underscore. | No |
 | `MEILISEARCH_SEARCH_API_KEY` | Yes, once created | Without it and without the legacy key, search answers `503` and `/api/ready` reports `search: false`. | Yes |
 | `MEILISEARCH_API_KEY` | No; legacy | The fallback for either Meilisearch role, which logs one warning per role. Remove it from the web service once the scoped key is live. | Yes |
-| `MEILISEARCH_WRITE_API_KEY` | Beta only | Beta stores its `beta_*` write key here so a Render one-off job can reindex Beta. It must never be set on the Production web service. | Yes |
+| `MEILISEARCH_WRITE_API_KEY` | Yes | The environment's document-sync key (`ylabs-<prefix>-web-docsync`), which can only add and delete documents in its own index, for live sync after edits and gate changes. Never the reindex key, which lives on the operator service. | Yes |
 | `OPENAI_API_KEY` | No | Search query embedding is skipped and search serves its keyword leg only. | Yes |
 | `YALIES_API_KEY` | No | Login still works, but classification falls back to the `userType` a previous login stored, or `unknown`. | Yes |
 | `SENTRY_DSN` | No | No server error reports. | Treat as secret, because it lets anyone post events into the project |
@@ -74,6 +77,7 @@ A Render service is therefore a deployed runtime whatever `NODE_ENV` says, unles
 | `RENDER_EXTERNAL_URL` | Set by Render | CORS trusts the service's own origin only through the allowlist, so a pull request preview, whose `onrender.com` origin is on no allowlist, renders a blank page. Only an exact `https` `onrender.com` origin with no port or path is trusted (`server/src/middleware/corsOrigin.ts`). Never set it by hand. | No |
 | `VITE_SENTRY_DSN` | No | The server reads it too: `server/src/middleware/securityHeaders.ts` opens `connect-src` to the Sentry ingest origin only when it is set, so without it the browser cannot deliver reports. | No; it ships in the client bundle by design |
 | `NODE_ENV` | Recommended, `production` | See "Deployed runtime" above. | No |
+| `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` | Production only; never on Beta | The server reads them too: `server/src/utils/posthogConfig.ts` opens `connect-src` to the PostHog US ingest and assets origins, and `GET /api/check` answers `productAnalytics: true` for a signed-in non-admin session, only when the key is a `phc_` project key, the host is exactly `https://us.i.posthog.com`, and the runtime is Production: deployed, `MONGODBURL` naming the `Prod` database, `MEILISEARCH_INDEX_PREFIX` set to `prod`, and `SCRAPER_ENV` not `beta`. Without them PostHog is fully off (`docs/research-journey-analytics.md`, Third-Party Measurement). | No; the project key ships in the client bundle by design |
 | `PORT` | Set by Render | Defaults to 4000. | No |
 | `FIRST_CONTACT_RATE_LIMIT_MAX` | No | Defaults to 300 per 15 minutes per address, floored at 50. Boot logs the effective value. | No |
 | `RESEARCH_SEARCH_EMBEDDING_MAX_PER_MINUTE` | No | Defaults to 600, floored at 60. | No |
@@ -85,8 +89,17 @@ A Render service is therefore a deployed runtime whatever `NODE_ENV` says, unles
 | `GATE_ARTIFACT_DIR` | No | Gate scorecard artifacts are read from and written to the operating system's temporary directory. | No |
 | `CORPUS_SNAPSHOT_DISABLED` | No | Unset means the in-process corpus quality snapshot runs; only `true` turns it off. | No |
 | `CORPUS_SNAPSHOT_MAX_AGE_HOURS` | No | The snapshot scheduler uses its default age before taking a new measurement. | No |
+| `DERIVED_UNDERGRAD_ROSTERS_SERVE` | No | Unset serves a roster the lane derived outside the reviewed allowlist once it passes the publish checks, and counts it as hosting evidence (#5413); only `false` withholds every derived roster, as a kill switch, and the stored hosting flag, browse rank and search document follow only after the browse-rank backfill and a search sync. An environment copied from the earlier example still sets `false`. | No |
+| `SEARCH_RERANK_CACHE_ENABLED` | No | Unset serves today's fused search order and never reads `search_rerank_cache`; only `true` reorders the top 30 results of a seeded query by its cached scores (`docs/search-rerank-cache.md`, #5448). | No |
+| `SEARCH_RERANK_LIVE_MISS_ENABLED` | No | Unset queues no background rerank and serves no `live-miss` entry it wrote, so seeded entries alone are served as `SEARCH_RERANK_CACHE_ENABLED` decides; only `true` scores a missed text query with `gpt-5-mini` in the background, capped per address, per session and at USD 1.00 a day (`docs/search-rerank-cache.md`, #5549). | No |
+| `SEARCH_RERANK_LIVE_MISS_MODE` | No | Unset or anything but `serve` writes `shadow` entries that are never served; `serve` writes servable `live-miss` entries. Read only when `SEARCH_RERANK_LIVE_MISS_ENABLED=true`. | No |
+| `SEARCH_RERANK_CACHE_COLLECTION` | No | Unset uses `search_rerank_cache`; a bench sets `search_rerank_cache_<suffix>` so its reads and writes stay out of the environment's cache. Any other name fails at startup. | No |
 | `BETA_DATA_QUALITY_SCORECARD_PATH`, `BETA_REPAIR_QUEUE_REPORT_PATH`, `SCRAPER_INTEGRITY_SCORECARD_PATH`, `PROMOTION_COPY_DRY_RUN_REPORT_PATH`, `LAUNCH_TRUST_SCORECARD_PATH`, `LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH`, `LAUNCH_ACQUISITION_REPORT_PATH` | No | Each overrides one artifact path the admin operator board reads, which otherwise sits under `GATE_ARTIFACT_DIR`. | No |
-| `FEATURE_<FLAG>` | Per flag | One per entry in `RELEASE_FEATURE_FLAGS`, which is empty today. Only the exact string `true` turns a flag on (`docs/release-process.md`, "Holding one feature instead of the whole release"). | No |
+| `FEATURE_<FLAG>` | Per flag | One per entry in `RELEASE_FEATURE_FLAGS`. Only the exact string `true` turns a flag on (`docs/release-process.md`, "Holding one feature instead of the whole release"). | No |
+| `FEATURE_ACCOUNT_DATA_CONTROLS` | No | Unset, `GET /api/users/me/export` and `DELETE /api/users/me` answer `404` (#4156). Only `true` turns on self-serve export and deletion. | No |
+| `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` | In Production while `FEATURE_ACCOUNT_DATA_CONTROLS` is on | Unset or malformed in Production, or wherever the `MONGODBURL` database name does not identify the environment, self-serve deletion is refused with `503` (`DELETION_UNAVAILABLE`) and the dashboard sends the student to the privacy mailbox instead, so no deletion runs that would leave the PostHog person behind (#5624). Development and Beta skip PostHog and report `postHog: skipped_not_configured`, because PostHog captures only Production. Set, a deletion asks `https://us.posthog.com/api/projects/<id>/persons/bulk_delete/` to delete the person keyed on `productAnalyticsId`, with events and recordings, and a PostHog failure stops the deletion before the account row goes so a retry can finish it. The key must be a `phx_` personal API key scoped to `person:write` on the Production project only, and the project id is digits only (`server/src/services/posthogPersonDeletionService.ts`). Production is the only environment PostHog captures, so Beta needs neither. | The key, yes |
+| `ACCOUNT_DELETION_AUDIT_HMAC_KEY` | While `FEATURE_ACCOUNT_DATA_CONTROLS` is on | Unset or shorter than 32 characters, self-serve deletion is refused with `503` (`DELETION_UNAVAILABLE`) and the dashboard sends the student to the privacy mailbox, because a deletion without it would record no audit subject and no request for the other environments (#5624). Set, the `account.self_delete` or `account.operator_delete` row in `admin_audit_events` carries an HMAC-SHA256 of the netid in `targetId`, never the netid itself, so only someone holding the key can confirm whether a given netid was deleted (#4156). The same hash keys the `account_deletion_requests` row that carries the deletion to the other environments. Changing it makes earlier hashes uncheckable, so keep one value per environment. | Yes |
+| `BETA_` and `PRODUCTION_` prefixed `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `ACCOUNT_DELETION_AUDIT_HMAC_KEY` | No | Never set on a Render service. They live on the operator's machine, beside `BETA_MONGODBURL` and `PRODUCTION_MONGODBURL`, and `accounts:delete-account-data --environment beta` or `production` reads only these for that environment, never the unprefixed Development values (#4156). `--apply` refuses before connecting while one that environment needs is missing, naming the prefixed variable (#5624): the audit key everywhere and, for Production, both PostHog settings. A dry run still works and prints `missingDeletionSettings`. | The keys, yes |
 
 These must never be set on a web service: `LOCAL_AUTH_BYPASS`, `LOCAL_AUTH_BYPASS_NETID`, `LOCAL_AUTH_BYPASS_USER_TYPE`, and `AUTH_DEBUG`.
 The bypass applies only to a loopback caller in a local development runtime, so it is inert on Render, but a value there is a sign that someone copied a local `.env`.
@@ -102,8 +115,10 @@ A change needs a redeploy, not only a restart.
 | `VITE_SENTRY_DSN` | No | No browser error reports. | No; public in the bundle |
 | `VITE_SENTRY_ENVIRONMENT` | No | Falls back to the Vite `MODE`. | No |
 | `VITE_SENTRY_RELEASE` | No | Browser reports carry no release. | No |
+| `VITE_POSTHOG_KEY` | Production only; never on Beta | No browser product analytics or session replay; the client never loads the SDK. A Beta build that carried one would still be refused by the Beta server's gate and CSP. | No; public in the bundle |
+| `VITE_POSTHOG_HOST` | With `VITE_POSTHOG_KEY` | Must be exactly `https://us.i.posthog.com`; any other value turns PostHog off on both the client and the server. | No |
 
-`DEV` and `MODE` are Vite built-ins, not variables anyone sets.
+`DEV`, `PROD` and `MODE` are Vite built-ins, not variables anyone sets.
 
 ## Meilisearch Private Service Variables
 
@@ -125,10 +140,10 @@ A one-off job runs on the operator service's latest build with that service's cu
 | `MONGODBURL` | Beta database | `Prod` database | Every phase refuses. | Yes |
 | `MEILISEARCH_HOST` | Yes | Yes | The reindex refuses. | No |
 | `MEILISEARCH_INDEX_PREFIX` | `beta` | `prod` | The reindex refuses an empty prefix. | No |
-| `MEILISEARCH_WRITE_API_KEY` | `beta_*` key | `prod_*` key | The rebuild fails before the swap, and the serving index is unchanged. | Yes |
+| `MEILISEARCH_WRITE_API_KEY` | `ylabs-beta-reindex` | `ylabs-prod-reindex` | The rebuild fails before the swap, and the serving index is unchanged. | Yes |
 | `OPENAI_API_KEY` | Yes | Yes | A rebuild of an index with a stored embedder is refused, rather than silently serving keyword-only search. | Yes |
-| `PFR3_MEILI_RESTORE_POINT` | No | Before each promotion | `promote:remote-phase` refuses for Production. | No |
-| `CONFIRM_PROD_SCRAPE` | No | Set by the job command | The Production reindex refuses at the write, after the preflight has printed. | No |
+| `PFR3_MEILI_RESTORE_POINT` | No | Per promotion, passed on the job's start command by `promote:production --meili-restore-point` rather than stored | `promote:remote-phase` refuses for Production. | No |
+| `CONFIRM_PROD_SCRAPE` | No | Set by the job command | The Production reindex with `--confirm` refuses before connecting. | No |
 
 ## Weekly Sweep Cron Variables (`ylabs-scraper`)
 
@@ -137,6 +152,7 @@ A one-off job runs on the operator service's latest build with that service's cu
 | `MONGODBURL` | Yes, the `Development` database | The job refuses unless it names `Development`. | Yes |
 | `OPENAI_API_KEY` | Yes | The job refuses in its first second. Give it its own key so it can be spend-capped and rotated alone. | Yes |
 | `YALIES_API_KEY` | Yes | The job refuses in its first second. | Yes |
+| `DIRECTORY_REMOVAL_KEY` | Before the first removal entry | Unset while `directory_removals` holds an entry, the sweep fails at its gate stage, because the gate refuses to run when it cannot tell a removed person from anyone else (#4160, `docs/directory-removal.md`). It is the same value as every other environment's key. | Yes |
 | `SCRAPLING_RENDERER_ENABLED` | No | Defaults to `false`, so the rendered-fetch lanes fetch plainly. | No |
 | `SCRAPER_PER_HOST_CONCURRENCY` | No | Per-host pacing uses its defaults. | No |
 | `SWEEP_REPOSITORY_URL` | No | Leave it unset on Render; it overrides the repository the entrypoint clones. | No |
@@ -146,6 +162,7 @@ A one-off job runs on the operator service's latest build with that service's cu
 The entrypoint sets `SWEEP_TARGET_SHA` to the `beta` HEAD it resolved and `SEARCH_INDEX_WRITES=deferred`, and unsets every `MEILISEARCH_*` variable, so none of those belong in the dashboard.
 The job refuses when `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `PROD_MONGODBURL`, or any other copy-pair URL is present, because it holds Development credentials only.
 Scope its database user to the `Development` database, because Render's outbound ranges are shared by every service in the region.
+Before re-enabling the cron, know that the seven center roster sources need a manual dry-run-then-expect apply after each sweep, one per run the sweep lists as `centerPlanOwed` (`docs/data-refresh-runbook.md`, "Center Roster Sources Owe A Center Plan").
 
 ## Operator Laptop Variables
 
@@ -155,6 +172,7 @@ These live in the operator's own `server/.env` or shell, never in Render and nev
 | -------- | ------- | ------ |
 | `MONGODBURL` | Development work and `yarn promote:beta` | Yes |
 | `DEVELOPMENT_MONGODBURL`, `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `ATLAS_DEVELOPMENT_MONGODBURL` | The copy pairs: `database:verify-names --pair <pair>`, the two mirrors, and `production:promote-beta-copy` | Yes |
+| `PRODUCTION_READONLY_MONGODBURL` | `research-search:rerank-seeding-round collect`, which refuses it unless it names the `Prod` database and lists only read-role actions (`docs/search-rerank-cache.md`, "Seeding rounds") | Yes |
 | `RENDER_API_KEY` | `yarn promote:beta` and `yarn promote:production`, which read the operator services and start their jobs, and `yarn ops:sweep`, which falls back to the render CLI's `~/.render/cli.yaml` login when it is unset | Yes |
 | `RENDER_BETA_OPERATOR_SERVICE_ID`, `RENDER_PRODUCTION_OPERATOR_SERVICE_ID` | The same | No |
 | `OPENAI_API_KEY`, `YALIES_API_KEY` | Laptop sweeps and `yarn development:search:sync` or `:rebuild` | Yes |
@@ -162,6 +180,7 @@ These live in the operator's own `server/.env` or shell, never in Render and nev
 | `TAVILY_API_KEY`, `EXA_API_KEY`, `BRAVE_SEARCH_API_KEY`, `PARALLEL_API_KEY` | `server/src/scripts/findLabWebsites.ts`, the lab-site discovery script | Yes |
 | `YALIES_OLD_API_KEY`, `YALIES_NEW_API_KEY` | `yarn security:verify-yalies-rotation`, set only for that one command | Yes |
 | `SMOKE_COOKIE` | `yarn security:smoke:production` with a signed-in check; it is a live session cookie | Yes |
+| `YLABS_REPORT_ROOT` | Every script's `--output` report path, as one more approved root beside the temp directories, so a report outlives a temp sweep; an absolute directory outside the repository checkout (`skills/architecture/SKILL.md`, "Script report output") | No |
 
 ## Guard and Confirmation Variables
 
@@ -170,7 +189,7 @@ These are typed for one command and never stored on a service.
 | Variable | Meaning |
 | -------- | ------- |
 | `SCRAPER_ENV`, `APP_ENV` | Which environment a script believes it targets. |
-| `ALLOW_NON_PROD_SCRAPER_WRITES` | Required for a Development scrape or materialize write; without it the run is silently dry. |
+| `ALLOW_NON_PROD_SCRAPER_WRITES` | The environment permission for a Development scrape or materialize write. Necessary but not sufficient: the command line must also carry `--apply`, and the permission without `--apply` is refused before connecting (#5842). |
 | `CONFIRM_PROD_SCRAPE` | Required for every guarded Production write, including the promotion copy and the reindex. |
 | `CONFIRM_LANE_A_COPY` | Required for `production:promote-beta-copy --apply`. |
 | `CONFIRM_DEVELOPMENT_TO_BETA_SYNC`, `CONFIRM_BETA_TO_DEVELOPMENT_SYNC`, `CONFIRM_ATLAS_DEVELOPMENT_OVERWRITE` | Required by the two mirrors. |
@@ -178,6 +197,9 @@ These are typed for one command and never stored on a service.
 | `ALLOW_REMOTE_E2E_SEED` | Allows the end-to-end smoke seed against a non-local database. |
 | `PROMOTION_DATASET_VERSION` | The dataset version label the promotion copy records. |
 | `SCRAPER_DEVELOPMENT_DB_NAME`, `SCRAPER_BETA_DB_NAME`, `SCRAPER_PRODUCTION_DB_NAME` | Override the database names the scraper guards expect. |
+| `DEV_WRITE_OWNER` | The session name that launched a Development write; required for an apply or a writing lane run against Development, which is refused without it (the sweep runners label themselves). Recorded on the lease and the launch record (`server/src/db/devWriteLease.ts`, #5756, #5782). |
+| `DEV_WRITE_LEASE_OWNER` | Set by a lease holder for its child processes, so a sweep's children join its lease instead of being refused by it. Never set it by hand. |
+| `DEV_WRITE_LEASE` | `off`, `false` or `0` switches the Development write lease off, and with it the model write guard that refuses an unleased Development write from a script (#5871); the test harness sets it for every suite. |
 | `YLABS_SKIP_LOCAL_DOTENV` | Stops a script loading `server/.env`; the test fence sets it for spawned children. |
 
 ## Scraper and Script Tuning Variables
@@ -188,10 +210,12 @@ None of these is a secret, and none belongs on a web service.
 | -------- | ------- |
 | `SCRAPER_FIELD_RETRACTION`, `SCRAPER_FACULTY_DEPARTURE_DETECTION`, `SCRAPER_YSM_LAB_DELISTING_DETECTION`, `C4_LOSSLESS_INGEST`, `C4_RESOLVE_AT_MINT_ENTITIES` | Scraper and materializer behaviour switches |
 | `SCRAPER_PER_HOST_CONCURRENCY`, `SCRAPER_ROSTER_LANE_CONCURRENCY` | Fetch pacing |
-| `SCRAPER_HTTP_CACHE`, `SCRAPER_HTTP_CACHE_DIR`, `SCRAPER_HTTP_CACHE_MAX_MB`, `XDG_CACHE_HOME` | The HTTP validator cache and the host-slot broker |
-| `SCRAPER_MACHINE_HOST_SLOTS`, `SCRAPER_MACHINE_HOST_SLOT_DIR`, `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS`, `SCRAPER_HOST_SLOT_BROKER` | Machine-wide host-slot sharing; the sweep sets `SCRAPER_HOST_SLOT_BROKER` for its children |
+| `MATERIALIZE_CONCURRENCY` | How many independent rows a materialize chunk writes at once; unset means 8, `1` is sequential, invalid means 1, capped at 16 |
+| `SCRAPER_HTTP_CACHE`, `SCRAPER_HTTP_CACHE_DIR`, `SCRAPER_HTTP_CACHE_MAX_MB`, `SCRAPER_HTTP_CACHE_REUSE_HOURS`, `XDG_CACHE_HOME` | The HTTP validator cache and the host-slot broker |
+| `SCRAPER_MACHINE_HOST_SLOTS`, `SCRAPER_MACHINE_HOST_SLOT_DIR`, `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS`, `SCRAPER_HOST_SLOT_BROKER` | Machine-wide host-slot sharing (the file budget and the broker behind it); the sweep sets `SCRAPER_HOST_SLOT_BROKER` for its children |
 | `SCRAPER_SWEEP_PAGE_REUSE`, `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB` | Sweep page reuse; the sweep sets `SCRAPER_SWEEP_PAGE_REUSE` for its children |
 | `SCRAPER_SWEEP_DEADLINE_AT` | Run deadline the weekly wrapper passes to `scrape:sweep`, so a source that failed on a transient database error is re-run only when the Render limit has room; never set it by hand |
+| `SCRAPER_REQUEST_LOG` | The opt-in per-request fetch log (`scrapers/utils/scraperRequestLog.ts`): a file path that receives one JSON line per outbound request from the shared fetch-deadline adapter, written owner-only; a 403 or 429 also records allowlisted headers and a 512-byte body prefix with addresses, emails, query strings and token-looking fields redacted after an entity and percent-escape decode; a local diagnostic rather than a publishable artefact; unset means no log |
 | `SCRAPER_RUN_STALL_WINDOW_MS` | The scrape-run stall window (`scrapers/scrapeRunProgress.ts`, default 20 minutes): a run with no progress for longer stops heartbeating and exits as `interrupted` with reason `stalled`; a value that is not a positive whole number is ignored |
 | `SCRAPLING_RENDERER_ENABLED`, `SCRAPLING_FETCH_MODE`, `SCRAPLING_PYTHON_COMMAND`, `SCRAPLING_BRIDGE_PATH`, `SCRAPLING_TIMEOUT_MS` | The rendered-fetch bridge |
 | `SCRAPER_SWEEP_CANARY_LIMIT`, `SCRAPER_SWEEP_CANARY_CONCURRENCY`, `SCRAPER_SWEEP_CANARY_TIMEOUT_MS`, `SCRAPER_SWEEP_CLUSTER_QUOTA_MB`, `SCRAPER_SWEEP_MIN_HEADROOM_MB` | The sweep preflight |
@@ -229,10 +253,10 @@ Everything here except the verification is a maintainer action in a dashboard.
 
 1. **Atlas.** Confirm the cluster is up and the target database exists. Create or confirm the service's database user, scoped to that service's one database.
 2. **Create the service** in the Render dashboard with the branch, runtime, and region from [Services](#services). For a web service use the build command above. For `ylabs-scraper` use Docker with `deploy/sweep-runner/Dockerfile` and the build context at the repository root.
-3. **Set every required variable** from the matching table above, and mark each secret as a secret. Do not copy a variable another service holds unless the table says this service needs it; in particular, never put a Production write key on the Production web service.
+3. **Set every required variable** from the matching table above, and mark each secret as a secret. Do not copy a variable another service holds unless the table says this service needs it; in particular, never put a reindex key on a web service; a web service holds only its document-sync key.
 4. **Allow its outbound ranges into Atlas.** On the new service open Connect, then the Outbound tab, and add each range to Atlas Network Access. Ranges are per region, so a service in a new region needs new entries. Remove any stale `/32`.
 5. **Deploy, then read the boot log.** A missing required variable fails boot with a message naming it, which is the point of the fail-fast checks.
 6. **Restore search.** For a rebuilt Meilisearch service, create the scoped keys from its shell, set them on the web and operator services, redeploy those, and reindex each environment per `docs/meilisearch-reindex-runbook.md`: Beta by one-off job, Production from its shell.
 7. **Point the domain.** If the rebuilt service is the Production web service, attach `yalelabs.io` to it and keep `SERVER_BASE_URL` equal to the public origin CAS calls back.
-8. **Verify.** `curl -s https://<host>/api/ready` answers `200` with `{"mongo":true,"search":true}`. For Production, also run `yarn security:smoke:production` from a laptop. For Beta, the next `Keep Alive` run closes any open `beta-probe-failing` issue.
+8. **Verify.** `curl -s https://<host>/api/ready` answers `200` with `"mongo":true,"search":true`, and `accountDeletion.status` reads `off` or `available`; `unavailable` names the missing settings in `missingSettings`. For Production, also run `yarn security:smoke:production` from a laptop. For Beta, the next `Keep Alive` run closes any open `beta-probe-failing` issue.
 9. **Update this page** with anything the rebuild found that it did not record.

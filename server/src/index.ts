@@ -4,6 +4,7 @@
 import app from './app';
 import dotenv from 'dotenv';
 import { initializeConnections, mongoOptions, startMongoKeepAlive } from './db/connections';
+import { declareRequestServingProcess } from './db/devWriteGuard';
 import { warmControlledVocabularyHeadings } from './utils/controlledVocabularyHeadings';
 import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
 import { startCorpusQualitySnapshotScheduler } from './services/corpusQualitySnapshotScheduler';
@@ -12,12 +13,22 @@ import { sanitizeLogValue } from './utils/logSanitizer';
 import { captureStartupError, initializeErrorTracking } from './utils/errorTracking';
 import { describeFirstContactCeiling } from './middleware/rateLimiters';
 import { serverListenHost } from './utils/environment';
+import { localAuthBypassStartupNotice } from './passport';
 import { registerGracefulShutdown } from './serverShutdown';
 import { worktreePortConflict } from './utils/worktreePortGuard';
 import { resolveServerPackageRoot } from './utils/serverPackageRoot';
 import path from 'node:path';
+import {
+  directoryRemovalServingStateMessage,
+  freshDirectoryRemovalServing,
+} from './services/directoryRemovalServing';
+import {
+  accountDeletionServingState,
+  accountDeletionServingStateMessage,
+} from './services/accountDeletionServing';
 
 dotenv.config({ quiet: true });
+declareRequestServingProcess();
 initializeErrorTracking();
 
 const port = Number(process.env.PORT || 4000);
@@ -54,6 +65,13 @@ const startApp = async () => {
       ),
     );
 
+    console.log(directoryRemovalServingStateMessage(await freshDirectoryRemovalServing()));
+
+    const accountDeletion = accountDeletionServingState();
+    const logAccountDeletion =
+      accountDeletion.status === 'unavailable' ? console.warn : console.log;
+    logAccountDeletion(accountDeletionServingStateMessage(accountDeletion));
+
     // Express 5 hands a listen failure such as EADDRINUSE to this callback instead
     // of leaving it uncaught, so the process must exit here to stay fail-fast.
     const server = app.listen(port, listenHost, (listenError?: Error) => {
@@ -65,6 +83,8 @@ const startApp = async () => {
       // Log the effective value so an unset or fat-fingered env var is visible
       // rather than inferred from behaviour (#2319).
       console.log(`[rate-limit] ${describeFirstContactCeiling()}`);
+      const bypassNotice = localAuthBypassStartupNotice();
+      if (bypassNotice) console.warn(bypassNotice);
 
       startMongoKeepAlive();
 

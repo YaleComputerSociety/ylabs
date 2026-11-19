@@ -1,4 +1,8 @@
 import {
+  memberSignalStatus,
+  type UndergraduateMemberEvidence,
+} from './undergraduateMemberEvidence';
+import {
   comparePersonProfileUrls,
   isCrossSchoolDirectoryProfileUrl,
   isIdentifierRecordUrl,
@@ -9,6 +13,7 @@ import {
 import { acronymCasing } from './displayText';
 import { safeHttpUrl } from './url';
 import { isCorroboratedPersonPageUrl } from './yalePersonPagePrefix';
+import { isYaleHostname } from './yaleHost';
 
 interface DetailSourceGroup {
   name?: string;
@@ -54,6 +59,7 @@ export interface DetailSourceLinkHealth {
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
   httpsLandingUrl?: string;
+  httpsSpellingUrl?: string;
 }
 
 export interface DetailSourceFieldContribution {
@@ -66,10 +72,13 @@ export interface BuildResearchDetailSourcesInput {
   accessSignals?: DetailSourceSignal[];
   sourceLinkHealth?: DetailSourceLinkHealth[];
   sourceFieldContributions?: DetailSourceFieldContribution[];
+  undergraduateMembers?: UndergraduateMemberEvidence;
 }
 
 export interface ResearchDetailSource {
   url: string;
+  /** The spelling a student is sent to, from `servedLinkUrl`; `url` stays the dedupe key. */
+  servedUrl: string;
   label: string;
   contexts: string[];
   healthStatus?: string;
@@ -178,6 +187,11 @@ export const normalizeActionDestination = (url?: string | null): string | null =
   }
 };
 
+export const isSameActionHost = (first?: string | null, second?: string | null): boolean => {
+  const firstHost = normalizeActionDestination(first)?.split('/')[0];
+  return Boolean(firstHost) && firstHost === normalizeActionDestination(second)?.split('/')[0];
+};
+
 export const labelizeResearchDetailValue = (value?: string): string =>
   (value || 'Unknown')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -247,7 +261,7 @@ export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean =>
     const parsed = new URL(normalized);
     const host = parsed.hostname.replace(/^www\./, '');
     const path = parsed.pathname.toLowerCase().replace(/\/+$/, '');
-    if (!host.endsWith('yale.edu')) return false;
+    if (!isYaleHostname(host)) return false;
 
     return (
       DIRECTORY_LOADER_SEGMENT_PATH.test(path) ||
@@ -260,15 +274,36 @@ export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean =>
   }
 };
 
-const RAW_DATA_API_HOSTS = new Set(['api.nsf.gov', 'api.reporter.nih.gov']);
+// Mirrors `isLaneDiscoveryEndpointUrl` in server/src/utils/laneDiscoveryEndpointUrl.ts;
+// changing the arms here requires updating that copy.
+const API_HOST_PREFIX = 'api.';
+const API_HOSTS = new Set(['eutils.ncbi.nlm.nih.gov']);
+const API_PATH_PREFIXES = ['/api/', '/europepmc/webservices/'];
+const AWARD_SEARCH_FORM_HOSTS = new Set(['pamspublic.science.energy.gov']);
+const AWARD_SEARCH_FORM_LEAF = /^awardsearch[a-z]*\.aspx$/i;
+const AWARD_SEARCH_HOME_HOSTS = new Set(['awardsearch.neh.gov']);
+
+const isAwardSearchEntryPage = (host: string, url: URL): boolean => {
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (AWARD_SEARCH_HOME_HOSTS.has(host)) return segments.length === 0 && !url.search;
+  if (!AWARD_SEARCH_FORM_HOSTS.has(host)) return false;
+  return AWARD_SEARCH_FORM_LEAF.test(segments[segments.length - 1] ?? '');
+};
 
 export const isRawDataApiSourceUrl = (url?: string | null): boolean => {
-  const normalized = normalizeSourceUrl(url);
-  if (!normalized) return false;
+  const safe = safeHttpUrl(url);
+  if (!safe) return false;
 
   try {
-    const host = new URL(normalized).hostname.replace(/^www\./, '').toLowerCase();
-    return RAW_DATA_API_HOSTS.has(host);
+    const parsed = new URL(safe);
+    const host = parsed.hostname
+      .toLowerCase()
+      .replace(/^www\./, '')
+      .replace(/\.$/, '');
+    if (host.startsWith(API_HOST_PREFIX) || API_HOSTS.has(host)) return true;
+    const path = `${parsed.pathname.toLowerCase().replace(/\/+$/, '')}/`;
+    if (API_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) return true;
+    return isAwardSearchEntryPage(host, parsed);
   } catch {
     return false;
   }
@@ -388,7 +423,7 @@ export const isLikelyOfficialPersonProfileUrl = (url?: string | null): boolean =
   try {
     const parsed = new URL(normalized);
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-    if (!host.endsWith('yale.edu')) return false;
+    if (!isYaleHostname(host)) return false;
     const match = parsed.pathname.replace(/\/+$/, '').match(OFFICIAL_PERSON_PROFILE_PATH);
     return Boolean(match) && !namesAPageRatherThanAPerson(match![1]);
   } catch {
@@ -456,7 +491,7 @@ export const officialProfileMirrorKey = (url?: string | null): string | null => 
   try {
     const parsed = new URL(normalized);
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-    if (!host.endsWith('yale.edu')) return null;
+    if (!isYaleHostname(host)) return null;
     const leaf = personPageLeaf(normalized, parsed.pathname.replace(/\/+$/, ''));
     return leaf ? `${host}\u0000${leaf}` : null;
   } catch {
@@ -514,6 +549,68 @@ export const isOrgEngagementSourceUrl = (url?: string | null): boolean =>
 
 const isApplyOrJoinSourceUrl = (url?: string | null): boolean =>
   sourcePathMatches(url, APPLY_OR_JOIN_PATH);
+
+/**
+ * The materializer admits a join route by what the page says, wherever it sits on the site,
+ * so a lab's invitation to undergraduates can be cited from its press or news page. The
+ * page is a fair citation; a label promising a join page over it is not. Only the final
+ * segment names the page, so a join word in a parent segment (often a lab's own slug) does not count.
+ */
+const JOIN_SHAPED_PATH =
+  /(^|[-/_])(get[-_]?involved|join(?:ing)?(?:[-_]us)?|participate|volunteer|become[-_]a[-_]member|opportunit(?:y|ies)|openings?|positions?|vacanc(?:y|ies)|apply|applications?|prospective(?:[-_]students?)?|recruit(?:ing|ment)?|careers?|jobs?)([-_.][^/]*)?$/i;
+
+export const isJoinShapedSourceUrl = (url?: string | null): boolean =>
+  sourcePathMatches(url, JOIN_SHAPED_PATH);
+
+export const JOIN_PAGE_LINK_LABEL = 'See how to join';
+export const JOIN_NOTE_LINK_LABEL = 'Read what they say about joining';
+
+export const joinPageLinkLabel = (
+  url?: string | null,
+  joinShapedLabel: string = JOIN_PAGE_LINK_LABEL,
+): string => (isJoinShapedSourceUrl(url) ? joinShapedLabel : JOIN_NOTE_LINK_LABEL);
+
+const ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS: Record<string, string> = {
+  POSTED_OPENING: 'Posted opening',
+  CREDIT_FORMALIZATION_POSSIBLE: 'Course credit option',
+  PAST_UNDERGRADS: 'Past undergraduate members',
+  CURRENT_UNDERGRADS: 'Current undergraduate members',
+  FACULTY_SUPERVISES_STUDENT_PROJECTS: 'Supervises student projects',
+  APPLICATION_FORM_EXISTS: 'Mentions how to join',
+};
+
+const UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT = 'Undergraduate access';
+
+const FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT = 'Fellowship recipients';
+
+export const ACCESS_SIGNAL_SOURCE_CONTEXTS: ReadonlySet<string> = new Set([
+  ...Object.values(ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS),
+  UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT,
+  FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT,
+]);
+
+/**
+ * A member chip names the members the page shows, so it reads the same evidence as the
+ * research team section (`undergraduateMemberEvidence`). A member signal the section does
+ * not render is still a citation, under the generic access label rather than a roster's.
+ */
+export const memberSignalSourceContext = (
+  signal: DetailSourceSignal,
+  undergraduateMembers?: UndergraduateMemberEvidence,
+): string => {
+  const status = memberSignalStatus(signal.signalType);
+  if (!status || !undergraduateMembers) return accessSignalSourceContext(signal.signalType);
+  if (status === 'past' && undergraduateMembers.citesFellowshipRecipients(signal.sourceUrl)) {
+    return FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT;
+  }
+  return undergraduateMembers.shownStatuses.has(status)
+    ? accessSignalSourceContext(signal.signalType)
+    : UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT;
+};
+
+export const accessSignalSourceContext = (signalType?: string): string =>
+  ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS[(signalType || '').toUpperCase()] ||
+  UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT;
 
 // Mirrors `PERSON_SCOPED_RESEARCH_ENTITY_TYPES` in
 // server/src/models/storedVocabularies.ts, including the retired types a stored
@@ -786,6 +883,85 @@ export const isMapOrPublicityPageSourceUrl = (url?: string | null): boolean => {
   }
 };
 
+const COURSE_PAGE_PARENT_SEGMENT = /^courses?$/i;
+
+const COURSE_CATALOG_HOSTS: readonly string[] = ['courses.yale.edu', 'coursetable.com'];
+
+const POSTING_PAGE_SEGMENT =
+  /^(?:jobs?|job-openings?|job-postings?|open-positions?|positions?|openings?|employment|careers?|hiring|vacanc(?:y|ies)|post-?doc(?:toral)?-(?:positions?|openings?|fellowships?))$/i;
+
+const CLINICAL_PRACTICE_HOSTS: readonly string[] = ['yalemedicine.org', 'ynhh.org', 'ynhhs.org'];
+
+const PATIENT_CARE_PATH_SEGMENT =
+  /^(?:patients?|for-patients|care|patient-care|patient-services|clinical-services?|clinical-care)$/i;
+
+const RESEARCH_OR_LAB_PATH_SEGMENT = /research|^labs?$/i;
+
+const parsedSourceUrl = (url?: string | null): URL | null => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return null;
+  try {
+    return new URL(normalized);
+  } catch {
+    return null;
+  }
+};
+
+const bareHostname = (parsed: URL): string => parsed.hostname.toLowerCase().replace(/\.$/, '');
+
+const pathSegments = (parsed: URL): string[] => parsed.pathname.split('/').filter(Boolean);
+
+/**
+ * The course, posting and patient-care page rules. Mirrored by `isCoursePageUrl`,
+ * `isPostingPageUrl` and `isPatientCarePageUrl` in server/src/utils/researchHomeWebsiteUrl.ts,
+ * which refuse the same pages as a stored website and as a lead's member website; parity is
+ * pinned by `contracts/inadmissibleWebsitePages.cases.json`, which both suites read (#5376).
+ */
+export const isCoursePageSourceUrl = (url?: string | null): boolean => {
+  const parsed = parsedSourceUrl(url);
+  if (!parsed) return false;
+  if (COURSE_CATALOG_HOSTS.includes(bareHostname(parsed).replace(/^www\./, ''))) return true;
+  const segments = pathSegments(parsed);
+  return segments.some(
+    (segment, index) => COURSE_PAGE_PARENT_SEGMENT.test(segment) && index < segments.length - 1,
+  );
+};
+
+export const isPostingPageSourceUrl = (url?: string | null): boolean => {
+  const parsed = parsedSourceUrl(url);
+  if (!parsed) return false;
+  return pathSegments(parsed).some((segment) => POSTING_PAGE_SEGMENT.test(segment));
+};
+
+export const isPatientCarePageSourceUrl = (url?: string | null): boolean => {
+  const parsed = parsedSourceUrl(url);
+  if (!parsed) return false;
+  const host = bareHostname(parsed);
+  if (
+    CLINICAL_PRACTICE_HOSTS.some((clinical) => host === clinical || host.endsWith(`.${clinical}`))
+  ) {
+    return true;
+  }
+  const segments = pathSegments(parsed);
+  if (segments.some((segment) => RESEARCH_OR_LAB_PATH_SEGMENT.test(segment))) return false;
+  return segments.some((segment) => PATIENT_CARE_PATH_SEGMENT.test(segment));
+};
+
+/**
+ * A page the server never serves as this row's website: a course page for any row, and a
+ * posting or patient-care page for a lab or person-scoped row. The detail page refuses the
+ * same page as its website button and its headline official-page action, so a row whose
+ * stored website the server cleared does not offer the page one button over (#5376).
+ */
+export const isRefusedResearchWebsitePageUrl = (
+  url?: string | null,
+  entityType?: string,
+): boolean => {
+  if (isCoursePageSourceUrl(url)) return true;
+  if (!PERSON_SCOPED_CITING_ENTITY_TYPES.has((entityType || '').toUpperCase())) return false;
+  return isPostingPageSourceUrl(url) || isPatientCarePageSourceUrl(url);
+};
+
 const ORG_UMBRELLA_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
 const eligibleOutreachSources = (
@@ -913,7 +1089,7 @@ export const resolveOutreachOfficialSource = (
     entityType,
     rankingContext,
     leadPersonNames,
-  );
+  ).filter((source) => !isRefusedResearchWebsitePageUrl(source.url, entityType));
   if (eligible.length === 0) return undefined;
 
   if (entityType && ORG_UMBRELLA_ENTITY_TYPES.has(entityType)) {
@@ -931,6 +1107,7 @@ export const resolveOutreachOfficialSource = (
 
 interface DecisionProfileGroup {
   leadIdentityStatus?: string;
+  entityType?: string;
   websiteUrl?: string;
   website?: string;
   sourceUrls?: unknown;
@@ -994,6 +1171,7 @@ export const resolveDecisionProfileUrl = (
       if (!admits(url)) return false;
       if (isPressOrNewsSourceUrl(url)) return false;
       if (isMapOrPublicityPageSourceUrl(url)) return false;
+      if (isRefusedResearchWebsitePageUrl(url, group?.entityType)) return false;
       if (isDepartmentRosterProvenanceUrl(url)) return false;
       if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
       const destination = normalizeActionDestination(url);
@@ -1145,14 +1323,18 @@ export const findSourceLinkHealthEntry = (
 };
 
 /**
- * The spelling of a research website a student should be sent to. When the `https:`
+ * The spelling of a stored link a student should be sent to. When the `https:`
  * spelling fails certificate verification and its plain-HTTP spelling is verified
  * reachable, the working spelling is offered, so a click lands on the page instead of
- * a browser security warning. When a plain-HTTP website is verified reachable and its
+ * a browser security warning. When a plain-HTTP link is verified reachable and its
  * own host redirected it to the same page over `https:`, that landing is offered
- * (#4649). Otherwise the stored URL is returned unchanged.
+ * (#4649). Failing that, a plain-HTTP link whose `https:` spelling was probed
+ * `HEALTHY` with a verified certificate is offered that spelling (#5639). Otherwise
+ * the stored URL is returned unchanged. Every link built from a
+ * stored URL goes through this, the research website CTA and the Sources rows alike
+ * (#3957).
  */
-export const servedResearchWebsiteUrl = (
+export const servedLinkUrl = (
   url: string | null | undefined,
   sourceLinkHealth: DetailSourceLinkHealth[] = [],
 ): string | undefined => {
@@ -1160,12 +1342,15 @@ export const servedResearchWebsiteUrl = (
   const normalized = normalizeSourceUrl(url);
   if (normalized && urlScheme(normalized) === 'http:') {
     const plainHealth = findSourceLinkHealthEntry(sourceLinkHealth, normalized);
+    if (urlScheme(plainHealth?.url) !== 'http:') return url;
     const landing = plainHealth?.httpsLandingUrl;
-    return plainHealth?.healthStatus === 'HEALTHY' &&
-      urlScheme(plainHealth.url) === 'http:' &&
-      landing &&
-      urlScheme(landing) === 'https:'
-      ? landing
+    if (plainHealth?.healthStatus === 'HEALTHY' && landing && urlScheme(landing) === 'https:')
+      return landing;
+    const spelling = plainHealth?.httpsSpellingUrl;
+    return spelling &&
+      urlScheme(spelling) === 'https:' &&
+      sourceLedgerKey(spelling) === sourceLedgerKey(normalized)
+      ? spelling
       : url;
   }
   if (!normalized || urlScheme(normalized) !== 'https:') return url;
@@ -1225,9 +1410,15 @@ export const sourceLabelForUrl = (url: string): string => {
       return 'Undergraduate initiatives page';
     }
     if (host === 'nsf.gov' && path.startsWith('/awardsearch')) {
-      return 'NSF Award Search';
+      const awardId = parsed.searchParams.get('AWD_ID')?.trim();
+      return awardId ? `NSF award ${awardId}` : 'NSF Award Search';
     }
-    if (host.endsWith('yale.edu')) {
+    const nihProjectId =
+      host === 'reporter.nih.gov' && path.match(/^\/project-details\/([^/]+)/)?.[1];
+    if (nihProjectId) {
+      return `NIH RePORTER project ${decodeURIComponent(nihProjectId).toUpperCase()}`;
+    }
+    if (isYaleHostname(host)) {
       return titleFromPath(parsed.pathname);
     }
     return `${host} source`;
@@ -1283,11 +1474,49 @@ export const firstCitedResearchDetailSource = (
   sources: ResearchDetailSource[],
 ): ResearchDetailSource | undefined => sources.find((source) => !source.isAttributionOnly);
 
+const sourcePathHint = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    const leaf = parsed.pathname.split('/').filter(Boolean).pop();
+    return leaf ? decodeURIComponent(leaf).slice(0, 40) : '';
+  } catch {
+    return '';
+  }
+};
+
+const withDistinctLabels = <T extends { url: string; label: string }>(sources: T[]): T[] => {
+  const groups = new Map<string, T[]>();
+  sources.forEach((source) =>
+    groups.set(source.label, [...(groups.get(source.label) ?? []), source]),
+  );
+  const distinctLabelBySource = new Map<T, string>();
+  groups.forEach((group, label) => {
+    if (group.length < 2) return;
+    const hints = group.map((source) => sourcePathHint(source.url));
+    const hintsAreDistinct = hints.every(Boolean) && new Set(hints).size === hints.length;
+    group.forEach((source, index) =>
+      distinctLabelBySource.set(
+        source,
+        `${label} (${hintsAreDistinct ? hints[index] : `${index + 1} of ${group.length}`})`,
+      ),
+    );
+  });
+  return sources.map((source) => {
+    const label = distinctLabelBySource.get(source);
+    return label ? { ...source, label } : source;
+  });
+};
+
+const RESEARCH_WEBSITE_SOURCE_CONTEXT = 'Profile website';
+
+const RESEARCH_WEBSITE_CONTRIBUTION_LABEL = 'Research website';
+
 export const buildResearchDetailSources = ({
   group,
   accessSignals = [],
   sourceLinkHealth = [],
   sourceFieldContributions = [],
+  undergraduateMembers,
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
   const sources = new Map<string, ResearchDetailSource>();
   /**
@@ -1313,10 +1542,20 @@ export const buildResearchDetailSources = ({
     if (existing) labels.forEach((label) => existing.includes(label) || existing.push(label));
     else contributionsByDedupeKey.set(key, [...labels]);
   });
-  const contextsFor = (normalizedUrl: string, context: string): string[] => {
+  const contextsFor = (
+    normalizedUrl: string,
+    context: string,
+    existingContexts: string[] = [],
+  ): string[] => {
+    const isResearchWebsiteRow =
+      context === RESEARCH_WEBSITE_SOURCE_CONTEXT ||
+      existingContexts.includes(RESEARCH_WEBSITE_SOURCE_CONTEXT);
+    const contributed = (
+      contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '') ?? []
+    ).filter((label) => !isResearchWebsiteRow || label !== RESEARCH_WEBSITE_CONTRIBUTION_LABEL);
+    if (context === RESEARCH_WEBSITE_SOURCE_CONTEXT) return [context, ...contributed];
     if (context !== GENERIC_PROFILE_SOURCE_CONTEXT) return [context];
-    const contributed = contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '');
-    return contributed && contributed.length ? contributed : [context];
+    return contributed.length ? contributed : [context];
   };
 
   const addSource = (url: string | undefined, context: string, attributionOnly = false) => {
@@ -1333,13 +1572,14 @@ export const buildResearchDetailSources = ({
 
     const existing = sources.get(key);
     /**
-     * A contribution only ever creates a row. It never edits one an earlier pass made,
-     * because a `Profile website` or evidence row already states what it is and the repo
-     * deliberately does not append contribution labels to those.
+     * A contribution only ever creates a row. It never edits one an earlier pass made: an
+     * evidence row already states what it is, and the research website row takes its
+     * contributions when it is made, after its own role, because a research summary,
+     * topics or methods read off that site are otherwise backed by no row at all.
      */
     if (existing && attributionOnly) return;
 
-    const contexts = contextsFor(normalized, context);
+    const contexts = contextsFor(normalized, context, existing?.contexts);
     if (existing) {
       contexts.forEach((entry) => {
         if (!existing.contexts.includes(entry)) existing.contexts.push(entry);
@@ -1353,22 +1593,23 @@ export const buildResearchDetailSources = ({
     sources.set(key, {
       url: normalized,
       label:
-        context === 'Profile website'
+        context === RESEARCH_WEBSITE_SOURCE_CONTEXT
           ? 'Research website'
           : personProfileRoleLabelForSource(normalized) || sourceLabelForUrl(normalized),
       contexts,
+      servedUrl: normalized,
       isLikelyUnavailable: false,
       isPrivateNetworkOnly: false,
       ...(attributionOnly ? { isAttributionOnly: true } : {}),
     });
   };
 
-  addSource(group?.websiteUrl, 'Profile website');
+  addSource(group?.websiteUrl, RESEARCH_WEBSITE_SOURCE_CONTEXT);
   group?.sourceUrls?.forEach((url) => addSource(url, GENERIC_PROFILE_SOURCE_CONTEXT));
 
   accessSignals.forEach((signal) => {
     if (!isCitableAccessSignal(signal)) return;
-    addSource(signal.sourceUrl, `${labelizeResearchDetailValue(signal.signalType)} evidence`);
+    addSource(signal.sourceUrl, memberSignalSourceContext(signal, undergraduateMembers));
   });
 
   /**
@@ -1407,6 +1648,7 @@ export const buildResearchDetailSources = ({
           : {}),
         isLikelyUnavailable: isLikelyUnavailableSourceLink(health),
         isPrivateNetworkOnly: isPrivateNetworkOnlySourceLink(health),
+        servedUrl: servedLinkUrl(source.url, sourceLinkHealth) || source.url,
       };
     })
     .sort(
@@ -1415,5 +1657,5 @@ export const buildResearchDetailSources = ({
         Number(right.isLikelyUnavailable || right.isPrivateNetworkOnly),
     );
 
-  return withPersonProfilesRanked(withHealth, entityRankingContext(group));
+  return withDistinctLabels(withPersonProfilesRanked(withHealth, entityRankingContext(group)));
 };

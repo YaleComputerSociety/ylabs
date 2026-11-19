@@ -1,6 +1,13 @@
+import { echoedQuery } from '../../utils/echoedQuery';
 import ActiveFilterChip from './ActiveFilterChip';
 import ResearchProgramsHandoff from './ResearchProgramsHandoff';
-import { researchEntityTypeFilterLabel } from '../../utils/researchEntityCopy';
+import {
+  ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL,
+  HAS_HAD_UNDERGRADS_FILTER_LABEL,
+  TAKING_UNDERGRADS_NOW_FILTER_LABEL,
+  UNDERGRADS_FILTER_GROUP_LABEL,
+  researchEntityTypeFilterLabel,
+} from '../../utils/researchEntityCopy';
 
 interface ResearchZeroResultRecoveryProps {
   isDepartmentSearch: boolean;
@@ -8,10 +15,16 @@ interface ResearchZeroResultRecoveryProps {
   selectedEntityType: string;
   selectedSchool: string;
   selectedDepartment: string;
+  selectedHostsUndergrads?: boolean;
+  selectedWelcomesUndergrads?: boolean;
+  selectedMentorsUndergrads?: boolean;
   departmentLabel: (value: string) => string;
   onRemoveEntityType: () => void;
   onRemoveSchool: () => void;
   onRemoveDepartment: () => void;
+  onRemoveHostsUndergrads?: () => void;
+  onRemoveWelcomesUndergrads?: () => void;
+  onRemoveMentorsUndergrads?: () => void;
   onClearAllFilters: () => void;
   relaxedQuery: string | null;
   onRelaxQuery: () => void;
@@ -28,10 +41,16 @@ const ResearchZeroResultRecovery = ({
   selectedEntityType,
   selectedSchool,
   selectedDepartment,
+  selectedHostsUndergrads = false,
+  selectedWelcomesUndergrads = false,
+  selectedMentorsUndergrads = false,
   departmentLabel,
   onRemoveEntityType,
   onRemoveSchool,
   onRemoveDepartment,
+  onRemoveHostsUndergrads,
+  onRemoveWelcomesUndergrads,
+  onRemoveMentorsUndergrads,
   onClearAllFilters,
   relaxedQuery,
   onRelaxQuery,
@@ -42,14 +61,16 @@ const ResearchZeroResultRecovery = ({
     aria-label="Ways to recover this search"
     className="yr-muted-surface rounded-card border-dashed p-4"
   >
-    <p className="text-sm leading-relaxed text-muted">
-      {isDepartmentSearch
-        ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try one of the recovery options below while this department is being seeded.'
-        : 'No indexed research matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.'}
-    </p>
+    {activeFilterCount === 0 && (
+      <p className="text-sm leading-relaxed text-muted">
+        {isDepartmentSearch
+          ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try one of the recovery options below while this department is being seeded.'
+          : 'No indexed research matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.'}
+      </p>
+    )}
 
     {activeFilterCount > 0 && (
-      <div className="mt-4">
+      <div>
         <p className="text-sm font-medium text-ink">
           Active filters removed every match. Clear them to widen your search.
         </p>
@@ -74,6 +95,27 @@ const ResearchZeroResultRecovery = ({
               onRemove={onRemoveDepartment}
             />
           )}
+          {selectedWelcomesUndergrads && onRemoveWelcomesUndergrads && (
+            <ActiveFilterChip
+              axis={UNDERGRADS_FILTER_GROUP_LABEL}
+              value={TAKING_UNDERGRADS_NOW_FILTER_LABEL}
+              onRemove={onRemoveWelcomesUndergrads}
+            />
+          )}
+          {selectedHostsUndergrads && onRemoveHostsUndergrads && (
+            <ActiveFilterChip
+              axis={UNDERGRADS_FILTER_GROUP_LABEL}
+              value={HAS_HAD_UNDERGRADS_FILTER_LABEL}
+              onRemove={onRemoveHostsUndergrads}
+            />
+          )}
+          {selectedMentorsUndergrads && onRemoveMentorsUndergrads && (
+            <ActiveFilterChip
+              axis={UNDERGRADS_FILTER_GROUP_LABEL}
+              value={ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL}
+              onRemove={onRemoveMentorsUndergrads}
+            />
+          )}
         </div>
         <button
           type="button"
@@ -88,7 +130,7 @@ const ResearchZeroResultRecovery = ({
     {relaxedQuery && (
       <div className="mt-4">
         <button type="button" onClick={onRelaxQuery} className={actionClassName}>
-          Search &lsquo;{relaxedQuery}&rsquo; instead
+          Search &lsquo;{echoedQuery(relaxedQuery)}&rsquo; instead
         </button>
       </div>
     )}

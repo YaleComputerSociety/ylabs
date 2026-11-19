@@ -1,7 +1,27 @@
 import axios from 'axios';
-import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../utils/ssrfGuard';
+import {
+  assertPublicHttpUrl,
+  isSsrfGuardRefusal,
+  SsrfBlockedError,
+  ssrfSafeAgents,
+} from '../utils/ssrfGuard';
 import { DEFAULT_RETRYABLE_STATUSES } from '../scrapers/utils/httpFetch';
-import { type HostSlotLimiter, withHostSlot } from '../scrapers/utils/hostConcurrencyLimiter';
+import {
+  ChainedHostSlotLimiter,
+  type HostSlotLimiter,
+  hostnameForLimiter,
+  withHostSlot,
+} from '../scrapers/utils/hostConcurrencyLimiter';
+import { machineHostSlotsForDirectRequest } from '../scrapers/utils/scraperHostSlotLimiter';
+import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
+import {
+  HOST_PAUSE_POLICY_FETCH,
+  activeHostPause,
+  hostPauseInErrorChain,
+  recordHostRefusal,
+  recordTierOneExhausted,
+} from '../scrapers/utils/hostPause';
+import { recordHostSuccess } from '../scrapers/utils/hostPauseState';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { classifyOffCampusAddressing } from '../utils/publicDnsResolution';
 import {
@@ -13,6 +33,15 @@ import {
   type SourceLinkHealthStatus,
 } from '../models/storedVocabularies';
 import { TLS_VERIFICATION_ERROR_CODES } from '../utils/tlsVerificationErrors';
+import {
+  EXCLUDED_HOST_ERROR_CODE,
+  excludedHostRedirectError,
+  isExcludedHostname,
+  isExcludedHostRedirectError,
+} from '../utils/excludedHosts';
+import { normalizeWebsiteUrlIdentityKey } from '../utils/websiteUrlIdentityKey';
+import { citationUrlsOf } from './sourceCitations';
+import { isGamblingSpamPage } from '../scrapers/utils/gamblingSpamPage';
 
 export { sourceLinkHealthStatuses, type SourceLinkHealthStatus };
 
@@ -50,6 +79,36 @@ export interface SourceLinkHealth {
    * (#4649).
    */
   httpsLandingUrl?: string;
+  /**
+   * The response came from the requested host, path and query, apart from scheme
+   * and cosmetic spelling. Held in memory only and never stored: an `https:`
+   * spelling counts only when its own probe stayed on the page it asked for (#5639).
+   */
+  landedOnRequestedResource?: true;
+  /**
+   * The probe stopped before contacting an excluded host (a redirect led into one), so
+   * it observed nothing and its caller must carry the stored verdict forward.
+   */
+  excludedHost?: true;
+  /**
+   * The live page the host's own redirects landed on, when it names a different page
+   * identity than the requested URL (another host, another path, not just a scheme,
+   * `www.`, letter case, slash or default-document spelling). Set only on a `HEALTHY` verdict. It is
+   * the evidence the URL-identity dedupe and resolve-at-mint read to treat the two URLs
+   * as one page (#5638).
+   */
+  redirectLandingUrl?: string;
+  /**
+   * The `UNAVAILABLE` came from a host that refused or could not route a connection on
+   * both attempts, as opposed to a DNS record confirmed absent. The backfill reads it to
+   * make a live link wait for a second run before a refused connection retires it
+   * (#6116), and stores it so a later removal can tell the two classes apart (#6264).
+   */
+  connectionLevelFailure?: true;
+  /** The `UNAVAILABLE` came from a DNS record confirmed absent (#2726, #6264). */
+  nameNotFound?: true;
+  /** The `UNAVAILABLE` came from a host that refused the connection (#6264). */
+  connectionRefused?: true;
 }
 
 export interface SourceLinkProbeResult {
@@ -57,10 +116,15 @@ export interface SourceLinkProbeResult {
   errorCode?: string;
   requestedUrl?: string;
   finalUrl?: string;
+  /** The status of each redirect hop on the way to `finalUrl`, in order (#5660). */
+  redirectStatuses?: number[];
   /** `Retry-After` the host asked for, when it sent one. Never a verdict input. */
   retryAfterMs?: number;
   privateAddressHost?: boolean;
   publicAddressHost?: boolean;
+  excludedHost?: true;
+  /** A 2xx answer whose page is a gambling site, not the cited resource (#6532). */
+  gamblingSpamPage?: true;
 }
 
 /**
@@ -79,7 +143,21 @@ export interface SourceLinkProbeResult {
  * `RETRYABLE_ERROR_CODES` and only reach this set once a second attempt agrees -
  * the same confirm-before-recording rule #2725 established for DNS.
  */
-const DEAD_LINK_ERROR_CODES = new Set(['ENOTFOUND', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
+export const DEAD_LINK_ERROR_CODES: ReadonlySet<string> = new Set([
+  'ENOTFOUND',
+  'ECONNREFUSED',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+]);
+
+const CONNECTION_LEVEL_ERROR_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+/**
+ * Two host-level observations count as one confirmed fact only this far apart, because a
+ * second probe minutes later meets the same outage rather than observing the host again
+ * (#6116). The backfill's second-run rule and the removal rule (#6264) both read it.
+ */
+export const CONNECTION_FAILURE_CONFIRMATION_GAP_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Only a status that asserts the resource is gone retires a link. Every other
@@ -89,7 +167,7 @@ const DEAD_LINK_ERROR_CODES = new Set(['ENOTFOUND', 'ECONNREFUSED', 'EHOSTUNREAC
  * citation, which is the inverse of the standing rule that 403/429/5xx/timeout
  * are inconclusive and never retire a link or license a replacement (#2473).
  */
-const RESOURCE_GONE_HTTP_STATUS_CODES = new Set([404, 410]);
+export const RESOURCE_GONE_HTTP_STATUS_CODES = new Set([404, 410]);
 
 /**
  * How long a probe verdict stays usable as a positive assertion of liveness. A
@@ -133,6 +211,20 @@ function retryAfterMs(headers: unknown): number | undefined {
   return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
 }
 
+const isYaleHost = (hostname: string): boolean => /(?:^|\.)yale\.edu$/i.test(hostname);
+
+function isHtmlResponse(headers: unknown): boolean {
+  const raw = (headers as Record<string, unknown> | undefined)?.['content-type'];
+  return typeof raw === 'string' && /\btext\/html\b|\bapplication\/xhtml\+xml\b/i.test(raw);
+}
+
+function visibleTextOf(html: string | undefined): string {
+  return (html ?? '')
+    .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
 export function probeStatusBackoffMs(
   attempt: number,
   retryAfter?: number,
@@ -168,6 +260,25 @@ const RETRYABLE_ERROR_CODES = new Set([
 const comparablePath = (url: URL): string => url.pathname.replace(/\/+$/, '').toLowerCase() || '/';
 
 const comparableHost = (url: URL): string => url.hostname.replace(/^www\./i, '').toLowerCase();
+
+const PERMANENT_REDIRECT_STATUSES = new Set([301, 308]);
+
+/**
+ * A host that permanently redirects an underscore slug to its hyphenated spelling
+ * has moved nothing: it serves the page it was asked for under the spelling it now
+ * publishes, so the landing is the requested resource rather than a roster (#5660).
+ * Every hop must be a 301 or 308, because a temporary redirect says nothing about
+ * where the page lives.
+ */
+function isPermanentSlugRespelling(
+  requestedPath: string,
+  finalPath: string,
+  redirectStatuses: readonly number[] | undefined,
+): boolean {
+  if (!redirectStatuses || redirectStatuses.length === 0) return false;
+  if (!redirectStatuses.every((status) => PERMANENT_REDIRECT_STATUSES.has(status))) return false;
+  return requestedPath.replace(/_/g, '-') === finalPath.replace(/_/g, '-');
+}
 
 const parseProbeUrl = (value: string | undefined): URL | undefined => {
   if (!value) return undefined;
@@ -206,6 +317,7 @@ const parseProbeUrl = (value: string | undefined): URL | undefined => {
 export function landsAwayFromRequestedResource(
   requestedUrl: string | undefined,
   finalUrl: string | undefined,
+  redirectStatuses?: readonly number[],
 ): boolean {
   const requested = parseProbeUrl(requestedUrl);
   const final = parseProbeUrl(finalUrl);
@@ -215,6 +327,9 @@ export function landsAwayFromRequestedResource(
   const finalPath = comparablePath(final);
   const sameHost = comparableHost(requested) === comparableHost(final);
   if (requestedPath === finalPath && sameHost) return false;
+  if (sameHost && isPermanentSlugRespelling(requestedPath, finalPath, redirectStatuses)) {
+    return false;
+  }
   if (requestedPath === '/') return false;
 
   if (finalPath === '/') return sameHost;
@@ -228,10 +343,13 @@ export function landsAwayFromRequestedResource(
 }
 
 function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
-  const { status, errorCode, requestedUrl, finalUrl } = probe;
+  const { status, errorCode, requestedUrl, finalUrl, redirectStatuses } = probe;
   if (typeof status === 'number' && Number.isFinite(status)) {
     if (status >= 200 && status < 300) {
-      if (landsAwayFromRequestedResource(requestedUrl, finalUrl)) {
+      if (
+        probe.gamblingSpamPage ||
+        landsAwayFromRequestedResource(requestedUrl, finalUrl, redirectStatuses)
+      ) {
         return { healthStatus: 'UNAVAILABLE', httpStatusCode: status };
       }
       return { healthStatus: 'HEALTHY', httpStatusCode: status };
@@ -250,6 +368,20 @@ function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
   return { healthStatus: 'UNKNOWN' };
 }
 
+const isSameResource = (requested: URL, final: URL): boolean =>
+  comparableHost(requested) === comparableHost(final) &&
+  comparablePath(requested) === comparablePath(final) &&
+  requested.search === final.search;
+
+function landedOnRequestedResource(
+  requestedUrl: string | undefined,
+  finalUrl: string | undefined,
+): boolean {
+  const requested = parseProbeUrl(requestedUrl);
+  const final = parseProbeUrl(finalUrl);
+  return Boolean(requested && final && isSameResource(requested, final));
+}
+
 export function httpsLandingOf(
   requestedUrl: string | undefined,
   finalUrl: string | undefined,
@@ -258,19 +390,61 @@ export function httpsLandingOf(
   const final = parseProbeUrl(finalUrl);
   if (!requested || !final) return undefined;
   if (requested.protocol !== 'http:' || final.protocol !== 'https:') return undefined;
-  if (comparableHost(requested) !== comparableHost(final)) return undefined;
-  if (comparablePath(requested) !== comparablePath(final)) return undefined;
-  if (requested.search !== final.search) return undefined;
+  return isSameResource(requested, final) ? final.toString() : undefined;
+}
+
+/**
+ * A whole host redirecting to another host's root names no page, so it is not alias
+ * evidence: it is also how a retired or lapsed lab domain falls back to its parent
+ * site. A page that moved to a host's root (a lab leaving a shared host for its own
+ * domain) still counts, because the requested side named one page (#5638).
+ */
+const isBareHostRootKey = (identityKey: string): boolean => !identityKey.includes('/');
+
+export function redirectLandingOf(
+  requestedUrl: string | undefined,
+  finalUrl: string | undefined,
+): string | undefined {
+  const requested = parseProbeUrl(requestedUrl);
+  const final = parseProbeUrl(finalUrl);
+  if (!requested || !final) return undefined;
+  if (final.protocol !== 'https:' && final.protocol !== 'http:') return undefined;
+  if (final.search) return undefined;
+  const requestedKey = normalizeWebsiteUrlIdentityKey(requested.toString()).toLowerCase();
+  const finalKey = normalizeWebsiteUrlIdentityKey(final.toString()).toLowerCase();
+  if (!requestedKey || !finalKey || requestedKey === finalKey) return undefined;
+  if (isBareHostRootKey(requestedKey) && isBareHostRootKey(finalKey)) return undefined;
   return final.toString();
 }
 
 export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
+  if (probe.excludedHost) return { healthStatus: 'UNKNOWN', excludedHost: true };
   const verdict = classifyProbeOutcome(probe);
-  const httpsLandingUrl =
-    verdict.healthStatus === 'HEALTHY'
-      ? httpsLandingOf(probe.requestedUrl, probe.finalUrl)
-      : undefined;
-  const classified = httpsLandingUrl ? { ...verdict, httpsLandingUrl } : verdict;
+  const healthy = verdict.healthStatus === 'HEALTHY';
+  const httpsLandingUrl = healthy ? httpsLandingOf(probe.requestedUrl, probe.finalUrl) : undefined;
+  const redirectLandingUrl = healthy
+    ? redirectLandingOf(probe.requestedUrl, probe.finalUrl)
+    : undefined;
+  const landed = healthy && landedOnRequestedResource(probe.requestedUrl, probe.finalUrl);
+  const connectionLevelFailure =
+    verdict.healthStatus === 'UNAVAILABLE' &&
+    typeof verdict.httpStatusCode !== 'number' &&
+    !!probe.errorCode &&
+    CONNECTION_LEVEL_ERROR_CODES.has(probe.errorCode);
+  const nameNotFound =
+    verdict.healthStatus === 'UNAVAILABLE' &&
+    typeof verdict.httpStatusCode !== 'number' &&
+    probe.errorCode === 'ENOTFOUND';
+  const connectionRefused = connectionLevelFailure && probe.errorCode === 'ECONNREFUSED';
+  const classified = {
+    ...verdict,
+    ...(connectionLevelFailure ? { connectionLevelFailure: true as const } : {}),
+    ...(nameNotFound ? { nameNotFound: true as const } : {}),
+    ...(connectionRefused ? { connectionRefused: true as const } : {}),
+    ...(httpsLandingUrl ? { httpsLandingUrl } : {}),
+    ...(redirectLandingUrl ? { redirectLandingUrl } : {}),
+    ...(landed ? { landedOnRequestedResource: true as const } : {}),
+  };
   const outcome =
     probe.errorCode && TLS_VERIFICATION_ERROR_CODES.has(probe.errorCode)
       ? { ...classified, tlsVerificationFailed: true }
@@ -291,6 +465,7 @@ export function isLikelyUnavailableSourceLink(health: SourceLinkHealth | undefin
 
 export interface DatedSourceLinkHealth extends SourceLinkHealth {
   checkedAt?: Date | string | null;
+  confirmingConnectionFailureAt?: Date | string | null;
 }
 
 /**
@@ -355,6 +530,12 @@ export function findSourceLinkHealth(
     ...(typeof match.httpStatusCode === 'number' ? { httpStatusCode: match.httpStatusCode } : {}),
     ...(match.privateAddressHost === true ? { privateAddressHost: true } : {}),
     ...(match.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
+    ...(match.connectionLevelFailure === true ? { connectionLevelFailure: true as const } : {}),
+    ...(match.nameNotFound === true ? { nameNotFound: true as const } : {}),
+    ...(match.connectionRefused === true ? { connectionRefused: true as const } : {}),
+    ...(match.confirmingConnectionFailureAt
+      ? { confirmingConnectionFailureAt: match.confirmingConnectionFailureAt as Date | string }
+      : {}),
     ...(match.checkedAt
       ? { checkedAt: match.checkedAt as DatedSourceLinkHealth['checkedAt'] }
       : {}),
@@ -484,10 +665,55 @@ async function probeResultForBlockedUrl(
     : { errorCode, privateAddressHost: true };
 }
 
+export interface SourceLinkProbeOptions {
+  /** Hosts never to contact, including as a redirect target (HOLD-style host bans). */
+  excludedHosts?: readonly string[];
+}
+
+const BAN_NOTICE_PREFIX_BYTES = 4_096;
+const PAGE_CONTENT_PREFIX_BYTES = 65_536;
+const BODY_PREFIX_READ_TIMEOUT_MS = 2_000;
+
+/**
+ * Reads the start of a body without draining the page: enough of a refusal to find a stated
+ * pause date, or enough of a 2xx page to tell a taken-over domain from the cited resource.
+ */
+async function readBodyPrefix(
+  data: unknown,
+  maxBytes: number = BAN_NOTICE_PREFIX_BYTES,
+): Promise<string | undefined> {
+  if (typeof data === 'string') return data.slice(0, maxBytes);
+  const stream = data as NodeJS.ReadableStream | undefined;
+  if (!stream || typeof stream.on !== 'function') return undefined;
+  return new Promise<string | undefined>((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const finish = () => {
+      clearTimeout(timer);
+      stream.removeListener('data', onData);
+      resolve(Buffer.concat(chunks).toString('utf8').slice(0, maxBytes));
+    };
+    const onData = (chunk: Buffer | string) => {
+      const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+      chunks.push(buffer);
+      size += buffer.length;
+      if (size >= maxBytes) finish();
+    };
+    const timer = setTimeout(finish, BODY_PREFIX_READ_TIMEOUT_MS);
+    stream.on('data', onData);
+    stream.once('end', finish);
+    stream.once('error', finish);
+  });
+}
+
 export async function probeSourceLink(
   url: string,
   requestGate?: HostSlotLimiter,
+  probeOptions: SourceLinkProbeOptions = {},
 ): Promise<SourceLinkProbeResult> {
+  const excludedHosts = probeOptions.excludedHosts ?? [];
+  const notContacted = (hostname: string | undefined): boolean =>
+    isExcludedHostname(hostname, excludedHosts) || activeHostPause(hostname) !== undefined;
   let safeUrl: URL;
   try {
     safeUrl = await assertPublicHttpUrl(url);
@@ -496,20 +722,42 @@ export async function probeSourceLink(
   }
 
   const requestedUrl = safeUrl.toString();
+  const notObserved = (): SourceLinkProbeResult => ({
+    errorCode: EXCLUDED_HOST_ERROR_CODE,
+    requestedUrl,
+    excludedHost: true,
+  });
+  if (notContacted(safeUrl.hostname)) return notObserved();
   const agents = ssrfSafeAgents();
-  const request = (method: 'HEAD' | 'GET') => {
-    const send = () =>
-      axios.request({
+  let redirectStatuses: number[] = [];
+  const request = () => {
+    const send = () => {
+      redirectStatuses = [];
+      return axios.request({
         url: requestedUrl,
-        method,
+        method: 'GET',
+        headers: { 'User-Agent': SCRAPER_USER_AGENT },
         maxRedirects: 5,
+        beforeRedirect: (redirectOptions, responseDetails) => {
+          if (notContacted((redirectOptions as { hostname?: string })?.hostname)) {
+            throw excludedHostRedirectError();
+          }
+          redirectStatuses.push(Number(responseDetails?.statusCode));
+        },
+        ...{ [HOST_PAUSE_POLICY_FETCH]: true },
         timeout: PROBE_TIMEOUT_MS,
         httpAgent: agents.httpAgent,
         httpsAgent: agents.httpsAgent,
-        responseType: method === 'GET' ? 'stream' : 'json',
+        responseType: 'stream',
         validateStatus: () => true,
       });
-    return requestGate ? withHostSlot(requestedUrl, send, requestGate) : send();
+    };
+    const machine = machineHostSlotsForDirectRequest();
+    const gates = [requestGate, machine].filter((gate): gate is HostSlotLimiter => !!gate);
+    // Redirect hops still follow inside axios, so only the first host is charged (#6168).
+    return gates.length > 0
+      ? withHostSlot(requestedUrl, send, new ChainedHostSlotLimiter(gates))
+      : send();
   };
 
   // `responseUrl`, lower-case `u`, is what `follow-redirects` sets on the Node
@@ -536,23 +784,54 @@ export async function probeSourceLink(
 
   const attempt = async (): Promise<SourceLinkProbeResult> => {
     try {
-      let response = await request('HEAD');
+      // One GET per link. A HEAD first doubled the requests for every link answering 4xx or
+      // 5xx, and some servers refuse HEAD but answer GET (#6214).
+      const response = await request();
+      const body = response.status === 403 ? await readBodyPrefix(response.data) : undefined;
+      const gamblingSpamPage =
+        response.status >= 200 &&
+        response.status < 300 &&
+        !isYaleHost(safeUrl.hostname) &&
+        isHtmlResponse(response.headers) &&
+        isGamblingSpamPage(
+          visibleTextOf(await readBodyPrefix(response.data, PAGE_CONTENT_PREFIX_BYTES)),
+        );
+      if (response.data && typeof response.data.destroy === 'function') {
+        response.data.destroy();
+      }
       if (response.status >= 400) {
-        response = await request('GET');
-        if (response.data && typeof response.data.destroy === 'function') {
-          response.data.destroy();
-        }
+        const pause = await recordHostRefusal({
+          host: hostnameForLimiter(resolvedUrl(response)) ?? safeUrl.hostname,
+          status: response.status,
+          headers: response.headers,
+          body,
+          quickRetryWaitMs: PROBE_STATUS_BACKOFF_MAX_MS,
+        });
+        if (pause) return notObserved();
+      } else {
+        await recordHostSuccess(hostnameForLimiter(resolvedUrl(response)) ?? safeUrl.hostname);
       }
       return {
         status: response.status,
         requestedUrl,
         ...(resolvedUrl(response) ? { finalUrl: resolvedUrl(response) } : {}),
+        ...(redirectStatuses.length > 0 ? { redirectStatuses: [...redirectStatuses] } : {}),
+        ...(gamblingSpamPage ? { gamblingSpamPage: true as const } : {}),
         ...(retryAfterMs(response.headers) !== undefined
           ? { retryAfterMs: retryAfterMs(response.headers) }
           : {}),
       };
     } catch (error) {
+      // The guard's connect-time lookup refuses a private address with the code
+      // EHOSTUNREACH, which is also a dead-link code. On a redirect into a host that
+      // split-horizon DNS answers privately on the Yale network, reporting that code
+      // retired a live page, so the guard's own refusal is reported as a refusal.
+      if (isSsrfGuardRefusal(error)) return { errorCode: 'ERR_SSRF_BLOCKED', requestedUrl };
       const code = (error as { code?: unknown })?.code;
+      if (isExcludedHostRedirectError(error)) {
+        return { errorCode: EXCLUDED_HOST_ERROR_CODE, requestedUrl, excludedHost: true };
+      }
+      if (hostPauseInErrorChain(error)) return notObserved();
       void sanitizeLogValue(error);
       return {
         errorCode: typeof code === 'string' ? code : 'ERR_REQUEST_FAILED',
@@ -575,8 +854,16 @@ export async function probeSourceLink(
   // never retried, so a 404 still settles on the first answer.
   for (let attemptIndex = 0; attemptIndex < PROBE_MAX_STATUS_RETRIES; attemptIndex += 1) {
     if (result.status === undefined || !DEFAULT_RETRYABLE_STATUSES.has(result.status)) break;
+    if (activeHostPause(safeUrl.hostname)) return notObserved();
     await delay(probeStatusBackoffMs(attemptIndex, result.retryAfterMs));
     result = await attempt();
+  }
+  if (result.status !== undefined && DEFAULT_RETRYABLE_STATUSES.has(result.status)) {
+    await recordTierOneExhausted(
+      hostnameForLimiter(result.finalUrl) ?? safeUrl.hostname,
+      result.status,
+      result.retryAfterMs,
+    );
   }
   return result;
 }
@@ -584,8 +871,9 @@ export async function probeSourceLink(
 export async function checkSourceLinkHealth(
   url: string,
   requestGate?: HostSlotLimiter,
+  probeOptions?: SourceLinkProbeOptions,
 ): Promise<SourceLinkHealth> {
-  return classifySourceLinkHealth(await probeSourceLink(url, requestGate));
+  return classifySourceLinkHealth(await probeSourceLink(url, requestGate, probeOptions));
 }
 
 /**
@@ -609,20 +897,7 @@ export function hasLiveSourceCitation(entity: {
   fieldProvenance?: unknown;
   sourceLinkHealth?: unknown;
 }): boolean {
-  const stored = Array.isArray(entity.sourceUrls)
-    ? entity.sourceUrls.filter((url): url is string => typeof url === 'string' && url.trim() !== '')
-    : [];
-  const provenance =
-    entity.fieldProvenance && typeof entity.fieldProvenance === 'object'
-      ? Object.values(entity.fieldProvenance as Record<string, unknown>)
-          .map((record) =>
-            record && typeof record === 'object'
-              ? (record as { sourceUrl?: unknown }).sourceUrl
-              : undefined,
-          )
-          .filter((url): url is string => typeof url === 'string' && url.trim() !== '')
-      : [];
-  const citations = [...new Set([...stored, ...provenance])];
+  const citations = citationUrlsOf(entity);
   // No citation at all is SILENCE, not death. An empty `sourceUrls` with no
   // provenance is the projection gap #1802 relies on, so it must stay soft; only
   // an explicit gone verdict on every citation an entity actually has is evidence

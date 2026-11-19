@@ -82,7 +82,6 @@
   "research-homes:backfill-school-host-mismatch",
   "research-homes:backfill-website-urls",
   "research-homes:clear-directory-index-descriptions",
-  "research-homes:inherit-lead-department",
   "research:backfill-yale-status-cache",
   "research:quality-search-review",
   "researchers:repair-person-name-noise",

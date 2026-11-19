@@ -45,6 +45,24 @@ The report prints the old capture's `supersededPlannedObservationCount` beside t
 A benchmark already recaptured under a new id before this existed is linked with `--mark-successor-of=<old-id> --id=<existing-id>`, which captures nothing and refuses a successor with a different lane or scope, a successor that already supersedes another benchmark, and a successor the old benchmark already descends from, because that would close a cycle and neither would replay.
 Capture fetches live pages and makes live model calls, so recapture only when no Development sweep is running.
 
+### Retiring a benchmark the lane no longer reaches
+
+A benchmark whose scope the lane no longer targets cannot be recaptured, because the successor would plan nothing and the recapture refuses it.
+Retire it instead, with the reason in the record:
+
+```bash
+yarn --cwd server lane:benchmark-capture --retire --id=<benchmark-id> --reason=<why the lane no longer reaches it>
+yarn --cwd server lane:benchmark-capture --retire --id=<benchmark-id> --reason=<why> --apply --confirm-lane-benchmark-capture
+```
+
+The command captures and links nothing: it sets `retiredAt` and `retiredReason` on that one benchmark and changes none of its pages, labels or replay history.
+An unnamed `lane:scorecard` run leaves a retired benchmark out and lists it under `retired` with its reason, and the analytics panel leaves it out too.
+`--benchmark=<id>` still replays it.
+`--retire` takes only `--id` and a `--reason` of at least 20 characters, and refuses a benchmark that is already retired or that has a successor, because a superseded benchmark is already out of the unnamed run.
+
+A benchmark of a manual-only lane is not retired.
+The model-calling lanes left the weekly sweep in #5457 but stay registered and runnable by hand, so their benchmarks still measure them; recapturing one makes live model calls, which is a decision for the lane's owner rather than routine upkeep.
+
 Only lanes whose output is a function of the pages they fetch and the model answers they receive can be benchmarked, and `BENCHMARKABLE_LANES` in `server/src/scripts/laneBenchmarkRun.ts` lists them.
 Pages are frozen at `getCached`, at `fetchPageWithPolicy`, and at the Scrapling renderer.
 A `fetchPageWithPolicy` fetch that failed with an HTTP status is frozen as that status, so a sub-page that answered 404 at capture answers 404 on replay rather than counting as a miss.
@@ -55,6 +73,9 @@ Replay skips the guard's DNS lookup, so before this a lane that runs the guard a
 A resolver failure is not frozen, for the same reason a reset connection is not.
 `center-affiliation-llm`, `center-director-llm` and `research-area-source-extractor` joined once their page fetch moved from a raw `axios.get` onto `fetchPageWithPolicy` (#4606), which keeps the same SSRF guard, redirect cap and retry on a throttled status.
 Their model calls already went over the default axios instance, so the model freeze covered them before the move.
+`center-director`, the code replacement for `center-director-llm` (#5296), fetches only through `fetchPageWithPolicy` and calls no model, so it joined on the same basis; its read snapshot stamps `readAt` from the run's reference date, and it has no benchmark until one is captured.
+`center-affiliation-roster`, the code replacement for `center-affiliation-llm` (#5296), joined on the same basis: one `fetchPageWithPolicy` read per center, no model, and a snapshot stamped from the run's reference date.
+It chooses its centers from the live corpus as the LLM lane does, so a center archived or re-sited after capture shows as `pagesMissed`, and it has no benchmark until one is captured.
 
 A rendered page is frozen at `createScraplingRenderedFetcher`, the one place every rendered lane gets its renderer (#3590).
 Capture records whether a renderer existed at all, because a lane with no renderer takes a different path from one whose render returns nothing, and it records every render, including a null or blocked result.
@@ -75,6 +96,7 @@ A dry-run explain of `research-area-source-extractor` on one fixed scope planned
 `center-director-llm` fetched the same pages before and after, but its model answered differently on two live reads of the same pages, which is why the lane already holds a changed director until a second read agrees.
 That hold reads the lane's own previous observation from the live log, so a director held or confirmed on replay depends on what the lane last observed rather than only on the frozen pages.
 `center-affiliation-llm` and `research-area-source-extractor` choose their targets from the live corpus, so a row archived or re-sited after capture shows as `pagesMissed` rather than as a changed score.
+`yale-directory` reads the live researcher netids to decide which records whose title fails the faculty screen it emits as a corpus person's netid and email (#5627), so a researcher created, archived or re-stamped after capture changes those observations without any change to the lane.
 
 The four funding lanes, `nih-reporter`, `nsf-award-search`, `doe-osti` and `neh-funded-projects`, fetch through `getCached`, and joined once their query window followed the run's reference date rather than the wall clock (#4607).
 Each one asked for a date window computed from today, so a replay on a later day asked for a different query, missed every frozen page, and measured nothing; replay now passes the capture date as the reference date, as it already did for page-stated deadlines.
@@ -94,13 +116,34 @@ Its scope is 60 rows: every live row whose stored `leadVerification.state` was `
 The lane planned a verdict for 46 of them, 5 `contradicted`, 39 `unstated` and 2 `unreachable`, over 77 frozen pages, all of which a replay serves.
 The other 14 keep a stored verdict the lane no longer reaches: 12 have no website left and 2 have only a `HISTORICAL` lead, so a first reader of `leadVerification` must not trust a stored verdict on a row the lane has stopped judging.
 Two replays on one head gave one fingerprint.
-It carries no gold labels yet; the per-lead hand labels and per-lead scoring are the remaining steps of #4251.
+It has since been recaptured over the same 60-row scope as `-v3` on 2026-10-11 and `-v4` on 2026-11-10.
+On 2026-11-12 `-v2` replayed unscored, asking for 3 pages it never froze, because the live corpus the lane takes its targets and leads from had moved.
+`-v4` judges 35 of the 60 rows and 38 leads, and two replays on one head gave one fingerprint.
+Its precision is scored per lead against owner labels, as "Lead verification per lead" below describes (#4941).
 `department-undergrad-research` reads a rendered page where its plain fetch is thin, and this benchmark was captured on a host with no renderer, so it measures only the plain-fetch path until it is recaptured where a renderer runs.
 Three lanes stay out, each for a reason a capture cannot remove:
 
 - `directory-alias-resolution` loads the whole Yale directory and takes its alias keys and the set of already-resolvable aliases from the live observation log and corpus, so its output is a function of the corpus rather than of a page scope, and a capture of it would freeze the whole directory.
 - `ysm-mesh-keyword` planned nothing on a `--limit` scope of 3 or 12, because `--limit` bounds the keyword index it walks rather than the faculty it attributes, so no small scope reaches a planned value; it needs an `--only` scope keyed by faculty before it can be benchmarked.
 - `undergrad-research-posting` is manual-only with an empty page list (`manualOnlySweepSources.ts`), so it has no pages to freeze until #3551 gives it some.
+
+### The description writer
+
+`coverage-synthesis-llm`, the description writer behind `research-entity:coverage-synthesis`, is a script rather than an orchestrator lane, and it joined `BENCHMARKABLE_LANES` through `SCRIPT_BENCHMARK_LANES`, which `runLaneDry` dispatches to `runWriterBenchmarkDry` (`server/src/scripts/coverageSynthesisBenchmark.ts`) instead of the orchestrator (#5537).
+Its input is not a fetched page but each row's writer evidence, the observations and row fields `--capture-evidence` reads, current research page text included, so capture freezes one `coverage-synthesis-evidence` entry per row slug and replay reads evidence only from those entries.
+Its model calls go over the default axios instance, so the model freeze above covers them, and the capture date stands in for the clock in the grant window and the prompt's `TODAY` line, so a replay on a later day asks the same question.
+Capture and replay never read or fill the shared `written_description_derivations` cache, because a cached draft answers without a model request, so capture would freeze nothing and replay would read a draft another run wrote.
+A benchmark needs an `--only` scope of row slugs:
+
+```bash
+yarn --cwd server lane:benchmark-capture --source=coverage-synthesis-llm --only=<slugs> --id=<benchmark-id> --apply --confirm-lane-benchmark-capture
+```
+
+It plans one `fullDescription` per row the writer accepts, so `emitted`, the frozen refusal labels and any gold labels score it as they score a lane, and each result also carries `writerSteps`, the count of each writer step, and `writerRows`, each row's step and refusal reasons.
+The writer rows are printed in the report and are not stored on `lane_scorecard_snapshots`.
+Replay writes nothing: no observation, no cache entry, and no model-usage record, because a frozen answer never leaves the process.
+Capture is a paid model call per row, so run it only on a scope chosen for the measurement.
+A changed writer prompt or snippet builder changes the request body, so it stales the benchmark like any LLM lane's.
 
 A replay is compared only once it has resolved something from the frozen input.
 One that served none of its frozen pages, or a rendered lane that served none of its frozen renders, is reported as unscored rather than scored, because it measured a path that never engaged.
@@ -200,6 +243,12 @@ A fellowship's structured fields compare by kind rather than by containment, bec
 The comparison is chosen by entity type and field together, so a research-entity field that shares a name keeps containment.
 `applicationLink` compares as a URL after upgrading `http` to `https`, lowercasing the host, and dropping the fragment and any trailing slash.
 `yearOfStudy`, `termOfAward`, and `purpose` compare by set equality, with each acceptable set written as a JSON array string, so a superset does not match.
+
+Gold labels follow the lane's own field definitions, so a definition ruling re-labels the gold rather than loosening the lane (2026-11-16 and 2026-11-17, manager rulings).
+`contactOffice` is present only where the page states the office explicitly (#4589, narrowed to admit a named office's application system); a sponsor named only in a program's title is not a contact office, so 50 agent-drafted `programs-grants-gold-v1` labels moved to absent and 3 moved to present after an inline second pass agreed with the first on 80 of 85 rows.
+`entryMode` labels follow the classifier's rules: a graduate dissertation or travel record requires an adviser by construction, and closure lives in `isAcceptingApplications`, so a closed program keeps its arm's mode rather than `TRACK_NEXT_CYCLE` (7 `programs-fellowships-office-gold-v1` labels).
+A `contactOffice` label accepts the page's own name for its office ("Yale Fellowships and Funding" beside "Office of Fellowships and Funding", 3 labels).
+The original label files are kept outside the repository so each re-label can be reverted.
 A `deadline` label written `YYYY-MM-DD` matches an emitted instant that falls on that America/New_York calendar date, and one written `YYYY-MM-DDTHH:MM` matches only the same New York minute.
 `requiresMentorBeforeApply` and `entryMode` compare by exact value, and a fellowship `title` and `contactOffice` keep containment.
 A fellowship `eligibility` is a statement: it matches when it is a clause of an acceptable value at least 20 characters long, or contains one and runs at most 400 characters past it (#4233).
@@ -247,3 +296,28 @@ If they do not, the lane depends on something the benchmark did not freeze, and 
 The collections are environment-local and listed in `NEVER_COPY_COLLECTIONS`, so a promotion never replaces a benchmark or its history.
 They are also listed in `PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS`, so the Development refresh never clears one either (#4034).
 Being unmirrored used to be the reason the refresh destroyed them, because the refresh cleared every collection Beta does not mirror; the allowlist is what makes "never mirrored" mean "kept" rather than "unprotected".
+
+### Lead verification per lead
+
+`lab-site-lead-verification` emits one `leadVerification` value per row, holding a verdict for each lead, so a field-level gold label cannot say which lead it was right about.
+The scorecard therefore reports `leadVerification` on that lane's results: the count of rows per state, the count of leads per verdict, and `perLead`, one entry per judged lead with its row, person id, role, verdict, and match reason (#4941).
+A row the lane could not read judged nobody and adds to no lead.
+A page that answered with a status, or a host-level failure such as a name that does not resolve, counts in the `unreachable` row count, while a row whose fetch observed nothing is deferred and counted as `deferredNotObserved` instead (#6258).
+
+Precision is scored only against an owner's judgement of who leads each row, read from a filled owner ballot.
+Agent judgements are never read as labels, and neither are the lane's own verdicts, because a sample only an agent checked is not a measured precision.
+With no owner label the report says `unmeasured: no owner labels` rather than a rate.
+
+```bash
+OPENAI_API_KEY= yarn --cwd server lane:scorecard --benchmark=<benchmark-id> --lead-ballot=<directory>
+```
+
+The directory holds `ballot.md`, whose items each open with a `## Item <n>` heading and carry one `Verdict: [ ] correct lead  [ ] not the lead  [ ] can't tell` line, and `key.json`, which maps each blind item number to its `entityKey` and `personId` and names the benchmark the ballot was drawn from.
+It must sit outside the repository, because a ballot quotes pages that name people, and the flag refuses a path inside it.
+The reader refuses an item that marks more than one box, a ballot missing a keyed item, and an item the key does not name, and it leaves an unmarked item unlabelled rather than reading it as "can't tell".
+A ballot applies only to the benchmark it was drawn from, and the run refuses a ballot whose benchmark it does not replay; the report counts the labelled leads that replay no longer judges as `labelsNotReplayed`.
+
+`confirmed.precision` is the share of `CONFIRMED` leads the owner judged the correct lead, and `contradicted.precision` the share of `CONTRADICTED` leads the owner judged not the lead.
+An `UNSTATED` verdict claims nothing, so `unstated` reports how the owner split those leads instead of a precision; it is the number #4941 asks for before anything reads `leadVerification` on a served row with no confirmed lead.
+A "can't tell" counts in `cantTell` and nowhere else, and a rate is `null` when nothing was judged.
+The per-lead block is part of the report only, and a stored scorecard row does not carry it.

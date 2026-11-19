@@ -56,3 +56,25 @@ export function redactDirectContactInfo(value: string): string {
     .replace(SPELLED_AT_EMAIL_PATTERN, '[email redacted]')
     .replace(PHONE_SHAPED_DIGITS_PATTERN, phoneRedactionReplacement);
 }
+
+const DIGITS_ONLY = (value: string): string => value.replace(/\D/g, '');
+
+/**
+ * The text with each contact detail its source does not publish redacted, and every one
+ * it does publish kept (#5046): a written body may repeat an address from its evidence
+ * but never introduce one.
+ */
+export function redactContactsAbsentFrom(value: string, sources: readonly string[]): string {
+  const sourceText = sources.join('\n');
+  const lowerSource = sourceText.toLowerCase();
+  const sourceDigits = new Set(
+    [...sourceText.matchAll(PHONE_SHAPED_DIGITS_PATTERN)].map((match) => DIGITS_ONLY(match[0])),
+  );
+  return value
+    .replace(DIRECT_EMAIL_ADDRESS_PATTERN, (email) =>
+      lowerSource.includes(email.toLowerCase()) ? email : '[email redacted]',
+    )
+    .replace(PHONE_SHAPED_DIGITS_PATTERN, (phone, offset: number, text: string) =>
+      sourceDigits.has(DIGITS_ONLY(phone)) ? phone : phoneRedactionReplacement(phone, offset, text),
+    );
+}

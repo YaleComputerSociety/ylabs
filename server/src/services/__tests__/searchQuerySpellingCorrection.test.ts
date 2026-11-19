@@ -23,12 +23,33 @@ const vocabulary = buildSearchSpellingVocabulary([
   ...repeat(1, { nameText: [], bodyText: ['a single neurosceince typo in prose'] }),
   ...repeat(1, { nameText: [['Vexmał Orrin']], bodyText: [] }),
   ...repeat(5, { nameText: [], bodyText: ['vexmail'] }),
+  ...repeat(1, {
+    nameText: [['Lyra Painterson']],
+    personNameText: [['Lyra Painterson'], ['Ilsor Kestrin']],
+    bodyText: [],
+  }),
+  ...repeat(6, { nameText: [], bodyText: ['kestrel ecology'] }),
 ]);
 
 const correct = (query: string, protectedTerms?: ReadonlySet<string>) =>
   correctSearchQuerySpelling(query, vocabulary, protectedTerms);
 
 describe('correctSearchQuerySpelling', () => {
+  it('leaves the start of a person name to the prefix match', () => {
+    expect(correct('paint')).toEqual({ query: 'paint', corrections: [] });
+    expect(correct('painy').query).toBe('pain');
+  });
+
+  it('leaves a word one edit from a person name to the typo match', () => {
+    expect(correct('Ilsor Kestril')).toEqual({ query: 'Ilsor Kestril', corrections: [] });
+    expect(correct('kestrell').query).toBe('kestrel');
+  });
+
+  it('never rewrites a word typed in capitals, which is an acronym', () => {
+    expect(correct('PQIN')).toEqual({ query: 'PQIN', corrections: [] });
+    expect(correct('pqin').query).toBe('pain');
+  });
+
   it('corrects a misspelled word to the corpus word it is one edit from', () => {
     expect(correct('imunology')).toEqual({
       query: 'immunology',
@@ -93,8 +114,17 @@ describe('correctSearchQuerySpelling', () => {
   });
 
   it('leaves words of three letters or fewer alone', () => {
-    expect(correct('bran').query).toBe('brain');
+    expect(correct('brakn').query).toBe('brain');
     expect(correct('brn').corrections).toEqual([]);
+  });
+
+  it('never rewrites a real English word that no served row carries', () => {
+    expect(correct('intro to machine learning')).toEqual({
+      query: 'intro to machine learning',
+      corrections: [],
+    });
+    expect(correct('bran').corrections).toEqual([]);
+    expect(correct('imunology').query).toBe('immunology');
   });
 
   it('leaves a word alone when no corpus word is close enough', () => {

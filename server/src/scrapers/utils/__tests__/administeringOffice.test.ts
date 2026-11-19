@@ -111,4 +111,106 @@ describe('the administering office a program page states (#4589)', () => {
       undefined,
     );
   });
+
+  it('reads the office whose named application system applications go through', () => {
+    expect(
+      officeIn(
+        'Applications for this fellowship will be accepted via the Office of Fellowships Summer Research Common Application.',
+      ),
+    ).toBe('Office of Fellowships');
+    expect(
+      officeIn(
+        'Application for this fellowship is via the Fixture Center Summer Travel Fellowships Common Application.',
+      ),
+    ).toBe('Fixture Center');
+    expect(
+      officeIn('Note: application to this competition is via the Department of Fixtures website.'),
+    ).toBe('Department of Fixtures');
+  });
+
+  it('reads the whole multi-word office name a website route names', () => {
+    expect(
+      officeIn('Application to this competition is via the Department of Fixture Science website.'),
+    ).toBe('Department of Fixture Science');
+    expect(
+      officeIn('Applications are submitted via the Council on Fixture Regional Studies portal.'),
+    ).toBe('Council on Fixture Regional Studies');
+    expect(
+      officeIn('Application is via the Center for Fixture and Professional Experience website.'),
+    ).toBe('Center for Fixture and Professional Experience');
+  });
+
+  it('reads awarded through, accepts applications, pleased to award and submit to an office', () => {
+    expect(
+      officeIn('The Fixture Travel Grant is awarded through Fixture Center and supports study.'),
+    ).toBe('Fixture Center');
+    expect(officeIn('The Fixture Center accepts applications from Yale students.')).toBe(
+      'Fixture Center',
+    );
+    expect(
+      officeIn('The Fixture Program in Science is pleased to award the Fixture Fellowship.'),
+    ).toBe('Fixture Program in Science');
+    expect(
+      officeIn(
+        'Please attach a one-page proposal and submit to the Head of College Office by May 1.',
+      ),
+    ).toBe('Head of College Office');
+  });
+
+  it('states no office for a bare system, a negated route, or a report owed to an office', () => {
+    expect(
+      officeIn('Applications should be submitted through the Yale Student Grants Database.'),
+    ).toBeUndefined();
+    expect(
+      officeIn('Applications for this fellowship cannot be submitted via this database.'),
+    ).toBeUndefined();
+    expect(
+      officeIn(
+        'Applications are not accepted via the Office of Fixture Fellowships Common Application.',
+      ),
+    ).toBeUndefined();
+    expect(
+      officeIn(
+        "Recipients must submit a summary report on their fellowship to the Fixture Head of College's Office.",
+      ),
+    ).toBeUndefined();
+    expect(
+      officeIn('Some fellowships may be found via the Student Grants Database.'),
+    ).toBeUndefined();
+  });
+
+  it('still states none when the route and another sentence name two different offices', () => {
+    expect(
+      officeIn(
+        'Applications will be accepted via the Office of Fixture Fellowships Common Application.',
+        'The Fixture Council on Regional Studies invites applications for this prize.',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('keeps a multi-word complement whole and states none when its end is undecidable', () => {
+    expect(
+      officeIn(
+        'Applications are submitted through the Yale Program in Fixture Studies Fellowship Application.',
+      ),
+    ).toBe('Yale Program in Fixture Studies');
+    expect(
+      officeIn(
+        'Applications are accepted via the Office of Undergraduate Research Summer Application.',
+      ),
+    ).toBe('Office of Undergraduate Research');
+    expect(
+      officeIn(
+        'Applications are accepted via the Office of Fellowships and Funding Summer Application.',
+      ),
+    ).toBe('Office of Fellowships and Funding');
+    expect(
+      officeIn('Applications are accepted via the Office of Fixture Research'),
+    ).toBeUndefined();
+    expect(
+      officeIn(
+        'Applications are accepted via the Office of International Summer Programs Application.',
+      ),
+    ).toBeUndefined();
+  });
 });

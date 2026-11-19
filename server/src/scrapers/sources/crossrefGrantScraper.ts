@@ -40,6 +40,11 @@ import {
 } from '../utils/grantEnrichmentTarget';
 import { grantAwardIdentity } from '../utils/grantAwardIdentity';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
+import {
+  withCreditedInvestigator,
+  withInvestigatorsUnioned,
+  type GrantInvestigator,
+} from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
@@ -47,7 +52,6 @@ export const CROSSREF_GRANT_WORKS_URL = 'https://api.crossref.org/types/grant/wo
 const DOI_RESOLVER = 'https://doi.org/';
 const YALE_ROR = 'https://ror.org/03v76x132';
 const AFFILIATION_QUERY = 'yale';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 60_000;
 const PAGE_ROWS = 1000;
 const MAX_PAGES = 20;
@@ -145,6 +149,7 @@ export interface RecentGrantRecord {
   dollarAmount?: number;
   url: string;
   role: 'pi' | 'copi';
+  investigators?: GrantInvestigator[];
 }
 
 const CONTROL_CHARACTERS = /\p{Cc}/gu;
@@ -293,14 +298,20 @@ export interface RowGrants {
   slug: string;
   researcherIds: Set<string>;
   grants: CrossrefGrant[];
+  creditedResearcherIds?: Map<CrossrefGrant, string>;
 }
 
 export function buildResearchEntityObservations(row: RowGrants): ObservationInput[] {
   const byIdentity = new Map<string, RecentGrantRecord>();
   for (const grant of row.grants) {
-    const record = grantToRecord(grant);
+    const record = withCreditedInvestigator(
+      grantToRecord(grant),
+      row.creditedResearcherIds?.get(grant),
+    );
     const identity = grantAwardIdentity(record);
-    if (identity && !byIdentity.has(identity)) byIdentity.set(identity, record);
+    if (!identity) continue;
+    const held = byIdentity.get(identity);
+    byIdentity.set(identity, held ? withInvestigatorsUnioned(held, record) : record);
   }
   const records = [...byIdentity.values()];
   const base = {
@@ -358,7 +369,7 @@ async function fetchCrossrefGrantPage(
       responseType: 'text',
       transformResponse: [(data) => data],
       maxRedirects: 0,
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
     }),
   );
   const text = typeof res.data === 'string' ? res.data : String(res.data ?? '');
@@ -513,9 +524,11 @@ export class CrossrefGrantScraper implements IScraper {
         slug: target.slug,
         researcherIds: new Set(),
         grants: [],
+        creditedResearcherIds: new Map<CrossrefGrant, string>(),
       };
       row.researcherIds.add(target.researcherId);
       row.grants.push(grant);
+      row.creditedResearcherIds?.set(grant, target.researcherId);
       rows.set(target.slug, row);
     }
 

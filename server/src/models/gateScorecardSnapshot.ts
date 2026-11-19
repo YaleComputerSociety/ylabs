@@ -24,6 +24,7 @@
  * verdicts to another.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 const gateScorecardEvaluationSchema = new mongoose.Schema(
   {

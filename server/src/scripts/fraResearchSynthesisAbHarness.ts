@@ -39,7 +39,6 @@
  * Read-only. Writes nothing but its report.
  */
 import dotenv from 'dotenv';
-import fs from 'fs';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
@@ -70,6 +69,8 @@ import {
   type FraProfileSynthesisEntity,
 } from './fraProfileSynthesisLane';
 import { connectScriptMongo } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -188,6 +189,7 @@ function probeThatMattered(probes: readonly ProfileProbe[]): ProfileProbe {
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks();
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL must be set.');
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY must be set.');
@@ -278,7 +280,7 @@ async function main(): Promise<void> {
   );
 
   if (reportPath) {
-    fs.writeFileSync(
+    writeReportFileSync(
       reportPath,
       `${JSON.stringify({ generatedAt: new Date().toISOString(), outcomes }, null, 2)}\n`,
     );

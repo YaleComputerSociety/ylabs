@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import {
   canonicalSchemaVersionField,
   defineCanonicalSchemaVersion,

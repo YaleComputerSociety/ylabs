@@ -116,7 +116,9 @@ describe('canonical MongoDB validator registry', () => {
   });
 
   it('does not close schemas to migration-era fields or invent unrelated validators', () => {
-    expect(JSON.stringify(CANONICAL_MONGO_VALIDATORS)).not.toContain('additionalProperties');
+    expect(JSON.stringify(CANONICAL_MONGO_VALIDATORS)).not.toContain(
+      '"additionalProperties":false',
+    );
     expect(CANONICAL_MONGO_VALIDATOR_COLLECTIONS).not.toContain('sources');
     expect(CANONICAL_MONGO_VALIDATOR_COLLECTIONS).not.toContain('student_engagement_events');
     expect(CANONICAL_MONGO_VALIDATOR_COLLECTIONS).not.toContain('research_entity_relationships');
@@ -135,7 +137,68 @@ describe('canonical MongoDB validator registry', () => {
     // gate covers: no environment applies these validators (#752 declined), so a review
     // here approves what would be applied and asserts nothing about stored data (#3396).
     //
-    // Reviewed for #5092. The only drift is researchers losing accountId, an optional objectId
+    // Reviewed for the #5979 follow-up. The only drift is operatorEnd gaining firstObservedAt,
+    // an optional date: the edge's first-observed startedAt, kept when an operator ends the edge
+    // before it, and put back by restore-detached-edge. No other collection or property changed.
+    //
+    // Reviewed for #5979 before that. The only drift is role_assignments gaining operatorEnd, an optional
+    // object of endedAt, reason, citationUrl, decidedBy ('owner' or 'agent'), recordedBy,
+    // recordedAt, previousState and previousEndedAt, which detach-edge --end-as-historical
+    // writes and restore-detached-edge clears, and which the canonical membership writer and
+    // the repair-queue PI writer read to refuse re-asserting that edge. Edges the tool has not
+    // ended carry none. No other collection or property changed.
+    //
+    // Reviewed for #5968 before that. The only drift is role_assignments gaining reviewedBy, an optional
+    // bounded string naming who detached or restored the edge, reviewedByAgent, an optional
+    // boolean recording whether that actor was an agent, and reviewedAt, an optional date,
+    // which detach-edge and restore-detached-edge write so a restore can tell an agent's
+    // detachment from the owner's. Edges neither tool has touched carry none. No other
+    // collection or property changed.
+    //
+    // Reviewed for #5838 before that. The only drift is each research_entities and researchers
+    // fieldValueRefusals entry gaining derivedBy, an optional string naming the sweep stage
+    // that re-derives the refusal and may withdraw it. Operator refusals, and every refusal
+    // recorded before it, carry none. No other collection or property changed.
+    //
+    // Reviewed for #5139 before that. The only drift is research_plans.stage admitting AWARDED and NOT_SELECTED,
+    // inserted before CLOSED, so a watched program can record an application result. Every stored
+    // stage stays valid and no row is rewritten. No other collection or property changed.
+    //
+    // Reviewed for #5741 before that. The only drift is researchers.profileFieldWriters entries gaining fillOnly,
+    // an optional boolean recording that the writer's value is backed only by a source that may
+    // fill the field but never outrank another source, as the directory department is. Writers
+    // recorded before it carry none. No other collection or property changed.
+    //
+    // Reviewed for #5627 before that. The only drift is researchers.identifiers gaining emailSupport, an
+    // optional object of supported (boolean), sources (array of strings) and computedForEmail
+    // (lowercased string), which the user materializer computes on every resolve and
+    // researchers:compute-email-support computes for every researcher holding an email.
+    // Researchers no pass has reached carry none. No other collection or property changed.
+    //
+    // Reviewed for #5706 before that. The only drift is researchers gaining profileFieldWriters, an optional
+    // map from a display field to the user key that wrote it, with that key's identity join rank
+    // and resolved confidence, which the user materializer reads and writes so several keys
+    // joining one researcher settle each field deterministically. Researchers no key has written
+    // carry none. No other collection or property changed.
+    //
+    // Reviewed for #5641 before that. The only drift is researchers gaining fieldValueRefusals, an optional
+    // map from a refusable field to refused values, the same record research rows carry, that
+    // researcher:refuse-field-value and the researcher fold write and the user materializer
+    // reads. Researchers without a refusal carry none. No other collection or property changed.
+    //
+    // Reviewed for #5592 before that. The only drift is researchers gaining distinctFromResearcherIds, an
+    // optional array of researcher objectIds that the researchers:record-distinct-people
+    // operator tool writes on both records of a pair judged to be different people, and that
+    // every researcher fold arm refuses. Researchers without a recorded pair carry none. No
+    // other collection or property changed.
+    //
+    // Reviewed for #5492 before that. The only drift is accounts gaining productAnalyticsId, an optional
+    // lowercase version 4 UUID that the server assigns on a Production session's first
+    // session check when product analytics is on, and that is the only identity PostHog
+    // receives. Accounts that never reach that path carry none. No other collection or
+    // property changed.
+    //
+    // Reviewed for #5092 before that. The only drift is researchers losing accountId, an optional objectId
     // linking a researcher to a login. Accounts are environment-local since #5088, no code
     // writes or reads the link, and 0 Development and Beta researchers carry it. No other
     // collection or property changed.
@@ -210,6 +273,6 @@ describe('canonical MongoDB validator registry', () => {
     expect(
       canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
       'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
-    ).toBe('b11d3b3402a1d3a73c93e381eeff38f63ce536bdbf3f6ae1dffe2135c5b4259a');
+    ).toBe('ebcb1d88f762db74d5c5e1d59f33c88da2246c33fe792e2b808898cdb5e4d6da');
   });
 });

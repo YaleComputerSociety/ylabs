@@ -1,0 +1,46 @@
+# Model call usage
+
+Every OpenAI call the server makes goes through one client, `server/src/utils/modelClient.ts` (#5523).
+It owns the endpoint, the auth header, the timeout and the request shape, and it records one `model_call_usages` document per call that reached the network.
+A regression test (`server/src/utils/__tests__/modelClientIsTheOnlyOpenAiCaller.test.ts`) drives each lane's and script's default model call through its public entry and fails when one reaches OpenAI without leaving a record under its caller.
+
+## Reading spend
+
+```bash
+yarn --cwd server model-usage:report --environment development --since-days 30
+```
+
+The report groups calls by caller and model, with call and failure counts, prompt tokens (and how many were billed at the cached rate), completion tokens, and an estimated cost.
+Rows are ranked by estimated cost, so the first row is the lane or script to look at first.
+`--environment` must match the database `MONGODBURL` names, exactly as `corpus:snapshot` checks it.
+
+The cost is an estimate at the list prices in `server/src/utils/modelPricing.ts`, not the invoice.
+A model missing from that table is reported as `unpriced` rather than counted as free, so add its price when a lane adopts a new model.
+
+The search live-miss rerank job (`search-rerank-live-miss`, `docs/search-rerank-cache.md`) reads this log as well as writing it: before each call it sums its own caller's estimated cost since UTC midnight and stops for the day at USD 1.00.
+Renaming that caller, or dropping its usage records, would therefore lift its spend ceiling, and an unpriced model counts as over the ceiling.
+
+## What is and is not recorded
+
+- Each caller is a name from `MODEL_CALLERS` in `modelClient.ts`: the lane's source name for a scraper lane, or the script's name for an operator script.
+- A failed call is recorded with `succeeded: false` and zero tokens, so a run that retries a failing upstream shows up as failures rather than vanishing.
+- `modelClient.ts` retries a 429 or 503 itself (#6253): at most 3 attempts per call and at most 30 seconds of waiting in total.
+  It waits for the `retry-after-ms` or `Retry-After` header plus up to 250 ms of jitter, or backs off exponentially with full jitter when neither header is sent.
+  A wait that would pass the total cap throws the throttle at once instead of stalling the run.
+  Each attempt is its own record, so a throttled call reads as one or two `succeeded: false` rows before its result.
+  A throttled request is rejected rather than billed, so a call still bills at most once and a caller's per-call budget still bounds its spend.
+  The search query embedding opts out with `retryWhenThrottled: false`, because it sits on a student's request and its own breaker already declines a 429.
+- A response a benchmark replay serves from its frozen pages is not recorded, because nothing was billed. `snapshotBenchmarkMode.ts` marks such a response with the `FROZEN_MODEL_RESPONSE_HEADER` header.
+- A request a benchmark replay refuses because it has no frozen response is not recorded either, because it never left the process.
+- `scrape:canary` is write-free by construction, so it switches recording off with `setModelUsageSink(null)`, and its model calls are not in the report.
+- The record is written before the call returns, so a script that disconnects right after its last call still keeps it.
+  The search query embedding is the exception: it passes `usageWrite: 'background'`, because a student's search must not wait on a usage insert.
+- A process with no open database connection records nothing, and a write that fails is dropped without failing the call it describes.
+- Meilisearch's own embedder calls OpenAI with the key it was configured with, during an index rebuild and for a hybrid search that arrives without a vector. Those calls never pass through this client, so the report does not include them.
+
+## Where it lives
+
+`model_call_usages` is environment-local (`NEVER_COPY_COLLECTIONS` and `PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS` in `server/src/scripts/mirrorCollectionPolicy.ts`): it records the calls this environment's processes made, so a promotion or refresh never copies or clears it.
+Documents expire 365 days after `calledAt` through a TTL index, because the web service records one per search embedding and the collection would otherwise grow without bound.
+A year covers any window the report is asked for when deciding on cost work.
+The TTL index is built deliberately with `yarn --cwd server db:build-indexes --apply`, like every other index, and nothing expires until it is.

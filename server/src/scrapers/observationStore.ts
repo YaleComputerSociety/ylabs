@@ -6,6 +6,11 @@
  * Never updates existing rows (appends only — supersession is handled by the resolver).
  */
 import mongoose from 'mongoose';
+import {
+  describeHeldByGuard,
+  type ObservationHoldGuard,
+  type ObservationsHeldByGuard,
+} from './observationHolds';
 import { Observation } from '../models/observation';
 import type { ObservedEntityType } from '../models/observation';
 import { Source } from '../models/source';
@@ -36,6 +41,7 @@ import {
   DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS,
   OWNERSHIP_GUARDED_DESCRIPTION_FIELDS,
   OWNERSHIP_GUARDED_ENTITY_TYPE,
+  type DescriptionOwnershipSite,
   ownershipGuardedCitedUrls,
   refusesDescriptionOnSharedPage,
 } from './descriptionSourceOwnership';
@@ -43,6 +49,20 @@ import { resetDescriptionOwnershipCitersCache } from './descriptionOwnershipReso
 import { normalizeEvidenceUrl } from './utils/sharedEvidenceUrls';
 import { insertDocumentsIdempotently } from './observationInsert';
 import { retryTransientDatabaseWrite } from './utils/databaseWriteRetry';
+import {
+  batchMayNameARemovablePerson,
+  loadDirectoryRemovalObservationGuard,
+  type DirectoryRemovalObservationGuard,
+} from './directoryRemovalObservationGuard';
+import { withRenamedResearchEntityIds } from './renamedResearchEntityAdoption';
+import {
+  RUN_SCOPED_EMAIL_RETIREMENT_REASON,
+  isRunScopedLatestWinsEmail,
+  planRunScopedEmailSupersede,
+  type RunScopedEmailRow,
+} from './runScopedEmailSupersede';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
+import { sanitizeClassifierAdmissions, sanitizeRefusedValues } from './observationRefusals';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
@@ -50,6 +70,15 @@ export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDe
 // value-less latest-wins supersession are skipped, and the materializer reads the full
 // retained log and decides late (collapseLatestWins + the resolver's ranked prose
 // preference). Off by default so behavior is byte-identical to today.
+function refusalFieldsForStorage(obs: ObservationInput) {
+  const refusedValues = sanitizeRefusedValues(obs.refusedValues);
+  const admittedUnder = sanitizeClassifierAdmissions(obs.admittedUnder);
+  return {
+    ...(refusedValues.length > 0 ? { refusedValues } : {}),
+    ...(admittedUnder.length > 0 ? { admittedUnder } : {}),
+  };
+}
+
 export function c4LosslessIngestEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.C4_LOSSLESS_INGEST === 'true';
 }
@@ -71,9 +100,17 @@ const isObjectIdLike = (value: string): boolean => /^[a-f0-9]{24}$/i.test(value)
  * registers the model, and registration creates its indexes, which made two scripts'
  * "performs no writes and drops no index in dry-run mode" tests fail.
  */
-async function researchEntityNameRows(
-  keys: readonly string[],
-): Promise<Array<{ slug?: unknown; _id?: unknown; name?: unknown; displayName?: unknown }>> {
+async function researchEntityNameRows(keys: readonly string[]): Promise<
+  Array<{
+    slug?: unknown;
+    _id?: unknown;
+    name?: unknown;
+    displayName?: unknown;
+    websiteUrl?: unknown;
+    entityType?: unknown;
+    kind?: unknown;
+  }>
+> {
   const db = mongoose.connection?.db;
   if (!db || keys.length === 0) return [];
   const objectIds = keys.filter(isObjectIdLike).map((key) => new mongoose.Types.ObjectId(key));
@@ -86,7 +123,7 @@ async function researchEntityNameRows(
           ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
         ],
       },
-      { projection: { slug: 1, name: 1, displayName: 1 } },
+      { projection: { slug: 1, name: 1, displayName: 1, websiteUrl: 1, entityType: 1, kind: 1 } },
     )
     .toArray() as any;
 }
@@ -298,11 +335,11 @@ export function observationEntityIdentityFilter(query: {
   return alternatives.length === 1 ? alternatives[0] : { $or: alternatives };
 }
 
-const loadActiveProseValue: ActiveProseLoader = async (query) => {
+export const loadActiveProseValue: ActiveProseLoader = async (query) => {
   // Fail open when no DB connection is available (e.g. unit tests that mock
   // insertMany): the guard must never hang or block a write, only prevent a
   // proven regression.
-  if (mongoose.connection.readyState !== 1) return undefined;
+  if (!mongooseConnectionWasOpened()) return undefined;
   const identity = observationEntityIdentityFilter(query);
   if (!identity) return undefined;
   const filter: Record<string, unknown> = {
@@ -398,6 +435,16 @@ interface AppendContext {
   sourceName: string;
   sourceWeight: number;
   dryRun: boolean;
+  directoryRemovalGuard?: () => Promise<DirectoryRemovalObservationGuard>;
+}
+
+async function withoutRemovedPeople(
+  inputs: ObservationInput[],
+  ctx: AppendContext,
+): Promise<{ kept: ObservationInput[]; refused: ObservationInput[] }> {
+  if (!batchMayNameARemovablePerson(inputs)) return { kept: inputs, refused: [] };
+  const guard = await (ctx.directoryRemovalGuard ?? loadDirectoryRemovalObservationGuard)();
+  return guard.withoutRemovedPeople(inputs);
 }
 
 /**
@@ -412,6 +459,7 @@ interface ForeignDescriptionCiters {
   byUrl: Map<string, Map<string, string>>;
   canonicalKey: (key: string) => string;
   nameOf: (key: string) => string | undefined;
+  siteOf: (key: string) => DescriptionOwnershipSite | undefined;
 }
 
 /**
@@ -435,6 +483,7 @@ async function loadForeignDescriptionCiters(
     byUrl,
     canonicalKey: (key) => key,
     nameOf: () => undefined,
+    siteOf: () => undefined,
   };
   if (urls.length === 0) return unresolved;
 
@@ -483,12 +532,15 @@ async function loadForeignDescriptionCiters(
   ];
   const nameByKey = new Map<string, string>();
   const idByKey = new Map<string, string>();
+  const siteByKey = new Map<string, DescriptionOwnershipSite>();
   for (const row of await researchEntityNameRows(lookupKeys)) {
     const label = String((row as any).displayName || (row as any).name || '');
     const id = String((row as any)._id);
+    const site = { websiteUrl: row.websiteUrl, entityType: row.entityType, kind: row.kind };
     for (const key of [String((row as any).slug), id]) {
       nameByKey.set(key, label);
       idByKey.set(key, id);
+      siteByKey.set(key, site);
     }
   }
   const canonicalKey = (key: string) => idByKey.get(key) ?? key;
@@ -497,7 +549,12 @@ async function loadForeignDescriptionCiters(
     for (const key of keys) citers.set(canonicalKey(key), nameByKey.get(key) ?? '');
     byUrl.set(url, citers);
   }
-  return { byUrl, canonicalKey, nameOf: (key) => nameByKey.get(key) };
+  return {
+    byUrl,
+    canonicalKey,
+    nameOf: (key) => nameByKey.get(key),
+    siteOf: (key) => siteByKey.get(key),
+  };
 }
 
 const writesOwnershipGuardedDescriptionField = (doc: { entityType: string; field: string }) =>
@@ -571,12 +628,55 @@ async function dropCardLosingDescriptionRefreshes(
   return { rows, observations: held.size };
 }
 
+export type ObservationDropGuard =
+  | 'removedPersonRequest'
+  | 'uncitableHost'
+  | 'sharedPageOwnership'
+  | 'fieldSanitizer'
+  | 'retiredField'
+  | 'invalidEnum'
+  | 'selfDefeatingCard'
+  | 'regressiveProse'
+  | 'weakerProse'
+  | 'cardLoss'
+  | 'dryRun';
+
+export type ObservationDropCounts = Partial<Record<ObservationDropGuard, number>>;
+
+function observationDropCounts(counts: ObservationDropCounts): ObservationDropCounts {
+  return Object.fromEntries(
+    Object.entries(counts).filter(([, count]) => typeof count === 'number' && count > 0),
+  ) as ObservationDropCounts;
+}
+
 export async function appendObservations(
   inputs: ObservationInput[],
   ctx: AppendContext,
-  opts: { loadActiveProse?: ActiveProseLoader; judgeDescriptionCard?: DescriptionCardJudge } = {},
-): Promise<{ inserted: number; skipped: number; superseded: number }> {
-  if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
+  opts: {
+    loadActiveProse?: ActiveProseLoader;
+    judgeDescriptionCard?: DescriptionCardJudge;
+    reportDrops?: (droppedBy: ObservationDropCounts) => void;
+  } = {},
+): Promise<{
+  inserted: number;
+  skipped: number;
+  superseded: number;
+  refusedByRequest?: ObservationInput[];
+  heldByGuard?: ObservationsHeldByGuard;
+}> {
+  const heldByGuard: ObservationsHeldByGuard = {};
+  const hold = (guard: ObservationHoldGuard, field: string): void => {
+    const byField = (heldByGuard[guard] ??= {});
+    byField[field] = (byField[field] ?? 0) + 1;
+  };
+  if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0, heldByGuard };
+  const removal = await withoutRemovedPeople(await withRenamedResearchEntityIds(inputs), ctx);
+  for (const obs of removal.refused) hold('removed-by-request', obs.field);
+  const refusedByRequest = removal.refused.length > 0 ? { refusedByRequest: removal.refused } : {};
+  if (removal.kept.length === 0) {
+    opts.reportDrops?.(observationDropCounts({ removedPersonRequest: removal.refused.length }));
+    return { inserted: 0, skipped: 0, superseded: 0, ...refusedByRequest, heldByGuard };
+  }
   const loadActiveProse = opts.loadActiveProse ?? loadActiveProseValue;
 
   // A deploy-target host names a build rather than a page, so an observation cited to
@@ -591,9 +691,11 @@ export async function appendObservations(
   // `labBrandedNameTypeBackfill`) still carry a stored `websiteUrl` through unchecked.
   const candidateInputs: ObservationInput[] = [];
   let rejectedUncitableHost = 0;
-  for (const obs of inputs) {
-    if (isUncitableHostUrl(obs.sourceUrl)) rejectedUncitableHost += 1;
-    else candidateInputs.push(obs);
+  for (const obs of removal.kept) {
+    if (isUncitableHostUrl(obs.sourceUrl)) {
+      rejectedUncitableHost += 1;
+      hold('uncitable-host', obs.field);
+    } else candidateInputs.push(obs);
   }
   // A page several rows already cite as their description cannot be the description
   // of this one either. The judgement sits here for the same reason the uncitable-host
@@ -613,9 +715,11 @@ export async function appendObservations(
       ? [...citers.entries()].filter(([key]) => key !== own).map(([, name]) => name)
       : [];
     const ownName = citers?.get(own) ?? foreignCiters.nameOf(storedCiterKey(obs));
-    if (refusesDescriptionOnSharedPage({ ...obs, ownName }, foreignNames))
+    const ownSite = foreignCiters.siteOf(storedCiterKey(obs));
+    if (refusesDescriptionOnSharedPage({ ...obs, ownName, ownSite }, foreignNames)) {
       ownershipRejected.push(obs);
-    else ownedInputs.push(obs);
+      hold('description-on-shared-page', obs.field);
+    } else ownedInputs.push(obs);
   }
   if (ownershipRejected.length > 0) {
     console.warn(
@@ -629,6 +733,7 @@ export async function appendObservations(
     const sanitized = sanitizeObservationField(obs.entityType, obs.field, obs.value);
     if (sanitized.rejected) {
       rejectedFurniture += 1;
+      hold('furniture', obs.field);
       continue;
     }
     sanitizedInputs.push(sanitized.value === obs.value ? obs : { ...obs, value: sanitized.value });
@@ -642,6 +747,7 @@ export async function appendObservations(
   const liveFieldInputs = sanitizedInputs.filter(
     (obs) => !isRefusedObservationField(obs.entityType, obs.field),
   );
+  for (const obs of rejectedRetiredField) hold('retired-field', obs.field);
   if (rejectedRetiredField.length > 0) {
     console.warn(
       `[observation-store] ${ctx.sourceName} asserted ${rejectedRetiredField.length} observation(s) on a retired field; nothing reads them, so they are refused at ingest (#3362).`,
@@ -650,6 +756,7 @@ export async function appendObservations(
   const rejectedInvalidEnum = liveFieldInputs.filter((obs) =>
     isObservationValueRejected(obs.field, obs.value),
   );
+  for (const obs of rejectedInvalidEnum) hold('invalid-enum', obs.field);
   const acceptedInputs = liveFieldInputs.filter(
     (obs) => !isObservationValueRejected(obs.field, obs.value),
   );
@@ -714,6 +821,7 @@ export async function appendObservations(
         selfDefeatingCardRestatesFullDescription(obs.field, obs.value, incomingContext)
       ) {
         selfDefeatingCardGuarded += 1;
+        hold('self-defeating-card', obs.field);
         continue;
       }
       if (
@@ -726,6 +834,7 @@ export async function appendObservations(
         })
       ) {
         regressiveProseGuarded += 1;
+        hold('regressive-prose', obs.field);
         continue;
       }
       if (
@@ -738,12 +847,14 @@ export async function appendObservations(
         })
       ) {
         weakerProseGuarded += 1;
+        hold('weaker-prose', obs.field);
         continue;
       }
     }
     keptInputs.push(obs);
   }
 
+  const beforeCardPairGuard = [...keptInputs];
   const cardRegressionGuarded = losslessIngest
     ? { rows: 0, observations: 0 }
     : await dropCardLosingDescriptionRefreshes(
@@ -752,6 +863,11 @@ export async function appendObservations(
         incomingResearchAreasByEntity,
         opts.judgeDescriptionCard ?? createDescriptionCardJudge(),
       );
+  if (cardRegressionGuarded.observations > 0) {
+    const stillKept = new Set(keptInputs);
+    for (const obs of beforeCardPairGuard)
+      if (!stillKept.has(obs)) hold('card-losing-pair', obs.field);
+  }
   if (cardRegressionGuarded.rows > 0) {
     console.warn(
       `[observation-store] ${ctx.sourceName} kept the current description for ${cardRegressionGuarded.rows} row(s) whose refresh would lose the card the current one gives.`,
@@ -776,8 +892,25 @@ export async function appendObservations(
     weakerProseGuarded +
     selfDefeatingCardGuarded +
     cardRegressionGuarded.observations;
+  const droppedBy = observationDropCounts({
+    removedPersonRequest: removal.refused.length,
+    uncitableHost: rejectedUncitableHost,
+    sharedPageOwnership: ownershipRejected.length,
+    fieldSanitizer: rejectedFurniture,
+    retiredField: rejectedRetiredField.length,
+    invalidEnum: rejectedInvalidEnum.length,
+    selfDefeatingCard: selfDefeatingCardGuarded,
+    regressiveProse: regressiveProseGuarded,
+    weakerProse: weakerProseGuarded,
+    cardLoss: cardRegressionGuarded.observations,
+  });
+  const heldAtIngest = describeHeldByGuard(heldByGuard);
+  if (heldAtIngest) {
+    console.warn(`[observation-store] ${ctx.sourceName} held at ingest: ${heldAtIngest} (#6441).`);
+  }
   if (keptInputs.length === 0) {
-    return { inserted: 0, skipped: skippedCount, superseded: 0 };
+    opts.reportDrops?.(droppedBy);
+    return { inserted: 0, skipped: skippedCount, superseded: 0, ...refusedByRequest, heldByGuard };
   }
 
   const docs = keptInputs.map((obs) => {
@@ -802,6 +935,9 @@ export async function appendObservations(
       ...(obs.assertsNoValueFor && obs.assertsNoValueFor.length > 0
         ? { assertsNoValueFor: [...new Set(obs.assertsNoValueFor)] }
         : {}),
+      ...refusalFieldsForStorage(obs),
+      ...(obs.reslugAdoption ? { reslugAdoption: true } : {}),
+      ...(obs.extraction ? { extraction: { source: obs.extraction.source } } : {}),
       observationFingerprint: buildObservationFingerprint({
         sourceName: ctx.sourceName,
         entityType: obs.entityType,
@@ -814,10 +950,19 @@ export async function appendObservations(
   });
 
   if (ctx.dryRun) {
-    return { inserted: 0, skipped: docs.length + skippedCount, superseded: 0 };
+    for (const doc of docs) hold('dry-run', doc.field);
+    opts.reportDrops?.({ ...droppedBy, dryRun: docs.length });
+    return {
+      inserted: 0,
+      skipped: docs.length + skippedCount,
+      superseded: 0,
+      ...refusedByRequest,
+      heldByGuard,
+    };
   }
 
   if (docs.some(writesOwnershipGuardedDescriptionField)) resetDescriptionOwnershipCitersCache();
+  opts.reportDrops?.(droppedBy);
   const landed = await insertDocumentsIdempotently(
     docs,
     {
@@ -830,6 +975,13 @@ export async function appendObservations(
     },
     { label: `${ctx.sourceName} observation insert (${docs.length} docs)` },
   );
+  if (landed.length < docs.length) {
+    const landedInputs = new Set(landed.map(({ input }) => input));
+    for (const doc of docs) if (!landedInputs.has(doc)) hold('not-landed', doc.field);
+    console.warn(
+      `[observation-store] ${ctx.sourceName} did not land ${docs.length - landed.length} of ${docs.length} observation(s) (#6441).`,
+    );
+  }
   const latestByFingerprint = new Map<string, { id: any; input: (typeof docs)[number] }>();
   for (const { inserted, input } of landed) {
     const fingerprint = (inserted as { observationFingerprint?: string }).observationFingerprint;
@@ -871,8 +1023,99 @@ export async function appendObservations(
           )
         ).modifiedCount || 0
       : 0;
+  const emailsANewerReadReplaced = await retireEmailsANewerReadReplaced(
+    landed.map(({ input }) => input),
+    ctx,
+  );
 
-  return { inserted: landed.length, skipped: skippedCount, superseded };
+  return {
+    inserted: landed.length,
+    skipped: skippedCount,
+    superseded: superseded + emailsANewerReadReplaced,
+    ...refusedByRequest,
+    heldByGuard,
+  };
+}
+
+const RUN_SCOPED_EMAIL_LOOKUP_CHUNK = 200;
+
+function runScopedEmailRow(doc: {
+  _id: unknown;
+  sourceName?: unknown;
+  entityKey?: unknown;
+  entityId?: unknown;
+  sourceUrl?: unknown;
+  scrapeRunId?: unknown;
+  observedAt?: unknown;
+  value?: unknown;
+}): RunScopedEmailRow {
+  return {
+    id: String(doc._id),
+    sourceName: String(doc.sourceName ?? ''),
+    entityKey: stringifyIdentifier(doc.entityKey),
+    entityId: stringifyIdentifier(doc.entityId),
+    sourceUrl: typeof doc.sourceUrl === 'string' ? doc.sourceUrl : undefined,
+    scrapeRunId: stringifyIdentifier(doc.scrapeRunId),
+    observedAt: doc.observedAt,
+    value: doc.value,
+  };
+}
+
+export async function retireEmailsANewerReadReplaced(
+  landedDocs: Array<{
+    _id: unknown;
+    entityType: string;
+    field: string;
+    entityKey?: string;
+    entityId?: unknown;
+    sourceUrl?: string;
+  }>,
+  ctx: AppendContext,
+): Promise<number> {
+  const emailDocs = landedDocs.filter(
+    (doc) =>
+      isRunScopedLatestWinsEmail(doc) &&
+      Boolean(doc.sourceUrl) &&
+      Boolean(observationEntityIdentityFilter(doc)),
+  );
+  if (emailDocs.length === 0 || !mongooseConnectionWasOpened()) return 0;
+
+  const clauses = new Map<string, Record<string, unknown>>();
+  for (const doc of emailDocs) {
+    const identity = observationEntityIdentityFilter(doc) as Record<string, unknown>;
+    const clause = { sourceUrl: doc.sourceUrl, ...identity };
+    clauses.set(JSON.stringify(clause), clause);
+  }
+  const stored: RunScopedEmailRow[] = [];
+  const clauseList = [...clauses.values()];
+  for (let start = 0; start < clauseList.length; start += RUN_SCOPED_EMAIL_LOOKUP_CHUNK) {
+    const rows = (await Observation.find({
+      entityType: 'user',
+      field: 'email',
+      sourceName: ctx.sourceName,
+      superseded: { $ne: true },
+      'rollback.rolledBackAt': { $exists: false },
+      $or: clauseList.slice(start, start + RUN_SCOPED_EMAIL_LOOKUP_CHUNK),
+    })
+      .select('_id sourceName entityKey entityId sourceUrl scrapeRunId observedAt value')
+      .lean()) as unknown as Array<Parameters<typeof runScopedEmailRow>[0]>;
+    stored.push(...rows.map(runScopedEmailRow));
+  }
+
+  const landedIds = new Set(emailDocs.map((doc) => String(doc._id)));
+  const storedById = new Map(stored.map((row) => [row.id, row]));
+  const landedRows = emailDocs
+    .filter((doc) => !storedById.has(String(doc._id)))
+    .map((doc) => runScopedEmailRow({ ...doc, sourceName: ctx.sourceName }));
+  const retireIds = planRunScopedEmailSupersede([...storedById.values(), ...landedRows])
+    .map((retirement) => retirement.id)
+    .filter((id) => !landedIds.has(id));
+  if (retireIds.length === 0) return 0;
+  const { retired } = await retireObservations(
+    { _id: { $in: retireIds.map((id) => new mongoose.Types.ObjectId(id)) } },
+    RUN_SCOPED_EMAIL_RETIREMENT_REASON,
+  );
+  return retired;
 }
 
 export interface RetireObservationsResult {
@@ -925,6 +1168,9 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'fellowshipRecipients',
   'currentUndergradCount',
   'undergradEvidenceQuote',
+  'undergradInvitation',
+  'undergradListEvidence',
+  'emeritusListedLeadIds',
   'undergradRoleEvidenceQuote',
   'contactInstructionsQuote',
   'joinPageUrl',
@@ -955,6 +1201,9 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   // A member page's identity evidence changes whenever the page adds or reorders a
   // Yale link, and two active readings conflict, which blinds identity resolution (#3802).
   'profileIdentityEvidence',
+  // One reading of a row's research pages per run, so a changed or cleared page retires
+  // the text a derivation was computed from instead of standing beside it (#5396).
+  'researchPageText',
 ]);
 
 /**
@@ -979,6 +1228,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
     'name',
     'inferredUserName',
     'title',
+    'profileTitle',
     'sectionLabel',
     'sourcePublishedAt',
     'freshnessExpiresAt',
@@ -996,12 +1246,50 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
  * same reason, so value-keyed rows left its own earlier typings live to outvote the newest one
  * at resolve; another source's type is a rival claim rather than a restatement, so it stays
  * value-keyed (#4884).
+ *
+ * The department roster lane types each person from their own listed title, so a re-read
+ * that finds a staff title must replace the lane's earlier faculty typing rather than stand
+ * beside it as a same-source conflict. The lane emits one typing per key per run, after its
+ * concurrent roster lanes finish, because two inserts for one key in flight at once supersede
+ * each other. It never lets a staff typing replace a faculty one, whether the faculty typing
+ * came from another roster in the run or from a live lane title stating a faculty appointment,
+ * so a partial run cannot undo another roster's faculty typing (#5750).
+ *
+ * The research.yale.edu directory lane and the centres lane state one type per record per
+ * read too. Value-keyed, a core facility record kept the `CENTER` a pre-category read had
+ * inferred from its name live beside the `CORE_FACILITY` every later read took from the
+ * cores directory, and with one more `CENTER` vote from another lane the stale reading won
+ * (#5749).
+ *
+ * Lead-school inheritance states one school and one department list per row per pass,
+ * derived from the lead's current appointment, so when the lead moves department the
+ * re-derived value must replace the lane's earlier one rather than stand beside it as a
+ * same-source conflict (#6053).
+ *
+ * The roster-bio lane re-reads the rows it minted and restates their biography evidence,
+ * so a narrower reading, or its no-value assertion, replaces the earlier evidence (#6107).
+ *
+ * The YSM faculty directory mints one research row per profile and states one school for
+ * it, read from the profile's Primary appointment, so a changed school must replace the
+ * earlier one rather than leave the profile naming two schools (#6160).
  */
 export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   Record<string, ReadonlySet<string>>
 > = {
   'lab-microsite-description-llm': new Set(['name', 'displayName']),
-  'official-profile-pi-backfill': new Set(['entityType', 'kind']),
+  'official-profile-pi-backfill': new Set([
+    'entityType',
+    'kind',
+    'school',
+    'statedAppointmentSchools',
+  ]),
+  'yale-research-official': new Set(['entityType', 'kind']),
+  'centers-institutes-index': new Set(['entityType', 'kind']),
+  'center-member-profile-research': new Set(['researchSummary', 'bio']),
+  'dept-faculty-roster': new Set(['userType']),
+  'lead-pi-school-inheritance': new Set(['school', 'departments']),
+  'roster-bio-research-evidence': new Set(['researchInterestSummary']),
+  'ysm-faculty-directory': new Set(['school']),
 };
 
 export function usesLatestWinsFingerprint(input: {

@@ -5,23 +5,27 @@
  * /users/savedResearchEntities and /users/savedResearchEntityPlans) so a saved
  * plan can be opened, annotated, and removed rather than only counted.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from '../../utils/axios';
 import useFavorites from '../../hooks/useFavorites';
 import useLatestRequest from '../../hooks/useLatestRequest';
-import usePlanNoteAutosave from '../../hooks/usePlanNoteAutosave';
+import usePlanNoteAutosave, { type PersistNoteOptions } from '../../hooks/usePlanNoteAutosave';
+import { keepalivePut } from '../../utils/keepalivePut';
+import PlanNoteSaveStatusText from './PlanNoteSaveStatusText';
 import useUndoableRemoval from '../../hooks/useUndoableRemoval';
 import UndoRemovalBanner from '../shared/UndoRemovalBanner';
 import LoadingSpinner from '../shared/LoadingSpinner';
 import LoadErrorNotice from '../shared/LoadErrorNotice';
 import { safeRouteSegment } from '../../utils/url';
 import {
-  deriveUndergraduateAccessStatus,
+  deriveUndergraduateAccessStatuses,
   undergraduateAccessSortRank,
+  type UndergraduateAccessFields,
   type UndergraduateAccessStatus,
 } from '../../utils/undergraduateAccessStatus';
 import ResearchHomeComparison from './ResearchHomeComparison';
+import { entityKindLabel, researchEntityTitle } from '../../utils/researchEntityCopy';
 import ResearchPlanStageControl from './ResearchPlanStageControl';
 import {
   createResearchAnalyticsInteractionId,
@@ -32,36 +36,57 @@ import {
   DEFAULT_RESEARCH_PLAN_STAGE,
   isActiveResearchPlanStage,
   normalizeResearchPlanStage,
-  researchPlanStageOrder,
   type ResearchPlanStage,
 } from '../../utils/researchPlanStages';
 import useLoadEffect from '../../hooks/useLoadEffect';
+import PlanListControls, { PlanFilterEmptyState } from './PlanListControls';
+import {
+  DEFAULT_PLAN_LIST_VIEW,
+  compareNewestSavedFirst,
+  compareStageOrder,
+  countPlansByStage,
+  orderStably,
+  planMatchesStageFilter,
+  type PlanListView,
+  type PlanStageFilter,
+} from '../../utils/dashboardPlanListView';
+import usePlanDetailSync, {
+  isPlanVersionConflict,
+  type ServedPlanDetail,
+  type ServedPlans,
+} from '../../hooks/usePlanDetailSync';
 
 interface SavedResearchPlansProps {
   onCountChange?: (count: number | null) => void;
+  listView?: PlanListView;
+  onListViewChange?: (view: PlanListView) => void;
 }
 
-interface SavedResearchEntity {
+const PLAN_LIST_ID = 'saved-research-plans';
+const PLAN_LIST_NOUN = 'saved research plans';
+
+interface SavedResearchEntity extends UndergraduateAccessFields {
   _id: string;
   slug: string;
   name: string;
   displayName?: string;
   kind?: string;
+  entityType?: string;
+  creativePractice?: boolean;
   departments?: string[];
   school?: string;
   shortDescription?: string;
-  hasUndergradHostingEvidence?: boolean;
 }
 
 /**
  * A saved plan the list cannot show, reported by the server rather than dropped, so
  * a student can tell an entry they removed from one the corpus stopped
- * serving (#2174). `REMOVED` is terminal; `UNAVAILABLE` can be reversed by a repair
+ * serving (#2174). `RETIRED` is terminal; `UNAVAILABLE` can be reversed by a repair
  * or a re-gate, so its plan and private notes are worth keeping.
  */
 interface UnavailableSavedResearchEntity {
   _id: string;
-  reason: 'REMOVED' | 'UNAVAILABLE';
+  reason: 'UNAVAILABLE' | 'MERGED' | 'RETIRED';
 }
 
 /**
@@ -69,32 +94,29 @@ interface UnavailableSavedResearchEntity {
  * these reasons is name-agnostic while the detail page resolves lead names, so a
  * held row can still serve its own page (#2597). What is true of every row here is
  * that the student directory is not listing it, which is what the copy says.
- * `REMOVED` promises nothing about the note: the plan row survives until removal,
+ * `RETIRED` promises nothing about the note: the plan row survives until removal,
  * but with the target gone no surface can ever read the note back.
  */
 const UNAVAILABLE_REASON_TEXT: Record<UnavailableSavedResearchEntity['reason'], string> = {
-  REMOVED: 'No longer in the directory, and it will not come back. Remove it to clear this item.',
+  MERGED:
+    'Combined with another listing for the same research. Your note moves to that listing at the next directory update.',
+  RETIRED: 'No longer listed in the student directory. Remove it to clear this item.',
   UNAVAILABLE:
     'Held back from the student directory right now. Your note is kept, and this item will reappear here once the directory lists it again.',
 };
 
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
+
+type ListLoadMode = 'replace' | 'merge';
 
 const MAX_PLAN_NOTES_LENGTH = 2000;
 const MIN_COMPARE_ENTITIES = 2;
 const MAX_COMPARE_ENTITIES = 4;
 
-const kindLabel = (kind?: string): string => {
-  if (!kind) return 'Research';
-  return kind
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-};
+const entityDisplayName = (entity: SavedResearchEntity): string => researchEntityTitle(entity);
 
-const entityDisplayName = (entity: SavedResearchEntity): string =>
-  entity.displayName?.trim() || entity.name;
+const noteButtonVerb = (isEditing: boolean, note: string): string =>
+  isEditing ? 'Hide note' : note ? 'Edit note' : 'Add note';
 
 const entitySubtitle = (entity: SavedResearchEntity): string => {
   const departments = (entity.departments || []).filter(Boolean);
@@ -105,28 +127,17 @@ const entitySubtitle = (entity: SavedResearchEntity): string => {
 };
 
 const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
+  invitation: 'border-[var(--yr-green)] bg-[var(--yr-green-soft)] text-[var(--yr-green)]',
   evidence: 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]',
 };
 
-const persistResearchPlanNote = async (entityId: string, note: string) => {
-  try {
-    await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
-      data: { plan: { privateNotes: note } },
-    });
-  } catch (error) {
-    console.error('Error saving research plan note.');
-    throw error;
-  }
-  void trackResearchEvent({
-    eventType: 'research_plan_update',
-    entityType: 'research_entity',
-    entityId,
-    payload: { field: 'note_presence' },
-    dedupeKey: createResearchAnalyticsInteractionId('plan'),
-  });
-};
+const NO_ACCESS_STATUSES: UndergraduateAccessStatus[] = [];
 
-const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
+const SavedResearchPlans = ({
+  onCountChange,
+  listView = DEFAULT_PLAN_LIST_VIEW,
+  onListViewChange,
+}: SavedResearchPlansProps) => {
   const {
     favIds: savedSlugs,
     loaded: savedSlugsLoaded,
@@ -138,14 +149,75 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const [unavailable, setUnavailable] = useState<UnavailableSavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
+  const [savedAt, setSavedAt] = useState<Record<string, string | undefined>>({});
+  const [keptInView, setKeptInView] = useState<{ filter: PlanStageFilter; ids: string[] }>({
+    filter: DEFAULT_PLAN_LIST_VIEW.stageFilter,
+    ids: [],
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [plansLoadFailed, setPlansLoadFailed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedForCompare, setSelectedForCompare] = useState<string[]>([]);
   const [isComparing, setIsComparing] = useState(false);
-  const { noteSaveStatuses, saveNote, scheduleNoteSave, markNotePersisted } =
-    usePlanNoteAutosave(persistResearchPlanNote);
+  const planSyncRef = useRef<ReturnType<typeof usePlanDetailSync> | null>(null);
+  const persistResearchPlanNote = useCallback(
+    async (entityId: string, note: string, options?: PersistNoteOptions) => {
+      const sync = planSyncRef.current;
+      const send = async (version: string | undefined) => {
+        const body = {
+          data: {
+            plan: { privateNotes: note, ...(version ? { expectedUpdatedAt: version } : {}) },
+          },
+        };
+        const served = options?.keepalive
+          ? await keepalivePut(`/users/savedResearchEntityPlans/${entityId}`, body)
+          : (await axios.put(`/users/savedResearchEntityPlans/${entityId}`, body)).data;
+        return (served as { savedResearchEntityPlans?: ServedPlans } | undefined)
+          ?.savedResearchEntityPlans;
+      };
+      try {
+        await (sync
+          ? sync.writePlan(entityId, send, { immediate: options?.keepalive })
+          : send(undefined));
+      } catch (error) {
+        console.error('Error saving research plan note.');
+        if (isPlanVersionConflict(error))
+          void sync?.refreshPlanDetails({ adoptVersionOf: entityId });
+        throw error;
+      }
+      void trackResearchEvent({
+        eventType: 'research_plan_update',
+        entityType: 'research_entity',
+        entityId: entityId,
+        payload: { field: 'note_presence' },
+        dedupeKey: createResearchAnalyticsInteractionId('plan'),
+      });
+    },
+    [],
+  );
+  const {
+    noteSaveStatuses,
+    saveNote,
+    scheduleNoteSave,
+    cancelNoteSave,
+    retainNoteSaves,
+    markNotePersisted,
+  } = usePlanNoteAutosave(persistResearchPlanNote);
+
+  const planSync = usePlanDetailSync({
+    plansPath: '/users/savedResearchEntityPlans',
+    responseKey: 'savedResearchEntityPlans',
+    notes,
+    stages,
+    setNotes,
+    setStages,
+    markNotePersisted,
+  });
+  const { recordServedPlan, writePlan, refreshPlanDetails, takeServerStage } = planSync;
+  useEffect(() => {
+    planSyncRef.current = planSync;
+  });
 
   // The count is how many plans the owner has, not how many of them are servable:
   // reporting only the servable ones is what let the dashboard read "0 research
@@ -156,54 +228,95 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
 
   const planRequest = useLatestRequest();
 
-  const loadPlans = useCallback(async () => {
-    const ticket = planRequest.begin();
-    setIsLoading(true);
-    setPlansLoadFailed(false);
-    try {
-      const [entityResponse, planResponse] = await Promise.all([
-        axios.get('/users/savedResearchEntities', {
-          withCredentials: true,
-          signal: ticket.signal,
-        }),
-        axios.get('/users/savedResearchEntityPlans', {
-          withCredentials: true,
-          signal: ticket.signal,
-        }),
-      ]);
-      if (!ticket.isCurrent()) return;
-      const loadedEntities: SavedResearchEntity[] = entityResponse.data.savedResearchEntities || [];
-      const loadedUnavailable: UnavailableSavedResearchEntity[] =
-        entityResponse.data.unavailableSavedResearchEntities || [];
-      const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
-        string,
-        { privateNotes?: string; stage?: string }
-      >;
-      const loadedNotes: Record<string, string> = {};
-      const loadedStages: Record<string, ResearchPlanStage> = {};
-      for (const entity of loadedEntities) {
-        loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
-        loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
-        markNotePersisted(entity._id, loadedNotes[entity._id]);
+  const loadedIdsRef = useRef(new Set<string>());
+
+  const loadPlans = useCallback(
+    async (mode: ListLoadMode = 'replace'): Promise<boolean> => {
+      const ticket = planRequest.begin();
+      const merging = mode === 'merge';
+      if (!merging) {
+        setIsLoading(true);
+        setPlansLoadFailed(false);
       }
-      setEntities(loadedEntities);
-      setUnavailable(loadedUnavailable);
-      setNotes(loadedNotes);
-      setStages(loadedStages);
-    } catch {
-      if (!ticket.isCurrent()) return;
-      console.error('Error fetching saved research plans.');
-      setEntities([]);
-      setUnavailable([]);
-      setNotes({});
-      setStages({});
-      setPlansLoadFailed(true);
-    } finally {
-      if (ticket.isCurrent()) setIsLoading(false);
-    }
-  }, [planRequest, markNotePersisted]);
+      try {
+        const [entityResponse, planResponse] = await Promise.all([
+          axios.get('/users/savedResearchEntities', {
+            withCredentials: true,
+            signal: ticket.signal,
+          }),
+          axios.get('/users/savedResearchEntityPlans', {
+            withCredentials: true,
+            signal: ticket.signal,
+          }),
+        ]);
+        if (!ticket.isCurrent()) return false;
+        const loadedEntities: SavedResearchEntity[] =
+          entityResponse.data.savedResearchEntities || [];
+        const loadedUnavailable: UnavailableSavedResearchEntity[] =
+          entityResponse.data.unavailableSavedResearchEntities || [];
+        const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
+          string,
+          ServedPlanDetail
+        >;
+        const loadedNotes: Record<string, string> = {};
+        const loadedStages: Record<string, ResearchPlanStage> = {};
+        const loadedSavedAt: Record<string, string | undefined> = {};
+        for (const entity of loadedEntities) {
+          loadedSavedAt[entity._id] = plans[entity._id]?.createdAt;
+          if (merging && loadedIdsRef.current.has(entity._id)) continue;
+          loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
+          loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
+          markNotePersisted(entity._id, loadedNotes[entity._id]);
+          recordServedPlan(entity._id, plans[entity._id]);
+        }
+        loadedIdsRef.current = new Set([
+          ...(merging ? loadedIdsRef.current : []),
+          ...loadedEntities.map((entity) => entity._id),
+        ]);
+        setEntities(loadedEntities);
+        setUnavailable(loadedUnavailable);
+        setNotes((current) => (merging ? { ...loadedNotes, ...current } : loadedNotes));
+        setStages((current) => (merging ? { ...loadedStages, ...current } : loadedStages));
+        setSavedAt(loadedSavedAt);
+        return true;
+      } catch {
+        if (!ticket.isCurrent() || merging) return false;
+        console.error('Error fetching saved research plans.');
+        setEntities([]);
+        setUnavailable([]);
+        setNotes({});
+        setStages({});
+        setSavedAt({});
+        setPlansLoadFailed(true);
+        return false;
+      } finally {
+        if (ticket.isCurrent()) setIsLoading(false);
+      }
+    },
+    [planRequest, markNotePersisted, recordServedPlan],
+  );
 
   useLoadEffect(loadPlans);
+
+  useEffect(() => {
+    if (savedSlugsLoaded) void refreshPlanDetails();
+  }, [savedSlugs, savedSlugsLoaded, refreshPlanDetails]);
+
+  const requestedSaveIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (isLoading || plansLoadFailed || !savedSlugsLoaded) return;
+    const known = new Set([
+      ...entities.flatMap((entity) => [entity.slug, entity._id]),
+      ...unavailable.map((entry) => entry._id),
+      ...requestedSaveIdsRef.current,
+    ]);
+    const unseen = savedSlugs.filter((id) => !known.has(id));
+    if (unseen.length === 0) return;
+    unseen.forEach((id) => requestedSaveIdsRef.current.add(id));
+    void loadPlans('merge').then((merged) => {
+      if (!merged) unseen.forEach((id) => requestedSaveIdsRef.current.delete(id));
+    });
+  }, [isLoading, plansLoadFailed, savedSlugsLoaded, entities, unavailable, savedSlugs, loadPlans]);
 
   const retryLoad = () => {
     void reloadFavorites();
@@ -214,11 +327,21 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     async (entityId: string, nextStage: ResearchPlanStage) => {
       const previousStage = stages[entityId] || DEFAULT_RESEARCH_PLAN_STAGE;
       if (previousStage === nextStage) return;
+      setKeptInView((current) =>
+        current.filter === listView.stageFilter
+          ? { filter: current.filter, ids: [...current.ids, entityId] }
+          : { filter: listView.stageFilter, ids: [entityId] },
+      );
       setStages((current) => ({ ...current, [entityId]: nextStage }));
       setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'saving' }));
       try {
-        await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
-          data: { plan: { stage: nextStage } },
+        await writePlan(entityId, async (version) => {
+          const response = await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
+            data: {
+              plan: { stage: nextStage, ...(version ? { expectedUpdatedAt: version } : {}) },
+            },
+          });
+          return response.data?.savedResearchEntityPlans;
         });
         setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'saved' }));
         void trackResearchEvent({
@@ -228,13 +351,17 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
           payload: { field: 'stage' },
           dedupeKey: createResearchAnalyticsInteractionId('plan'),
         });
-      } catch {
+      } catch (error) {
         console.error('Error saving research plan stage.');
+        if (isPlanVersionConflict(error) && (await takeServerStage(entityId))) {
+          setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'conflict' }));
+          return;
+        }
         setStages((current) => ({ ...current, [entityId]: previousStage }));
         setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'error' }));
       }
     },
-    [stages],
+    [stages, writePlan, takeServerStage, listView.stageFilter],
   );
 
   /**
@@ -257,6 +384,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     // Read the note before the row leaves the list, because afterwards no read path
     // serves it.
     const note = notes[entityId] || '';
+    cancelNoteSave(entityId);
     const removal = setFavorite(slug, false, 'saved_plans');
     void removal.then((removed) => {
       if (removed) markNotePersisted(entityId, '');
@@ -271,6 +399,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       // failed re-favourite outside the server's restore window discards the only copy
       // of the note, which is the loss this undo exists to prevent.
       if (note) {
+        await refreshPlanDetails({ adoptVersionOf: entityId });
         setNotes((current) => ({ ...current, [entityId]: note }));
         await saveNote(entityId, note);
       }
@@ -291,11 +420,14 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     [entities, savedSlugs],
   );
 
+  useEffect(() => {
+    retainNoteSaves(visibleEntities.map((entity) => entity._id));
+  }, [visibleEntities, retainNoteSaves]);
+
   const accessStatuses = useMemo(() => {
-    const statuses = new Map<string, UndergraduateAccessStatus>();
+    const statuses = new Map<string, UndergraduateAccessStatus[]>();
     for (const entity of visibleEntities) {
-      const status = deriveUndergraduateAccessStatus(entity);
-      if (status) statuses.set(entity._id, status);
+      statuses.set(entity._id, deriveUndergraduateAccessStatuses(entity));
     }
     return statuses;
   }, [visibleEntities]);
@@ -307,26 +439,44 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
 
   const orderedEntities = useMemo(
     () =>
-      visibleEntities
-        .map((entity, index) => ({ entity, index }))
-        .sort((a, b) => {
-          const stageDelta =
-            researchPlanStageOrder(stageOf(a.entity._id)) -
-            researchPlanStageOrder(stageOf(b.entity._id));
-          if (stageDelta !== 0) return stageDelta;
-          const accessDelta =
-            undergraduateAccessSortRank(accessStatuses.get(a.entity._id) || null) -
-            undergraduateAccessSortRank(accessStatuses.get(b.entity._id) || null);
-          if (accessDelta !== 0) return accessDelta;
-          return a.index - b.index;
-        })
-        .map(({ entity }) => entity),
-    [visibleEntities, stageOf, accessStatuses],
+      orderStably(visibleEntities, (a, b) =>
+        listView.sort === 'stage'
+          ? compareStageOrder(stageOf(a._id), stageOf(b._id)) ||
+            undergraduateAccessSortRank(accessStatuses.get(a._id) || NO_ACCESS_STATUSES) -
+              undergraduateAccessSortRank(accessStatuses.get(b._id) || NO_ACCESS_STATUSES)
+          : compareNewestSavedFirst(savedAt[a._id], savedAt[b._id]),
+      ),
+    [visibleEntities, stageOf, accessStatuses, savedAt, listView.sort],
   );
+
+  const stageCounts = useMemo(
+    () =>
+      countPlansByStage(
+        visibleEntities.map((entity) => stageOf(entity._id)),
+        'research',
+      ),
+    [visibleEntities, stageOf],
+  );
+
+  const shownEntities = useMemo(() => {
+    const kept = keptInView.filter === listView.stageFilter ? keptInView.ids : [];
+    return orderedEntities.filter(
+      (entity) =>
+        planMatchesStageFilter(stageOf(entity._id), listView.stageFilter, 'research') ||
+        kept.includes(entity._id),
+    );
+  }, [orderedEntities, stageOf, listView.stageFilter, keptInView]);
+
+  const changeListView = (view: PlanListView) => onListViewChange?.(view);
 
   const selectableIds = useMemo(
     () => new Set(visibleEntities.map((entity) => entity._id)),
     [visibleEntities],
+  );
+
+  const shownIds = useMemo(
+    () => new Set(shownEntities.map((entity) => entity._id)),
+    [shownEntities],
   );
 
   const selectedEntities = useMemo(
@@ -341,6 +491,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const toggleCompareSelection = (entityId: string) => {
     setSelectedForCompare((current) => {
       if (current.includes(entityId)) return current.filter((id) => id !== entityId);
+      if (!shownIds.has(entityId)) return current;
       const visibleSelectedCount = current.filter((id) => selectableIds.has(id)).length;
       if (visibleSelectedCount >= MAX_COMPARE_ENTITIES) return current;
       return [...current, entityId];
@@ -462,11 +613,31 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         </div>
       )}
 
-      {visibleEntities.length > 0 ? (
+      {visibleEntities.length > 0 && (
+        <PlanListControls
+          surface="research"
+          idPrefix={PLAN_LIST_ID}
+          view={listView}
+          counts={stageCounts}
+          shownCount={shownEntities.length}
+          pluralNoun={PLAN_LIST_NOUN}
+          onChange={changeListView}
+        />
+      )}
+
+      {visibleEntities.length > 0 && shownEntities.length === 0 ? (
+        <PlanFilterEmptyState
+          idPrefix={PLAN_LIST_ID}
+          surface="research"
+          stageFilter={listView.stageFilter}
+          pluralNoun={PLAN_LIST_NOUN}
+          onShowAll={() => changeListView({ ...listView, stageFilter: 'all' })}
+        />
+      ) : visibleEntities.length > 0 ? (
         <ul>
-          {orderedEntities.map((entity) => {
+          {shownEntities.map((entity) => {
             const status = noteSaveStatuses[entity._id];
-            const accessStatus = accessStatuses.get(entity._id) || null;
+            const entityAccessStatuses = accessStatuses.get(entity._id) || NO_ACCESS_STATUSES;
             const isEditing = editingId === entity._id;
             const note = notes[entity._id] || '';
             const stage = stageOf(entity._id);
@@ -481,17 +652,21 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex min-w-0 items-start gap-3">
                       {visibleEntities.length >= MIN_COMPARE_ENTITIES && (
-                        <input
-                          type="checkbox"
-                          checked={selectedForCompare.includes(entity._id)}
-                          disabled={atCompareLimit && !selectedForCompare.includes(entity._id)}
-                          onChange={() => toggleCompareSelection(entity._id)}
-                          aria-label={`Select ${entityDisplayName(entity)} to compare`}
-                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded-control border-line-strong accent-brand yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
-                        />
+                        <label className="-mx-3 -mb-3.5 -mt-3 inline-flex h-11 w-10 flex-shrink-0 cursor-pointer items-center justify-center has-[:disabled]:cursor-not-allowed">
+                          <input
+                            type="checkbox"
+                            checked={selectedForCompare.includes(entity._id)}
+                            disabled={atCompareLimit && !selectedForCompare.includes(entity._id)}
+                            onChange={() => toggleCompareSelection(entity._id)}
+                            aria-label={`Select ${entityDisplayName(entity)} to compare`}
+                            className="h-4 w-4 rounded-control border-line-strong accent-brand yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                        </label>
                       )}
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold text-brand">{kindLabel(entity.kind)}</p>
+                        <p className="text-xs font-semibold text-brand">
+                          {entityKindLabel(entity)}
+                        </p>
                         <h3 className="truncate text-sm font-semibold text-ink">
                           <Link
                             to={`/research/${safeRouteSegment(entity.slug)}`}
@@ -504,15 +679,18 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         {entitySubtitle(entity) && (
                           <p className="truncate text-xs text-muted">{entitySubtitle(entity)}</p>
                         )}
-                        {accessStatus && (
+                        {entityAccessStatuses.length > 0 && (
                           <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            <span
-                              className={`inline-flex items-center rounded-card border px-2 py-0.5 text-xs font-semibold ${
-                                ACCESS_BADGE_CLASS[accessStatus.tone]
-                              }`}
-                            >
-                              {accessStatus.label}
-                            </span>
+                            {entityAccessStatuses.map((accessStatus) => (
+                              <span
+                                key={accessStatus.label}
+                                className={`inline-flex items-center rounded-card border px-2 py-0.5 text-xs font-semibold ${
+                                  ACCESS_BADGE_CLASS[accessStatus.tone]
+                                }`}
+                              >
+                                {accessStatus.label}
+                              </span>
+                            ))}
                           </p>
                         )}
                       </div>
@@ -524,13 +702,14 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                           setEditingId((current) => (current === entity._id ? null : entity._id))
                         }
                         aria-expanded={isEditing}
+                        aria-label={`${noteButtonVerb(isEditing, note)} for ${entityDisplayName(entity)}`}
                         className={`inline-flex min-h-[44px] items-center rounded-control border px-3 py-2 text-xs font-semibold transition-colors yr-focus-ring ${
                           note
                             ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'
                             : 'border-[var(--yr-line)] text-muted hover:bg-[var(--yr-panel-muted)]'
                         }`}
                       >
-                        {isEditing ? 'Hide notes' : note ? 'Notes' : 'Add note'}
+                        {noteButtonVerb(isEditing, note)}
                       </button>
                       <Link
                         to={`/research/${safeRouteSegment(entity.slug)}`}
@@ -544,7 +723,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         onClick={() =>
                           unsavePlan(entity.slug, entity._id, entityDisplayName(entity))
                         }
-                        aria-label={`Remove ${entityDisplayName(entity)} from saved plans`}
+                        aria-label={`Unsave ${entityDisplayName(entity)}`}
                         className="inline-flex min-h-[44px] items-center rounded-control border border-[var(--yr-line)] px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 yr-focus-ring"
                       >
                         Unsave
@@ -582,21 +761,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         rows={2}
                         className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                       />
-                      <p
-                        className={`mt-1 text-xs ${
-                          status === 'error' ? 'text-red-700' : 'text-muted'
-                        }`}
-                        role={status === 'error' ? 'alert' : 'status'}
-                        aria-live="polite"
-                      >
-                        {status === 'saving'
-                          ? 'Saving…'
-                          : status === 'saved'
-                            ? 'Saved'
-                            : status === 'error'
-                              ? 'Not saved. Check your connection or sign in again, then retry.'
-                              : ''}
-                      </p>
+                      <PlanNoteSaveStatusText status={status} />
                     </div>
                   )}
                 </div>

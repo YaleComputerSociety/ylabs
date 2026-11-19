@@ -155,6 +155,21 @@ describe('Program card deadline urgency', () => {
     expect(screen.getByText(/days left/)).toBeTruthy();
   });
 
+  it('shows the student stage and no countdown once they marked the program applied', () => {
+    renderAdmin(
+      <BrowseCard
+        item={soonItem({})}
+        isFavorite
+        onOpenModal={vi.fn()}
+        statusBadgeOverride={{ label: 'Applied', className: '' }}
+      />,
+    );
+
+    expect(screen.getByText('Applied')).toBeTruthy();
+    expect(screen.queryByText(/days left/)).toBeNull();
+    expect(screen.queryByText('Closing soon')).toBeNull();
+  });
+
   it('gives no countdown for a projected next-cycle date inside the urgency window (#3904)', () => {
     renderAdmin(
       <BrowseCard

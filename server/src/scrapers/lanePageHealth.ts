@@ -10,6 +10,7 @@ import {
 } from '../services/sourceLinkHealth';
 import { isBenchmarkModeActive, isBenchmarkReplayActive } from './snapshotBenchmarkMode';
 import type { ObservationInput, ScraperContext } from './types';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 export const LANE_PAGE_HEALTH_FIELD = 'lanePageHealth';
 
@@ -234,7 +235,7 @@ export async function loadLanePageHealthObservations(
   entity: Pick<ObservationInput, 'entityType' | 'entityId' | 'entityKey'>,
 ): Promise<LanePageObservation[]> {
   if (!entity.entityId && !entity.entityKey) return [];
-  if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return [];
+  if (isBenchmarkModeActive() || !mongooseConnectionWasOpened()) return [];
   return Observation.find({
     entityType: entity.entityType,
     sourceName,
@@ -269,7 +270,7 @@ export function withoutGoneLanePageObservations<T extends LanePageObservation>(
     const withdrawn =
       page !== undefined &&
       page.goneAt > page.liveAt &&
-      observedTime(observation.observedAt) < page.goneAt;
+      (borrowsPages(laneOf(observation)) || observedTime(observation.observedAt) < page.goneAt);
     if (!withdrawn) {
       kept.push(observation);
       continue;
@@ -288,6 +289,8 @@ function comparableValue(value: unknown): string {
 }
 
 const GONE_PAGE_BODY_FIELDS = ['description', 'fullDescription'] as const;
+
+const GONE_PAGE_EVIDENCE_FIELDS = ['methods'] as const;
 
 export function planGoneLanePageFieldClears(input: {
   stored: Record<string, unknown> | null | undefined;
@@ -320,9 +323,10 @@ export function planGoneLanePageFieldClears(input: {
     clearedBodies.includes('fullDescription') &&
     clearable('shortDescription') &&
     (storedValue('shortDescription') !== null || 'shortDescription' in input.staged);
+  const clearedEvidence = GONE_PAGE_EVIDENCE_FIELDS.filter(storedFromGonePage);
   return cardFollowsClearedBody || storedFromGonePage('shortDescription')
-    ? [...clearedBodies, 'shortDescription']
-    : clearedBodies;
+    ? [...clearedBodies, 'shortDescription', ...clearedEvidence]
+    : [...clearedBodies, ...clearedEvidence];
 }
 
 export class LanePageReads {
@@ -483,7 +487,7 @@ export async function emitLanePageHealthForCitedPages(
   scope?: CitedLanePageScope,
 ): Promise<CitedLanePageHealthResult> {
   const result: CitedLanePageHealthResult = { gone: 0, restored: 0 };
-  if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return result;
+  if (isBenchmarkModeActive() || !mongooseConnectionWasOpened()) return result;
   const cited = await Observation.find({
     sourceName: ctx.sourceName,
     entityType: 'researchEntity',

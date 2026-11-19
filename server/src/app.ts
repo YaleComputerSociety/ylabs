@@ -14,6 +14,7 @@ import dotenv from 'dotenv';
 import * as path from 'path';
 import { readFile } from 'fs/promises';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { refreshDirectoryRemovalsBeforeServing } from './middleware/directoryRemovalFreshness';
 import { securityHeaders } from './middleware/securityHeaders';
 import { createClientStaticAssets } from './middleware/clientStaticAssets';
 import { sanitizeMongo } from './middleware/sanitizeMongo';
@@ -33,6 +34,11 @@ import {
   globalLimiter,
   observeFirstContactVolume,
 } from './middleware/rateLimiters';
+import {
+  reissueSessionSignedWithPreviousKey,
+  SESSION_SECRET_PREVIOUS_ENV,
+  sessionSigningKeys,
+} from './utils/sessionSigningKeys';
 
 const clientDistPath = path.join(resolveServerPackageRoot(import.meta.url), '..', 'client', 'dist');
 const API_BODY_LIMIT = '64kb';
@@ -80,6 +86,20 @@ if (sessionSecret.length < MIN_SESSION_SECRET_LENGTH || isWeakSessionSecret(sess
       'SESSION_SECRET must be set to a high-entropy string of at least 32 characters.',
     );
   }
+}
+
+const sessionSigningKeyList = sessionSigningKeys({
+  currentSecret: sessionSecret,
+  previousSecret: process.env[SESSION_SECRET_PREVIOUS_ENV],
+  isAcceptableSecret: (value) =>
+    value.length >= MIN_SESSION_SECRET_LENGTH && !isWeakSessionSecret(value),
+  requireStrongSecrets: !allowsNonProductionSecurityBypass(),
+});
+
+if (sessionSigningKeyList.length > 1) {
+  console.info(
+    `[security] Session secret rotation overlap active: ${SESSION_SECRET_PREVIOUS_ENV} still verifies older cookies.`,
+  );
 }
 
 const bypassRuntimeSecurity = allowsNonProductionSecurityBypass();
@@ -183,7 +203,7 @@ const app = express()
   .use(
     cookieSession({
       name: sessionCookieName(),
-      keys: [sessionSecret],
+      keys: sessionSigningKeyList,
       // 30 days: long enough that students aren't silently logged out
       // mid-semester workflows, short enough to bound stale sessions.
       maxAge: SESSION_LIFETIME_MS,
@@ -193,6 +213,7 @@ const app = express()
       sameSite: 'lax',
     }),
   )
+  .use(reissueSessionSignedWithPreviousKey(sessionCookieName(), sessionSecret))
   .use('/api', ensureAnonymousRateLimitId)
   // cookie-session is stateless and does not implement session.regenerate /
   // session.save, which Passport >= 0.6 calls during req.logIn (session-
@@ -228,12 +249,19 @@ const app = express()
   .use('/api', firstContactLimiter)
   .use('/api', observeFirstContactVolume)
   .use('/api', globalLimiter)
+  .use('/api', refreshDirectoryRemovalsBeforeServing)
   .use('/api', passportRoutes)
   .use('/api', routes);
 
 app.use('/api', notFoundHandler);
 
-app.get('/{*clientPath}', async (req, res) => {
+const isPageRequest = (req: express.Request): boolean =>
+  req.method === 'GET' || req.method === 'HEAD';
+
+// Path-less on purpose: a named wildcard route decodes the path and answers a
+// malformed percent sequence with a 400 before resolvePageShell can 404 it.
+app.use(async (req, res, next) => {
+  if (!isPageRequest(req)) return next();
   if (!shouldServeSpaFallback(req)) {
     return sendStaticNotFound(res);
   }

@@ -2,6 +2,7 @@
  * Append-only audit record for privileged operator/admin mutations.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 const adminAuditEventSchema = new mongoose.Schema(
   {

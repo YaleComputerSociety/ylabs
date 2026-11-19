@@ -10,6 +10,7 @@
  * promotion replaces whole collections and would erase a benchmark the target captured.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const LANE_BENCHMARK_COLLECTION = 'lane_benchmarks';
 export const LANE_BENCHMARK_PAGE_COLLECTION = 'lane_benchmark_pages';
@@ -55,6 +56,8 @@ const laneBenchmarkSchema = new mongoose.Schema(
     goldLabels: { type: [goldLabelSchema], default: [] },
     goldLabeledAt: { type: Date, required: false },
     supersedes: { type: String, required: false },
+    retiredAt: { type: Date, required: false },
+    retiredReason: { type: String, required: false },
   },
   { timestamps: true },
 );

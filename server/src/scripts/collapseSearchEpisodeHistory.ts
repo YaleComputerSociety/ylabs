@@ -21,13 +21,18 @@ import { initializeConnections } from '../db/connections';
 import { AnalyticsEvent, AnalyticsEventType } from '../models/analytics';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import {
   collapseDeleteIds,
   collapseKeepRewrites,
   planSearchEpisodeCollapse,
   type SearchEventRow,
 } from './collapseSearchEpisodeHistoryCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -60,15 +65,12 @@ export function parseCollapseSearchEpisodesArgs(argv: string[]): CollapseSearchE
       throw new Error('--confirm-search-episode-collapse does not accept a value');
     }
     if (arg === '--snapshot') {
-      options.snapshot = resolveSafeJsonReportOutputPath(argv[i + 1], '--snapshot');
+      options.snapshot = resolveSafeJsonReportPath(argv[i + 1], '--snapshot');
       i += 1;
       continue;
     }
     if (arg.startsWith('--snapshot=')) {
-      options.snapshot = resolveSafeJsonReportOutputPath(
-        arg.slice('--snapshot='.length),
-        '--snapshot',
-      );
+      options.snapshot = resolveSafeJsonReportPath(arg.slice('--snapshot='.length), '--snapshot');
       continue;
     }
     if (arg === '--output') {
@@ -90,7 +92,7 @@ export function writeJsonArtifact(report: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 /**

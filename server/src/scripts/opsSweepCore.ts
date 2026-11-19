@@ -13,11 +13,15 @@ import {
 } from './runScraperSweep';
 import { RENDER_CRON_RUN_LIMIT_MS } from './weeklyDevelopmentSweepCore';
 import { formatDuration, type StoredWeeklySweepRun } from './weeklySweepRunsReportCore';
+import { effectiveObservationCount } from '../scrapers/effectiveObservationCount';
 
 export const SWEEP_RENDER_SERVICE_ID = 'crn-db0sddk9v7es73cqui20';
 export const SWEEP_DATABASE_ROLE = 'ylabs-sweep-dev';
 export const ATLAS_PROJECT_ID = '685b36661a9a1101c14a007b';
 export const RERUN_SOURCE_ENTRYPOINT_FLAG = '--rerun-source';
+export const RESUME_WEEKLY_RUN_ENTRYPOINT_FLAG = '--resume-weekly-run';
+const WEEKLY_RUN_ID_PATTERN = /^[0-9a-f]{24}$/;
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/;
 export const OVERRIDE_HOLD_FLAG = '--override-hold';
 export const SWEEP_ENTRYPOINT_PATH = 'deploy/sweep-runner/entrypoint.sh';
 export const SWEEP_ENTRYPOINT_COMMAND = '/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh';
@@ -49,13 +53,15 @@ const SOURCE_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 export type OpsSweepCommand =
   | { command: 'status' }
   | { command: 'rerun'; sources: string[]; overrideHold: boolean; dryRun: boolean }
-  | { command: 'probe-permissions'; dryRun: boolean };
+  | { command: 'probe-permissions'; dryRun: boolean }
+  | { command: 'resume'; runId?: string; dryRun: boolean };
 
 export const OPS_SWEEP_USAGE = [
   'Usage:',
   '  yarn ops:sweep status',
   `  yarn ops:sweep rerun <source>... [${OVERRIDE_HOLD_FLAG}] [--dry-run]`,
   '  yarn ops:sweep probe-permissions [--dry-run]',
+  '  yarn ops:sweep resume [<weekly run id>] [--dry-run]',
 ].join('\n');
 
 export function parseOpsSweepArgs(argv: string[]): OpsSweepCommand {
@@ -90,6 +96,16 @@ export function parseOpsSweepArgs(argv: string[]): OpsSweepCommand {
       throw new Error(`probe-permissions takes no arguments\n${OPS_SWEEP_USAGE}`);
     }
     return { command, dryRun: flags.includes('--dry-run') };
+  }
+  if (command === 'resume') {
+    allowFlags(['--dry-run']);
+    if (positional.length > 1)
+      throw new Error(`resume takes at most one run id\n${OPS_SWEEP_USAGE}`);
+    const [runId] = positional;
+    if (runId && !WEEKLY_RUN_ID_PATTERN.test(runId)) {
+      throw new Error(`resume needs a weekly_sweep_runs id (24 hex characters); got ${runId}`);
+    }
+    return { command, ...(runId ? { runId } : {}), dryRun: flags.includes('--dry-run') };
   }
   throw new Error(OPS_SWEEP_USAGE);
 }
@@ -225,6 +241,65 @@ export function rerunJobStartCommand(sources: string[], overrideHold: boolean): 
   ].join(' ');
 }
 
+export interface ResumableWeeklySweep extends RunningWeeklySweep {
+  finishedAt?: Date | string | null;
+  codeSha?: string | null;
+}
+
+/**
+ * Why an interrupted weekly run cannot be resumed now. Only an unfinished run whose
+ * Render time limit has passed is resumable: until then its container may still be writing
+ * Development, and a run that finished, however it ended, has no checkpoint left to continue.
+ */
+export function resumeRefusals(input: {
+  run: ResumableWeeklySweep | null | undefined;
+  heldLockSources: string[];
+  now: Date;
+}): string[] {
+  const { run } = input;
+  if (!run) return ['no unfinished weekly_sweep_runs row was found'];
+  const refusals: string[] = [];
+  const id = String(run._id ?? 'with no id');
+  if (run.status !== 'running' || run.finishedAt) {
+    refusals.push(
+      `run ${id} is ${String(run.status ?? 'unknown')}, and only an unfinished run can be resumed`,
+    );
+  }
+  if (!run.codeSha || !COMMIT_SHA_PATTERN.test(run.codeSha)) {
+    refusals.push(`run ${id} recorded no commit, so a resume cannot run the same code`);
+  }
+  if (isWeeklySweepInProgress(run, input.now)) {
+    refusals.push(
+      `run ${id} started ${new Date(run.startedAt!).toISOString()}, within the Render time limit, so its container may still be running`,
+    );
+  }
+  if (input.heldLockSources.length > 0) {
+    refusals.push(
+      `another writer holds a live scrape job lock on ${input.heldLockSources.join(', ')}`,
+    );
+  }
+  return refusals;
+}
+
+export function resumeJobStartCommand(runId: string, codeSha: string): string {
+  if (!WEEKLY_RUN_ID_PATTERN.test(runId) || !COMMIT_SHA_PATTERN.test(codeSha)) {
+    throw new Error(`refusing to build a resume command for ${JSON.stringify([runId, codeSha])}`);
+  }
+  return [
+    SWEEP_ENTRYPOINT_COMMAND,
+    RESUME_WEEKLY_RUN_ENTRYPOINT_FLAG,
+    runId,
+    codeSha,
+    '--confirm-weekly-development-sweep',
+  ].join(' ');
+}
+
+export function entrypointSupportsResume(entrypointText: string | null | undefined): boolean {
+  return Boolean(
+    entrypointText && entrypointText.includes(`"${RESUME_WEEKLY_RUN_ENTRYPOINT_FLAG}"`),
+  );
+}
+
 export function entrypointSupportsRerun(entrypointText: string | null | undefined): boolean {
   return Boolean(entrypointText && entrypointText.includes(`"${RERUN_SOURCE_ENTRYPOINT_FLAG}"`));
 }
@@ -251,6 +326,7 @@ export interface ScrapeRunCounts {
   finishedAt?: Date | string;
   codeSha?: string;
   observationCount?: number;
+  storedObservationCountAtReconcile?: number;
   entitiesCreated?: number;
   entitiesUpdated?: number;
   entitiesArchived?: number;
@@ -297,16 +373,16 @@ export function compareRerunWithBaseline(input: {
   if (!current) {
     return result('missing', ['no scrape_runs row was written by this rerun']);
   }
-  const summary = `run ${String(current._id ?? '?')} ${current.status ?? 'unknown'}, code ${current.codeSha?.slice(0, 9) ?? 'unknown'}, ${countOf(current.observationCount)} observations, ${countOf(current.entitiesCreated)} created / ${countOf(current.entitiesUpdated)} updated / ${countOf(current.entitiesArchived)} archived, ${countOf(current.materializationErrors)} materialization errors`;
+  const summary = `run ${String(current._id ?? '?')} ${current.status ?? 'unknown'}, code ${current.codeSha?.slice(0, 9) ?? 'unknown'}, ${effectiveObservationCount(current)} observations, ${countOf(current.entitiesCreated)} created / ${countOf(current.entitiesUpdated)} updated / ${countOf(current.entitiesArchived)} archived, ${countOf(current.materializationErrors)} materialization errors`;
   if (current.status !== 'success') return result('failed', [summary]);
-  if (countOf(current.observationCount) === 0) {
+  if (effectiveObservationCount(current) === 0) {
     return result('produced-nothing', [summary, 'producedNothing: the run wrote no observations']);
   }
   if (!baseline) {
     return result('no-baseline', [summary, 'no earlier comparable successful run to compare with']);
   }
   const deltas: Array<[string, number, number]> = [
-    ['observations', countOf(baseline.observationCount), countOf(current.observationCount)],
+    ['observations', effectiveObservationCount(baseline), effectiveObservationCount(current)],
     ['entities updated', countOf(baseline.entitiesUpdated), countOf(current.entitiesUpdated)],
   ];
   const lines = [

@@ -633,6 +633,60 @@ describe('getAnalytics research coverage and range scoping', () => {
     expect(projectStage.$project.displayName).toBe('$netidResearcher.displayName');
   });
 
+  it('counts active users only among app-user accounts while averaging events over every netid', async () => {
+    primeAnalyticsMocks();
+
+    await getAnalytics();
+
+    const engagementPipeline = mocks.analyticsAggregate.mock.calls.find((call) =>
+      call[0].some((stage: Record<string, any>) => stage.$facet && stage.$facet.userActivityStats),
+    )![0];
+
+    const server = await MongoMemoryServer.create();
+    const client = new MongoClient(server.getUri());
+    try {
+      await client.connect();
+      const db = client.db('analytics_active_users');
+      const loginAt = (netid: string) => ({
+        eventType: AnalyticsEventType.LOGIN,
+        netid,
+        userType: 'undergraduate',
+        timestamp: new Date(),
+      });
+
+      await db
+        .collection('analyticsevents')
+        .insertMany([
+          loginAt('withaccount01'),
+          loginAt('withaccount01'),
+          loginAt('withaccount02'),
+          loginAt('deletedaccount01'),
+          loginAt('archivedaccount01'),
+          loginAt('neverloggedin01'),
+        ]);
+      await db
+        .collection('accounts')
+        .insertMany([
+          { netid: 'withaccount01', lastLoginAt: new Date() },
+          { netid: 'withaccount02', lastLoginAt: new Date() },
+          { netid: 'archivedaccount01', lastLoginAt: new Date(), archived: true },
+          { netid: 'neverloggedin01' },
+        ]);
+
+      const [result] = await db
+        .collection('analyticsevents')
+        .aggregate(engagementPipeline)
+        .toArray();
+
+      expect(result.userActivityStats).toEqual([
+        { _id: null, activeUsers: 2, avgEventsPerUser: 1.2 },
+      ]);
+    } finally {
+      await client.close();
+      await server?.stop();
+    }
+  });
+
   it('resolves the linked display name and still emits one row for a user with no account', async () => {
     primeAnalyticsMocks();
 
@@ -1111,6 +1165,22 @@ describe('logEvent', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('keeps redacting a public page contact a student pastes into a search (#5046)', async () => {
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: AnalyticsEventType.RESEARCH_SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'reef lab reef-lab@example.edu 203-555-0199',
+    });
+
+    const stored = JSON.stringify(mocks.analyticsCreate.mock.calls[0][0]);
+    expect(stored).toContain('reef lab [email redacted] [phone redacted]');
+    expect(stored).not.toContain('reef-lab@example.edu');
+    expect(stored).not.toContain('203-555-0199');
   });
 
   it('redacts direct contact details before persisting analytics text and metadata', async () => {

@@ -2,9 +2,8 @@
  * UndergradFellowshipRecipientScraper
  *
  * Reverse-looks-up Yale faculty who have actually mentored undergraduate
- * researchers by harvesting publicly published recipient lists for each of the
- * major Yale undergrad research fellowship programs (STARS, Dean's Research,
- * Tetelman, Mellon Mays, etc.).
+ * researchers by harvesting publicly published recipient lists that name a
+ * faculty mentor (STARS II symposium booklets).
  *
  * Each {student, program, year, advisor} pair feeds the matched advisor's
  * ResearchGroup as a `pastUndergradAdvisees` entry, which the access materializer
@@ -41,18 +40,18 @@
  *     emitted) so a smoke run with `--limit 50` exercises the full pipeline
  *     without producing 1000s of observations
  *   - ctx.options.only — filters to a subset of programKeys, e.g.
- *     `--only stars-ii,deans-research`
+ *     `--only stars-ii`
  *   - ctx.options.manualRecipientCsvDir — optional directory containing
  *     `<programKey>.csv` files for otherwise manual-upload-required programs.
  *     When no CSV is present, the scraper also looks for `<programKey>.pdf`
  *     in the accepted-input fellowship directory and extracts labelled rows.
  *
  * Most Yale fellowship programs do NOT publish recipient lists in scrapable
- * HTML — they're either symposium PDFs (STARS II), hidden behind admin email
- * contact (Mellon Mays, Tetelman, Dean's Research), or not published at all.
- * Configs for those programs are stubbed with `manualUploadRequired=true` and
- * a clear error from their extractor; an admin can drop a CSV, or a reviewed
- * PDF with labelled recipient/advisor text, into the system at a later stage.
+ * HTML. STARS II publishes symposium PDFs, so its config is stubbed with
+ * `manualUploadRequired=true` and a clear error from its extractor; an admin
+ * can drop a CSV, or a reviewed PDF with labelled recipient/advisor text, into
+ * the system at a later stage. A program that publishes no recipient list
+ * naming a mentor is not configured at all (docs/decisions.md, #5362).
  * The scraper architecture is
  * built so adding a new program — when a list does become available — is a
  * single config-row change.
@@ -66,7 +65,7 @@ import { Researcher } from '../../models/researcher';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
-import { normalizeOrcid } from '../../utils/orcid';
+import { plausiblePersonOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { researcherNetid } from '../../utils/researcherIdentity';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -78,10 +77,25 @@ import {
 } from '../../utils/tempArtifactRoots';
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import {
+  adviserPairCountsTowardHosting,
+  departmentsAgree,
+  type UndergradHostingRule,
+} from '../utils/labScienceAdviserRule';
+import {
+  parseSeniorEssayAdviserTables,
+  parseSeniorThesisAdviserParagraphs,
+  parseStarsAuthorListBooklet,
+  type AdviserListPair,
+} from '../utils/undergradAdviserLists';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import {
+  catalogDepartmentWithAncestors,
+  getOrgUnitCanonicalizer,
+} from '../orgUnitCanonicalization';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MIN_FELLOWSHIP_RECIPIENT_YEAR = 1980;
 const MAX_FELLOWSHIP_RECIPIENT_FUTURE_YEARS = 1;
@@ -146,6 +160,7 @@ export interface FellowshipRecipient {
   reviewNote?: string;
   /** Year of the award (4-digit). Inferred from the listing or the URL. */
   year: number;
+  sourceDepartments?: string[];
 }
 
 /** Context passed to per-program extractors for URL resolution + year inference. */
@@ -180,6 +195,8 @@ export interface ProgramConfig {
   /** Reason string surfaced in the log line when manualUploadRequired=true. */
   skipReason?: string;
   pdfExtractor?: RecipientExtractor;
+  adviserDepartments?: readonly string[];
+  hostingRule?: UndergradHostingRule;
 }
 
 export interface FellowshipRecipientListing {
@@ -228,9 +245,8 @@ export interface UserMatch {
 // ---------------------------------------------------------------------------
 // Per-program extractor stubs
 //
-// All active v1 programs require a manual upload: their recipient lists are either
-// PDF-only (STARS II symposium booklets), behind an admin contact (Mellon Mays,
-// Tetelman, Dean's Research), or simply never published. Each stub throws a
+// A program whose recipient list is PDF-only (STARS II symposium booklets)
+// requires a manual upload. Each stub throws a
 // clear, identical-shaped error so the
 // orchestrator records `manual-upload-required` for that program and continues.
 //
@@ -339,7 +355,7 @@ export const manualRecipientCsvExtractor: RecipientExtractor = (csv, ctx) => {
     out.push({
       studentName: valueFor(record, ['studentName', 'student', 'recipientName', 'recipient']),
       advisorName,
-      advisorOrcid: normalizeOrcid(valueFor(record, ['advisorOrcid', 'orcid'])) || undefined,
+      advisorOrcid: plausiblePersonOrcid(valueFor(record, ['advisorOrcid', 'orcid'])) || undefined,
       projectTitle:
         valueFor(record, ['projectTitle', 'project', 'title', 'researchTitle']) || undefined,
       sourceUrl: valueFor(record, ['sourceUrl', 'source', 'sourceLink', 'url']) || undefined,
@@ -556,6 +572,38 @@ export const starsSymposiumPiExtractor: RecipientExtractor = (text, ctx) => {
   return out;
 };
 
+const adviserPairsToRecipients = (
+  pairs: AdviserListPair[],
+  sourceUrl: string,
+): FellowshipRecipient[] =>
+  pairs.map((pair) => ({
+    studentName: '',
+    advisorName: pair.advisorName,
+    year: pair.year,
+    sourceUrl,
+    ...(pair.sourceDepartments ? { sourceDepartments: pair.sourceDepartments } : {}),
+  }));
+
+export const seniorEssayAdviserTableExtractor: RecipientExtractor = (html, ctx) =>
+  adviserPairsToRecipients(parseSeniorEssayAdviserTables(html).pairs, ctx.sourceUrl || ctx.pageUrl);
+
+export const seniorThesisAdviserParagraphExtractor: RecipientExtractor = (html, ctx) =>
+  adviserPairsToRecipients(
+    parseSeniorThesisAdviserParagraphs(html).pairs,
+    ctx.sourceUrl || ctx.pageUrl,
+  );
+
+export const starsSymposiumBookletExtractor: RecipientExtractor = (text, ctx) => {
+  const piLineRecipients = starsSymposiumPiExtractor(text, ctx);
+  if (piLineRecipients.length > 0) return piLineRecipients;
+  const year = ctx.defaultYear ?? parseExactYear(text.match(/\b20\d{2}\b/)?.[0]);
+  if (!year) return [];
+  return adviserPairsToRecipients(
+    parseStarsAuthorListBooklet(text, year),
+    ctx.sourceUrl || ctx.pageUrl,
+  );
+};
+
 export function manualPdfInputsFor(
   config: Pick<ProgramConfig, 'programKey' | 'urls'>,
 ): Array<{ fileKey: string; sourceUrl: string }> {
@@ -651,52 +699,14 @@ export const DEFAULT_PROGRAM_CONFIGS: ProgramConfig[] = [
     urls: [
       'https://science.yalecollege.yale.edu/sites/default/files/files/2025%20STARS2%20Symposium.pdf',
       'https://science.yalecollege.yale.edu/sites/default/files/files/2024%20STARS2%20Symposium%20(1)%20(002).pdf',
+      'https://science.yalecollege.yale.edu/sites/default/files/files/STARSII%20Symposium%20Abstract%20Booklet%20Spring%202021.pdf',
+      'https://science.yalecollege.yale.edu/sites/default/files/files/STARS%20II%20Symposium%20Booklet%20Complete_13Apr2019.pdf',
     ],
     extractor: manualUploadStub,
-    pdfExtractor: starsSymposiumPiExtractor,
+    pdfExtractor: starsSymposiumBookletExtractor,
     manualUploadRequired: true,
     skipReason: 'STARS II symposium abstracts published as PDF only',
-  },
-  {
-    programKey: 'stars-summer',
-    programName: 'STARS Summer Research Program',
-    urls: [
-      'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/stars/stars-summer-research-program',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason: 'STARS Summer recipient lists not publicly published; symposium booklets are PDFs',
-  },
-  {
-    programKey: 'deans-research',
-    programName: "Yale College Dean's Research Fellowship & Rosenfeld Science Scholars",
-    urls: [
-      'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/yale-college-deans-research-fellowship',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason: "Dean's Research / Rosenfeld recipient lists not published; contact program office",
-  },
-  {
-    programKey: 'tetelman',
-    programName: 'Alan S. Tetelman 1958 Fellowship for International Research in the Sciences',
-    urls: [
-      'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/tetelman-fellowship-international-research-sciences',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason:
-      'Tetelman recipient list not publicly published; only sample destinations are listed',
-  },
-  {
-    programKey: 'mellon-mays',
-    programName: 'Mellon Mays Undergraduate Fellowship (Yale)',
-    urls: [
-      'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason: 'Mellon Mays Yale fellow names not publicly published',
+    hostingRule: 'lab-science-program',
   },
 ];
 
@@ -712,8 +722,16 @@ export const DEFAULT_PROGRAM_CONFIGS: ProgramConfig[] = [
  *
  * Plausible = 1980 ≤ year ≤ currentYear+1 to avoid matching e.g. ZIP codes.
  */
+function decodedUrl(url: string): string {
+  try {
+    return decodeURI(url);
+  } catch {
+    return url;
+  }
+}
+
 export function inferYearFromUrl(url: string): number | undefined {
-  const matches = url.match(/(19[89]\d|20\d{2})/g);
+  const matches = decodedUrl(url).match(/(19[89]\d|20\d{2})/g);
   if (!matches || matches.length === 0) return undefined;
   const currentYear = new Date().getFullYear();
   // Prefer the LAST match (URLs typically end with `/2024/` rather than start with it).
@@ -744,7 +762,7 @@ export function aggregateAdviseesByAdvisor(
   const out = new Map<string, AdvisorAggregateRow>();
   for (const r of recipients) {
     const cleaned = normalizeName(r.advisorName);
-    const advisorOrcid = normalizeOrcid(r.advisorOrcid);
+    const advisorOrcid = plausiblePersonOrcid(r.advisorOrcid);
     if (!cleaned && !advisorOrcid) continue;
     const { last } = splitName(cleaned);
     if (!last && !advisorOrcid) continue;
@@ -827,7 +845,7 @@ export async function netidForAdvisorResearcher(researcher: {
   return researcherNetid(researcher);
 }
 
-function researcherToUserMatch(researcher: any, netid: string): UserMatch {
+export function researcherToUserMatch(researcher: any, netid: string): UserMatch {
   const displayName =
     typeof researcher.displayName === 'string' ? researcher.displayName.trim() : '';
   const { first, last } = splitName(displayName);
@@ -842,9 +860,8 @@ function researcherToUserMatch(researcher: any, netid: string): UserMatch {
 }
 
 export const defaultAdvisorResearcherResolver: AdvisorResearcherResolver = async (name, orcid) => {
-  if (orcid) {
-    const cleaned = normalizeOrcid(orcid);
-    if (!cleaned) return null;
+  const cleaned = plausiblePersonOrcid(orcid);
+  if (cleaned) {
     const researcher: any = await Researcher.findOne({
       'identifiers.orcid': cleaned.toUpperCase(),
       archived: { $ne: true },
@@ -863,12 +880,50 @@ export const defaultAdvisorResearcherResolver: AdvisorResearcherResolver = async
   return researcherToUserMatch(researcher, await netidForAdvisorResearcher(researcher));
 };
 
-async function findUserForAdvisorRow(
-  row: AdvisorAggregateRow,
-  advisorResolver: AdvisorResearcherResolver,
-): Promise<UserMatch | null> {
-  return advisorResolver(row.canonicalName, row.advisorOrcid || undefined);
+export interface AdvisorResolution {
+  status: 'matched' | 'absent' | 'ambiguous';
+  match?: UserMatch;
 }
+
+export type AdvisorResolutionResolver = (
+  name: string,
+  orcid?: string,
+) => Promise<AdvisorResolution>;
+
+export const defaultAdvisorResolution: AdvisorResolutionResolver = async (name, orcid) => {
+  if (orcid) {
+    const match = await defaultAdvisorResearcherResolver(name, orcid);
+    return match ? { status: 'matched', match } : { status: 'absent' };
+  }
+  const resolution = await resolveResearcherIdForPersonName(name);
+  if (resolution.status !== 'matched' || !resolution.researcherId) {
+    return { status: resolution.status === 'ambiguous' ? 'ambiguous' : 'absent' };
+  }
+  const researcher: any = await Researcher.findById(resolution.researcherId)
+    .select('_id displayName profile identifiers')
+    .lean();
+  if (!researcher) return { status: 'absent' };
+  return {
+    status: 'matched',
+    match: researcherToUserMatch(researcher, await netidForAdvisorResearcher(researcher)),
+  };
+};
+
+export interface AdvisorDepartments {
+  departments: string[];
+  affiliations: string[];
+}
+
+export type AdviserPairRefusal =
+  'ambiguous' | 'no-match' | 'department-mismatch' | 'not-lab-science' | 'no-lead-row';
+
+export const ADVISER_PAIR_REFUSALS: readonly AdviserPairRefusal[] = [
+  'ambiguous',
+  'no-match',
+  'department-mismatch',
+  'not-lab-science',
+  'no-lead-row',
+];
 
 const LEAD_ROLES = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] as const;
 const OWN_RESEARCH_ROW_TYPES = ['LAB', 'FACULTY_RESEARCH_AREA'];
@@ -897,7 +952,7 @@ export function preferredLeadRowSlug(candidates: LeadRowCandidate[]): string | n
   return best?.slug ?? null;
 }
 
-export async function existingLeadRowSlugForOwner(owner: UserMatch): Promise<string | null> {
+export async function existingLeadRowsForOwner(owner: UserMatch): Promise<LeadRowCandidate[]> {
   const edges: any[] = await RoleAssignment.find({
     personId: owner._id,
     'target.kind': 'RESEARCH_ENTITY',
@@ -907,7 +962,7 @@ export async function existingLeadRowSlugForOwner(owner: UserMatch): Promise<str
   })
     .select('target role')
     .lean();
-  if (edges.length === 0) return null;
+  if (edges.length === 0) return [];
   const roleByEntityId = new Map(edges.map((edge) => [String(edge.target?.id), edge.role]));
   const rows: any[] = await ResearchEntity.find({
     _id: { $in: edges.map((edge) => edge.target?.id).filter(Boolean) },
@@ -915,13 +970,49 @@ export async function existingLeadRowSlugForOwner(owner: UserMatch): Promise<str
   })
     .select('slug entityType')
     .lean();
-  return preferredLeadRowSlug(
-    rows.map((row) => ({
-      slug: String(row.slug),
-      entityType: row.entityType,
-      role: roleByEntityId.get(String(row._id)),
-    })),
-  );
+  return rows.map((row) => ({
+    slug: String(row.slug),
+    entityType: row.entityType,
+    role: roleByEntityId.get(String(row._id)),
+  }));
+}
+
+export async function existingLeadRowSlugForOwner(owner: UserMatch): Promise<string | null> {
+  return preferredLeadRowSlug(await existingLeadRowsForOwner(owner));
+}
+
+export async function leadRowDepartmentsForOwner(owner: UserMatch): Promise<AdvisorDepartments> {
+  const edges: any[] = await RoleAssignment.find({
+    personId: owner._id,
+    'target.kind': 'RESEARCH_ENTITY',
+    role: { $in: LEAD_ROLES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('target')
+    .lean();
+  const rows: any[] =
+    edges.length === 0
+      ? []
+      : await ResearchEntity.find({
+          _id: { $in: edges.map((edge) => edge.target?.id).filter(Boolean) },
+          archived: { $ne: true },
+        })
+          .select('departments orgAffiliationLabels')
+          .lean();
+  const strings = (values: unknown): string[] =>
+    Array.isArray(values)
+      ? values.filter((value): value is string => typeof value === 'string')
+      : [];
+  return {
+    departments: [
+      ...new Set([
+        ...(owner.primaryDepartment ? [owner.primaryDepartment] : []),
+        ...rows.flatMap((row) => strings(row.departments)),
+      ]),
+    ],
+    affiliations: [...new Set(rows.flatMap((row) => strings(row.orgAffiliationLabels)))],
+  };
 }
 
 /**
@@ -968,7 +1059,6 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -997,6 +1087,63 @@ export interface UndergradFellowshipScraperDeps {
   defaultManualRecipientPdfDir?: string;
   /** Override local PDF text extraction (tests inject canned text). */
   pdfTextExtractor?: (body: Buffer) => Promise<string>;
+  advisorResolution?: AdvisorResolutionResolver;
+  ownerDepartments?: (owner: UserMatch) => Promise<AdvisorDepartments>;
+}
+
+type AdviserPairVerdict = { slug: string } | { refusal: AdviserPairRefusal };
+
+interface RowEvidence {
+  advisees: PastUndergradAdviseeEntry[];
+  recipients: FellowshipRecipientListing[];
+  sourceUrls: Set<string>;
+}
+
+type AdviserPairOutcomes = Record<AdviserPairRefusal | 'parsed' | 'matched', number>;
+
+const emptyAdviserPairOutcomes = (): AdviserPairOutcomes => ({
+  parsed: 0,
+  matched: 0,
+  ambiguous: 0,
+  'no-match': 0,
+  'department-mismatch': 0,
+  'not-lab-science': 0,
+  'no-lead-row': 0,
+});
+
+const formatAdviserPairOutcomes = (outcomes: AdviserPairOutcomes): string =>
+  [
+    `parsed=${outcomes.parsed}`,
+    `matched=${outcomes.matched}`,
+    ...ADVISER_PAIR_REFUSALS.map((refusal) => `${refusal}=${outcomes[refusal]}`),
+  ].join(' ');
+
+function mergeAdvisorRowInto(evidence: RowEvidence, row: AdvisorAggregateRow): void {
+  for (const entry of row.advisees) {
+    const bucket = evidence.advisees.find(
+      (existing) => existing.year === entry.year && existing.programName === entry.programName,
+    );
+    if (bucket) bucket.count += entry.count;
+    else evidence.advisees.push({ ...entry });
+  }
+  for (const listing of row.recipients) {
+    const duplicate = evidence.recipients.some(
+      (existing) =>
+        existing.studentName === listing.studentName &&
+        existing.year === listing.year &&
+        existing.programName === listing.programName,
+    );
+    if (!duplicate) evidence.recipients.push(listing);
+  }
+  for (const url of row.sourceUrls) evidence.sourceUrls.add(url);
+}
+
+export async function primaryDepartmentCatalogAncestors(
+  primaryDepartment: unknown,
+): Promise<string[]> {
+  const primary = typeof primaryDepartment === 'string' ? primaryDepartment.trim() : '';
+  if (!primary || !mongooseConnectionWasOpened()) return [];
+  return catalogDepartmentWithAncestors(await getOrgUnitCanonicalizer(), primary).slice(1);
 }
 
 export class UndergradFellowshipRecipientScraper implements IScraper {
@@ -1004,15 +1151,16 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
   readonly displayName = 'Yale undergrad fellowship recipient lists';
 
   private readonly fetchPage: (url: string, useCache: boolean) => Promise<string>;
-  private readonly advisorResolver: AdvisorResearcherResolver;
   private readonly ownerToGroupSlug: (owner: UserMatch) => Promise<string | null>;
   private readonly defaultManualRecipientCsvDir: string;
   private readonly defaultManualRecipientPdfDir: string;
   private readonly pdfTextExtractor: (body: Buffer) => Promise<string>;
+  private readonly advisorResolution: AdvisorResolutionResolver;
+  private readonly ownerDepartments: (owner: UserMatch) => Promise<AdvisorDepartments>;
 
   /**
-   * Configs are injectable for testing; default to the v1 six-program set.
-   * Most defaults are stubs (`manualUploadRequired=true`) — see file header.
+   * Configs are injectable for testing; default to `DEFAULT_PROGRAM_CONFIGS`.
+   * The STARS II default is a stub (`manualUploadRequired=true`); see the file header.
    */
   constructor(
     private readonly configs: ProgramConfig[] = DEFAULT_PROGRAM_CONFIGS,
@@ -1020,7 +1168,16 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
   ) {
     const sourceName = this.name;
     this.fetchPage = deps.fetchPage ?? ((url, useCache) => fetchHtml(url, useCache, sourceName));
-    this.advisorResolver = deps.advisorResolver ?? defaultAdvisorResearcherResolver;
+    const injectedResolver = deps.advisorResolver;
+    this.advisorResolution =
+      deps.advisorResolution ??
+      (injectedResolver
+        ? async (name, orcid) => {
+            const match = await injectedResolver(name, orcid);
+            return match ? { status: 'matched', match } : { status: 'absent' };
+          }
+        : defaultAdvisorResolution);
+    this.ownerDepartments = deps.ownerDepartments ?? leadRowDepartmentsForOwner;
     this.ownerToGroupSlug = deps.ownerToGroupSlug ?? existingLeadRowSlugForOwner;
     this.defaultManualRecipientCsvDir =
       deps.defaultManualRecipientCsvDir ?? DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR;
@@ -1040,11 +1197,16 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
     }
     const recipientLimit = limitOption ?? Infinity;
 
-    let totalObs = 0;
-    let totalAdvisorsEmitted = 0;
     let totalRecipientsProcessed = 0;
     let totalUnmatched = 0;
     const perProgram: Array<{ key: string; status: string; count: number }> = [];
+    const pairOutcomesByProgram: Array<{ key: string; outcomes: AdviserPairOutcomes }> = [];
+    const evidenceBySlug = new Map<string, RowEvidence>();
+    const caches: AdviserPairCaches = {
+      resolutions: new Map(),
+      departments: new Map(),
+      slugs: new Map(),
+    };
 
     for (const config of this.configs) {
       if (onlyFilter && !onlyFilter.has(config.programKey.toLowerCase())) continue;
@@ -1191,70 +1353,146 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
       const trimmed = remaining < recipients.length ? recipients.slice(0, remaining) : recipients;
       totalRecipientsProcessed += trimmed.length;
 
-      // Aggregate by canonical advisor name.
-      const aggregated = aggregateAdviseesByAdvisor(
-        trimmed,
-        effectiveConfig.programName,
-        sourceByRecipient,
-      );
-
-      let programAdvisorsEmitted = 0;
-      let programUnmatched = 0;
-      for (const [, row] of aggregated) {
-        // Resolve advisor → User
-        let user: UserMatch | null;
+      const outcomes = emptyAdviserPairOutcomes();
+      const acceptedBySlug = new Map<string, FellowshipRecipient[]>();
+      for (const recipient of trimmed) {
+        outcomes.parsed += 1;
+        let verdict: AdviserPairVerdict;
         try {
-          user = await findUserForAdvisorRow(row, this.advisorResolver);
+          verdict = await this.judgeAdviserPair(recipient, effectiveConfig, caches);
         } catch (err: any) {
           ctx.log(
             `[${config.programKey}] user lookup failed for recipient advisor: ${sanitizeLogValue(err)}`,
           );
           continue;
         }
-        if (!user) {
-          programUnmatched++;
+        if ('refusal' in verdict) {
+          outcomes[verdict.refusal] += 1;
           continue;
         }
-
-        const slug = await this.ownerToGroupSlug(user);
-        if (!slug) {
-          ctx.log(`[${config.programKey}] matched advisor leads no existing row; skipping`);
-          programUnmatched++;
-          continue;
-        }
-
-        const sourceUrl =
-          row.sourceUrls.values().next().value || representativeUrl || effectiveConfig.urls[0];
-        const obs = buildObservationsForAdvisor(slug, row.advisees, sourceUrl, row.recipients);
-        await ctx.emit(obs);
-        totalObs += obs.length;
-        programAdvisorsEmitted++;
+        outcomes.matched += 1;
+        acceptedBySlug.set(verdict.slug, [...(acceptedBySlug.get(verdict.slug) ?? []), recipient]);
       }
 
-      totalAdvisorsEmitted += programAdvisorsEmitted;
-      totalUnmatched += programUnmatched;
+      for (const [slug, accepted] of acceptedBySlug) {
+        const evidence =
+          evidenceBySlug.get(slug) ??
+          ({ advisees: [], recipients: [], sourceUrls: new Set<string>() } satisfies RowEvidence);
+        for (const row of aggregateAdviseesByAdvisor(
+          accepted,
+          effectiveConfig.programName,
+          sourceByRecipient,
+        ).values()) {
+          mergeAdvisorRowInto(evidence, row);
+        }
+        if (evidence.sourceUrls.size === 0 && representativeUrl) {
+          evidence.sourceUrls.add(representativeUrl);
+        }
+        evidenceBySlug.set(slug, evidence);
+      }
 
+      const programUnmatched = outcomes.parsed - outcomes.matched;
+      totalUnmatched += programUnmatched;
+      pairOutcomesByProgram.push({ key: config.programKey, outcomes });
       ctx.log(
-        `[${config.programKey}] ${trimmed.length} recipients → ${programAdvisorsEmitted} advisors emitted, ${programUnmatched} unmatched`,
+        `[${config.programKey}] ${trimmed.length} adviser pairs -> ${acceptedBySlug.size} rows matched (${formatAdviserPairOutcomes(outcomes)})`,
       );
       perProgram.push({
         key: config.programKey,
         status: 'ok',
-        count: programAdvisorsEmitted,
+        count: acceptedBySlug.size,
       });
     }
+
+    let totalObs = 0;
+    for (const [slug, evidence] of evidenceBySlug) {
+      const advisees = [...evidence.advisees].sort(
+        (left, right) =>
+          right.year - left.year || left.programName.localeCompare(right.programName),
+      );
+      const sourceUrl = evidence.sourceUrls.values().next().value ?? '';
+      const obs = buildObservationsForAdvisor(slug, advisees, sourceUrl, evidence.recipients);
+      await ctx.emit(obs);
+      totalObs += obs.length;
+    }
+    const totalAdvisorsEmitted = evidenceBySlug.size;
 
     const summary = perProgram
       .map((p) => `${p.key}=${p.status === 'ok' ? p.count : p.status}`)
       .join(', ');
+    const pairSummary = pairOutcomesByProgram
+      .map(({ key, outcomes }) => `${key}{${formatAdviserPairOutcomes(outcomes)}}`)
+      .join(', ');
     ctx.log(
-      `Emitted ${totalObs} observations across ${totalAdvisorsEmitted} advisors (${totalRecipientsProcessed} recipients, ${totalUnmatched} unmatched). Programs: ${summary}`,
+      `Emitted ${totalObs} observations across ${totalAdvisorsEmitted} rows (${totalRecipientsProcessed} adviser pairs, ${totalUnmatched} unmatched). Programs: ${summary}`,
     );
 
     return {
       observationCount: totalObs,
       entitiesObserved: totalAdvisorsEmitted,
-      notes: `Programs: ${summary}; ${totalUnmatched} unmatched advisor names skipped`,
+      notes: `Programs: ${summary}; adviser pairs: ${pairSummary || 'none'}; ${totalUnmatched} unmatched adviser pairs skipped`,
     };
   }
+
+  private async judgeAdviserPair(
+    recipient: FellowshipRecipient,
+    config: ProgramConfig,
+    caches: AdviserPairCaches,
+  ): Promise<AdviserPairVerdict> {
+    const sourceDepartments = recipient.sourceDepartments ?? config.adviserDepartments;
+    const advisorName = normalizeName(recipient.advisorName);
+    const advisorOrcid = plausiblePersonOrcid(recipient.advisorOrcid);
+    const resolution = await cachedLookup(
+      caches.resolutions,
+      advisorOrcid ? `orcid:${advisorOrcid}` : `name:${slugify(advisorName)}`,
+      () => this.advisorResolution(advisorName || advisorOrcid, advisorOrcid || undefined),
+    );
+    if (resolution.status === 'ambiguous') return { refusal: 'ambiguous' };
+    if (resolution.status !== 'matched' || !resolution.match) return { refusal: 'no-match' };
+    const match = resolution.match;
+
+    const ownerKey = String(match._id);
+    if (sourceDepartments || config.hostingRule === 'lab-science-adviser-department') {
+      const { departments, affiliations } = await cachedLookup(caches.departments, ownerKey, () =>
+        this.ownerDepartments(match),
+      );
+      if (
+        sourceDepartments &&
+        !departmentsAgree(sourceDepartments, [...departments, ...affiliations])
+      ) {
+        return { refusal: 'department-mismatch' };
+      }
+      if (
+        !adviserPairCountsTowardHosting(
+          config.hostingRule,
+          departments,
+          match.primaryDepartment,
+          await primaryDepartmentCatalogAncestors(match.primaryDepartment),
+        )
+      ) {
+        return { refusal: 'not-lab-science' };
+      }
+    }
+
+    const slug = await cachedLookup(caches.slugs, ownerKey, () => this.ownerToGroupSlug(match));
+    return slug ? { slug } : { refusal: 'no-lead-row' };
+  }
+}
+
+interface AdviserPairCaches {
+  resolutions: Map<string, Promise<AdvisorResolution>>;
+  departments: Map<string, Promise<AdvisorDepartments>>;
+  slugs: Map<string, Promise<string | null>>;
+}
+
+function cachedLookup<T>(
+  cache: Map<string, Promise<T>>,
+  key: string,
+  load: () => Promise<T>,
+): Promise<T> {
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const loaded = load();
+  cache.set(key, loaded);
+  return loaded;
 }

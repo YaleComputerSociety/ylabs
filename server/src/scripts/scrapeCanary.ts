@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { installMongoWriteRefusal } from '../scrapers/utils/mongoWriteRefusal';
 import { connectScriptMongo } from '../db/connections';
+import { setModelUsageSink } from '../utils/modelClient';
+import { resolveSafeJsonReportOutputPath } from '../utils/reportOutputPath';
 
 export interface ScrapeCanaryCliOptions {
   sourceName: string;
@@ -30,7 +32,7 @@ export function parseScrapeCanaryArgs(argv: string[]): ScrapeCanaryCliOptions {
       }
       index += 1;
     } else if (arg === '--output') {
-      output = value;
+      output = resolveSafeJsonReportOutputPath(value);
       index += 1;
     } else if (arg === '--force-llm') {
       forceLlm = true;
@@ -48,6 +50,7 @@ async function main(): Promise<number> {
   dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
   const options = parseScrapeCanaryArgs(process.argv.slice(2));
   const refusal = installMongoWriteRefusal(mongoose);
+  setModelUsageSink(null);
 
   const [
     { buildOrchestrator },
@@ -55,18 +58,17 @@ async function main(): Promise<number> {
     { getSourceByName },
     { readPriorRunYieldFacts },
     output,
-    hosts,
-    { scraperHostSlotLimiter },
+    { installScraperFetchHooks },
   ] = await Promise.all([
     import('../scrapers/registry'),
     import('../scrapers/scraperCanary'),
     import('../scrapers/observationStore'),
     import('../scrapers/sourceYieldGuard'),
     import('../scrapers/scraperCliOutput'),
-    import('../scrapers/utils/hostConcurrencyLimiter'),
-    import('../scrapers/utils/scraperHostSlotLimiter'),
+    import('../scrapers/utils/scraperFetchHooks'),
   ]);
-  hosts.installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
+  // A canary asks whether a lane still works against the live site, so it never reads a reused body.
+  installScraperFetchHooks({ validatorCache: false });
 
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required for a scrape canary');

@@ -45,10 +45,16 @@ const protectUrlDots = (value: string): string => {
   return `${protectDots(url)}${trailingSentencePunctuation}`;
 };
 
+// The domain ending is lowercase on purpose: a missing space after a period
+// ("the program.Info sessions") must still read as a sentence boundary.
+const BARE_DOMAIN_WITH_OPTIONAL_PATH =
+  /\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+(?:edu|com|org|net|gov|info|io)\b(?:\/[^\s]*)?/g;
+
 const protectSentenceAbbreviations = (value: string): string =>
   value
     .replace(/https?:\/\/[^\s]+/gi, protectUrlDots)
     .replace(/\bwww\.[^\s]+/gi, protectUrlDots)
+    .replace(BARE_DOMAIN_WITH_OPTIONAL_PATH, protectUrlDots)
     .replace(/\be\s*\.\s*g\s*\./gi, (match) =>
       match.replace(/[ \t\n]*/g, '').replace(/\./g, ABBREVIATION_DOT),
     )

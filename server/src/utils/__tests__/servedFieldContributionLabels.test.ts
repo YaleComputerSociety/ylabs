@@ -10,7 +10,7 @@ const allowAll = () => true;
 describe('servedFieldContributionLabel', () => {
   it('labels a served field in student language', () => {
     expect(servedFieldContributionLabel('fullDescription')).toBe('Research summary');
-    expect(servedFieldContributionLabel('inferredPiUserId')).toBe('Lead identity');
+    expect(servedFieldContributionLabel('inferredPiUserId')).toBe('Who leads it');
   });
 
   it('names the topics field in plain directory language', () => {
@@ -59,7 +59,7 @@ describe('buildSourceFieldContributions', () => {
       },
       {
         sourceUrl: 'https://example.yale.edu/profile/fixture/',
-        contributions: ['Lead identity'],
+        contributions: ['Who leads it'],
       },
     ]);
   });

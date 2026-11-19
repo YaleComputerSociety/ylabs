@@ -91,6 +91,7 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
   unusable_name: () => researchReasons({ entity: { name: 'n/a' } }),
   duplicate_risk: () => researchReasons({ duplicateRisk: true }),
   exact_url_duplicate_risk: () => researchReasons({ exactUrlDuplicateRisk: true }),
+  lead_is_staff_of_served_lab: () => researchReasons({ leadIsStaffOfServedLab: true }),
   profile_identity_risk: () =>
     researchReasons({
       entity: {
@@ -237,6 +238,7 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
         sourceUrls: ['https://reporter.nih.gov/project-details/10899610'],
       },
     }),
+  researcher_removed: () => researchReasons({ leadMembers: [], everyLeadRemovedByRequest: true }),
   permanently_closed: () =>
     researchReasons({ entity: { studentVisibilitySuppressionReason: 'permanently_closed' } }),
   lab_name_org_type_mismatch: () =>
@@ -269,10 +271,6 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
           ],
         },
       },
-    }),
-  lead_title_ruled_non_hosting_rank: () =>
-    researchReasons({
-      leadMembers: [{ userId: 'user-example-lead', role: 'pi', title: 'Clinical Fellow' }],
     }),
   unbacked_lab_name: () =>
     researchReasons({

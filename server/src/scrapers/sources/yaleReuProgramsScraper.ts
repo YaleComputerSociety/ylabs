@@ -17,6 +17,7 @@
  * link, never fetched or cited as a source.
  */
 import axios from 'axios';
+import { programPageYearOfStudy } from '../utils/fundYearOfStudy';
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
@@ -25,14 +26,16 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import {
   PROGRAM_PAGE_NON_PROSE_SELECTOR,
+  acceptingByStatedWindow,
   isApplyLink,
   nearestDeadlineText,
   programApplicationLinks,
   programPageDescription,
   programPageTitle,
+  statedApplicationWindow,
 } from '../utils/programPageEvidence';
 import { parseProgramDate } from '../utils/programDeadline';
-import { boundedObservedFellowshipProse } from '../fellowshipProse';
+import { boundedObservedFellowshipProse, sanitizedObservedSourceText } from '../fellowshipProse';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 export const YALE_REU_PROGRAMS_SOURCE = 'yale-reu-programs';
@@ -84,12 +87,15 @@ export interface ReuProgramCandidate {
   title: string;
   description?: string;
   eligibility?: string;
+  fullSourceDescription?: string;
   competitionType: string;
   sourceUrl: string;
   applicationLink?: string;
   links: Array<{ label: string; url: string }>;
   deadline?: Date;
+  applicationOpenDate?: Date;
   contactOffice?: string;
+  yearOfStudy: string[];
   termOfAward: string[];
   purpose: string[];
   isAcceptingApplications: boolean;
@@ -210,12 +216,6 @@ function sectionTextForHeading($: cheerio.CheerioAPI, headingPattern: RegExp): s
   return combined ? boundedObservedFellowshipProse(combined) : undefined;
 }
 
-function hasActiveApplicationLanguage(text: string): boolean {
-  return /\bapplications?\s+(?:are\s+)?(?:now\s+)?open\b|\bcurrently accepting applications\b|\baccepting applications\b|\bapplications?\s+(?:are\s+)?accepted\b/i.test(
-    text,
-  );
-}
-
 function competitionTypeForText(text: string): string {
   if (/research experiences? for undergraduates|\bnsf reu\b|\breu\b/i.test(text)) {
     return 'NSF REU (Research Experiences for Undergraduates)';
@@ -233,6 +233,7 @@ function fingerprintCandidate(candidate: Omit<ReuProgramCandidate, 'sourceFinger
     applicationLink: candidate.applicationLink || '',
     links: candidate.links,
     deadline: candidate.deadline?.toISOString() || '',
+    applicationOpenDate: candidate.applicationOpenDate?.toISOString() || '',
     contactOffice: candidate.contactOffice || '',
     termOfAward: candidate.termOfAward,
     purpose: candidate.purpose,
@@ -282,32 +283,44 @@ export function parseReuProgramPage(
     0,
     DEADLINE_APPLICATION_SECTION_CHARS,
   );
-  const deadline = parseProgramDate(
-    nearestDeadlineText(`${applicationInfo || ''} ${bodyText}`),
-    'deadline',
+  const statedWindow = statedApplicationWindow(
+    `${applicationInfo || ''} ${bodyText}`,
     referenceDate,
   );
+  const deadline =
+    parseProgramDate(
+      nearestDeadlineText(`${applicationInfo || ''} ${bodyText}`),
+      'deadline',
+      referenceDate,
+    ) ?? statedWindow.closesAt;
+  const applicationOpenDate = statedWindow.opensAt;
 
   const links = programApplicationLinks($, root, pageUrl, MAX_PROGRAM_LINKS);
   const applicationLink = links.find((link) => isApplyLink(link.url, link.label))?.url;
 
   const termOfAward = inferTerm(identityText);
-  const isAcceptingApplications =
-    (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
-    hasActiveApplicationLanguage(bodyText);
+  const isAcceptingApplications = acceptingByStatedWindow(
+    statedWindow,
+    deadline,
+    referenceDate,
+    bodyText,
+  );
 
   const candidate: Omit<ReuProgramCandidate, 'sourceFingerprint'> = {
     sourceKey: sourceKeyForTitle(title),
     title,
     description,
     eligibility,
+    fullSourceDescription: sanitizedObservedSourceText(bodyText),
     competitionType: competitionTypeForText(identityText),
     sourceUrl: pageUrl,
     applicationLink,
     links,
     deadline,
+    applicationOpenDate,
     contactOffice: hostingOffice || undefined,
     termOfAward,
+    yearOfStudy: programPageYearOfStudy({ eligibility, description }),
     purpose: ['Research'],
     isAcceptingApplications,
     reviewRequired: !deadline,
@@ -376,13 +389,16 @@ export function candidateToObservations(candidate: ReuProgramCandidate): Observa
     observation('competitionType', candidate.competitionType, candidate),
     observation('description', candidate.description, candidate),
     observation('eligibility', candidate.eligibility, candidate),
+    observation('fullSourceDescription', candidate.fullSourceDescription, candidate),
     currentSourceObservation('researchFocused', true, candidate),
     currentSourceObservation('archived', false, candidate),
     observation('applicationLink', candidate.applicationLink, candidate),
     observation('links', candidate.links, candidate),
     observation('deadline', candidate.deadline, candidate),
+    observation('applicationOpenDate', candidate.applicationOpenDate, candidate),
     observation('contactOffice', candidate.contactOffice, candidate),
     observation('termOfAward', candidate.termOfAward, candidate),
+    observation('yearOfStudy', candidate.yearOfStudy, candidate),
     observation('purpose', candidate.purpose, candidate),
     observation('isAcceptingApplications', candidate.isAcceptingApplications, candidate),
     observation('reviewRequired', candidate.reviewRequired, candidate),
@@ -402,7 +418,6 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
     axios.get(safeUrlText, {
       timeout: 30000,
       headers: {
-        'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
         Accept: 'text/html,application/xhtml+xml',
       },
       maxRedirects: 5,

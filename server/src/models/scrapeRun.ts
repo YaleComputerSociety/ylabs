@@ -5,6 +5,7 @@
  * tracks counts and errors, and supports rollback ("invalidate this run's observations").
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import { scrapeRunInterruptionReasons, scrapeRunStatuses } from './storedVocabularies';
 
 const scrapeRunSchema = new mongoose.Schema(
@@ -56,6 +57,23 @@ const scrapeRunSchema = new mongoose.Schema(
       ),
       default: undefined,
     },
+    launch: {
+      type: new mongoose.Schema(
+        {
+          ownerLabel: String,
+          worktree: String,
+          cwd: String,
+          gitSha: String,
+          entry: String,
+          argv: [String],
+          host: String,
+          pid: Number,
+          devWriteLeaseOwnerId: String,
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
     interruption: {
       type: new mongoose.Schema(
         {
@@ -71,6 +89,14 @@ const scrapeRunSchema = new mongoose.Schema(
     observationCount: {
       type: Number,
       default: 0,
+    },
+    storedObservationCountAtReconcile: {
+      type: Number,
+      required: false,
+    },
+    reconciledAt: {
+      type: Date,
+      required: false,
     },
     entitiesObserved: {
       type: Number,

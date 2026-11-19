@@ -35,6 +35,16 @@ export const sourceCoverageRegistry = {
     notes:
       "Not a crawl: the materializer infers chips from a row's own stored name and description through the canonical research-area vocabulary, and records this name so the serve-time coherence guard has provenance to reconcile against. LOW because no page named the facet, only the subject.",
   },
+  'research-page-topics-derived': {
+    priority: 0,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['ResearchEntity'],
+    evidenceCategories: ['TOPICS'],
+    defaultConfidence: 'MEDIUM',
+    producesModelText: true,
+    notes:
+      "Not a crawl: the materializer applies the cached reading research-topics:derive made of the row's stored researchPageText, keyed by input hash, so changed or cleared text stops applying on the next resolve. Recorded as fieldProvenance only, never as an observation (#5296, #5396).",
+  },
   'manual-admin-edit': {
     priority: 0,
     tier: 'MANUAL_OVERRIDE',
@@ -66,6 +76,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence. Where the site declares itself a laboratory it also emits that record's branded name and its entityType/kind, so a person-scoped row cannot keep a faculty-research type while carrying a lab's name.",
   },
+  'research-page-text': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['TOPICS'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Deterministic research-statement text of the row's own cited research pages, contact-redacted and capped, stored as a researchPageText observation plus a content hash and never projected onto the row, served or indexed. research-topics:derive reads it to cache quoted topics, which the materializer applies as the research-page-topics-derived candidate for researchAreas, outranking ysm-mesh-keyword and ysm-faculty-directory lists, and lab-site-research-read lists once that held lane (#5418) re-lands (#5296, #5396).",
+  },
   'lab-site-declared-lead-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
@@ -76,6 +95,24 @@ export const sourceCoverageRegistry = {
     notes:
       "Reads a lab site for the lead it declares for itself, so a website harvested from another person's profile lab-website slot is re-homed to the researcher who runs the lab; emits websiteUrl, sourceUrls, and a branded name only, never access, route, or opportunity evidence.",
   },
+  'department-emeritus-listings': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['OFFICIAL_PROFILE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Reads department emeritus faculty pages, the stored own-profile-page titles of leads (#6081), and the stored Emeritus sections of official Yale center rosters (#6162), and records `emeritusListedLeadIds` on the row each listed person already leads, matched by a profile link exactly one live researcher holds, else by a name one researcher carries within the page's department. A lead whose stored title a live lane still asserts is left to that title. Never mints rows, edges or roster members.",
+  },
+  'official-undergrad-lists': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['OFFICIAL_PROFILE', 'UNDERGRAD_ROLE_LANGUAGE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      'Reads official Yale lists that name professors beside undergraduates (mentors, hosted or welcomes, one signal per list) and attaches each named professor to the row they already lead as `undergradListEvidence`. A Yale email matches exactly; a name matches only when exactly one researcher carries it and, where the list states a department, that researcher agrees with it. Student names, project titles and topics are never read into an observation.',
+  },
   'roster-bio-research-evidence': {
     priority: 2,
     tier: 'DERIVED_OFFICIAL',
@@ -84,6 +121,24 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'MEDIUM',
     notes:
       "Reads the roster lane's stored profile biographies, keeps the present-tense research sentences of people whose title can host a student's research, and mints a faculty-research row with those sentences as writer evidence. Refuses past research, CV records, clinical-service and teaching-only sentences, students, trainees, staff, and anyone the corpus already covers by profile URL, person key, or name.",
+  },
+  'center-profile-research-rows': {
+    priority: 2,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Mints a faculty-research row for a centers-institutes-index member with a proven identity basis who leads no LAB or FACULTY_RESEARCH_AREA row, when the member's title can host a student's research and their center profile states present research; the row cites that profile and names its lead by netid. Refuses a member with no netid, a teaching-only title whose profile affirms no research, a slug or profile another row holds, a member some row already infers as its lead, and anyone with a live or archived personal row in their name.",
+  },
+  'center-member-profile-research': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['OFFICIAL_PROFILE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Reads a center member's own profile page for the biography and research statement and emits them as bio and researchSummary writer evidence on the one LAB or FACULTY_RESEARCH_AREA row the member leads. Joins only through a centers-institutes-index membership edge with a recorded identity basis; skips a member who leads no such row or several, and a row several members lead. Mints nothing and asserts no website, contact, title, access, or opportunity evidence.",
   },
   'directory-alias-resolution': {
     priority: 2,
@@ -185,6 +240,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Deterministic research-area recovery for empty-area research entities from their official lab/department/profile pages. Emits only approved TaxonomyTerm areas (fail-closed); never creates access, route, description, or identity evidence.',
   },
+  'center-affiliation-roster': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Reads an official center/institute page with code and emits umbrella relationship observations for the people and labs the page lists by structure. Relationship-only; the materializer resolves a person through the faculty-research-area arms or the listed profile site, and a lab card through the one live row serving its site, and skips anything that does not resolve.',
+  },
   'center-affiliation-llm': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
@@ -205,6 +269,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Reads an organizational home's official site + leadership pages and emits an entity-level inferred-director observation. The materializer resolves the named director to a unique Yale User before promoting them to a `director` member (skips unresolved/ambiguous names; never mints a lead).",
   },
+  'center-director': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'ENTITY_MEMBERSHIP'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Reads an organizational home's own page and in-subtree leadership pages with code and emits an entity-level inferred-director observation only when one director is stated by a title label or a strict sentence; a tie at the top rank is refused. The materializer resolves the name to a unique Yale User before promoting them to a `director` member.",
+  },
   'lab-microsite-undergrad-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
@@ -222,6 +295,15 @@ export const sourceCoverageRegistry = {
     producesModelText: true,
     notes:
       'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs. A crawled sub-page is a crawl seed until it is shown to be about this entity: a paginated or multi-person index page, and a person page belonging to somebody else, are traversed but never cited as a description source for this row.',
+  },
+  'lab-site-undergrad-invitation': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['LAB_WEBSITE', 'JOIN_INSTRUCTIONS', 'UNDERGRAD_ROLE_LANGUAGE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Deterministic extraction of an undergraduate invitation sentence from a lab's own home and join pages. Two levels: an active opening and a standing invitation; a passed stated term, closed or filled wording, roster lines, course or degree mentions and a quote repeated across rows are refused.",
   },
   'dept-faculty-roster': {
     priority: 2,

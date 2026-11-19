@@ -4,6 +4,7 @@ import {
   containsInternalLabels,
   createSmokeReport,
   discoverResearchSlug,
+  evaluateAccountDeletionReadiness,
   evaluateResearchSearchResponse,
   parseSmokeConfig,
   shouldSendSmokeOrigin,
@@ -252,5 +253,42 @@ describe('production promotion smoke research search health', () => {
 
     expect(Object.keys(details).sort()).toStrictEqual(['degraded', 'rowCount', 'statusCode']);
     expect(JSON.stringify(details)).not.toContain('synthetic-lab');
+  });
+});
+
+describe('production promotion smoke account deletion readiness', () => {
+  it('fails a deploy whose deletion is on but unavailable, naming only the settings', () => {
+    expect(
+      evaluateAccountDeletionReadiness({
+        mongo: true,
+        search: true,
+        accountDeletion: {
+          status: 'unavailable',
+          missingSettings: ['POSTHOG_PROJECT_ID', 'phx_not a setting name'],
+        },
+      }),
+    ).toStrictEqual({
+      status: 'fail',
+      details: { accountDeletion: 'unavailable', missingSettings: ['POSTHOG_PROJECT_ID'] },
+    });
+  });
+
+  it('passes a deploy whose deletion is available or switched off', () => {
+    for (const status of ['available', 'off']) {
+      expect(
+        evaluateAccountDeletionReadiness({ accountDeletion: { status, missingSettings: [] } }),
+      ).toStrictEqual({ status: 'pass', details: { accountDeletion: status } });
+    }
+  });
+
+  it('fails when the server does not report a recognised deletion readiness', () => {
+    expect(evaluateAccountDeletionReadiness({ mongo: true, search: true })).toStrictEqual({
+      status: 'fail',
+      details: { accountDeletion: 'unreported' },
+    });
+    expect(evaluateAccountDeletionReadiness(null).status).toBe('fail');
+    expect(
+      evaluateAccountDeletionReadiness({ accountDeletion: { status: 'degraded' } }).status,
+    ).toBe('fail');
   });
 });

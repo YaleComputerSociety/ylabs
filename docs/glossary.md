@@ -14,6 +14,12 @@ An append-only assertion: "at time T, source S claimed that entity E's field F h
 Nothing in the product reads an observation directly.
 Owner: `server/src/models/observation.ts`.
 
+**Extraction marker (`extraction`).**
+An optional record on an observation of which part of a page the lane read the value from, as `extraction.source`, an enum meant to grow.
+Today its one value is `profileTitleBlock`: `dept-faculty-roster` sets it on a title taken from the person's profile page enrichment, and the title rule counts a roster title as first-hand only when it carries that marker (#5578).
+It is never part of the observation's identity: it sits outside the fingerprint and every hash, dedupe key and gate key, so adding it to a lane leaves every existing observation reading as unchanged.
+Observations stored before the marker carry none, and none are backfilled.
+
 **Source.**
 A registered scraper, carrying a trust weight the resolver multiplies by.
 Registered in `server/src/scrapers/registry.ts`, with each scraper under `server/src/scrapers/sources/`.
@@ -63,6 +69,11 @@ Owner: `fieldLockProvenanceSchema` in `server/src/models/modelPrimitives.ts`.
 A recorded statement that one specific value is inadmissible for a field, keyed by `valueKey` with a `rule` and optional evidence URL.
 A refusal blocks the write, so unlike a repair it survives a re-scrape without needing a lock, and it can be withdrawn.
 Owner: `fieldValueRefusalSchema` in `server/src/models/modelPrimitives.ts`.
+
+**Lane refusal (`refusedValues`).**
+Not the operator refusal above: a lane's own record, on a witness observation, that it saw one value on a page and refused it under a versioned classifier.
+It never blocks a write; field retraction uses it to retire the lane's older assertion of that identical value from the same page, or from the page the refusal names as `assertedUnder` when the same run read it (#5803).
+Owner: `ObservationRefusedValue` in `server/src/scrapers/observationRefusals.ts`.
 
 **Suppression.**
 A tombstone on a record, not on a field.
@@ -155,14 +166,16 @@ Prefer it to a throwaway script.
 **Creative practice.**
 A served faculty row whose own body describes exhibitions, performances, compositions, productions, creative writing, design practice or an instrument's practice rather than research, in an arts department or school.
 It is served and labelled "Creative practice" on the browse card and the detail page, never withheld, and never described as a lab, a research group or an opening.
-The served `creativePractice` flag is derived at serve time and written to no field.
+The served `creativePractice` flag is derived at serve time and written to no stored field.
+It is also a kind in the `/research` Type facet: the search index derives it at index time from the same served body, through the same decision the browse card calls, so a row's facet bucket and its card label agree, and the option is hidden when its count is 0 (#5141).
 Owner: `server/src/utils/creativePracticeDescription.ts`; `docs/decisions.md` 2026-10-03 holds the decision.
 
 **Department research guidance.**
 A department's own page on how an undergraduate gets into research there, served on `/programs` with no application affordance and the action "Read the department's guidance".
 Stored as `programKind: 'DEPARTMENT_RESEARCH_GUIDE'`, earned only by the page's own title (`sourcePageTitle`) on a record that states no application cycle, and admitted by the programs gate with the reason `department_research_guidance`.
-The served `departmentResearchGuidance` flag carries that same predicate to the client, so a row whose kind alone reads as guidance keeps its application affordances.
-Owner: `server/src/services/departmentResearchGuidance.ts`; `docs/decisions.md` 2026-10-01 holds the decision.
+Its second kind is senior essay guidance, a department's own page on its senior essay, senior project or senior requirement, stored as `programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE'`, earned by its own title predicate, admitted with the reason `department_senior_essay_guidance`, labelled "Senior essay guidance" and served in the same section with the action "Read the department's senior essay guidance".
+The served `departmentResearchGuidance` flag is true for either kind and carries the same predicates to the client, so a row whose kind alone reads as guidance keeps its application affordances, and the served `departmentGuidanceKind` (`research` or `senior_essay`) chooses the label.
+Owner: `server/src/services/departmentResearchGuidance.ts`; `docs/decisions.md` 2026-10-01 and 2026-11-12 hold the decision.
 
 ## Environments and operations
 
@@ -172,7 +185,7 @@ Development is the only environment where scrapers run, so a data fix is applied
 `MONGODBURL` names the database the current process talks to.
 
 **Promotion.**
-`promoteAcceptedBetaCopy` replaces twelve whole collections at once by default, fourteen with `--include-observations` and `--include-scrape-runs`, so one promotion delivers every pending fix together.
+`promoteAcceptedBetaCopy` replaces thirteen whole collections at once by default, fifteen with `--include-observations` and `--include-scrape-runs`, so one promotion delivers every pending fix together.
 Promotion is not per-fix work and never gets its own issue.
 It is also not monotonic: Production can hold the better value.
 
@@ -213,6 +226,8 @@ These appear in older code and docs and must not be introduced in new copy, labe
 | Yale Research (the product name), retired by #3186 | y/labs |
 | home, homes, saved homes (a saved item) | research, or "saved research profiles" |
 | "ways in", "verified ways in" (student copy) | "how to get involved" |
+| Program Watch, favorites, "Add to favorites", saved programs (student copy for watching a program) | watch, "Watch <program>" / "Stop watching <program>", and the "Watched programs" tab (#5171) |
+| "Dashboard" as the name of the saved-research tab | "Saved research"; Dashboard is the page |
 | Journey, Program Kind, Entry Mode, Legacy Type (program filter tabs) | Opportunity, Program type, How you apply; the legacy category facet is operator-only |
 
 A client guard test enforces the copy half: `client/src/__tests__/deprecatedVocabularyGuard.test.ts`.

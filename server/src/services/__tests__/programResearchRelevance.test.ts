@@ -409,6 +409,58 @@ describe('classifyProgramResearchRelevance', () => {
         ).toBe(true);
       });
 
+      it('serves a grant for summer research beside internships or language study (#6481)', () => {
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description:
+              'The program awards grants ranging from $2,500 to $5,000 to current undergraduate and graduate students for summer research, internships, or language study in the region.',
+          }),
+        ).toBe(true);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description:
+              'Projects may include independent research, language courses, or opportunities to develop language proficiency.',
+          }),
+        ).toBe(true);
+      });
+
+      it('still withholds a fund that names summer research only to deny it or as an opportunity (#6481)', () => {
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description: 'The grant does not fund summer research; it supports internships only.',
+          }),
+        ).toBe(false);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description:
+              'Fellows also learn about funding for summer research opportunities at the center.',
+          }),
+        ).toBe(false);
+        expect(
+          related({
+            ...languageAndResearchGrant,
+            description: 'Projects may not include independent research.',
+          }),
+        ).toBe(false);
+        for (const description of [
+          'Grants are not available for summer research.',
+          'Funding cannot be used for summer research.',
+          'These awards are never given for independent research.',
+          "The fellowship doesn't pay for thesis research.",
+          'The grant covers language courses, not for summer research.',
+          'Funding is not intended for field research or archival work.',
+          'The award funds internships, and students may apply elsewhere for summer research.',
+          'Grants are offered for summer research-adjacent internships.',
+          'Projects may include research-adjacent outreach.',
+        ]) {
+          expect(related({ ...languageAndResearchGrant, description })).toBe(false);
+        }
+      });
+
       it('withholds a multi-purpose fund whose only research evidence is the purpose tag', () => {
         expect(
           related({
@@ -488,5 +540,103 @@ describe('classifyProgramResearchRelevance', () => {
         ).toBe(false);
       });
     });
+  });
+});
+
+describe('programs that are not research by their own account (#6216)', () => {
+  it('withholds a structured program whose full source says research is not its main focus', () => {
+    const result = classifyProgramResearchRelevance({
+      title: 'First-Year Pathways Circle',
+      programKind: 'STRUCTURED_PROGRAM',
+      description: 'A cohort for first-year students interested in research careers in science.',
+      fullSourceDescription:
+        'The circle focuses on advising and networking but does not primarily focus on STEM research.',
+    });
+    expect(result.researchRelated).toBe(false);
+    expect(result.reasons).toContain('disclaims_primary_research_focus');
+  });
+
+  it('still serves a program that only says research experience is not required', () => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Summer Lab Fellowship',
+        purpose: ['Research'],
+        description: 'Fellows join a lab for ten weeks; prior research experience is not required.',
+      }).researchRelated,
+    ).toBe(true);
+  });
+
+  it('withholds a scholarship that pays for a graduate degree course of study', () => {
+    const result = classifyProgramResearchRelevance({
+      title: 'Fenwick Scholarship',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      purpose: ['Study Abroad', 'Tuition Support', 'Research'],
+      description:
+        'The scholarship supports one-year postgraduate degree courses abroad and pays all tuition fees.',
+    });
+    expect(result.researchRelated).toBe(false);
+    expect(result.reasons).toContain('funds_degree_course_of_study');
+  });
+
+  it.each([
+    'The award pays all tuition fees for a graduate degree course abroad.',
+    'Covers tuition for a postgraduate course of study abroad.',
+    'Funds one year of a master’s degree course abroad.',
+  ])('withholds a non-research award whose text says "%s"', (description) => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Fixture Study Abroad Award',
+        purpose: ['Study Abroad'],
+        description,
+      }),
+    ).toMatchObject({
+      researchRelated: false,
+      reasons: expect.arrayContaining(['funds_degree_course_of_study']),
+    });
+  });
+
+  it('does not withhold a degree award whose text says it does not cover graduate study', () => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Fixture Research Fund',
+        purpose: ['Research'],
+        description: 'The fund does not cover graduate tuition or graduate study programs.',
+      }).reasons,
+    ).not.toContain('funds_degree_course_of_study');
+  });
+
+  it.each([
+    "Funds summer research internships. The fund doesn't cover graduate study programs.",
+    'Funds summer research internships. The fund cannot cover graduate study programs.',
+  ])('keeps a research fund whose negated degree clause reads "%s"', (description) => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Summer Research Fund',
+        purpose: ['Research'],
+        description,
+      }).researchRelated,
+    ).toBe(true);
+  });
+
+  it('keeps a degree award whose own text names research as an eligible use', () => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Fenwick Research Award',
+        purpose: ['Research'],
+        description:
+          'The award supports graduate study abroad and its funds may be used for research expenses.',
+      }).researchRelated,
+    ).toBe(true);
+  });
+
+  it('never serves a row on the full source text alone', () => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Alumni Mixer Grant',
+        purpose: ['Community or Public Service'],
+        description: 'Funds a networking evening.',
+        fullSourceDescription: 'Funds may be used for research expenses and lab supplies.',
+      }).researchRelated,
+    ).toBe(false);
   });
 });

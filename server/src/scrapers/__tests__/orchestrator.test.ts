@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
   getSourceByName: vi.fn(),
   appendObservations: vi.fn(),
   buildEvidenceCoverageImpactReportForObservations: vi.fn(),
+  reapDeadScrapeRuns: vi.fn(),
+}));
+
+vi.mock('../staleScrapeRunReaper', () => ({
+  reapDeadScrapeRuns: mocks.reapDeadScrapeRuns,
 }));
 
 vi.mock('../../models/scrapeRun', () => ({
@@ -29,7 +34,7 @@ vi.mock('../../services/researchEntityEvidenceCoverage', () => ({
 }));
 
 import { ScraperOrchestrator } from '../orchestrator';
-import { INTERRUPT_CLEANUP_TIMEOUT_MS } from '../interruptCleanup';
+import { INTERRUPT_CLEANUP_TIMEOUT_MS } from '../../utils/interruptCleanup';
 import { currentProcessCodeSha } from '../scrapeRunCodeIdentity';
 import { ScrapeRunStalledError } from '../scrapeRunProgress';
 import { SCRAPE_RUN_NOTES_MAX_LENGTH, SCRAPE_RUN_NOTES_TRUNCATED_SUFFIX } from '../scrapeRunNotes';
@@ -54,6 +59,7 @@ describe('ScraperOrchestrator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.scrapeRunCreate.mockResolvedValue({ _id: 'run-1' });
+    mocks.reapDeadScrapeRuns.mockResolvedValue({ closed: 0, changedSinceRead: 0 });
     mocks.scrapeRunUpdateOne.mockResolvedValue({ modifiedCount: 1 });
     mocks.scrapeRunFind.mockReturnValue(priorRuns([]));
     mocks.getSourceByName.mockResolvedValue({
@@ -69,6 +75,43 @@ describe('ScraperOrchestrator', () => {
       improved: 0,
       rows: [],
     });
+  });
+
+  const emptyScraper = (): IScraper => ({
+    name: 'fixture-source',
+    displayName: 'Fixture source',
+    async run() {
+      return { observationCount: 0, entitiesObserved: 0 };
+    },
+  });
+  const runOptions = { dryRun: true, dbReview: false, useCache: false, release: false };
+
+  it('closes dead runs before it records its own, passing its lock so a rerun can close its predecessor (#5628)', async () => {
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register(emptyScraper());
+
+    await orchestrator.run('fixture-source', runOptions, { lockOwnerId: 'lock-owner-1' });
+
+    expect(mocks.reapDeadScrapeRuns).toHaveBeenCalledWith({
+      detectedBy: 'orchestrator-run-start',
+      callerLockOwnerId: 'lock-owner-1',
+    });
+    expect(mocks.reapDeadScrapeRuns.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.scrapeRunCreate.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('still runs the source when closing dead runs fails', async () => {
+    mocks.reapDeadScrapeRuns.mockRejectedValue(new Error('reap unavailable'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register(emptyScraper());
+
+    const result = await orchestrator.run('fixture-source', runOptions);
+
+    expect(result.runId).toBe('run-1');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Could not close dead scrape runs'));
+    warn.mockRestore();
   });
 
   it('persists dry-run emitted observation counts even when observations are not inserted', async () => {
@@ -148,6 +191,36 @@ describe('ScraperOrchestrator', () => {
     const [row] = mocks.scrapeRunCreate.mock.calls[0];
     expect(row).toHaveProperty('codeSha', currentProcessCodeSha());
     expect(currentProcessCodeSha()).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('records who launched the run, from where, and with which redacted arguments (#5782)', async () => {
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register({
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      run: async () => ({ observationCount: 0, entitiesObserved: 0 }),
+    });
+    const previousArgv = process.argv;
+    const previousOwner = process.env.DEV_WRITE_OWNER;
+    process.argv = [previousArgv[0], 'src/scrapers/cli.ts', 'run', '--api-key=not-a-real-key'];
+    process.env.DEV_WRITE_OWNER = 'session-under-test';
+    try {
+      await orchestrator.run('fixture-source', { dryRun: true, useCache: true, release: false });
+    } finally {
+      process.argv = previousArgv;
+      if (previousOwner === undefined) delete process.env.DEV_WRITE_OWNER;
+      else process.env.DEV_WRITE_OWNER = previousOwner;
+    }
+
+    const [row] = mocks.scrapeRunCreate.mock.calls[0];
+    expect(row.launch).toMatchObject({
+      ownerLabel: 'session-under-test',
+      gitSha: currentProcessCodeSha(),
+      entry: 'src/scrapers/cli.ts',
+      argv: ['run', '--api-key=<redacted>'],
+      cwd: process.cwd(),
+    });
+    expect(row.launch.worktree).toEqual(expect.any(String));
   });
 
   it('fails a run whose source has now emitted nothing on three consecutive runs', async () => {
@@ -787,6 +860,43 @@ describe('ScraperOrchestrator', () => {
       await vi.advanceTimersByTimeAsync(5_000);
       expect(beats()).toBe(3);
       expect(statusWrites()).toEqual(['success']);
+    });
+
+    it('flushes the write counters on each heartbeat of a writing run, and never for a dry run (#6269)', async () => {
+      vi.useFakeTimers();
+      mocks.appendObservations.mockResolvedValue({ inserted: 3, skipped: 0, superseded: 0 });
+      const flushed = () =>
+        mocks.scrapeRunUpdateOne.mock.calls
+          .map(([, update]) => (update as { $max?: { observationCount?: number } }).$max)
+          .filter(Boolean);
+      for (const dryRun of [false, true]) {
+        mocks.scrapeRunUpdateOne.mockClear();
+        let finish: () => void = () => undefined;
+        const orchestrator = new ScraperOrchestrator({ runHeartbeatIntervalMs: 1_000 });
+        orchestrator.register({
+          name: 'fixture-source',
+          displayName: 'Fixture source',
+          run: async (ctx) => {
+            await ctx.emit([
+              { entityType: 'researchEntity', entityKey: 'fixture-a', field: 'name', value: 'A' },
+              { entityType: 'researchEntity', entityKey: 'fixture-b', field: 'name', value: 'B' },
+              { entityType: 'researchEntity', entityKey: 'fixture-c', field: 'name', value: 'C' },
+            ]);
+            return new Promise((resolve) => {
+              finish = () => resolve({ observationCount: 3, entitiesObserved: 3 });
+            });
+          },
+        });
+
+        const running = orchestrator.run('fixture-source', { ...OPTIONS, dryRun });
+        try {
+          await vi.advanceTimersByTimeAsync(1_500);
+          expect(flushed()).toEqual(dryRun ? [] : [{ observationCount: 3, entitiesObserved: 3 }]);
+        } finally {
+          finish();
+          await running;
+        }
+      }
     });
 
     it('marks an interrupted run interrupted before the signal is re-raised', async () => {

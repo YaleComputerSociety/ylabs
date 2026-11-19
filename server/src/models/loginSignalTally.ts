@@ -11,6 +11,7 @@
  * personalization decision recorded in docs/decisions.md is made.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import { loginSignalBuckets } from './storedVocabularies';
 
 export const LOGIN_SIGNAL_TALLY_COLLECTION = 'login_signal_tallies';

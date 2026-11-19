@@ -9,6 +9,7 @@
  * reason as `corpus_quality_snapshots`: a copied history is both misdated and lost.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const LANE_SCORECARD_SNAPSHOT_COLLECTION = 'lane_scorecard_snapshots';
 

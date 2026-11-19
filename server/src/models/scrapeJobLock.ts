@@ -5,6 +5,7 @@
  * still allowing stale leases to be taken over after their expiry.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 const scrapeJobLockSchema = new mongoose.Schema(
   {
@@ -51,6 +52,28 @@ const scrapeJobLockSchema = new mongoose.Schema(
       required: false,
     },
     lastRunId: {
+      type: String,
+      required: false,
+    },
+    ownerHost: {
+      type: String,
+      required: false,
+    },
+    ownerPid: {
+      type: Number,
+      required: false,
+    },
+    // Older writers take a lock over without touching ownerHost or ownerPid, so a dead-owner
+    // takeover trusts them only while this still names the current ownerId.
+    ownerProcessOwnerId: {
+      type: String,
+      required: false,
+    },
+    ownerLabel: {
+      type: String,
+      required: false,
+    },
+    command: {
       type: String,
       required: false,
     },

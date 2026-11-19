@@ -31,16 +31,12 @@ describe('promote:remote-phase', () => {
   it('runs every Beta step in order and reports success', () => {
     const lines = capture();
     const ran: string[] = [];
-    const code = runRemotePhase(
-      ['--environment', 'beta', '--confirm-beta-backup'],
-      BETA_ENV,
-      (step) => {
-        ran.push(step.label);
-        return 0;
-      },
-    );
+    const code = runRemotePhase(['--environment', 'beta'], BETA_ENV, (step) => {
+      ran.push(step.label);
+      return 0;
+    });
     expect(code).toBe(0);
-    expect(ran).toHaveLength(7);
+    expect(ran).toHaveLength(8);
     expect(resultLine(lines)).toMatchObject({ environment: 'beta', status: 'succeeded' });
   });
 
@@ -52,7 +48,12 @@ describe('promote:remote-phase', () => {
       return step.label === 'data quality' ? 2 : 0;
     });
     expect(code).toBe(1);
-    expect(ran).toEqual(['verify database names', 'visibility gate', 'data quality']);
+    expect(ran).toEqual([
+      'verify database names',
+      'retarget saved plans',
+      'visibility gate',
+      'data quality',
+    ]);
     expect(resultLine(lines)).toMatchObject({ status: 'failed', failedStep: 'data quality' });
   });
 

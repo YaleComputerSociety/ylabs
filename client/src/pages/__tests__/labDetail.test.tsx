@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import LabDetail from '../labDetail';
@@ -35,6 +35,12 @@ const mockedAxios = axios as unknown as {
   post: ReturnType<typeof vi.fn>;
 };
 
+const reachOutLine = () =>
+  screen.getByText(
+    (_, element) =>
+      element?.tagName === 'P' &&
+      (element.textContent ?? '').startsWith('Most undergraduates get started'),
+  );
 const PILL_ELIGIBLE_LABELS = ['Example Studies'];
 
 const DEFAULT_SLUG = 'sample-research-profile';
@@ -281,6 +287,78 @@ describe('LabDetail page', () => {
     expect(await screen.findByRole('button', { name: 'Save research plan' })).toBeTruthy();
   });
 
+  it('offers an undo after unsaving from the detail page and re-saves on undo', async () => {
+    const servedPayload: LabDetailPayload = {
+      ...basePayload,
+      group: { ...basePayload.group, _id: DEFAULT_SLUG },
+    };
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+    mockedAxios.put.mockResolvedValue({ data: { savedResearchEntityIds: [DEFAULT_SLUG] } });
+    renderLabDetail(servedPayload, { savedResearchEntityIds: [DEFAULT_SLUG] });
+
+    const saved = await screen.findByRole('button', { name: 'Saved to Dashboard' });
+    expect(saved.textContent).toContain('Press again to remove it. You can undo.');
+    fireEvent.click(saved);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    await waitFor(() =>
+      expect(mockedAxios.put).toHaveBeenCalledWith('/users/savedResearchEntities', {
+        withCredentials: true,
+        data: { savedResearchEntities: [DEFAULT_SLUG] },
+      }),
+    );
+    expect(await screen.findByRole('button', { name: 'Saved to Dashboard' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  });
+
+  it('drops the unsave undo when following a link to another research page', async () => {
+    const OTHER_SLUG = 'related-example-research';
+    const servedPayload: LabDetailPayload = {
+      ...basePayload,
+      group: { ...basePayload.group, _id: DEFAULT_SLUG },
+      relatedResearchEntities: [
+        {
+          id: OTHER_SLUG,
+          slug: OTHER_SLUG,
+          name: 'Neighbor Example Lab',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          departments: [],
+        },
+      ],
+    };
+    const otherPayload: LabDetailPayload = {
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        _id: OTHER_SLUG,
+        slug: OTHER_SLUG,
+        name: 'Neighbor Example Lab',
+      },
+    };
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+    renderLabDetail(servedPayload, { savedResearchEntityIds: [DEFAULT_SLUG] });
+    const serveDefault = mockedAxios.get.getMockImplementation() as (url: string) => unknown;
+    mockedAxios.get.mockImplementation((url: string) =>
+      url === `/research/${OTHER_SLUG}`
+        ? Promise.resolve({ data: otherPayload })
+        : serveDefault(url),
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Saved to Dashboard' }));
+    expect(await screen.findByRole('button', { name: 'Undo' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('link', { name: /Neighbor Example Lab/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Neighbor Example Lab' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(screen.queryByText(/Removed from your Dashboard/)).toBeNull();
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+  });
+
   it('redirects an archived slug to the canonical entity slug', async () => {
     const OLD_SLUG = 'nsf-pi-archived-shell';
     const CANONICAL_SLUG = 'named-canonical-lab';
@@ -334,6 +412,52 @@ describe('LabDetail page', () => {
       ),
     );
     expect(screen.queryByText('Research profile not found.')).toBeNull();
+  });
+
+  it('moves a mixed-case address onto the lower-case canonical profile address', async () => {
+    const MIXED_CASE_SLUG = 'Named-Canonical-LAB';
+    const CANONICAL_SLUG = 'named-canonical-lab';
+    const canonicalPayload: LabDetailPayload = {
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        _id: 'canonical-1',
+        slug: CANONICAL_SLUG,
+        name: 'Canonical Lab Name',
+      },
+    };
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: [] } });
+      }
+      if (url === `/research/${MIXED_CASE_SLUG}` || url === `/research/${CANONICAL_SLUG}`) {
+        return Promise.resolve({
+          data: canonicalPayload,
+          request: { responseURL: `http://localhost/api/research/${CANONICAL_SLUG}` },
+        });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+    const LocationProbe = () => <output aria-label="Current path">{useLocation().pathname}</output>;
+
+    render(
+      <UserContext.Provider
+        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
+      >
+        <MemoryRouter initialEntries={[`/research/${MIXED_CASE_SLUG}`]}>
+          <LocationProbe />
+          <Routes>
+            <Route path="/research/:slug" element={<LabDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+
+    await screen.findByText('Canonical Lab Name');
+    await waitFor(() =>
+      expect(screen.getByLabelText('Current path').textContent).toBe(`/research/${CANONICAL_SLUG}`),
+    );
   });
 
   it('keeps generic source review separate from a qualified action', async () => {
@@ -445,6 +569,9 @@ describe('LabDetail page', () => {
     const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
     expect(directoryLink.getAttribute('href')).toBe(
       'https://directory.yale.edu/?query=Sample%20Research%20Profile',
+    );
+    expect(directoryLink).toHaveAccessibleDescription(
+      'Opens the Yale Directory in a new tab, outside y/labs.',
     );
   });
 
@@ -605,6 +732,111 @@ describe('LabDetail page', () => {
     expect(
       screen.queryByRole('link', { name: "Open Fixture Ashby's official profile" }),
     ).toBeNull();
+  });
+
+  it('lets the reach-out line stand alone when the lead card email is the only way in', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: /^Email Jordan Researcher at / })).toBeTruthy();
+    expect(
+      within(reachOutLine())
+        .getByRole('link', { name: 'jordan.researcher@example.test' })
+        .getAttribute('href'),
+    ).toBe('mailto:jordan.researcher@example.test');
+    expect(screen.queryByText(/does not have a direct link/)).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
+  it('shows the same sanitized address in the reach-out line as its href, whatever the stored casing', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'MAILTO:Jordan.Researcher@Example.test',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const lineLink = within(reachOutLine()).getByRole('link', {
+      name: 'jordan.researcher@example.test',
+    });
+    expect(lineLink.getAttribute('href')).toBe('mailto:jordan.researcher@example.test');
+    expect(reachOutLine().textContent).not.toMatch(/mailto:/i);
+  });
+
+  it('records an email click in the reach-out line with the reach_out surface and no address', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    fireEvent.click(
+      within(reachOutLine()).getByRole('link', { name: 'jordan.researcher@example.test' }),
+    );
+    await flushResearchAnalytics();
+
+    const events = mockedAxios.post.mock.calls.flatMap(
+      ([, body]) =>
+        (body as { events?: Array<{ eventType: string; payload?: unknown }> })?.events ?? [],
+    );
+    const contact = events.find((event) => event.eventType === 'contact_route_click');
+    expect(contact?.payload).toEqual({ contactMethod: 'email', surface: 'reach_out' });
+    expect(JSON.stringify(events)).not.toContain('jordan.researcher@example.test');
   });
 
   it('renders a Yale Directory fallback instead of a dead end when no website, profile, or email exists', async () => {
@@ -914,39 +1146,15 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
   });
 
-  it('shows the whole undergraduate quote with the page it is quoted from (#3569)', async () => {
-    const longQuote = `${'Undergraduate students contribute to field and lab work '.repeat(5)}end.`;
+  it('never shows an undergraduate quote, even from a payload that still carries one (#5309)', async () => {
     const { container } = renderLabDetail({
       ...basePayload,
       group: {
         ...basePayload.group,
-        undergradEvidenceQuote: longQuote,
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
-      },
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    expect(screen.getByText('Mentions undergraduate research')).toBeTruthy();
-    expect(container.querySelector('blockquote')?.textContent).toBe(`\u201c${longQuote}\u201d`);
-    expect(
-      screen
-        .getByRole('link', { name: 'example.yale.edu (opens in a new tab)' })
-        .getAttribute('href'),
-    ).toBe('https://example.yale.edu/join');
-    expect(screen.queryByLabelText('Research activity evidence')).toBeNull();
-    await expectNoAxeViolations(container);
-  });
-
-  it('shows no undergraduate quote when the way in is withheld for an emeritus lead', async () => {
-    const { container } = renderLabDetail({
-      ...basePayload,
-      group: {
-        ...basePayload.group,
-        undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
-        emeritusLed: true,
-        wayInWithheld: true,
+        ...({
+          undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
+          undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
+        } as object),
       },
     });
 
@@ -954,16 +1162,134 @@ describe('LabDetail page', () => {
 
     expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
     expect(container.querySelector('blockquote')).toBeNull();
+    expect(screen.queryByText(/Quoted from/)).toBeNull();
   });
 
-  it('lists the roster undergraduates instead of the quote when the lab page names them', async () => {
+  it('shows the undergraduate count its Sources chip cites when no named roster is served', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: { ...basePayload.group, currentUndergradCount: 3 },
+      accessSignals: [
+        {
+          _id: 'signal-current-undergrads',
+          signalType: 'CURRENT_UNDERGRADS',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.5,
+          sourceUrl: 'https://fixture-lab.example.org/our-team',
+        },
+      ] as never,
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const text = container.textContent || '';
+    expect(text).toContain('Current undergraduate members');
+    expect(text).toContain('lists 3 current undergraduates');
+    expect(screen.getByRole('link', { name: /See the lab.s page/ }).getAttribute('href')).toBe(
+      'https://fixture-lab.example.org/our-team',
+    );
+    await expectNoAxeViolations(container);
+  });
+
+  it('names an official profile as the page an undergraduate count was read from', async () => {
+    const profileUrl =
+      'https://engineering.yale.edu/research-and-faculty/faculty-directory/fixture';
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: { ...basePayload.group, currentUndergradCount: 1 },
+      accessSignals: [
+        {
+          _id: 'signal-current-undergrads',
+          signalType: 'CURRENT_UNDERGRADS',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.5,
+          sourceUrl: profileUrl,
+        },
+      ] as never,
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const text = container.textContent || '';
+    expect(text).toContain('The official profile lists 1 current undergraduate.');
+    expect(text).not.toContain('own page lists');
+    expect(screen.queryByRole('link', { name: /See the lab.s page/ })).toBeNull();
+    expect(screen.getByRole('link', { name: 'See the profile' }).getAttribute('href')).toBe(
+      profileUrl,
+    );
+  });
+
+  it('names a lead profile on a host-root person page as the page an undergraduate count was read from', async () => {
+    const profileUrl = 'https://law.yale.edu/fixture-ashby';
+    renderLabDetail({
+      ...basePayload,
+      group: { ...basePayload.group, currentUndergradCount: 2 },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.ashby',
+            fname: 'Fixture',
+            lname: 'Ashby',
+            displayName: 'Fixture Ashby',
+          },
+        },
+      ],
+      accessSignals: [
+        {
+          _id: 'signal-current-undergrads',
+          signalType: 'CURRENT_UNDERGRADS',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.5,
+          sourceUrl: profileUrl,
+        },
+      ] as never,
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText(/The official profile lists 2 current undergraduates\./)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /See the lab.s page/ })).toBeNull();
+    expect(screen.getByRole('link', { name: 'See the profile' }).getAttribute('href')).toBe(
+      profileUrl,
+    );
+  });
+
+  it('shows past undergraduate members its Sources chip cites without stating an alumni count', async () => {
     const { container } = renderLabDetail({
       ...basePayload,
       group: {
         ...basePayload.group,
-        undergradEvidenceQuote: 'Listed Undergrad Undergraduate Email',
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/people',
+        pastUndergradAdvisees: [{ programName: 'Lab roster alumni', year: 2022, count: 5 }],
       },
+      accessSignals: [
+        {
+          _id: 'signal-past-undergrads',
+          signalType: 'PAST_UNDERGRADS',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.5,
+          sourceUrl: 'https://fixture-lab.example.org/alumni',
+        },
+      ] as never,
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const text = container.textContent || '';
+    expect(text).toContain('Past undergraduate members');
+    expect(text).toContain('lists past undergraduate researchers');
+    expect(text).toContain('Has advised undergrads (2022)');
+    expect(text).not.toMatch(/\b5 past undergrad/i);
+    expect(screen.getByRole('link', { name: /See the lab.s page/ }).getAttribute('href')).toBe(
+      'https://fixture-lab.example.org/alumni',
+    );
+    await expectNoAxeViolations(container);
+  });
+
+  it('lists the roster undergraduates when the lab page names them', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: basePayload.group,
       roster: {
         status: 'current',
         returned: 0,
@@ -976,35 +1302,39 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-    expect(container.querySelector('blockquote')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Undergraduate researchers' })).toBeTruthy();
     expect(screen.getByText('Listed Undergrad')).toBeTruthy();
     await expectNoAxeViolations(container);
   });
 
-  it.each([
-    ['no quote', { undergradEvidenceQuote: undefined }],
-    ['a blank quote', { undergradEvidenceQuote: '   ' }],
-    ['a quote with no cited page', { undergradEvidenceSourceUrl: undefined }],
-    ['a quote citing a non-http page', { undergradEvidenceSourceUrl: 'javascript:alert(1)' }],
-  ])('shows no undergraduate quote for %s', async (_label, overrides) => {
+  it('labels a fellowship mentee count by its program beside a roster that lists undergraduates', async () => {
     const { container } = renderLabDetail({
       ...basePayload,
       group: {
         ...basePayload.group,
-        undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
-        ...overrides,
+        pastUndergradAdvisees: [
+          { programName: 'Lab roster alumni', count: 2 },
+          { programName: 'Fixture Scholars II (Fixture Expansion)', year: 2025, count: 1 },
+        ],
+      },
+      roster: {
+        status: 'current',
+        returned: 0,
+        truncated: false,
+        withheldCount: 0,
+        sourceUrl: 'https://example.yale.edu/people',
+        undergraduates: [
+          { name: 'Listed Undergrad', status: 'current', startYear: 2024 },
+          { name: 'Earlier Undergrad', status: 'past', endYear: 2023 },
+        ],
       },
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-    expect(container.querySelector('blockquote')).toBeNull();
-    expect(screen.queryByText(/Quoted from/)).toBeNull();
-    expect(container.querySelector('a[href^="javascript:"]')).toBeNull();
+    const text = container.textContent || '';
+    expect(text).toContain('Mentored 1 Fixture Scholars II recipient (2025)');
+    expect(text).not.toMatch(/advised (\d+ )?undergrad/i);
   });
 
   it('points to the lab website instead of a dead end when there is no profile or email', async () => {
@@ -1024,6 +1354,10 @@ describe('LabDetail page', () => {
     const websiteLinks = screen.getAllByRole('link', { name: 'Visit lab website' });
     expect(websiteLinks).toHaveLength(1);
     expect(websiteLinks[0].getAttribute('href')).toBe(RESEARCH_WEBSITE_URL);
+    expect(websiteLinks[0]).toHaveAccessibleDescription(
+      'Opens the lab website in a new tab, outside y/labs.',
+    );
+    expect(screen.getByText('Opens the lab website in a new tab, outside y/labs.')).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
     expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
@@ -1060,7 +1394,7 @@ describe('LabDetail page', () => {
       LAB_WEBSITE_URL,
     );
     expect(screen.queryByText(/no separate website/)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Email Fixture Steele' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /^Email Fixture Steele at / })).toBeTruthy();
   });
 
   it('points an under-review entity to its lab website instead of a Yale Directory dead end', async () => {
@@ -1278,13 +1612,13 @@ describe('LabDetail page', () => {
 
     // The primary action stays the official profile; the email rides alongside like the ORCID line.
     expect(screen.queryByRole('link', { name: 'Email the PI' })).toBeNull();
-    const emailLink = screen.getByRole('link', { name: 'Email Jordan Researcher' });
+    const emailLink = screen.getByRole('link', { name: /^Email Jordan Researcher at / });
     expect(emailLink.textContent).toBe('jordan.researcher@example.test');
     // No prefilled subject or body: the address alone is the action.
     expect(emailLink.getAttribute('href')).toBe('mailto:jordan.researcher@example.test');
   });
 
-  it('omits the get-involved block when it would only point back at the lead card', async () => {
+  it('points back at the lead card when the get-involved block has no action of its own', async () => {
     const LEAD_PROFILE_URL = 'https://medicine.yale.edu/profile/fixture-lead/';
     renderLabDetail({
       ...basePayload,
@@ -1311,10 +1645,55 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('link', { name: 'Email Jordan Researcher' })).toBeTruthy();
-    expect(screen.queryByText('How to get involved')).toBeNull();
+    expect(screen.getByRole('link', { name: /^Email Jordan Researcher at / })).toBeTruthy();
+    expect(
+      within(reachOutLine())
+        .getByRole('link', { name: 'jordan.researcher@example.test' })
+        .getAttribute('href'),
+    ).toBe('mailto:jordan.researcher@example.test');
+    expect(
+      screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
+    ).toBe('/getting-started');
     expect(screen.queryByText(/linked in the card above/)).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
+  it('explains a principal investigator lead and spells out grant funders', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        entityType: 'LAB',
+        recentGrants: [{ agency: 'NHLBI' }],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            profileUrls: { official: 'https://medicine.yale.edu/profile/fixture-lead/' },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(
+      screen.getByText(
+        /The faculty member who leads this research, also called the principal investigator \(PI\)\./,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'What a PI does' }).getAttribute('href')).toBe(
+      '/getting-started#what-is-a-pi',
+    );
+    expect(
+      screen.getByText(/1 from National Heart, Lung, and Blood Institute \(NHLBI\)/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Funded: 1/)).toBeNull();
   });
 
   it('drops a generic official page beside a lead card that already links the profile', async () => {
@@ -1348,7 +1727,14 @@ describe('LabDetail page', () => {
         .some((link) => link.getAttribute('href') === LEAD_CARD_PROFILE_URL),
     ).toBe(true);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
-    expect(screen.queryByText('How to get involved')).toBeNull();
+    expect(
+      within(reachOutLine()).getByRole('link', {
+        name: 'their official profile (opens in a new tab)',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
+    ).toBe('/getting-started');
   });
 
   it('offers the research homepage with the join page as a secondary link beside a lead card that links the profile', async () => {
@@ -1382,10 +1768,53 @@ describe('LabDetail page', () => {
         .getAllByRole('link')
         .map((link) => [link.textContent, link.getAttribute('href')]),
     ).toEqual([
+      ['their official profile', LEAD_CARD_PROFILE_URL],
       ['Visit research website', RESEARCH_WEBSITE_URL],
       ['See how to join', JOIN_PAGE_URL],
+      ['New to research? How to reach out', '/getting-started'],
     ]);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+  });
+
+  it('says the join link beside the website opens another site when it sits on a different host', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [OFFICIAL_PROFILE_URL, JOIN_PAGE_URL],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const note =
+      'Opens the research website, or a page about joining on another site, in a new tab, outside y/labs.';
+    expect(
+      screen.getByRole('link', { name: 'Visit research website' }),
+    ).toHaveAccessibleDescription(note);
+    expect(screen.getByRole('link', { name: 'See how to join' })).toHaveAccessibleDescription(note);
+  });
+
+  it('names only the website for a join link beside it on the same host', async () => {
+    const sameHostJoinPageUrl = new URL('join-us', RESEARCH_WEBSITE_URL).toString();
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [OFFICIAL_PROFILE_URL, sameHostJoinPageUrl],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'See how to join' }).getAttribute('href')).toBe(
+      sameHostJoinPageUrl,
+    );
+    expect(screen.getByRole('link', { name: 'See how to join' })).toHaveAccessibleDescription(
+      'Opens the research website in a new tab, outside y/labs.',
+    );
   });
 
   it('does not mark an official profile opened above when a join page takes the only action', async () => {
@@ -1404,7 +1833,7 @@ describe('LabDetail page', () => {
       JOIN_PAGE_URL,
     );
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
-    expect(screen.queryByText('opened above')).toBeNull();
+    expect(screen.queryByText('also linked above')).toBeNull();
   });
 
   it('offers the research homepage over an own-button profile and links the join page beneath it', async () => {
@@ -1424,7 +1853,7 @@ describe('LabDetail page', () => {
       within(getInvolvedBlock)
         .getAllByRole('link')
         .map((link) => link.getAttribute('href')),
-    ).toEqual([RESEARCH_WEBSITE_URL, JOIN_PAGE_URL]);
+    ).toEqual([RESEARCH_WEBSITE_URL, JOIN_PAGE_URL, '/getting-started']);
     expect(screen.queryByRole('link', { name: 'See how to get involved' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
   });
@@ -1453,6 +1882,35 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: 'See how to join' }).getAttribute('href')).toBe(
       vettedJoinPageUrl,
     );
+  });
+
+  it('labels a served join route by what its page is when the address is not a join page', async () => {
+    const pressPageUrl = 'https://join-lab.example.test/press';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [RESEARCH_WEBSITE_URL],
+      },
+      accessSignals: [
+        {
+          signalType: 'APPLICATION_FORM_EXISTS',
+          confidence: 'MEDIUM',
+          excerpt: 'A join, opportunities, or application page was found.',
+          sourceUrl: pressPageUrl,
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('link', { name: 'See how to join' })).toBeNull();
+    expect(
+      screen.getByRole('link', { name: 'Read what they say about joining' }).getAttribute('href'),
+    ).toBe(pressPageUrl);
+    expect(screen.getByText('Mentions how to join')).toBeTruthy();
+    expect(screen.queryByText(/Application Form Exists/)).toBeNull();
   });
 
   it('offers the served join page as the button when the row has no homepage', async () => {
@@ -1497,7 +1955,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    const emailLink = screen.getByRole('link', { name: 'Email Jordan Researcher' });
+    const emailLink = screen.getByRole('link', { name: /^Email Jordan Researcher at / });
     expect(emailLink.getAttribute('href')).toMatch(/^mailto:/);
     fireEvent.click(emailLink);
 
@@ -1525,18 +1983,20 @@ describe('LabDetail page', () => {
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
-    fireEvent.click(screen.getByRole('link', { name: 'Email Jordan Researcher' }));
+    fireEvent.click(screen.getByRole('link', { name: /^Email Jordan Researcher at / }));
     await flushResearchAnalytics();
 
     const events = mockedAxios.post.mock.calls
       .flatMap(([, body]) => (body as { events?: unknown[] })?.events ?? [])
       .filter(
-        (event): event is { eventType: string; payload?: { contactMethod?: string } } =>
+        (
+          event,
+        ): event is { eventType: string; payload?: { contactMethod?: string; surface?: string } } =>
           typeof event === 'object' && event !== null,
       );
     const contact = events.find((event) => event.eventType === 'contact_route_click');
     expect(contact).toBeDefined();
-    expect(contact?.payload?.contactMethod).toBe('email');
+    expect(contact?.payload).toEqual({ contactMethod: 'email', surface: 'lead_card' });
     // The destination never leaves the client: the analytics contract forbids retaining it.
     expect(JSON.stringify(events)).not.toContain('jordan.researcher@example.test');
   });
@@ -1752,7 +2212,7 @@ describe('LabDetail page', () => {
       GET_INVOLVED_URL,
     );
     const getInvolvedBlock = screen.getByText('How to get involved').parentElement as HTMLElement;
-    expect(within(getInvolvedBlock).getAllByRole('link')).toHaveLength(1);
+    expect(within(getInvolvedBlock).getAllByRole('link')).toHaveLength(2);
     expect(screen.queryByRole('link', { name: /^Contact / })).toBeNull();
     expect(
       screen
@@ -1821,7 +2281,7 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByRole('heading', { name: 'Principal Investigator' })).toBeTruthy();
-    expect(screen.getByText('Lead identity under review')).toBeTruthy();
+    expect(screen.getByText('Lead not confirmed yet')).toBeTruthy();
     expect(screen.queryByText('Unverified Investigator')).toBeNull();
   });
 
@@ -2041,7 +2501,7 @@ describe('LabDetail page', () => {
 
     const text = container.textContent || '';
     expect(text).toContain('What this lab studies');
-    expect(text).toContain('Best fit for');
+    expect(text).toContain('Topics');
     expect(screen.getByText('Fixture Evolution')).toBeTruthy();
     expect(screen.getByText('Population Models')).toBeTruthy();
     expect(screen.getByText('Synthetic DNA Examples')).toBeTruthy();
@@ -2187,7 +2647,7 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: /Example Member/ }).getAttribute('href')).toBe(
       '/research/faculty-research-area-example-member',
     );
-    expect(screen.getByText('Faculty Research')).toBeTruthy();
+    expect(screen.getByText('Faculty research')).toBeTruthy();
     expect(screen.queryByText('Individual')).toBeNull();
   });
 
@@ -2227,6 +2687,77 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: /Yale Cancer Center/ }).getAttribute('href')).toBe(
       '/research/center-yale-cancer-center',
     );
+  });
+
+  it('puts the way in under the summary and keeps the lead rail beside it', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: { ...basePayload.group, websiteUrl: 'https://example.test/lab' },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+          },
+        },
+      ],
+      affiliatedResearchEntities: [
+        {
+          id: 'entity-umbrella',
+          slug: 'center-yale-cancer-center',
+          name: 'Yale Cancer Center',
+          kind: 'center',
+          entityType: 'CENTER',
+          departments: ['Neuroscience'],
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const summaryCard = screen
+      .getByRole('heading', { name: 'Research summary' })
+      .closest('section') as HTMLElement;
+    const rail = summaryCard.nextElementSibling as HTMLElement;
+    const body = rail.nextElementSibling as HTMLElement;
+    expect(summaryCard.textContent).toContain('How to get involved');
+    expect(rail.textContent).not.toContain('How to get involved');
+    expect(summaryCard.textContent).not.toContain('Jordan Researcher');
+    expect(rail.textContent).toContain('Jordan Researcher');
+    expect(rail.className).toContain('md:self-start');
+    expect(rail.className).toContain('md:shadow-none');
+    expect(body.textContent).toContain('Affiliated with');
+  });
+
+  it('omits the rail and puts the body right after the summary when there is no lead or evidence', async () => {
+    renderLabDetail({
+      ...basePayload,
+      affiliatedResearchEntities: [
+        {
+          id: 'entity-umbrella',
+          slug: 'center-example-institute',
+          name: 'Example Institute',
+          kind: 'institute',
+          entityType: 'INSTITUTE',
+          departments: ['Neuroscience'],
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const summaryCard = screen
+      .getByRole('heading', { name: 'Research summary' })
+      .closest('section') as HTMLElement;
+    const body = summaryCard.nextElementSibling as HTMLElement;
+    expect(summaryCard.parentElement?.children).toHaveLength(2);
+    expect(body.tagName).not.toBe('SECTION');
+    expect(body.textContent).toContain('Affiliated with');
+    expect(screen.queryByLabelText('Research activity evidence')).toBeNull();
   });
 
   it('does not link an affiliation summary without a navigable slug', async () => {
@@ -2405,6 +2936,110 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: /Only Similar Lab/ })).toBeTruthy();
   });
 
+  it("lists each lead's other research under its own heading, linked to its profile", async () => {
+    renderLabDetail({
+      ...basePayload,
+      alsoLedResearchEntitiesByLead: [
+        {
+          leadName: 'Ada Fixture',
+          leadPublicKey: 'ada-fixture-pi',
+          researchEntities: [
+            {
+              id: 'ada-fixture-faculty-research',
+              slug: 'ada-fixture-faculty-research',
+              name: 'Ada Fixture Faculty Research',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              departments: ['Physics'],
+              blurb: 'Studies tidal sediment transport.',
+            },
+          ],
+        },
+        {
+          leadName: 'Devon Fixture',
+          researchEntities: [
+            {
+              id: 'fixture-shoreline-center',
+              slug: 'fixture-shoreline-center',
+              name: 'Fixture Shoreline Center',
+              kind: 'center',
+              entityType: 'CENTER',
+              departments: ['Physics'],
+            },
+          ],
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const firstSection = screen
+      .getByRole('heading', { name: 'Also led by Ada Fixture', level: 2 })
+      .closest('section') as HTMLElement;
+    expect(
+      within(firstSection)
+        .getByRole('link', { name: /Faculty research/ })
+        .getAttribute('href'),
+    ).toBe('/research/ada-fixture-faculty-research');
+    expect(
+      within(firstSection).getByRole('heading', { name: 'Ada Fixture', level: 3 }),
+    ).toBeTruthy();
+    expect(within(firstSection).getByText('Studies tidal sediment transport.')).toBeTruthy();
+    expect(within(firstSection).getAllByRole('listitem')).toHaveLength(1);
+    const secondSection = screen
+      .getByRole('heading', { name: 'Also led by Devon Fixture', level: 2 })
+      .closest('section') as HTMLElement;
+    expect(
+      within(secondSection)
+        .getByRole('link', { name: /Fixture Shoreline Center/ })
+        .getAttribute('href'),
+    ).toBe('/research/fixture-shoreline-center');
+  });
+
+  it("shows no lead's-other-research section when the lead leads nothing else", async () => {
+    renderLabDetail({ ...basePayload, alsoLedResearchEntitiesByLead: [] });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('heading', { name: /^Also led by/ })).toBeNull();
+  });
+
+  it('never repeats a row the related, affiliated, or similar sections already link', async () => {
+    const sharedEntity = {
+      id: 'fixture-shared-lab',
+      slug: 'fixture-shared-lab',
+      name: 'Fixture Shared Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Physics'],
+    };
+    const ledOnly = {
+      id: 'fixture-led-only-lab',
+      slug: 'fixture-led-only-lab',
+      name: 'Fixture Led Only Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Physics'],
+    };
+    renderLabDetail({
+      ...basePayload,
+      affiliatedResearchEntities: [sharedEntity],
+      similarResearchEntities: [ledOnly],
+      alsoLedResearchEntitiesByLead: [
+        { leadName: 'Ada Fixture', researchEntities: [sharedEntity, ledOnly] },
+        { leadName: 'Devon Fixture', researchEntities: [sharedEntity] },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getAllByRole('link', { name: /Fixture Shared Lab/ })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: /Fixture Led Only Lab/ })).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'Also led by Ada Fixture' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Also led by Devon Fixture' })).toBeNull();
+    expect(screen.queryByText('More like this')).toBeNull();
+  });
+
   it('does not render inferred student-fit preparation from topic metadata', async () => {
     renderLabDetail({
       ...basePayload,
@@ -2434,7 +3069,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText('Example Health Systems Profile');
 
-    expect(screen.getByText('Best fit for')).toBeTruthy();
+    expect(screen.getByText('Topics')).toBeTruthy();
     expect(screen.queryByText('This lab appears to study')).toBeNull();
     expect(screen.queryByText('Good fit if you are interested in')).toBeNull();
     expect(screen.queryByText('Student fit')).toBeNull();
@@ -2487,6 +3122,21 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('No indexed planning routes are attached yet.')).toBeNull();
   });
 
+  it('renders no lead section, and no pointer to a profile link, when no lead is attached', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      members: [],
+      group: { ...basePayload.group, entityType: 'CORE_FACILITY' },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const text = container.textContent || '';
+    expect(text).not.toContain('Principal Investigator');
+    expect(text).not.toContain('No principal investigator');
+    expect(text).not.toContain('Check the official profile');
+  });
+
   it('does not render legacy active listings as a public detail section', async () => {
     const { container } = renderLabDetail();
 
@@ -2496,14 +3146,9 @@ describe('LabDetail page', () => {
     });
 
     const text = container.textContent || '';
-    const principalInvestigatorIndex = text.indexOf('Principal Investigator');
-    const sourcesIndex = text.indexOf('Sources');
 
     expect(text).not.toContain('Active Opportunities');
-    expect(text).toContain('No principal investigator is attached yet');
-    expect(text).toContain('Check the official profile for current leadership.');
-    expect(principalInvestigatorIndex).toBeGreaterThan(-1);
-    expect(sourcesIndex).toBeGreaterThan(principalInvestigatorIndex);
+    expect(text).toContain('Sources');
     expect(text).not.toContain('Research Activity');
     expect(text).not.toContain('Ways In');
     expect(text).not.toContain('Access evidence has not been attached yet.Evidence');
@@ -3023,7 +3668,14 @@ describe('LabDetail display name unification', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
-    expect(screen.queryByText('How to get involved')).toBeNull();
+    expect(
+      within(reachOutLine()).getByRole('link', {
+        name: 'their official profile (opens in a new tab)',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
+    ).toBe('/getting-started');
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
     expect(
       screen.getAllByRole('link').filter((link) => link.getAttribute('href') === LEAD_PROFILE_URL),
@@ -3166,6 +3818,70 @@ describe('LabDetail display name unification', () => {
     const exploreLink = screen.getByRole('link', { name: /explore research/i });
     expect(exploreLink.getAttribute('href')).toBe('/research');
     await waitFor(() => expect(document.title).toContain('Page not found'));
+  });
+
+  it('treats a slug the profile route rejects as malformed as a missing page, not a load failure', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: [] } });
+      }
+      if (url.startsWith('/research/')) {
+        return Promise.reject({ response: { status: 400 } });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+
+    render(
+      <UserContext.Provider
+        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
+      >
+        <MemoryRouter initialEntries={['/research/dept-psych-missing-example-lab']}>
+          <Routes>
+            <Route path="/research/:slug" element={<LabDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: /we couldn't find that y\/labs page/i }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Something went wrong loading this research profile/)).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Search y/labs' })).toHaveValue(
+      'missing example lab',
+    );
+  });
+
+  it('asks for one fresh login instead of a retryable failure when the profile answers 401', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.reject({ response: { status: 401 } });
+      }
+      if (url === `/research/${DEFAULT_SLUG}`) {
+        return Promise.reject({ response: { status: 401 } });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+
+    render(
+      <UserContext.Provider
+        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
+      >
+        <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
+          <Routes>
+            <Route path="/research/:slug" element={<LabDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Your session needs a fresh login' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Log in with Yale' }).getAttribute('href')).toBe(
+      '/login',
+    );
+    expect(screen.queryByText(/Something went wrong loading this research profile/)).toBeNull();
   });
 
   it('offers an Explore Research recovery CTA when the profile fails to load for a non-404 reason', async () => {

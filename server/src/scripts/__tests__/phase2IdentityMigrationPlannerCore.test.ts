@@ -7,6 +7,11 @@ import {
   MAX_PHASE2_PROFILE_URL_STRINGS,
   type Phase2IdentityMigrationPlannerInput,
 } from '../phase2IdentityMigrationPlannerCore';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
+const SYNTHETIC_ORCID_3 = syntheticPersonOrcid(502);
 
 function input(
   overrides: Partial<Phase2IdentityMigrationPlannerInput> = {},
@@ -62,7 +67,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
             email: 'person.one@yale.edu',
             name: 'Person One',
             websiteUrl: 'https://example.yale.edu/profile/person-one/',
-            orcidId: '0000-0001-2345-6789',
+            orcidId: SYNTHETIC_ORCID_1,
           },
         ],
         memberships: [
@@ -150,7 +155,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
     {
       label: 'shared ORCID',
       externalField: 'orcidId',
-      externalValue: '0000-0001-2345-6789',
+      externalValue: SYNTHETIC_ORCID_1,
       yaleIdentity: { netid: 'yale-orcid-person' },
       yaleEvidence: ['NETID'],
       externalHint: 'ORCID',
@@ -219,14 +224,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
   );
 
   it.each([
-    [
-      'ORCID',
-      'orcid',
-      'orcidId',
-      '9999-9999-9999-9994',
-      '1111-1111-1111-1115',
-      'conflicting_orcid',
-    ],
+    ['ORCID', 'orcid', 'orcidId', SYNTHETIC_ORCID_2, SYNTHETIC_ORCID_3, 'conflicting_orcid'],
     [
       'Google Scholar identifier',
       'googleScholarId',

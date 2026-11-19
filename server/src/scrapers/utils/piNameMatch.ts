@@ -70,12 +70,14 @@ const NICKNAME_GROUPS: string[][] = [
   ['donald', 'don', 'donnie'],
   ['gregory', 'greg'],
   ['frederick', 'fred', 'freddie'],
+  ['harold', 'harry', 'hal'],
   ['raymond', 'ray'],
   ['eugene', 'gene'],
   ['lawrence', 'larry'],
   ['gerald', 'gerry', 'jerry'],
-  ['elizabeth', 'liz', 'beth', 'betty', 'eliza', 'betsy'],
-  ['katherine', 'kate', 'katie', 'kathy', 'katy'],
+  ['elizabeth', 'liz', 'liza', 'beth', 'betty', 'eliza', 'betsy'],
+  ['yelizaveta', 'elizaveta', 'liza'],
+  ['katherine', 'katharine', 'kate', 'katie', 'kathy', 'katy'],
   ['catherine', 'cathy', 'cath', 'katie'],
   ['margaret', 'maggie', 'meg', 'peggy', 'marge'],
   ['jennifer', 'jen', 'jenn', 'jenny'],
@@ -88,6 +90,7 @@ const NICKNAME_GROUPS: string[][] = [
   ['patricia', 'patty', 'tricia', 'trish'],
   ['victoria', 'vicky', 'tori'],
   ['pamela', 'pam'],
+  ['judith', 'judy'],
 ];
 
 const VARIANT_INDEX = ((): Map<string, Set<string>> => {
@@ -122,7 +125,33 @@ function givenTokens(name: string | undefined | null): string[] {
     .filter(Boolean);
 }
 
+const NICKNAME_ASIDE =
+  /\([^)]*\)|"[^"]*"|\u201c[^\u201d]*\u201d|(?<=\s)['\u2018][^'\u2019]+['\u2019](?=\s|$)/g;
+
+function givenTokensWithoutNicknames(givenName: string): string[] {
+  return givenTokens(String(givenName || '').replace(NICKNAME_ASIDE, ' '));
+}
+
+function statedMiddleInitial(givenName: string): string {
+  return givenTokensWithoutNicknames(givenName)[1]?.[0] ?? '';
+}
+
+export function statesMiddleInitial(givenName: string): boolean {
+  return Boolean(statedMiddleInitial(givenName));
+}
+
+export function statedMiddleInitialsConflict(a: string, b: string): boolean {
+  const left = givenTokensWithoutNicknames(a);
+  const right = givenTokensWithoutNicknames(b);
+  let index = 1;
+  while (index < left.length && left[index] === right[index]) index += 1;
+  const leftInitial = left[index]?.[0];
+  const rightInitial = right[index]?.[0];
+  return Boolean(leftInitial && rightInitial && leftInitial !== rightInitial);
+}
+
 export function givenNamesEquivalent(a: string, b: string): boolean {
+  if (statedMiddleInitialsConflict(a, b)) return false;
   const fa = givenTokens(a)[0] || '';
   const fb = givenTokens(b)[0] || '';
   if (!fa || !fb) return false;
@@ -168,8 +197,8 @@ const GIVEN_NAME_SHORT_FORM_GROUPS: readonly (readonly string[])[] = [
   ['liz', 'elizabeth'],
   ['beth', 'elizabeth'],
   ['betsy', 'elizabeth'],
-  ['kate', 'katherine', 'kathryn'],
-  ['kathy', 'katherine', 'kathryn'],
+  ['kate', 'katherine', 'katharine', 'kathryn'],
+  ['kathy', 'katherine', 'katharine', 'kathryn'],
   ['cathy', 'catherine'],
   ['sue', 'susan'],
   ['meg', 'margaret'],
@@ -237,6 +266,33 @@ function givenNameTokensCouldMatch(x: string, y: string): boolean {
   if (x.length === 1 || y.length === 1) return x[0] === y[0];
   return (
     x.startsWith(y) || y.startsWith(x) || x.endsWith(y) || y.endsWith(x) || givenNamesAgree(x, y)
+  );
+}
+
+const MIN_TRANSLITERATION_LETTERS = 4;
+
+// The Greek `-ios` is read as its contracted `-is` before any vowel fold, so `dionysios` and
+// `dionysis` are one romanised name (#5853) while a Latin `-ius` such as `marius` stays apart from `maris`.
+const transliterationKey = (token: string): string =>
+  token
+    .replace(/ios$/, 'is')
+    .replace(/h/g, '')
+    .replace(/y/g, 'i')
+    .replace(/o/g, 'u')
+    .replace(/e/g, 'a')
+    .replace(/([^aiu])\1+/g, '$1');
+
+/**
+ * Whether two given-name tokens could be two romanisations of one name
+ * (`muhammad`/`mohammed`, `dionysios`/`dionysis`), while `tom`/`tim` stay two names.
+ * It reads only lowercase ASCII tokens and widens agreement, so a caller should ask it
+ * only where a surname already matched.
+ */
+export function givenNamesCouldBeOneTransliteration(left: string, right: string): boolean {
+  return (
+    Math.min(left.length, right.length) >= MIN_TRANSLITERATION_LETTERS &&
+    left[0] === right[0] &&
+    transliterationKey(left) === transliterationKey(right)
   );
 }
 

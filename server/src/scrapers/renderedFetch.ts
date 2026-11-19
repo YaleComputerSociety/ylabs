@@ -19,12 +19,33 @@ import {
 } from './snapshotBenchmarkMode';
 import { getCached, setCached } from './snapshotCache';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
-import { hostnameForLimiter } from './utils/hostConcurrencyLimiter';
-import { retryOnRetryableResultStatus, type RetryPolicyOptions } from './utils/httpFetch';
+import { SCRAPER_USER_AGENT } from './utils/scraperUserAgent';
+import { enforceRobotsForPageRead, type RobotsDisallowedError } from './utils/robotsFetchHook';
+import type { RobotsTxtFetcher } from './utils/robotsPolicyCache';
+import {
+  acquireHostSlotWithin,
+  hostnameForLimiter,
+  type HostSlotLimiter,
+} from './utils/hostConcurrencyLimiter';
+import {
+  resolveRetryPolicy,
+  retryOnRetryableResultStatus,
+  type RetryPolicyOptions,
+} from './utils/httpFetch';
+import {
+  activeHostPause,
+  HostPausedError,
+  recordHostRefusal,
+  recordTierOneExhausted,
+  retryAfterMsFromHeaders,
+} from './utils/hostPause';
+import { recordHostSuccess } from './utils/hostPauseState';
+import { processScraperRequestLog, type ScraperRequestLog } from './utils/scraperRequestLog';
 import {
   startSsrfGuardedForwardProxy,
   type SsrfGuardedForwardProxy,
 } from './utils/ssrfGuardedForwardProxy';
+import { normalizeExcludedHost } from '../utils/excludedHosts';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { withScrapeRunProgress } from './scrapeRunProgress';
 import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
@@ -173,43 +194,79 @@ export interface ScraplingRenderedFetcherOptions {
   bridgePath?: string;
   mode?: 'dynamic' | 'stealthy';
   timeoutMs?: number;
-  seedRedirectCheck?: (url: URL, timeoutMs: number) => Promise<boolean>;
-  startForwardProxy?: () => Promise<RenderedFetchForwardProxy>;
+  seedRedirectCheck?: (url: URL, timeoutMs: number) => Promise<boolean | RenderedSeedPreflight>;
+  hostSlots?: HostSlotLimiter;
+  robotsTxtFetcher?: RobotsTxtFetcher;
+  startForwardProxy?: (pacing: RenderedFetchProxyPacing) => Promise<RenderedFetchForwardProxy>;
   retry?: RetryPolicyOptions;
+  requestLog?: ScraperRequestLog | null;
+}
+
+export interface RenderedFetchProxyPacing {
+  heldHost: string;
+  hostSlotWaitMs: number;
+  robotsTxtFetcher?: RobotsTxtFetcher;
 }
 
 export type RenderedFetchForwardProxy = Pick<
   SsrfGuardedForwardProxy,
   'url' | 'forwardedHosts' | 'close'
->;
+> &
+  Partial<Pick<SsrfGuardedForwardProxy, 'pacingRefusals' | 'robotsRefusals'>>;
+
+const HOST_REFUSAL_STATUSES: ReadonlySet<number> = new Set([403, 429, 503]);
+
+export interface RenderedSeedPreflight {
+  redirected: boolean;
+  status?: number;
+  retryAfterMs?: number;
+}
+
+class RenderedSeedRefusedError extends Error {
+  constructor(readonly status: number) {
+    super(`the rendered seed preflight was refused with ${status}`);
+    this.name = 'RenderedSeedRefusedError';
+  }
+}
 
 const isHttpRedirectStatus = (statusCode: number | undefined): boolean =>
   typeof statusCode === 'number' && statusCode >= 300 && statusCode < 400;
 
-const defaultRenderedSeedRedirectCheck = (url: URL, timeoutMs: number): Promise<boolean> =>
+const defaultRenderedSeedRedirectCheck = (
+  url: URL,
+  timeoutMs: number,
+): Promise<RenderedSeedPreflight> =>
   new Promise((resolvePromise, reject) => {
     const client = url.protocol === 'https:' ? https : http;
     const agents = ssrfSafeAgents();
+    const boundMs = Math.min(timeoutMs, MAX_RENDERED_SEED_REDIRECT_CHECK_MS);
     const req = client.request(
       url,
       {
         method: 'GET',
         agent: url.protocol === 'https:' ? agents.httpsAgent : agents.httpAgent,
-        timeout: Math.min(timeoutMs, MAX_RENDERED_SEED_REDIRECT_CHECK_MS),
+        timeout: boundMs,
         headers: {
           Range: 'bytes=0-0',
-          'User-Agent': 'YaleResearchRenderedFetchPreflight/1.0',
+          'User-Agent': SCRAPER_USER_AGENT,
         },
       },
       (response) => {
         response.destroy();
-        resolvePromise(isHttpRedirectStatus(response.statusCode));
+        const retryAfterMs = retryAfterMsFromHeaders(response.headers);
+        resolvePromise({
+          redirected: isHttpRedirectStatus(response.statusCode),
+          ...(response.statusCode !== undefined ? { status: response.statusCode } : {}),
+          ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+        });
       },
     );
 
-    req.on('timeout', () => {
+    const abortCheck = () =>
       req.destroy(Object.assign(new Error('Timeout'), { name: 'AbortError' }));
-    });
+    const overallDeadline = setTimeout(abortCheck, boundMs);
+    req.once('close', () => clearTimeout(overallDeadline));
+    req.on('timeout', abortCheck);
     req.on('error', reject);
     req.end();
   });
@@ -453,8 +510,96 @@ function createLiveScraplingRenderedFetcher(
     options.timeoutMs || numberFromEnv(process.env.SCRAPLING_TIMEOUT_MS),
     DEFAULT_TIMEOUT_MS,
   );
-  const seedRedirectCheck = options.seedRedirectCheck || defaultRenderedSeedRedirectCheck;
-  const startForwardProxy = options.startForwardProxy || startSsrfGuardedForwardProxy;
+  const unloggedSeedRedirectCheck = options.seedRedirectCheck || defaultRenderedSeedRedirectCheck;
+  const startForwardProxy =
+    options.startForwardProxy ||
+    ((pacing: RenderedFetchProxyPacing) => startSsrfGuardedForwardProxy(pacing));
+  const requestLog =
+    options.requestLog === undefined ? processScraperRequestLog() : options.requestLog;
+
+  const hostSlots = options.hostSlots ?? scraperHostSlotLimiter();
+
+  const sendSeedPreflight = async (
+    seedUrl: URL,
+    timeoutMs: number,
+  ): Promise<RenderedSeedPreflight> => {
+    const dispatchedAt = new Date();
+    try {
+      const answer = await unloggedSeedRedirectCheck(seedUrl, timeoutMs);
+      const preflight = typeof answer === 'boolean' ? { redirected: answer } : answer;
+      requestLog?.record(
+        seedUrl.toString(),
+        dispatchedAt,
+        Date.now() - dispatchedAt.getTime(),
+        preflight.status !== undefined ? { status: preflight.status } : {},
+      );
+      return preflight;
+    } catch (error) {
+      const code = (error as { code?: unknown } | undefined)?.code;
+      requestLog?.record(seedUrl.toString(), dispatchedAt, Date.now() - dispatchedAt.getTime(), {
+        error: typeof code === 'string' ? code : 'UNKNOWN',
+      });
+      throw error;
+    }
+  };
+
+  const seedRedirectCheck = async (seedUrl: URL, timeoutMs: number): Promise<boolean> => {
+    const preflight = await sendSeedPreflight(seedUrl, timeoutMs);
+    const { status } = preflight;
+    if (status !== undefined && HOST_REFUSAL_STATUSES.has(status)) {
+      const seedHost = stripIpv6Brackets(seedUrl.hostname);
+      const pause = await recordHostRefusal({
+        host: seedHost,
+        status,
+        retryAfterMs: preflight.retryAfterMs,
+        quickRetryWaitMs: resolveRetryPolicy(options.retry ?? {}, seedHost).maxBackoffMs,
+      });
+      if (pause) throw new HostPausedError(pause, true);
+      throw new RenderedSeedRefusedError(status);
+    }
+    return preflight.redirected;
+  };
+
+  /**
+   * A same-origin redirect inside the browser can land the seed on a path robots.txt disallows.
+   * The proxy answered that page with its own 403, so it is not the host refusing us and must not
+   * reach `recordHostRefusal`: the render observed nothing, like a disallowed seed.
+   */
+  const robotsRefusalOfFinalPage = (
+    refusals: RobotsDisallowedError[],
+    finalUrl: string,
+  ): RobotsDisallowedError | undefined => {
+    const final = new URL(finalUrl);
+    const path = `${final.pathname}${final.search}`;
+    return refusals.find(
+      (refusal) =>
+        refusal.path === path &&
+        normalizeExcludedHost(refusal.host) === normalizeExcludedHost(final.hostname),
+    );
+  };
+
+  const recordSeedOutcome = async (
+    seedHost: string,
+    result: RenderedFetchResult,
+  ): Promise<void> => {
+    const status = result.statusCode;
+    if (typeof status === 'number' && status >= 200 && status < 300) {
+      await recordHostSuccess(seedHost).catch((error: unknown) => {
+        console.warn(
+          `[host-pause] could not record a rendered success from ${seedHost}: ${sanitizeLogValue(error)}`,
+        );
+      });
+      return;
+    }
+    if (status === undefined || !HOST_REFUSAL_STATUSES.has(status)) return;
+    const pause = await recordHostRefusal({
+      host: seedHost,
+      status,
+      body: result.html,
+      quickRetryWaitMs: resolveRetryPolicy(options.retry ?? {}, seedHost).maxBackoffMs,
+    });
+    if (pause) throw new HostPausedError(pause, true);
+  };
 
   const renderOnce: RenderedFetcher = async (request) => {
     if (isBenchmarkReplayActive()) refuseBenchmarkReplayNetwork();
@@ -466,8 +611,15 @@ function createLiveScraplingRenderedFetcher(
     const seedUrl = await assertPublicHttpUrl(request.url);
     const safeRequestUrl = seedUrl.toString();
     const timeoutMs = boundedRenderedFetchTimeout(request.timeoutMs, defaultTimeoutMs);
-    const releaseHostSlot = await scraperHostSlotLimiter().acquire(seedUrl.hostname);
+    const pausedSeed = activeHostPause(seedUrl.hostname);
+    if (pausedSeed) throw new HostPausedError(pausedSeed);
+    // Before the slot, not after: the robots.txt read goes through the same host budget, so
+    // reading it while holding the seed host's only slot would wait on that slot (#6340).
+    await enforceRobotsForPageRead(seedUrl, 'GET', options.robotsTxtFetcher);
+    const releaseHostSlot = await acquireHostSlotWithin(hostSlots, seedUrl.hostname);
     try {
+      const pausedWhileWaiting = activeHostPause(seedUrl.hostname);
+      if (pausedWhileWaiting) throw new HostPausedError(pausedWhileWaiting);
       try {
         if (await seedRedirectCheck(seedUrl, timeoutMs)) {
           return {
@@ -478,7 +630,18 @@ function createLiveScraplingRenderedFetcher(
             fetchMode: 'scrapling',
           };
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof HostPausedError) throw error;
+        if (error instanceof RenderedSeedRefusedError) {
+          return {
+            url: seedUrl.toString(),
+            html: '',
+            statusCode: error.status,
+            blocked: true,
+            blockedReason: 'rendered-seed-refused',
+            fetchMode: 'scrapling',
+          };
+        }
         return {
           url: seedUrl.toString(),
           html: '',
@@ -490,7 +653,11 @@ function createLiveScraplingRenderedFetcher(
 
       let forwardProxy: RenderedFetchForwardProxy;
       try {
-        forwardProxy = await startForwardProxy();
+        forwardProxy = await startForwardProxy({
+          heldHost: seedUrl.hostname,
+          hostSlotWaitMs: timeoutMs,
+          ...(options.robotsTxtFetcher ? { robotsTxtFetcher: options.robotsTxtFetcher } : {}),
+        });
       } catch {
         return {
           url: seedUrl.toString(),
@@ -515,7 +682,7 @@ function createLiveScraplingRenderedFetcher(
       const waitSelector = normalizeRenderedFetchSelector(request.waitSelector);
       if (waitSelector) args.push('--wait-selector', waitSelector);
 
-      try {
+      const render = async (): Promise<RenderedFetchResult & { answeredBySeed?: true }> => {
         const { stdout } = await execFileAsync(pythonCommand, args, {
           timeout: timeoutMs + 5_000,
           maxBuffer: 10 * 1024 * 1024,
@@ -575,9 +742,15 @@ function createLiveScraplingRenderedFetcher(
           blocked: parsed.blocked,
           blockedReason: parsed.blockedReason,
           fetchMode: 'scrapling',
+          answeredBySeed: true,
         };
+      };
+
+      let rendered: RenderedFetchResult & { answeredBySeed?: true };
+      try {
+        rendered = await render();
       } catch (err: any) {
-        return {
+        rendered = {
           url: request.url,
           html: '',
           blocked: false,
@@ -587,21 +760,42 @@ function createLiveScraplingRenderedFetcher(
       } finally {
         await forwardProxy.close();
       }
+      const pacingRefusal = forwardProxy.pacingRefusals?.()[0];
+      if (pacingRefusal) throw pacingRefusal.error;
+      const { answeredBySeed, ...result } = rendered;
+      const finalPageRefusal = answeredBySeed
+        ? robotsRefusalOfFinalPage(forwardProxy.robotsRefusals?.() ?? [], result.url)
+        : undefined;
+      if (finalPageRefusal) throw finalPageRefusal;
+      if (answeredBySeed) await recordSeedOutcome(stripIpv6Brackets(seedUrl.hostname), result);
+      return result;
     } finally {
       releaseHostSlot();
     }
   };
 
-  return (request) =>
-    retryOnRetryableResultStatus(
-      hostnameForLimiter(request.url),
+  return async (request) => {
+    const host = hostnameForLimiter(request.url);
+    const result = await retryOnRetryableResultStatus(
+      host,
       () => renderOnce(request),
-      (result) => ({
-        status: result?.statusCode,
-        succeeded: renderedPageFailureReason(result) === null,
+      (rendered) => ({
+        status: rendered?.statusCode,
+        succeeded: renderedPageFailureReason(rendered) === null,
       }),
       options.retry,
     );
+    const status = result?.statusCode;
+    if (
+      host &&
+      status !== undefined &&
+      renderedPageFailureReason(result) !== null &&
+      resolveRetryPolicy(options.retry ?? {}, host).retryable.has(status)
+    ) {
+      await recordTierOneExhausted(host, status);
+    }
+    return result;
+  };
 }
 
 function inferRenderedFetchOverrides(result: unknown): RenderedFetchMetricOverrides {

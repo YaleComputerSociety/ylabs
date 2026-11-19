@@ -7,6 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { storedVerdictSurvivesUnknownProbe } from './backfillSourceLinkHealthCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import type {
   ResolverBreakerStats,
@@ -23,6 +24,8 @@ import {
   noteStoredSourceLinkVerdicts,
   probeUncachedUrlsByHost,
 } from './backfillSourceLinkHealth';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -109,6 +112,7 @@ export interface FellowshipSourceLinkHealthBackfillResult {
   scanned: number;
   checked: number;
   updated: number;
+  preservedDecisive: number;
   errors: number;
   resolver: ResolverBreakerStats;
   byStatus: Record<string, number>;
@@ -150,6 +154,7 @@ export async function runFellowshipSourceLinkHealthBackfill(options: {
     scanned: 0,
     checked: 0,
     updated: 0,
+    preservedDecisive: 0,
     errors: 0,
     resolver: resolverBreaker.stats,
     byStatus: {},
@@ -186,6 +191,16 @@ export async function runFellowshipSourceLinkHealthBackfill(options: {
   for (const { fellowship, url } of planned) {
     const health = healthCache.get(url);
     if (!health) continue;
+    if (
+      health.healthStatus === 'UNKNOWN' &&
+      storedVerdictSurvivesUnknownProbe(
+        health,
+        fellowship.sourceLinkHealth as { healthStatus?: unknown },
+      )
+    ) {
+      result.preservedDecisive += 1;
+      continue;
+    }
     try {
       result.byStatus[health.healthStatus] = (result.byStatus[health.healthStatus] ?? 0) + 1;
       const sourceLinkHealth = {
@@ -224,6 +239,7 @@ export async function runFellowshipSourceLinkHealthBackfill(options: {
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseFellowshipSourceLinkHealthBackfillArgs(process.argv.slice(2));
   assertFellowshipSourceLinkHealthApplyAllowed(options);
   const apply = !options.dryRun;
@@ -253,7 +269,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
+      writeReportFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
       console.log(`Saved fellowship source-link-health backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));

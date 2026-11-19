@@ -3,6 +3,7 @@ import { Observation } from '../models/observation';
 import {
   OWNERSHIP_GUARDED_DESCRIPTION_FIELDS,
   OWNERSHIP_GUARDED_ENTITY_TYPE,
+  type DescriptionOwnershipSite,
   isOwnershipGuardedDescription,
   refusesDescriptionOnSharedPage,
 } from './descriptionSourceOwnership';
@@ -46,6 +47,7 @@ export function screenDescriptionsOnSharedPages<T extends OwnershipScreenableObs
   foreignCitersByUrl: ReadonlyMap<string, ReadonlyMap<string, string>>,
   ownEntityKeys: ReadonlySet<string>,
   ownName?: unknown,
+  ownSite?: DescriptionOwnershipSite,
 ): OwnershipScreenResult<T> {
   const kept: T[] = [];
   const dropped: Array<{ field: string; citedUrl: string; foreignCiters: number }> = [];
@@ -55,6 +57,7 @@ export function screenDescriptionsOnSharedPages<T extends OwnershipScreenableObs
       field: observation.field,
       sourceUrl: observation.sourceUrl,
       ownName,
+      ownSite,
     };
     if (!isOwnershipGuardedDescription(candidate)) {
       kept.push(observation);

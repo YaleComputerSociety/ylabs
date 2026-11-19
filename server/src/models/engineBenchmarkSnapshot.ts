@@ -13,6 +13,7 @@
  * Environment-local by policy, listed in scripts/mirrorCollectionPolicy.ts.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const ENGINE_BENCHMARK_SNAPSHOT_COLLECTION = 'engine_benchmark_snapshots';
 

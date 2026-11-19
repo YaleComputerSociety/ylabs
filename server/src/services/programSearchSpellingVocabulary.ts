@@ -1,7 +1,8 @@
 import { Fellowship } from '../models/fellowship';
-import { publicStudentVisibilityTiers } from '../models/studentVisibility';
+import { servedStudentVisibilityTierFilter } from '../models/studentVisibility';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
+import { PROGRAM_FUNDING_INTENT_WORDS, PROGRAM_PAY_INTENT_WORDS } from './programSearchIntentWords';
 import { PROGRAM_QUERY_ALIAS_PHRASES } from './programTopicService';
 import { getResearchSearchSpellingVocabulary } from './researchSearchSpellingVocabulary';
 import {
@@ -31,19 +32,29 @@ export const PROGRAM_QUERY_STOP_WORDS = [
   'a',
   'an',
   'and',
+  'as',
+  'at',
+  'by',
   'for',
+  'from',
   'in',
+  'is',
+  'my',
   'of',
   'on',
   'or',
   'the',
   'to',
+  'with',
 ];
 
 const PROGRAM_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
-  [...PROGRAM_QUERY_ALIAS_PHRASES, ...PROGRAM_QUERY_STOP_WORDS].flatMap(
-    (phrase) => foldLatinDiacritics(phrase.toLowerCase()).match(/[a-z]+/g) ?? [],
-  ),
+  [
+    ...PROGRAM_QUERY_ALIAS_PHRASES,
+    ...PROGRAM_QUERY_STOP_WORDS,
+    ...PROGRAM_PAY_INTENT_WORDS,
+    ...PROGRAM_FUNDING_INTENT_WORDS,
+  ].flatMap((phrase) => foldLatinDiacritics(phrase.toLowerCase()).match(/[a-z]+/g) ?? []),
 );
 
 let cached: { vocabulary: SearchSpellingVocabulary; loadedAt: number } | null = null;
@@ -74,7 +85,7 @@ let inFlightLoad: Promise<SearchSpellingVocabulary | null> | null = null;
 
 export const loadProgramSearchSpellingVocabulary = async (): Promise<SearchSpellingVocabulary> => {
   const programs = (await Fellowship.find(
-    { archived: false, studentVisibilityTier: { $in: publicStudentVisibilityTiers } },
+    { archived: false, ...servedStudentVisibilityTierFilter() },
     Object.fromEntries(PROGRAM_SEARCH_SPELLING_FIELDS.map((field) => [field, 1])),
   ).lean()) as Array<Record<string, unknown>>;
   return buildSearchSpellingVocabulary(

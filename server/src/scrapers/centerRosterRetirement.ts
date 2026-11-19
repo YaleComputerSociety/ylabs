@@ -29,6 +29,11 @@
  *      a read that lists far fewer people than the largest admitted read on record is a
  *      read to distrust, whatever the absence fraction says.
  *
+ * A `sectionsRecorded` snapshot (#6084) also says which section each listing sat under. For a
+ * lane that adopts that contract, a person listed under a past or emeritus section in two such
+ * reads is departed and their edge ends, while a person in no section is only omitted, which
+ * retires nothing without a witness from the person's own page.
+ *
  * Scope is what this lane itself listed for this center: observations carrying this
  * source's name under this center's key prefix, and role edges whose
  * `rosterProvenance.sourceName` is this source. An edge whose membership key or
@@ -41,6 +46,7 @@
  * relationship is archived. Nothing is deleted, and because no live observation backs a
  * retired claim any more, the next materialization has nothing to resurrect it from.
  */
+import { createHash } from 'node:crypto';
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -56,11 +62,16 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { escapeRegex } from '../utils/regex';
 import { retireObservations } from './observationStore';
 import {
+  RELATIONSHIP_TARGET_WEBSITE_URL_FIELD,
   relationshipTargetIdentities,
   type RelationshipTargetIdentity,
 } from './centerRelationshipTarget';
-import { officialProfileIdentityKey } from './utils/rosterMembershipKey';
+import {
+  comparableRosterMembershipKey,
+  officialProfileIdentityKey,
+} from './utils/rosterMembershipKey';
 import { attributedArchiveSet } from '../models/entityArchival';
+import { liveResearchEntityNamedByKeyObservations } from './renamedResearchEntityAdoption';
 
 export const CENTERS_INSTITUTES_SOURCE_NAME = 'centers-institutes-index';
 export const CENTER_ROSTER_HEALTH_ENTITY_TYPE = 'centerRosterHealth' as const;
@@ -74,19 +85,47 @@ export const CENTER_AFFILIATION_LLM_SOURCE_NAME = 'center-affiliation-llm';
 export const CENTER_AFFILIATION_RETIREMENT_REASON =
   'center affiliation retirement: two complete reads of the center page no longer name this claim (#4022)';
 
+export const CENTER_AFFILIATION_ROSTER_SOURCE_NAME = 'center-affiliation-roster';
+export const CENTER_AFFILIATION_ROSTER_RETIREMENT_REASON =
+  'center affiliation roster retirement: two complete reads of the center page no longer list this affiliation (#5296)';
+
 export interface CenterRosterLane {
   sourceName: string;
   retirementReason: string;
+  /**
+   * The lane records the section each listing sits under (#6084). Only such a lane reads a
+   * `sectionsRecorded` snapshot under the departed-versus-omitted rule; every other lane's
+   * snapshots are read under the plain absence rule even if one carried sections.
+   */
+  adoptsSectionContract?: boolean;
 }
 
 export const CENTERS_INSTITUTES_ROSTER_LANE: CenterRosterLane = {
   sourceName: CENTERS_INSTITUTES_SOURCE_NAME,
   retirementReason: CENTER_ROSTER_RETIREMENT_REASON,
+  adoptsSectionContract: true,
 };
+
+export const CENTER_ROSTER_SECTION_CLASSIFIER_VERSION = 1;
+
+/**
+ * What a roster section says about the people it lists. `past` covers Alumni, Former, Past,
+ * Previous, Retired and In Memoriam sections; `unclassified` is a listing with no section
+ * label, read as current exactly as before the contract.
+ */
+export type CenterRosterSectionKind = 'current' | 'past' | 'emeritus' | 'unclassified';
+
+export const centerRosterSectionEndsMembership = (kind: CenterRosterSectionKind): boolean =>
+  kind === 'past' || kind === 'emeritus';
 
 export const CENTER_AFFILIATION_ROSTER_LANE: CenterRosterLane = {
   sourceName: CENTER_AFFILIATION_LLM_SOURCE_NAME,
   retirementReason: CENTER_AFFILIATION_RETIREMENT_REASON,
+};
+
+export const CENTER_AFFILIATION_CODE_ROSTER_LANE: CenterRosterLane = {
+  sourceName: CENTER_AFFILIATION_ROSTER_SOURCE_NAME,
+  retirementReason: CENTER_AFFILIATION_ROSTER_RETIREMENT_REASON,
 };
 
 export type CenterRosterStopReason =
@@ -126,6 +165,30 @@ export interface CenterRosterReadMember {
    * and must never retire anything (#3852).
    */
   claimEntityKey?: string;
+  sectionKind?: CenterRosterSectionKind;
+  sectionLabel?: string;
+  sectionFingerprint?: string;
+  /**
+   * The member's own page, read in the same run, states a current appointment, which wins
+   * over an emeritus section listing as the #5835 rule has a fresh own-page read win.
+   */
+  ownPageCurrentAppointment?: boolean;
+  /**
+   * The member's own page was not read in this run, so the #5835 own-page check could not
+   * run and an emeritus listing is only omitted, never departed.
+   */
+  ownPageUnread?: boolean;
+}
+
+export interface CenterRosterSectionRecord {
+  label: string;
+  kind: CenterRosterSectionKind;
+  listedCount: number;
+  fingerprint: string;
+  complete: boolean;
+  stopReason: CenterRosterStopReason;
+  pagesRead: number;
+  personTypeFilter?: boolean;
 }
 
 export type CenterRosterReadStatus = 'ok' | 'empty' | 'partial-read';
@@ -143,6 +206,9 @@ export interface CenterRosterHealthSnapshot {
    * page a statement that is missing is evidence once the subject itself was read (#5091).
    */
   subjectKeys?: unknown;
+  sectionsRecorded?: unknown;
+  sectionClassifierVersion?: unknown;
+  sections?: unknown;
   read?: {
     pagesRead?: unknown;
     readMode?: unknown;
@@ -162,6 +228,7 @@ export function buildCenterRosterHealthSnapshot(input: {
   cacheAllowed: boolean;
   readAt: Date;
   subjectKeys?: readonly string[];
+  sections?: readonly CenterRosterSectionRecord[];
 }): CenterRosterHealthSnapshot {
   const members = [...input.members].sort((left, right) =>
     left.memberKey.localeCompare(right.memberKey),
@@ -180,6 +247,13 @@ export function buildCenterRosterHealthSnapshot(input: {
     discoveredCount: members.length,
     members,
     ...(input.subjectKeys ? { subjectKeys: [...new Set(input.subjectKeys)].sort() } : {}),
+    ...(input.sections
+      ? {
+          sectionsRecorded: true,
+          sectionClassifierVersion: CENTER_ROSTER_SECTION_CLASSIFIER_VERSION,
+          sections: input.sections.map((section) => ({ ...section })),
+        }
+      : {}),
     read: {
       pagesRead: input.pagesRead,
       readMode: input.readMode,
@@ -222,8 +296,196 @@ export function snapshotMembers(snapshot: CenterRosterHealthSnapshot): CenterRos
       membershipKey: text(entry.membershipKey),
       relationshipKey: text(entry.relationshipKey),
       claimEntityKey: text(entry.claimEntityKey),
+      ...(SECTION_KINDS.has(text(entry.sectionKind) as CenterRosterSectionKind)
+        ? { sectionKind: text(entry.sectionKind) as CenterRosterSectionKind }
+        : {}),
+      ...(text(entry.sectionLabel) ? { sectionLabel: text(entry.sectionLabel) } : {}),
+      ...(text(entry.sectionFingerprint)
+        ? { sectionFingerprint: text(entry.sectionFingerprint) }
+        : {}),
+      ...(entry.ownPageCurrentAppointment === true ? { ownPageCurrentAppointment: true } : {}),
+      ...(entry.ownPageUnread === true ? { ownPageUnread: true } : {}),
     }))
     .filter((entry) => entry.memberKey && entry.role);
+}
+
+const SECTION_KINDS: ReadonlySet<CenterRosterSectionKind> = new Set([
+  'current',
+  'past',
+  'emeritus',
+  'unclassified',
+]);
+
+export function snapshotRecordsSections(snapshot: CenterRosterHealthSnapshot): boolean {
+  return snapshot.sectionsRecorded === true && Array.isArray(snapshot.sections);
+}
+
+export function snapshotSections(
+  snapshot: CenterRosterHealthSnapshot,
+): CenterRosterSectionRecord[] {
+  if (!snapshotRecordsSections(snapshot)) return [];
+  return (snapshot.sections as unknown[])
+    .filter(
+      (entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object',
+    )
+    .map((entry) => ({
+      label: typeof entry.label === 'string' ? entry.label : '',
+      kind: (SECTION_KINDS.has(entry.kind as CenterRosterSectionKind)
+        ? entry.kind
+        : 'unclassified') as CenterRosterSectionKind,
+      listedCount: typeof entry.listedCount === 'number' ? entry.listedCount : 0,
+      fingerprint: typeof entry.fingerprint === 'string' ? entry.fingerprint : '',
+      complete: entry.complete === true,
+      stopReason: entry.stopReason as CenterRosterStopReason,
+      pagesRead: typeof entry.pagesRead === 'number' ? entry.pagesRead : 0,
+      ...(entry.personTypeFilter === true ? { personTypeFilter: true } : {}),
+    }))
+    .filter((section) => section.fingerprint);
+}
+
+export interface CenterRosterSectionListing {
+  memberKey: string;
+  label: string;
+  kind: CenterRosterSectionKind;
+  stageKey: string;
+  pageIndex: number;
+}
+
+export interface CenterRosterSectionStage {
+  key: string;
+  personTypeFilter: boolean;
+  stopReason: CenterRosterStopReason;
+}
+
+export interface CenterRosterMemberSection {
+  kind: CenterRosterSectionKind;
+  label: string;
+  fingerprint: string;
+}
+
+export interface ResolvedCenterRosterSections {
+  sections: CenterRosterSectionRecord[];
+  memberSections: Map<string, CenterRosterMemberSection>;
+}
+
+const SECTION_KIND_RANK: Record<CenterRosterSectionKind, number> = {
+  current: 0,
+  unclassified: 1,
+  emeritus: 2,
+  past: 3,
+};
+
+export function centerRosterSectionFingerprint(memberKeys: Iterable<string>): string {
+  const sorted = [...new Set(memberKeys)].sort();
+  return createHash('sha256').update(sorted.join('\n')).digest('hex').slice(0, 16);
+}
+
+/**
+ * Groups a read's listings into sections and resolves the one section each member is read
+ * under, failing closed toward current at every step:
+ *
+ * - A section whose fingerprint (its sorted member keys) another section of the same pass
+ *   shares is not a section of its own, so a repeated sidebar block never reads as a second
+ *   section. Of the sections that share a fingerprint, the most current one stands. A filter
+ *   pass's fingerprint carries its stage, because a filter that lists exactly the unfiltered
+ *   roster is a second listing rather than a sidebar, and dropping either would leave its
+ *   members with no section.
+ * - A member listed under a current or unlabelled section and under a past one is current.
+ * - A person-type filter outranks the unfiltered listing, which mixes every type, but only
+ *   when every filter pass reached its end: a filter left unfinished could hold the current
+ *   listing that would have outranked a past one. A member only a filter pass listed then
+ *   gets no section at all, so it is omitted rather than read under that filter.
+ */
+export function resolveCenterRosterSections(
+  listings: readonly CenterRosterSectionListing[],
+  stages: readonly CenterRosterSectionStage[],
+): ResolvedCenterRosterSections {
+  const stageByKey = new Map(stages.map((stage) => [stage.key, stage]));
+  interface RawSection {
+    stageKey: string;
+    label: string;
+    kind: CenterRosterSectionKind;
+    memberKeys: Set<string>;
+    pages: Set<number>;
+    order: number;
+  }
+  const raw = new Map<string, RawSection>();
+  for (const listing of listings) {
+    if (!listing.memberKey || !stageByKey.has(listing.stageKey)) continue;
+    const key = [listing.stageKey, listing.label, listing.kind].join('\u0000');
+    let section = raw.get(key);
+    if (!section) {
+      section = {
+        stageKey: listing.stageKey,
+        label: listing.label,
+        kind: listing.kind,
+        memberKeys: new Set(),
+        pages: new Set(),
+        order: raw.size,
+      };
+      raw.set(key, section);
+    }
+    section.memberKeys.add(listing.memberKey);
+    section.pages.add(listing.pageIndex);
+  }
+
+  const byFingerprint = new Map<string, RawSection[]>();
+  for (const section of raw.values()) {
+    const fingerprint = centerRosterSectionFingerprint(
+      section.stageKey ? [`stage:${section.stageKey}`, ...section.memberKeys] : section.memberKeys,
+    );
+    byFingerprint.set(fingerprint, [...(byFingerprint.get(fingerprint) ?? []), section]);
+  }
+  const standing: Array<RawSection & { fingerprint: string }> = [];
+  for (const [fingerprint, group] of byFingerprint) {
+    const winner = [...group].sort(
+      (left, right) =>
+        SECTION_KIND_RANK[left.kind] - SECTION_KIND_RANK[right.kind] || left.order - right.order,
+    )[0];
+    standing.push({ ...winner, fingerprint });
+  }
+  standing.sort((left, right) => left.order - right.order);
+
+  const filterStages = stages.filter((stage) => stage.personTypeFilter);
+  const filtersUsable =
+    filterStages.length > 0 &&
+    filterStages.every((stage) => centerRosterStopReadWholeRoster(stage.stopReason));
+  const isFilterSection = (section: RawSection) =>
+    stageByKey.get(section.stageKey)?.personTypeFilter === true;
+
+  const memberSections = new Map<string, CenterRosterMemberSection>();
+  const memberKeys = new Set(listings.map((listing) => listing.memberKey).filter(Boolean));
+  for (const memberKey of memberKeys) {
+    const containing = standing.filter((section) => section.memberKeys.has(memberKey));
+    const filtered = containing.filter(isFilterSection);
+    const unfiltered = containing.filter((section) => !isFilterSection(section));
+    const candidates = filtersUsable && filtered.length > 0 ? filtered : unfiltered;
+    const chosen = [...candidates].sort(
+      (left, right) =>
+        SECTION_KIND_RANK[left.kind] - SECTION_KIND_RANK[right.kind] || left.order - right.order,
+    )[0];
+    if (!chosen) continue;
+    memberSections.set(memberKey, {
+      kind: chosen.kind,
+      label: chosen.label,
+      fingerprint: chosen.fingerprint,
+    });
+  }
+
+  const sections: CenterRosterSectionRecord[] = standing.map((section) => {
+    const stage = stageByKey.get(section.stageKey) as CenterRosterSectionStage;
+    return {
+      label: section.label,
+      kind: section.kind,
+      listedCount: section.memberKeys.size,
+      fingerprint: section.fingerprint,
+      complete: centerRosterStopReadWholeRoster(stage.stopReason),
+      stopReason: stage.stopReason,
+      pagesRead: section.pages.size,
+      ...(stage.personTypeFilter ? { personTypeFilter: true } : {}),
+    };
+  });
+  return { sections, memberSections };
 }
 
 export function snapshotSubjectKeys(snapshot: CenterRosterHealthSnapshot): string[] {
@@ -263,6 +525,21 @@ export interface CenterRosterRead {
   membershipKeys: ReadonlySet<string>;
   relationshipKeys: ReadonlySet<string>;
   members: readonly CenterRosterReadMember[];
+  memberIdentities?: ReadonlySet<string>;
+  sections?: CenterRosterReadSections;
+}
+
+/**
+ * Identities are `comparableRosterMembershipKey` forms of a membership key's identity part,
+ * so a person listed under a different role or a moved profile path is the same person.
+ */
+export interface CenterRosterReadSections {
+  currentIdentities: ReadonlySet<string>;
+  departedIdentities: ReadonlyMap<string, string>;
+  listedIdentities: ReadonlySet<string>;
+  departedMemberKeys: ReadonlySet<string>;
+  omittedMemberKeys: ReadonlySet<string>;
+  listingCountsByKind: Readonly<Record<CenterRosterSectionKind, number>>;
 }
 
 export const memberClaimKey = (memberKey: string, role: string): string => `${memberKey}|${role}`;
@@ -272,31 +549,120 @@ const identityPart = (membershipKey: string): string => {
   return separator > 0 ? membershipKey.slice(0, separator) : membershipKey;
 };
 
+const comparableIdentity = (membershipKey: string): string =>
+  membershipKey ? comparableRosterMembershipKey(identityPart(membershipKey)) : '';
+
+type MemberSectionVerdict = 'listed' | 'departed' | 'omitted';
+
+/**
+ * Departed means listed under a past or emeritus section that was itself read to its end.
+ * Listed under such a section that was not read to its end is omitted, never departed, and
+ * an emeritus listing loses to a current appointment the member's own page states.
+ */
+function memberSectionVerdict(
+  member: CenterRosterReadMember,
+  sectionsByFingerprint: ReadonlyMap<string, CenterRosterSectionRecord>,
+): MemberSectionVerdict {
+  const kind = member.sectionKind ?? 'unclassified';
+  if (!centerRosterSectionEndsMembership(kind)) return 'listed';
+  if (kind === 'emeritus' && member.ownPageCurrentAppointment) return 'listed';
+  if (kind === 'emeritus' && member.ownPageUnread) return 'omitted';
+  const section = sectionsByFingerprint.get(member.sectionFingerprint ?? '');
+  return section && section.kind === kind && section.complete ? 'departed' : 'omitted';
+}
+
+function readSectionsFromSnapshot(
+  snapshot: CenterRosterHealthSnapshot,
+  members: readonly CenterRosterReadMember[],
+): { sections: CenterRosterReadSections; listedMembers: CenterRosterReadMember[] } {
+  const sectionsByFingerprint = new Map(
+    snapshotSections(snapshot).map((section) => [section.fingerprint, section]),
+  );
+  const currentIdentities = new Set<string>();
+  const departedIdentities = new Map<string, string>();
+  const listedIdentities = new Set<string>();
+  const departedMemberKeys = new Set<string>();
+  const omittedMemberKeys = new Set<string>();
+  const listingCountsByKind: Record<CenterRosterSectionKind, number> = {
+    current: 0,
+    past: 0,
+    emeritus: 0,
+    unclassified: 0,
+  };
+  const listedMembers: CenterRosterReadMember[] = [];
+  for (const member of members) {
+    listingCountsByKind[member.sectionKind ?? 'unclassified'] += 1;
+    const verdict = memberSectionVerdict(member, sectionsByFingerprint);
+    const identity = comparableIdentity(member.membershipKey ?? '');
+    if (verdict === 'omitted') {
+      omittedMemberKeys.add(member.memberKey);
+      continue;
+    }
+    listedMembers.push(member);
+    if (identity) listedIdentities.add(identity);
+    if (verdict === 'departed') {
+      departedMemberKeys.add(member.memberKey);
+      if (identity) departedIdentities.set(identity, member.sectionLabel ?? '');
+    } else if (identity) {
+      currentIdentities.add(identity);
+    }
+  }
+  for (const identity of currentIdentities) departedIdentities.delete(identity);
+  return {
+    sections: {
+      currentIdentities,
+      departedIdentities,
+      listedIdentities,
+      departedMemberKeys,
+      omittedMemberKeys,
+      listingCountsByKind,
+    },
+    listedMembers,
+  };
+}
+
 export function centerRosterReadFromSnapshot(
   snapshot: CenterRosterHealthSnapshot,
   scrapeRunId: string,
   observedAt: Date,
+  options: { adoptsSectionContract?: boolean } = {},
 ): CenterRosterRead | null {
   if (centerRosterReadAdmissibility(snapshot) !== 'read-listed-members') return null;
-  const members = snapshotMembers(snapshot);
+  const allMembers = snapshotMembers(snapshot);
+  const sectioned =
+    options.adoptsSectionContract === true && snapshotRecordsSections(snapshot)
+      ? readSectionsFromSnapshot(snapshot, allMembers)
+      : null;
+  const members = sectioned ? sectioned.listedMembers : allMembers;
   return {
+    ...(sectioned ? { sections: sectioned.sections } : {}),
     scrapeRunId,
     observedAt,
-    discoveredCount: new Set(members.map((member) => member.memberKey)).size,
+    discoveredCount: new Set(allMembers.map((member) => member.memberKey)).size,
     memberKeys: new Set(members.map((member) => member.memberKey)),
     memberClaims: new Set(members.map((member) => memberClaimKey(member.memberKey, member.role))),
     memberProfileClaims: new Set(
       members
         .filter((member) => member.membershipKey)
         .map((member) =>
-          memberClaimKey(member.memberKey, identityPart(member.membershipKey ?? '')),
+          memberClaimKey(
+            member.memberKey,
+            comparableRosterMembershipKey(identityPart(member.membershipKey ?? '')),
+          ),
         ),
     ),
-    membershipKeys: new Set(members.map((member) => member.membershipKey ?? '').filter(Boolean)),
+    membershipKeys: new Set(
+      members
+        .map((member) => comparableRosterMembershipKey(member.membershipKey ?? ''))
+        .filter(Boolean),
+    ),
     relationshipKeys: new Set(
       members.map((member) => member.relationshipKey ?? '').filter(Boolean),
     ),
     members,
+    memberIdentities: new Set(
+      members.map((member) => comparableIdentity(member.membershipKey ?? '')).filter(Boolean),
+    ),
   };
 }
 
@@ -324,6 +690,57 @@ export function absentReadRunIds<Read extends { scrapeRunId: string; observedAt:
   }
   return Array.from(runIds);
 }
+
+/**
+ * Admitted `sectionsRecorded` reads in distinct runs that list the claim's person under a
+ * past or emeritus section read to its end, after the claim was last observed and after the
+ * last read that listed the person as current (#6084). A read cached or in the claim's own
+ * run never counts, exactly as for absence.
+ */
+export function departedReadRunIds<Read extends CenterRosterRead>(
+  claim: { observedAt: Date; scrapeRunId?: string },
+  reads: readonly Read[],
+  identity: string,
+): string[] {
+  if (!identity) return [];
+  let anchor = claim.observedAt.getTime();
+  for (const read of reads) {
+    const listedCurrent = read.sections
+      ? read.sections.currentIdentities.has(identity)
+      : (read.memberIdentities?.has(identity) ??
+        read.members.some((member) => comparableIdentity(member.membershipKey ?? '') === identity));
+    if (listedCurrent) anchor = Math.max(anchor, read.observedAt.getTime());
+  }
+  const runIds = new Set<string>();
+  for (const read of reads) {
+    if (!read.sections) continue;
+    if (claim.scrapeRunId && read.scrapeRunId === claim.scrapeRunId) continue;
+    if (!(read.observedAt.getTime() > anchor)) continue;
+    if (!read.sections.departedIdentities.has(identity)) continue;
+    runIds.add(read.scrapeRunId);
+  }
+  return Array.from(runIds);
+}
+
+const latestDepartedSectionLabel = (reads: readonly CenterRosterRead[], identity: string) =>
+  [...reads]
+    .filter((read) => read.sections?.departedIdentities.has(identity))
+    .sort((left, right) => right.observedAt.getTime() - left.observedAt.getTime())[0]
+    ?.sections?.departedIdentities.get(identity) ?? '';
+
+/**
+ * Under the section contract an absence is only an omission, which is never evidence about
+ * the person (#2647): it retires a claim only beside a positive witness, the person's own
+ * page saying they left or died. A claim whose absent reads are all pre-contract reads keeps
+ * the plain absence rule.
+ */
+const absentReadsRecordSections = (
+  absentRunIds: readonly string[],
+  reads: readonly CenterRosterRead[],
+): boolean => {
+  const absent = new Set(absentRunIds);
+  return reads.some((read) => absent.has(read.scrapeRunId) && read.sections !== undefined);
+};
 
 export function passesCenterRosterAbsenceCeiling(
   absentCount: number,
@@ -387,13 +804,29 @@ export interface CenterRosterRetirementCounts {
   retiredRelationshipKeys: number;
   retiredEdges: number;
   retiredLeadEdges: number;
+  protectedLeadEdges: number;
   retiredObservations: number;
+  sectionReads: number;
+  departedEdges: number;
+  departedRelationshipKeys: number;
+  departedEdgesAwaitingSecondRead: number;
+  witnessedOmittedEdges: number;
+  witnessedOmittedMemberKeys: number;
+  omittedUnwitnessedEdges: number;
+  omittedUnwitnessedMemberKeys: number;
+  omittedUnwitnessedRelationshipKeys: number;
+  latestReadListings: Record<CenterRosterSectionKind, number>;
 }
+
+export type CenterRosterEdgeRetirementVerdict =
+  'departed' | 'witnessed-omitted' | 'role-or-profile-changed' | 'absent';
 
 export interface PlannedEdgeRetirement {
   edgeId: string;
   role: string;
   membershipKey: string;
+  verdict?: CenterRosterEdgeRetirementVerdict;
+  sectionLabel?: string;
 }
 
 export interface CenterRosterRetirementPlan {
@@ -405,11 +838,40 @@ export interface CenterRosterRetirementPlan {
   retiredProfileClaims: string[];
   retiredRelationshipKeys: string[];
   retiredEdges: PlannedEdgeRetirement[];
+  protectedLeadEdges: PlannedEdgeRetirement[];
   observationIds: string[];
   counts: CenterRosterRetirementCounts;
 }
 
 const LEAD_CANONICAL_ROLES = new Set(['PI', 'DIRECTOR', 'CO_DIRECTOR']);
+
+const DEPARTURE_EVIDENCE_VERDICTS = new Set<CenterRosterEdgeRetirementVerdict | undefined>([
+  'departed',
+  'witnessed-omitted',
+]);
+
+/**
+ * A center's lead goes away only when evidence says the person left (a past or emeritus
+ * section, or their own page) or names a successor who keeps a lead edge. A role claim the
+ * roster stopped stating, or a listing it stopped carrying, ends no lead that would leave
+ * the center with none: the edge is kept and reported for operator review instead (#6308).
+ */
+function lastLeadEdgesWithoutDepartureEvidence(
+  edges: readonly CenterRosterGovernedEdge[],
+  retiredEdges: readonly PlannedEdgeRetirement[],
+  personRolesAssertedByOtherSources: ReadonlySet<string> | undefined,
+): PlannedEdgeRetirement[] {
+  const retiredIds = new Set(retiredEdges.map((edge) => edge.edgeId));
+  const keepsAnotherLead =
+    edges.some((edge) => LEAD_CANONICAL_ROLES.has(edge.role) && !retiredIds.has(edge.edgeId)) ||
+    [...(personRolesAssertedByOtherSources ?? [])].some((personRole) =>
+      LEAD_CANONICAL_ROLES.has(personRole.slice(personRole.lastIndexOf('|') + 1)),
+    );
+  if (keepsAnotherLead) return [];
+  return retiredEdges.filter(
+    (edge) => LEAD_CANONICAL_ROLES.has(edge.role) && !DEPARTURE_EVIDENCE_VERDICTS.has(edge.verdict),
+  );
+}
 
 const emptyCounts = (): CenterRosterRetirementCounts => ({
   admittedReads: 0,
@@ -427,7 +889,18 @@ const emptyCounts = (): CenterRosterRetirementCounts => ({
   retiredRelationshipKeys: 0,
   retiredEdges: 0,
   retiredLeadEdges: 0,
+  protectedLeadEdges: 0,
   retiredObservations: 0,
+  sectionReads: 0,
+  departedEdges: 0,
+  departedRelationshipKeys: 0,
+  departedEdgesAwaitingSecondRead: 0,
+  witnessedOmittedEdges: 0,
+  witnessedOmittedMemberKeys: 0,
+  omittedUnwitnessedEdges: 0,
+  omittedUnwitnessedMemberKeys: 0,
+  omittedUnwitnessedRelationshipKeys: 0,
+  latestReadListings: { current: 0, past: 0, emeritus: 0, unclassified: 0 },
 });
 
 interface ObservationGroup {
@@ -466,6 +939,7 @@ export function planCenterRosterRetirement(input: {
   edges: readonly CenterRosterGovernedEdge[];
   protectedMembershipKeys?: ReadonlySet<string>;
   protectedPersonRoles?: ReadonlySet<string>;
+  witnessedPersonIds?: ReadonlySet<string>;
   minAbsentReads?: number;
   maxAbsentFraction?: number;
   minRetainedFraction?: number;
@@ -473,6 +947,55 @@ export function planCenterRosterRetirement(input: {
   const minReads = input.minAbsentReads ?? CENTER_ROSTER_MIN_ABSENT_READS;
   const counts = emptyCounts();
   counts.admittedReads = input.reads.length;
+  counts.sectionReads = input.reads.filter((read) => read.sections).length;
+  const latestRead = input.reads.reduce<CenterRosterRead | null>(
+    (newest, read) =>
+      !newest || read.observedAt.getTime() > newest.observedAt.getTime() ? read : newest,
+    null,
+  );
+  if (latestRead?.sections) {
+    counts.latestReadListings = { ...latestRead.sections.listingCountsByKind };
+  }
+  const witnessedIdentities = new Set(
+    input.edges
+      .filter((edge) => edge.membershipKey && input.witnessedPersonIds?.has(edge.personId))
+      .map((edge) => comparableIdentity(edge.membershipKey)),
+  );
+  const memberIdentity = (rows: readonly CenterRosterGovernedObservation[]): string => {
+    const profile = [...rows]
+      .filter(
+        (row) => row.field === 'profileUrl' && typeof row.value === 'string' && !row.superseded,
+      )
+      .sort((left, right) => right.observedAt.getTime() - left.observedAt.getTime())[0];
+    if (!profile) return '';
+    return comparableRosterMembershipKey(officialProfileIdentityKey(String(profile.value)));
+  };
+  const relationshipTargetIdentity = (rows: readonly CenterRosterGovernedObservation[]): string => {
+    const site = [...rows]
+      .filter(
+        (row) =>
+          row.field === RELATIONSHIP_TARGET_WEBSITE_URL_FIELD &&
+          typeof row.value === 'string' &&
+          !row.superseded,
+      )
+      .sort((left, right) => right.observedAt.getTime() - left.observedAt.getTime())[0];
+    if (!site) return '';
+    return comparableRosterMembershipKey(officialProfileIdentityKey(String(site.value)));
+  };
+  const memberKeysByIdentity = new Map<string, Set<string>>();
+  for (const row of input.memberObservations) {
+    if (row.field !== 'profileUrl' || typeof row.value !== 'string' || !row.value.trim()) continue;
+    const identity = comparableRosterMembershipKey(officialProfileIdentityKey(row.value));
+    memberKeysByIdentity.set(
+      identity,
+      new Set([...(memberKeysByIdentity.get(identity) ?? []), row.entityKey]),
+    );
+  }
+  const personListedIn = (read: CenterRosterRead, identity: string): boolean =>
+    Boolean(read.sections?.listedIdentities.has(identity)) ||
+    [...(memberKeysByIdentity.get(identity) ?? [])].some((memberKey) =>
+      read.memberKeys.has(memberKey),
+    );
   const plan: CenterRosterRetirementPlan = {
     entityKey: input.entityKey,
     verdict: 'nothing-to-retire',
@@ -481,6 +1004,7 @@ export function planCenterRosterRetirement(input: {
     retiredProfileClaims: [],
     retiredRelationshipKeys: [],
     retiredEdges: [],
+    protectedLeadEdges: [],
     observationIds: [],
     counts,
   };
@@ -490,6 +1014,7 @@ export function planCenterRosterRetirement(input: {
     groupObservations(input.memberObservations, (row) => row.entityKey),
   );
   counts.governedMemberKeys = memberGroups.length;
+  const memberGroupRows = new Map(memberGroups.map((group) => [group.key, group.rows]));
   const retiredMemberKeys = new Set<string>();
   for (const group of memberGroups) {
     const absent = absentReadRunIds(
@@ -498,6 +1023,13 @@ export function planCenterRosterRetirement(input: {
       (read) => read.memberKeys.has(group.key),
     );
     if (absent.length >= minReads) {
+      if (absentReadsRecordSections(absent, input.reads)) {
+        if (!witnessedIdentities.has(memberIdentity(group.rows))) {
+          counts.omittedUnwitnessedMemberKeys += 1;
+          continue;
+        }
+        counts.witnessedOmittedMemberKeys += 1;
+      }
       retiredMemberKeys.add(group.key);
       for (const row of group.rows) retiredObservationIds.add(row.observationId);
     } else if (absent.length > 0) {
@@ -509,6 +1041,8 @@ export function planCenterRosterRetirement(input: {
     field: string,
     claimOf: (value: string) => string,
     listedClaims: (read: CenterRosterRead) => ReadonlySet<string>,
+    comparableClaim: (claim: string) => string = (claim) => claim,
+    observationIdsByClaim?: Map<string, string[]>,
   ): string[] => {
     const claimGroups = groupObservations(
       input.memberObservations.filter(
@@ -519,26 +1053,40 @@ export function planCenterRosterRetirement(input: {
     const retiredClaims: string[] = [];
     for (const group of claimGroups.values()) {
       if (retiredMemberKeys.has(group.latest.entityKey)) continue;
+      const listedKey = memberClaimKey(
+        group.latest.entityKey,
+        comparableClaim(claimOf(String(group.latest.value).trim())),
+      );
       const absent = absentReadRunIds(
         { observedAt: group.latest.observedAt, scrapeRunId: group.latest.scrapeRunId },
         input.reads,
-        (read) => listedClaims(read).has(group.key),
+        (read) =>
+          listedClaims(read).has(listedKey) ||
+          (read.sections !== undefined && !read.memberKeys.has(group.latest.entityKey)),
       );
       if (absent.length < minReads) continue;
       retiredClaims.push(group.key);
       for (const row of group.rows) retiredObservationIds.add(row.observationId);
+      observationIdsByClaim?.set(
+        group.key,
+        group.rows.map((row) => row.observationId),
+      );
     }
     return retiredClaims;
   };
+  const roleClaimObservationIds = new Map<string, string[]>();
   const retiredRoleClaims = retireStaleMemberClaims(
     'role',
     (role) => role,
     (read) => read.memberClaims,
+    (claim) => claim,
+    roleClaimObservationIds,
   );
   const retiredProfileClaims = retireStaleMemberClaims(
     'profileUrl',
     officialProfileIdentityKey,
     (read) => read.memberProfileClaims,
+    comparableRosterMembershipKey,
   );
 
   const relationshipGroups = liveGroups(
@@ -554,6 +1102,22 @@ export function planCenterRosterRetirement(input: {
       (read) => read.relationshipKeys.has(group.key),
     );
     if (absent.length < minReads) continue;
+    if (absentReadsRecordSections(absent, input.reads)) {
+      const identity = relationshipTargetIdentity(group.rows);
+      const departed =
+        departedReadRunIds(
+          { observedAt: group.latest.observedAt, scrapeRunId: group.latest.scrapeRunId },
+          input.reads,
+          identity,
+        ).length >= minReads;
+      const rekeyed = Boolean(identity && latestRead?.sections?.currentIdentities.has(identity));
+      if (departed) {
+        counts.departedRelationshipKeys += 1;
+      } else if (!rekeyed && !witnessedIdentities.has(identity)) {
+        counts.omittedUnwitnessedRelationshipKeys += 1;
+        continue;
+      }
+    }
     retiredRelationshipKeys.push(group.key);
     for (const row of group.rows) retiredRelationshipObservationIds.push(row.observationId);
   }
@@ -576,19 +1140,77 @@ export function planCenterRosterRetirement(input: {
       counts.protectedEdges += 1;
       continue;
     }
-    const absent = absentReadRunIds({ observedAt: edge.observedAt }, input.reads, (read) =>
-      read.membershipKeys.has(edge.membershipKey),
-    );
-    if (absent.length >= minReads) {
+    const identity = comparableIdentity(edge.membershipKey);
+    const departed = departedReadRunIds({ observedAt: edge.observedAt }, input.reads, identity);
+    if (departed.length >= minReads) {
+      counts.departedEdges += 1;
       retiredEdges.push({
         edgeId: edge.edgeId,
         role: edge.role,
         membershipKey: edge.membershipKey,
+        verdict: 'departed',
+        sectionLabel: latestDepartedSectionLabel(input.reads, identity),
       });
+      continue;
+    }
+    const absent = absentReadRunIds({ observedAt: edge.observedAt }, input.reads, (read) =>
+      read.membershipKeys.has(comparableRosterMembershipKey(edge.membershipKey)),
+    );
+    if (absent.length >= minReads) {
+      let verdict: CenterRosterEdgeRetirementVerdict = 'absent';
+      if (absentReadsRecordSections(absent, input.reads)) {
+        const absentRuns = new Set(absent);
+        const stillListedInEveryAbsentRead = input.reads
+          .filter((read) => absentRuns.has(read.scrapeRunId) && read.sections)
+          .every((read) => personListedIn(read, identity));
+        if (stillListedInEveryAbsentRead) {
+          verdict = 'role-or-profile-changed';
+        } else if (input.witnessedPersonIds?.has(edge.personId)) {
+          verdict = 'witnessed-omitted';
+          counts.witnessedOmittedEdges += 1;
+        } else {
+          counts.omittedUnwitnessedEdges += 1;
+          continue;
+        }
+      }
+      retiredEdges.push({
+        edgeId: edge.edgeId,
+        role: edge.role,
+        membershipKey: edge.membershipKey,
+        verdict,
+      });
+    } else if (departed.length > 0) {
+      counts.departedEdgesAwaitingSecondRead += 1;
+      counts.edgesAwaitingSecondRead += 1;
     } else if (absent.length > 0) {
       counts.edgesAwaitingSecondRead += 1;
     }
   }
+
+  const keptLeadEdges = lastLeadEdgesWithoutDepartureEvidence(
+    input.edges,
+    retiredEdges,
+    input.protectedPersonRoles,
+  );
+  for (const edge of keptLeadEdges) {
+    retiredEdges.splice(retiredEdges.indexOf(edge), 1);
+    plan.protectedLeadEdges.push(edge);
+    const claimRole = edge.membershipKey.slice(edge.membershipKey.lastIndexOf('|') + 1);
+    for (const memberKey of memberKeysByIdentity.get(comparableIdentity(edge.membershipKey)) ??
+      []) {
+      if (retiredMemberKeys.delete(memberKey)) {
+        for (const row of memberGroupRows.get(memberKey) ?? []) {
+          retiredObservationIds.delete(row.observationId);
+        }
+      }
+      const claim = memberClaimKey(memberKey, claimRole);
+      const claimIndex = retiredRoleClaims.indexOf(claim);
+      if (claimIndex < 0) continue;
+      retiredRoleClaims.splice(claimIndex, 1);
+      for (const id of roleClaimObservationIds.get(claim) ?? []) retiredObservationIds.delete(id);
+    }
+  }
+  counts.protectedLeadEdges = plan.protectedLeadEdges.length;
 
   const maxFraction = input.maxAbsentFraction ?? CENTER_ROSTER_MAX_ABSENT_FRACTION;
   const freeze = (reason: CenterRosterFreezeReason): CenterRosterRetirementPlan => ({
@@ -679,6 +1301,7 @@ export async function loadCenterRosterReads(
       (row.value ?? {}) as CenterRosterHealthSnapshot,
       scrapeRunId,
       row.observedAt,
+      { adoptsSectionContract: lane.adoptsSectionContract === true },
     );
     if (read) reads.push(read);
   }
@@ -752,7 +1375,27 @@ export interface CenterRosterRetirementInputs {
   edges: CenterRosterGovernedEdge[];
   protectedMembershipKeys: Set<string>;
   protectedPersonRoles: Set<string>;
+  witnessedPersonIds?: Set<string>;
 }
+
+export type CenterRosterDepartureWitnessLoader = (
+  personIds: readonly string[],
+  now: Date,
+) => Promise<Set<string>>;
+
+/**
+ * The person's own page saying they left or died, read through `personPageDeparture.ts`
+ * unchanged. Imported on call, because that module reads the materializer's read scope and
+ * the materializer imports this one.
+ */
+export const loadCenterRosterDepartureWitnesses: CenterRosterDepartureWitnessLoader = async (
+  personIds,
+  now,
+) => {
+  if (personIds.length === 0) return new Set();
+  const { loadPersonPageDepartures } = await import('./personPageDeparture');
+  return new Set((await loadPersonPageDepartures(personIds, now)).keys());
+};
 
 export async function loadCenterRosterRetirementInputs(
   centerEntityKey: string,
@@ -762,12 +1405,16 @@ export async function loadCenterRosterRetirementInputs(
   >,
   reads?: CenterRosterRead[],
   lane: CenterRosterLane = CENTERS_INSTITUTES_ROSTER_LANE,
+  loadWitnesses: CenterRosterDepartureWitnessLoader = loadCenterRosterDepartureWitnesses,
 ): Promise<CenterRosterRetirementInputs | null> {
-  const entity = (await ResearchEntity.findOne({ slug: centerEntityKey, archived: { $ne: true } })
+  const entity = ((await ResearchEntity.findOne({ slug: centerEntityKey, archived: { $ne: true } })
     .select('_id')
-    .lean()) as { _id?: unknown } | null;
+    .lean()) ?? (await liveResearchEntityNamedByKeyObservations(centerEntityKey))) as {
+    _id?: unknown;
+  } | null;
   const centerEntityId = serializedDocumentId(entity?._id) || '';
   if (!centerEntityId) return null;
+  const edges = await loadGovernedEdges(centerEntityId, lane);
   return {
     centerEntityId,
     reads: reads ?? (await loadCenterRosterReads(centerEntityKey, lane)),
@@ -781,9 +1428,17 @@ export async function loadCenterRosterRetirementInputs(
       centerEntityKey,
       lane,
     ),
-    edges: await loadGovernedEdges(centerEntityId, lane),
+    edges,
     protectedMembershipKeys: await deps.membershipKeysAssertedByOtherSources(centerEntityKey),
     protectedPersonRoles: await deps.personRolesAssertedByOtherSources(centerEntityKey),
+    ...(lane.adoptsSectionContract
+      ? {
+          witnessedPersonIds: await loadWitnesses(
+            [...new Set(edges.map((edge) => edge.personId).filter(Boolean))],
+            new Date(),
+          ),
+        }
+      : {}),
   };
 }
 
@@ -829,14 +1484,25 @@ export async function applyCenterRosterRetirementPlan(
 
   await retireObservationRows(plan.observationIds, lane.retirementReason);
 
-  if (plan.retiredEdges.length > 0) {
+  const edgesBySectionLabel = new Map<string, PlannedEdgeRetirement[]>();
+  for (const edge of plan.retiredEdges) {
+    const label = edge.verdict === 'departed' ? (edge.sectionLabel ?? '') : '';
+    edgesBySectionLabel.set(label, [...(edgesBySectionLabel.get(label) ?? []), edge]);
+  }
+  for (const [sectionLabel, edges] of edgesBySectionLabel) {
     await RoleAssignment.updateMany(
       {
-        _id: { $in: plan.retiredEdges.map((edge) => new mongoose.Types.ObjectId(edge.edgeId)) },
+        _id: { $in: edges.map((edge) => new mongoose.Types.ObjectId(edge.edgeId)) },
         'rosterProvenance.sourceName': lane.sourceName,
         state: { $ne: 'HISTORICAL' },
       },
-      { $set: { state: 'HISTORICAL', endedAt } },
+      {
+        $set: {
+          state: 'HISTORICAL',
+          endedAt,
+          ...(sectionLabel ? { 'rosterProvenance.sectionLabel': sectionLabel } : {}),
+        },
+      },
     );
   }
 
@@ -868,7 +1534,9 @@ export async function applyCenterRosterRetirementPlan(
   }
 
   const retiredIdentities = new Set(
-    plan.retiredEdges.map((edge) => identityPart(edge.membershipKey)),
+    plan.retiredEdges.map((edge) =>
+      comparableRosterMembershipKey(identityPart(edge.membershipKey)),
+    ),
   );
   const retiredClaimMemberKeys = new Set(
     [...plan.retiredRoleClaims, ...plan.retiredProfileClaims].map((claim) => claim.split('|')[0]),
@@ -881,7 +1549,8 @@ export async function applyCenterRosterRetirementPlan(
   const stillListed = (latestRead?.members ?? []).filter(
     (member) =>
       retiredClaimMemberKeys.has(member.memberKey) ||
-      (member.membershipKey && retiredIdentities.has(identityPart(member.membershipKey))),
+      (member.membershipKey &&
+        retiredIdentities.has(comparableRosterMembershipKey(identityPart(member.membershipKey)))),
   );
   for (const memberKey of new Set(stillListed.map((member) => member.memberKey))) {
     await deps.rematerializeMemberKey(memberKey);
@@ -913,12 +1582,62 @@ export async function applyCenterRosterRetirementPlan(
 export type CenterRosterRetirementOutcome =
   'invalid-run-id' | 'no-center-roster-read' | 'planned' | 'reconciled';
 
+/**
+ * What an operator approves when they approve a center's retirement plan: the verdict and the
+ * exact edges it ends or keeps. An apply carries out a plan only when its own digest, planned
+ * against the edges the projection just wrote, equals the approved one (#6348).
+ */
+export interface CenterRosterRetirementDigest {
+  entityKey: string;
+  verdict: CenterRosterRetirementPlan['verdict'];
+  freezeReason: CenterRosterFreezeReason | null;
+  retiredEdgeIds: string[];
+  protectedLeadEdgeIds: string[];
+}
+
+export function centerRosterRetirementDigest(
+  plan: Pick<
+    CenterRosterRetirementPlan,
+    'entityKey' | 'verdict' | 'freezeReason' | 'retiredEdges' | 'protectedLeadEdges'
+  >,
+): CenterRosterRetirementDigest {
+  return {
+    entityKey: plan.entityKey,
+    verdict: plan.verdict,
+    freezeReason: plan.freezeReason ?? null,
+    retiredEdgeIds: [...new Set(plan.retiredEdges.map((edge) => edge.edgeId))].sort(),
+    protectedLeadEdgeIds: [...new Set(plan.protectedLeadEdges.map((edge) => edge.edgeId))].sort(),
+  };
+}
+
+const canonicalDigest = (digest: CenterRosterRetirementDigest): string =>
+  JSON.stringify([
+    digest.entityKey,
+    digest.verdict,
+    digest.freezeReason ?? null,
+    [...digest.retiredEdgeIds].sort(),
+    [...digest.protectedLeadEdgeIds].sort(),
+  ]);
+
+export function centerRosterRetirementDigestsEqual(
+  left: CenterRosterRetirementDigest,
+  right: CenterRosterRetirementDigest,
+): boolean {
+  return canonicalDigest(left) === canonicalDigest(right);
+}
+
 export interface CenterRosterRetirementCenterResult {
   entityKey: string;
   admissibility: CenterRosterReadAdmissibility;
   verdict?: CenterRosterRetirementPlan['verdict'] | 'entity-missing';
   freezeReason?: CenterRosterFreezeReason;
   counts?: CenterRosterRetirementCounts;
+  digest?: CenterRosterRetirementDigest;
+  /**
+   * The apply was held to an approved plan and this center's post-projection plan did not
+   * match it, so nothing was retired for it.
+   */
+  planDiverged?: true;
   applied?: AppliedCenterRosterRetirement;
 }
 
@@ -933,11 +1652,18 @@ export interface CenterRosterRetirementResult {
  * the projection just wrote. A dry run plans and reports without writing, for the same
  * reason field retraction does: the freeze verdict has to be readable before a pass that
  * retires evidence is authorized.
+ *
+ * With `approvedDigests` an apply retires a center only when its plan's digest equals the
+ * approved one; any other center is reported as plan-diverged and left untouched (#6348).
  */
 export async function reconcileCenterRosterRetirementsFromRun(
   scrapeRunId: string,
   deps: CenterRosterRetirementDeps,
-  options: { dryRun?: boolean; lane?: CenterRosterLane } = {},
+  options: {
+    dryRun?: boolean;
+    lane?: CenterRosterLane;
+    approvedDigests?: ReadonlyMap<string, CenterRosterRetirementDigest>;
+  } = {},
 ): Promise<CenterRosterRetirementResult> {
   const dryRun = options.dryRun === true;
   const lane = options.lane ?? CENTERS_INSTITUTES_ROSTER_LANE;
@@ -974,19 +1700,38 @@ export async function reconcileCenterRosterRetirementsFromRun(
       continue;
     }
     const plan = planCenterRosterRetirement({ entityKey, ...inputs });
+    if (lane.adoptsSectionContract && plan.counts.sectionReads > 0) {
+      const { counts } = plan;
+      console.info(
+        `[center-roster-retirement] ${lane.sourceName} ${sanitizeLogValue(entityKey)} sections: latest read lists ${counts.latestReadListings.current} current, ${counts.latestReadListings.unclassified} unlabelled, ${counts.latestReadListings.past} past, ${counts.latestReadListings.emeritus} emeritus; ${counts.departedEdges} departed edge(s), ${counts.departedEdgesAwaitingSecondRead} awaiting a second read, ${counts.witnessedOmittedEdges} witnessed-omitted, ${counts.omittedUnwitnessedEdges} omitted-unwitnessed edge(s), ${counts.omittedUnwitnessedMemberKeys} omitted-unwitnessed member key(s), ${counts.protectedLeadEdges} last lead edge(s) kept for operator review`,
+      );
+    }
+    const digest = centerRosterRetirementDigest(plan);
+    const approved = options.approvedDigests?.get(entityKey);
+    const planDiverged =
+      !dryRun &&
+      options.approvedDigests !== undefined &&
+      (!approved || !centerRosterRetirementDigestsEqual(digest, approved));
     const result: CenterRosterRetirementCenterResult = {
       entityKey,
       admissibility,
       verdict: plan.verdict,
       counts: plan.counts,
+      digest,
       ...(plan.freezeReason ? { freezeReason: plan.freezeReason } : {}),
+      ...(planDiverged ? { planDiverged: true as const } : {}),
     };
     if (plan.verdict === 'frozen') {
       console.warn(
         `[center-roster-retirement] ${lane.sourceName} frozen ${sanitizeLogValue(entityKey)} (${plan.freezeReason}): ${plan.counts.governedMemberKeys} member keys, ${plan.counts.governedEdges} edges governed`,
       );
     }
-    if (!dryRun && plan.verdict === 'retire') {
+    if (planDiverged) {
+      console.warn(
+        `[center-roster-retirement] ${lane.sourceName} plan-diverged ${sanitizeLogValue(entityKey)}: the post-projection plan (${plan.verdict}, ${digest.retiredEdgeIds.length} edge(s) to end) is not the approved one${approved ? ` (${approved.verdict}, ${approved.retiredEdgeIds.length} edge(s) to end)` : ', and none was approved'}, so nothing was retired for it`,
+      );
+    }
+    if (!dryRun && !planDiverged && plan.verdict === 'retire') {
       result.applied = await applyCenterRosterRetirementPlan(plan, inputs, deps, new Date(), lane);
     }
     centers.push(result);

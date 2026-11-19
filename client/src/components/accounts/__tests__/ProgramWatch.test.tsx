@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -84,6 +84,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
+    expect(screen.getByRole('heading', { level: 2, name: 'Watched programs' })).toBeTruthy();
     expect(screen.getByText('Travel Fellowship')).toBeTruthy();
     expect(screen.getByText('Note: Ask about housing')).toBeTruthy();
     await waitFor(() =>
@@ -91,6 +92,62 @@ describe('ProgramWatch', () => {
         expect.objectContaining({
           count: 2,
           nextDeadlineLabel: expect.stringContaining('Summer Research Grant'),
+        }),
+      ),
+    );
+  });
+
+  it('drops the closing-soon urgency from a program the student already applied to', async () => {
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ['p1', 'p2'] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        return Promise.resolve({
+          data: {
+            watchedPrograms: [
+              { _id: 'p1', id: 'p1', title: 'Applied Grant', deadline: soon },
+              { _id: 'p2', id: 'p2', title: 'Open Grant', deadline: soon },
+            ].map((program) => ({ ...program, isAcceptingApplications: true })),
+          },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({
+          data: { watchedProgramPlans: { p1: { stage: 'APPLIED' }, p2: { stage: 'SAVED' } } },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    const onSummaryChange = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch onSummaryChange={onSummaryChange} />
+      </MemoryRouter>,
+    );
+
+    const appliedCard = (await screen.findByText('Applied Grant')).closest('li') as HTMLElement;
+    const openCard = screen.getByText('Open Grant').closest('li') as HTMLElement;
+    expect(appliedCard.textContent).not.toMatch(/Closing soon|days left/);
+    expect(within(appliedCard).queryByText('Applied', { selector: 'span' })).toBeNull();
+    expect(
+      (
+        within(appliedCard).getByRole('combobox', {
+          name: /^Application stage for /,
+        }) as HTMLSelectElement
+      ).value,
+    ).toBe('APPLIED');
+    expect(openCard.textContent).toMatch(/Closing soon|days left/);
+    expect(appliedCard.querySelector('.text-amber-700')).toBeNull();
+    expect(openCard.querySelector('.text-amber-700')).not.toBeNull();
+    await waitFor(() =>
+      expect(onSummaryChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          approachingCount: 1,
+          notStartedCount: 1,
+          nextDeadlineLabel: expect.stringContaining('Open Grant'),
         }),
       ),
     );
@@ -120,7 +177,7 @@ describe('ProgramWatch', () => {
     expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
   });
 
-  it('reads the persisted outreach stage for each watched program', async () => {
+  it('reads the persisted application stage for each watched program', async () => {
     withWatchedPrograms();
 
     render(
@@ -131,16 +188,117 @@ describe('ProgramWatch', () => {
 
     await screen.findByText('Summer Research Grant');
     const savedStage = screen.getByRole('combobox', {
-      name: 'Outreach stage for Summer Research Grant',
+      name: 'Application stage for Summer Research Grant',
     }) as HTMLSelectElement;
     const appliedStage = screen.getByRole('combobox', {
-      name: 'Outreach stage for Travel Fellowship',
+      name: 'Application stage for Travel Fellowship',
     }) as HTMLSelectElement;
     expect(savedStage.value).toBe('SAVED');
     expect(appliedStage.value).toBe('APPLIED');
   });
 
-  it('persists a full-pipeline stage change through the canonical plan stage', async () => {
+  it('offers exactly the application stages on a program card', async () => {
+    withWatchedPrograms();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    const stageSelect = screen.getByRole('combobox', {
+      name: 'Application stage for Summer Research Grant',
+    }) as HTMLSelectElement;
+    expect(Array.from(stageSelect.options, (option) => option.textContent)).toEqual([
+      'Saved',
+      'Preparing',
+      'Applied',
+      'Awarded',
+      'Not selected',
+      'No longer applying',
+    ]);
+    expect(Array.from(stageSelect.options, (option) => option.value)).toEqual([
+      'SAVED',
+      'PREPARING',
+      'APPLIED',
+      'AWARDED',
+      'NOT_SELECTED',
+      'CLOSED',
+    ]);
+    expect(screen.getAllByText('Application stage', { selector: 'span' })).toHaveLength(2);
+    expect(screen.queryByText('Outreach stage')).toBeNull();
+  });
+
+  it('keeps a program plan stored at an outreach stage selected until the student changes it', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ['p1', 'p2'] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        return Promise.resolve({
+          data: {
+            watchedPrograms: [
+              { _id: 'p1', id: 'p1', title: 'Exploring Grant' },
+              { _id: 'p2', id: 'p2', title: 'Contacted Grant' },
+            ],
+          },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({
+          data: {
+            watchedProgramPlans: { p1: { stage: 'EXPLORING' }, p2: { stage: 'CONTACTED' } },
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.put.mockResolvedValue({ data: { watchedProgramPlans: {} } });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Exploring Grant');
+    const exploring = screen.getByRole('combobox', {
+      name: 'Application stage for Exploring Grant',
+    }) as HTMLSelectElement;
+    const contacted = screen.getByRole('combobox', {
+      name: 'Application stage for Contacted Grant',
+    }) as HTMLSelectElement;
+    expect(exploring.value).toBe('EXPLORING');
+    expect(exploring.selectedOptions[0].textContent).toBe('Exploring');
+    expect(Array.from(exploring.options, (option) => option.value)).toEqual([
+      'SAVED',
+      'EXPLORING',
+      'PREPARING',
+      'APPLIED',
+      'AWARDED',
+      'NOT_SELECTED',
+      'CLOSED',
+    ]);
+    expect(contacted.value).toBe('CONTACTED');
+    expect(contacted.selectedOptions[0].textContent).toBe('Contacted');
+
+    fireEvent.change(contacted, { target: { value: 'APPLIED' } });
+    await waitFor(() =>
+      expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedProgramPlans/p2', {
+        data: { plan: { stage: 'APPLIED' } },
+      }),
+    );
+    await waitFor(() =>
+      expect(Array.from(contacted.options, (option) => option.value)).not.toContain('CONTACTED'),
+    );
+  });
+
+  it.each([
+    ['AWARDED', 'Awarded'],
+    ['NOT_SELECTED', 'Not selected'],
+    ['CLOSED', 'No longer applying'],
+  ])('persists the %s application stage through the canonical plan stage', async (stage, label) => {
     withWatchedPrograms();
     mockedAxios.put.mockResolvedValue({ data: { watchedProgramPlans: {} } });
 
@@ -152,17 +310,70 @@ describe('ProgramWatch', () => {
 
     await screen.findByText('Summer Research Grant');
     const stageSelect = screen.getByRole('combobox', {
-      name: 'Outreach stage for Summer Research Grant',
-    });
-    fireEvent.change(stageSelect, { target: { value: 'CONTACTED' } });
+      name: 'Application stage for Summer Research Grant',
+    }) as HTMLSelectElement;
+    fireEvent.change(stageSelect, { target: { value: stage } });
 
     await waitFor(() =>
       expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedProgramPlans/p1', {
-        data: { plan: { stage: 'CONTACTED' } },
+        data: { plan: { stage } },
       }),
     );
-    expect((stageSelect as HTMLSelectElement).value).toBe('CONTACTED');
+    expect(stageSelect.value).toBe(stage);
+    expect(stageSelect.selectedOptions[0].textContent).toBe(label);
     expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
+  });
+
+  it('counts no application result as closing soon', async () => {
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ['p1', 'p2', 'p3'] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        return Promise.resolve({
+          data: {
+            watchedPrograms: [
+              { _id: 'p1', id: 'p1', title: 'Awarded Grant', deadline: soon },
+              { _id: 'p2', id: 'p2', title: 'Not Selected Grant', deadline: soon },
+              { _id: 'p3', id: 'p3', title: 'Open Grant', deadline: soon },
+            ].map((program) => ({ ...program, isAcceptingApplications: true })),
+          },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({
+          data: {
+            watchedProgramPlans: {
+              p1: { stage: 'AWARDED' },
+              p2: { stage: 'NOT_SELECTED' },
+              p3: { stage: 'PREPARING' },
+            },
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    const onSummaryChange = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch onSummaryChange={onSummaryChange} />
+      </MemoryRouter>,
+    );
+
+    const awardedCard = (await screen.findByText('Awarded Grant')).closest('li') as HTMLElement;
+    const notSelectedCard = screen.getByText('Not Selected Grant').closest('li') as HTMLElement;
+    expect(awardedCard.textContent).not.toMatch(/Closing soon|days left/);
+    expect(notSelectedCard.textContent).not.toMatch(/Closing soon|days left/);
+    await waitFor(() =>
+      expect(onSummaryChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          approachingCount: 1,
+          nextDeadlineLabel: expect.stringContaining('Open Grant'),
+        }),
+      ),
+    );
   });
 
   it('reverts the displayed stage and surfaces an error when a stage save fails', async () => {
@@ -177,7 +388,7 @@ describe('ProgramWatch', () => {
 
     await screen.findByText('Summer Research Grant');
     const stageSelect = screen.getByRole('combobox', {
-      name: 'Outreach stage for Summer Research Grant',
+      name: 'Application stage for Summer Research Grant',
     }) as HTMLSelectElement;
     fireEvent.change(stageSelect, { target: { value: 'APPLIED' } });
 
@@ -196,7 +407,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[0]);
 
     await waitFor(() =>
       expect(mockedAxios.delete).toHaveBeenCalledWith('/users/watchedPrograms', {
@@ -217,11 +428,11 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Travel Fellowship');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[1]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[1]);
 
     await waitFor(() => expect(mockedAxios.delete).toHaveBeenCalled());
     expect(
-      screen.queryByRole('combobox', { name: 'Outreach stage for Travel Fellowship' }),
+      screen.queryByRole('combobox', { name: 'Application stage for Travel Fellowship' }),
     ).toBeNull();
     const undo = await screen.findByRole('button', { name: 'Undo' });
     const region = undo.closest('[role="status"]');
@@ -243,12 +454,12 @@ describe('ProgramWatch', () => {
 
     await screen.findByText('Summer Research Grant');
     fireEvent.change(
-      screen.getByRole('combobox', { name: 'Outreach stage for Summer Research Grant' }),
+      screen.getByRole('combobox', { name: 'Application stage for Summer Research Grant' }),
       { target: { value: 'APPLIED' } },
     );
     await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1));
     mockedAxios.put.mockClear();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[0]);
     fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
 
     await waitFor(() =>
@@ -284,7 +495,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[0]);
 
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
     expect(await screen.findByText('Summer Research Grant')).toBeTruthy();
@@ -301,7 +512,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    fireEvent.click(screen.getByRole('button', { name: 'Add note for Summer Research Grant' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit note for Summer Research Grant' }));
     const note = screen.getByRole('textbox', { name: 'Note for Summer Research Grant' });
     act(() => note.focus());
     fireEvent.blur(note);
@@ -442,8 +653,10 @@ describe('ProgramWatch control containment', () => {
     for (const title of ['Summer Research Grant', 'Travel Fellowship']) {
       const card = cardOf(title);
       expect(card).toBeTruthy();
-      const noteButton = screen.getByRole('button', { name: `Add note for ${title}` });
-      const stageControl = screen.getByLabelText(`Outreach stage for ${title}`);
+      const noteButton = screen.getByRole('button', {
+        name: new RegExp(`^(Add|Edit) note for ${title}$`),
+      });
+      const stageControl = screen.getByLabelText(`Application stage for ${title}`);
       expect(card?.contains(noteButton)).toBe(true);
       expect(card?.contains(stageControl)).toBe(true);
     }
@@ -476,12 +689,101 @@ describe('ProgramWatch control containment', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    const withNote = screen.getByRole('button', { name: 'Add note for Summer Research Grant' });
+    const withNote = screen.getByRole('button', { name: 'Edit note for Summer Research Grant' });
     const withoutNote = screen.getByRole('button', { name: 'Add note for Travel Fellowship' });
 
     expect(withNote.className).not.toMatch(/\byellow-/);
     expect(withNote.className).toContain('border-gold');
     expect(withNote.className).toContain('bg-gold-soft');
     expect(withoutNote.className).not.toContain('bg-gold-soft');
+  });
+
+  it('shows a program watched in another tab once this tab is visible again', async () => {
+    let ids = ['p1'];
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ids } });
+      }
+      if (url === '/users/watchedPrograms') {
+        const all = [
+          { _id: 'p1', id: 'p1', title: 'Summer Research Grant', isAcceptingApplications: true },
+          { _id: 'p2', id: 'p2', title: 'Travel Fellowship', isAcceptingApplications: true },
+        ];
+        return Promise.resolve({
+          data: { watchedPrograms: all.filter((program) => ids.includes(program.id)) },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({ data: { watchedProgramPlans: {} } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    expect(screen.queryByText('Travel Fellowship')).toBeNull();
+
+    ids = ['p1', 'p2'];
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByText('Travel Fellowship')).toBeTruthy();
+  });
+
+  it('retries loading a program watched in another tab after a failed refresh', async () => {
+    let ids = ['p1'];
+    let failPrograms = false;
+    const all = [
+      { _id: 'p1', id: 'p1', title: 'Summer Research Grant', isAcceptingApplications: true },
+      { _id: 'p2', id: 'p2', title: 'Travel Fellowship', isAcceptingApplications: true },
+    ];
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: [...ids] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        if (failPrograms) return Promise.reject(new Error('network'));
+        return Promise.resolve({
+          data: { watchedPrograms: all.filter((program) => ids.includes(program.id)) },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({ data: { watchedProgramPlans: {} } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+
+    ids = ['p1', 'p2'];
+    failPrograms = true;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() =>
+      expect(
+        mockedAxios.get.mock.calls.filter(([url]) => url === '/users/watchedPrograms'),
+      ).toHaveLength(2),
+    );
+    expect(screen.queryByText('Travel Fellowship')).toBeNull();
+
+    failPrograms = false;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByText('Travel Fellowship')).toBeTruthy();
   });
 });

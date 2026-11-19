@@ -16,6 +16,7 @@ import {
 } from './researchEntityBrowseRank';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import { rostersWithDepartedLeadsRetired } from './departedLeadServing';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import { syncEntity } from './meiliSyncService';
 import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
@@ -24,12 +25,23 @@ import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelat
 
 const browseRankDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
-const leadMembersByEntityId = async (entityIds: any[]): Promise<Map<string, any[]>> => {
+export const leadMembersByEntityId = async (entityIds: any[]): Promise<Map<string, any[]>> => {
   if (entityIds.length === 0) return new Map();
   const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
+  const servedByEntityId = await rostersWithDepartedLeadsRetired(rosterByEntityId);
   const byId = new Map<string, any[]>();
   for (const [key, roster] of rosterByEntityId) {
-    const leads = roster.filter((member) => LEAD_ROLE_LEGACY_LABELS.has(member.role));
+    const retiredHere = new Set(
+      (servedByEntityId.get(key) ?? [])
+        .filter(
+          (entry, index) => entry.state === 'HISTORICAL' && roster[index]?.state !== 'HISTORICAL',
+        )
+        .map((entry) => String(entry.personId)),
+    );
+    const leads = roster.filter(
+      (member) =>
+        LEAD_ROLE_LEGACY_LABELS.has(member.role) && !retiredHere.has(String(member.personId)),
+    );
     if (leads.length > 0) byId.set(key, leads);
   }
   return byId;
@@ -64,6 +76,7 @@ export interface RecomputeBrowseRankResult {
   updated: number;
   stamped: number;
   scoreDrifted: number;
+  hostingFlagDrifted: number;
   refusedNewerScorer: number;
   indexSyncFailures: number;
   indexSyncDeferred?: number;
@@ -98,6 +111,7 @@ export async function recomputeBrowseRankForEntities(
       updated: 0,
       stamped: 0,
       scoreDrifted: 0,
+      hostingFlagDrifted: 0,
       refusedNewerScorer: 0,
       indexSyncFailures: 0,
       scoresByEntityId,
@@ -114,6 +128,7 @@ export async function recomputeBrowseRankForEntities(
   let updated = 0;
   let stamped = 0;
   let scoreDrifted = 0;
+  let hostingFlagDrifted = 0;
   let refusedNewerScorer = 0;
   let indexSyncFailures = 0;
   let indexSyncDeferred = 0;
@@ -139,6 +154,7 @@ export async function recomputeBrowseRankForEntities(
     const servedFieldsUnchanged = scoreUnchanged && hostingUnchanged;
     const stampUnchanged = storedScorerVersion(entity) === scorerVersion;
     if (!scoreUnchanged) scoreDrifted += 1;
+    if (!hostingUnchanged) hostingFlagDrifted += 1;
     if (servedFieldsUnchanged && stampUnchanged) continue;
     if (options.dryRun) {
       if (servedFieldsUnchanged) stamped += 1;
@@ -179,6 +195,7 @@ export async function recomputeBrowseRankForEntities(
     updated,
     stamped,
     scoreDrifted,
+    hostingFlagDrifted,
     refusedNewerScorer,
     indexSyncFailures,
     ...(indexSyncDeferred > 0 ? { indexSyncDeferred } : {}),

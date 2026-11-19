@@ -27,7 +27,6 @@
  * I/O is fully injectable (`fetchPage`, `callLLM`, `userFinder`) so the
  * runtime can be exercised in tests without ever touching the network.
  */
-import axios from 'axios';
 import mongoose, { type QueryFilter } from 'mongoose';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
@@ -51,6 +50,7 @@ import {
   quoteStatesAnUndergraduateAccessFact,
   rosterSnippetNamesAnUndergraduate,
 } from '../undergradQuoteRelevance';
+import { isRosterLineRatherThanAStatement } from '../undergradEvidenceQuoteValidation';
 import {
   contactQuoteStatesAnInstruction,
   quoteListsPeopleWithTheirContactDetails,
@@ -118,8 +118,17 @@ import {
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
+import { postChatCompletion } from '../../utils/modelClient';
+import { serializedDocumentId } from '../../utils/idSerialization';
+import { loadResearchEntityLeadPersonNames } from '../../utils/researchHomeNameIdentityRoster';
+import {
+  leadSurname,
+  nonYaleMicrositeOwnership,
+  rowIsScopedToLead,
+} from '../utils/nonYaleMicrositeOwnership';
+import { liveResearchEntityIdForLaneKey } from '../renamedResearchEntityAdoption';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_PROMPT_CHARS = 50_000;
 const DEFAULT_LIMIT = 100;
@@ -138,7 +147,7 @@ const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 const MIN_READABLE_PAGE_TEXT_CHARS = 200;
 // Part of the content-hash contract: bumping it makes an unchanged page re-derive its
 // observations on the next read, served from the answer cache when one is held (#3789).
-const OBSERVATION_DERIVATION_VERSION = 'people-listing-quotes-refused-v8';
+const OBSERVATION_DERIVATION_VERSION = 'non-yale-lead-identity-refused-v9';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -244,7 +253,7 @@ export const LAB_UNDERGRAD_SYSTEM_PROMPT = UNDERGRAD_EXTRACTION_PROMPT;
  * prompt. Strips `<script>`, `<style>`, `<noscript>`, collapses whitespace,
  * and truncates to MAX_PROMPT_CHARS so we stay well below model context.
  */
-const PAGE_CHROME_SELECTOR =
+export const PAGE_CHROME_SELECTOR =
   'script, style, noscript, svg, iframe, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs';
 
 /**
@@ -531,8 +540,11 @@ function latestLaneQuoteObservation(
  * one quote and clear a different one.
  */
 export const defaultLiveEvidenceQuoteLoader: LiveEvidenceQuoteLoaderFn = async (entityKey) => {
-  if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return null;
-  const survivor = await ResearchEntity.findOne({ slug: entityKey, archived: { $ne: true } })
+  if (isBenchmarkModeActive() || !mongooseConnectionWasOpened()) return null;
+  const survivor = await ResearchEntity.findOne({
+    _id: await liveResearchEntityIdForLaneKey(entityKey),
+    archived: { $ne: true },
+  })
     .select(`_id fieldProvenance.${UNDERGRAD_EVIDENCE_QUOTE_FIELD}`)
     .lean<{
       _id: mongoose.Types.ObjectId;
@@ -646,12 +658,16 @@ function sectionPrefix(url: string): { host: string; prefix: string } | null {
   }
 }
 
+export function isAtOwnSiteRoot(url: string): boolean {
+  return sectionPrefix(url)?.prefix === '';
+}
+
 /**
  * The fetched pages that belong to this entity. A home page with its own path, such as a center
  * that lives at `/southasia` on a shared host, can link into a sibling program's section of the
  * same host, and a quote from there describes that program rather than this one (#3764).
  */
-export function pagesWithinEntityScope(pages: readonly PromptSourcePage[]): PromptSourcePage[] {
+export function pagesWithinEntityScope<T extends PromptSourcePage>(pages: readonly T[]): T[] {
   const home = pages[0] ? sectionPrefix(pages[0].url) : null;
   if (!home || !home.prefix) return [...pages];
   return pages.filter((page, index) => {
@@ -1097,7 +1113,37 @@ export function splitRosterUndergraduates(
   return { current: rosterEvidenceFromLines(current), past: rosterEvidenceFromLines(past) };
 }
 
+// Mirrored in client/src/utils/pastUndergradAdvisees.ts; change both together.
 export const ROSTER_ALUMNI_PROGRAM_NAME = 'Lab roster alumni';
+
+function nonYaleDescriptionSourceUnconfirmedAsLeads(
+  sourceUrl: string,
+  sourceContext: {
+    leadPersonName?: string;
+    entityIdentity?: ResearchEntityIdentity;
+    entityShape?: JoinPageEntity;
+    sourcePages?: PromptSourcePage[];
+    sourceTexts?: string[];
+  },
+): boolean {
+  const surname = leadSurname(sourceContext.leadPersonName);
+  if (!surname) return false;
+  const row = {
+    kind: sourceContext.entityShape?.kind,
+    rowName: sourceContext.entityIdentity?.name,
+  };
+  if (!rowIsScopedToLead(row, surname)) return false;
+  const citedPageText =
+    sourceContext.sourcePages?.find((page) => page.url === sourceUrl)?.text ??
+    (sourceContext.sourceTexts ?? []).join('\n');
+  return (
+    nonYaleMicrositeOwnership({
+      sourceUrl,
+      text: citedPageText,
+      lead: { names: [sourceContext.leadPersonName] },
+    }).decision === 'refuse'
+  );
+}
 
 /**
  * Pure: turn an LLMExtraction into the ObservationInput list the materializer
@@ -1138,6 +1184,7 @@ export function extractionToObservations(
     entityShape?: JoinPageEntity;
     joinPages?: PromptSourcePage[];
     readIsComplete?: boolean;
+    leadPersonName?: string;
   } = {},
 ): ObservationInput[] {
   const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
@@ -1237,6 +1284,7 @@ export function extractionToObservations(
   if (
     evidenceQuote &&
     quoteStatesAnUndergraduateAccessFact(evidenceQuote.text) &&
+    !isRosterLineRatherThanAStatement(evidenceQuote.text) &&
     isCurrentYaleUndergradEvidence(evidenceQuote.text) &&
     !quoteListsPeopleWithTheirContactDetails(evidenceQuoteValue)
   ) {
@@ -1268,6 +1316,7 @@ export function extractionToObservations(
     // row's research prose (#2570). An absent identity carries no tokens to check
     // and so is allowed, the same way the guard allows a URL with no readable name.
     !personProfileSourceNamesADifferentPerson(quoteSourceUrl, sourceContext.entityIdentity || {}) &&
+    !nonYaleDescriptionSourceUnconfirmedAsLeads(quoteSourceUrl, sourceContext) &&
     sourceSupportsResearchSummary(extraction, sourceContext.sourceTexts)
       ? cleanStudentFacingDescription(researchSummary)
       : '';
@@ -1437,6 +1486,7 @@ export interface CandidateLab extends ResearchEntityIdentity {
   entityType?: string;
   kind?: string;
   storedWebsiteUrl?: string;
+  leadPersonName?: string;
 }
 
 function usableWebsiteUrlFromDoc(doc: Record<string, any>): string {
@@ -1471,6 +1521,14 @@ export function candidateLabFromResearchEntityDoc(doc: Record<string, any>): Can
     sourceUrls: doc.sourceUrls,
     fullDescription: doc.fullDescription,
   };
+}
+
+function withLeadPersonName(
+  lab: CandidateLab,
+  leadPersonNameByEntityId: ReadonlyMap<string, string>,
+): CandidateLab {
+  const leadPersonName = leadPersonNameByEntityId.get(serializedDocumentId(lab._id) || '');
+  return leadPersonName ? { ...lab, leadPersonName } : lab;
 }
 
 export function selectLabsToProcess(
@@ -1509,7 +1567,7 @@ export interface FetchedPage {
   html: string;
 }
 
-/** Default page fetcher: axios + 10s timeout + USER_AGENT. Returns null on
+/** Default page fetcher: axios + 10s timeout + SCRAPER_USER_AGENT. Returns null on
  *  any non-2xx, network error, or timeout. */
 export type FetchPageFn = (url: string) => Promise<FetchedPage | null>;
 
@@ -1518,7 +1576,7 @@ export const defaultFetchPage: FetchPageFn = async (url) => {
   // preserve this path's null-on-failure contract by mapping any final error to null.
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
+      headers: { Accept: 'text/html,*/*' },
       timeoutMs: FETCH_TIMEOUT_MS,
     });
     return { url: page.url, html: page.html };
@@ -1528,9 +1586,7 @@ export const defaultFetchPage: FetchPageFn = async (url) => {
 };
 
 /** Default LLM caller: hits OpenAI's chat-completions endpoint with the
- *  structured-output JSON schema. We use axios (rather than the openai SDK)
- *  to keep dependencies lean — the response contract is a simple
- *  `choices[0].message.content` JSON string. */
+ *  structured-output JSON schema through the shared model client. */
 export type CallLLMFn = (input: {
   model: string;
   systemPrompt: string;
@@ -1552,9 +1608,11 @@ export const defaultCallLLM: CallLLMFn = async ({
   apiKey,
   responseFormat,
 }) => {
-  const res = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const res = await postChatCompletion({
+    caller: 'lab-microsite-undergrad-llm',
+    apiKey: apiKey,
+    timeoutMs: 60_000,
+    body: {
       model,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -1563,14 +1621,7 @@ export const defaultCallLLM: CallLLMFn = async ({
       response_format: responseFormat,
       ...openAiChatSampling(model),
     },
-    {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 60_000,
-    },
-  );
+  });
   const content = res.data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== 'string') {
     throw new Error('LLM returned empty content');
@@ -1654,7 +1705,10 @@ async function defaultLabFinder(): Promise<CandidateLab[]> {
     departments: 1,
     fullDescription: 1,
   }).lean();
-  return (docs as any[]).map(candidateLabFromResearchEntityDoc);
+  const leadPersonNameByEntityId = await loadResearchEntityLeadPersonNames();
+  return (docs as any[])
+    .map(candidateLabFromResearchEntityDoc)
+    .map((lab) => withLeadPersonName(lab, leadPersonNameByEntityId));
 }
 
 class SharedDependencyFailure extends Error {
@@ -1967,6 +2021,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             sourcePages,
             joinPages: joinPage?.page ? [joinPage.page] : [],
             entityIdentity: lab,
+            leadPersonName: lab.leadPersonName,
             entityShape: {
               entityType: lab.entityType,
               kind: lab.kind,

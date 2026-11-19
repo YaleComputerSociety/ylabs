@@ -11,6 +11,7 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
 }));
 
 import { publicProgramForReader } from '../../controllers/programPayload';
+import { programLikeCardShortDescription } from '../../utils/researchEntityDescriptionQuality';
 import {
   publicFellowshipForStudent,
   readFellowships,
@@ -19,7 +20,7 @@ import {
 } from '../fellowshipService';
 
 describe('fellowship public serializer', () => {
-  it('sanitizes service-level public URL, contact, and prep-step fields', () => {
+  it('sanitizes public URLs and serves published contact details in prose (#5046)', () => {
     const payload = publicFellowshipForStudent({
       _id: '67d8928150621bcef434a1d5',
       title: 'Visible program',
@@ -46,15 +47,15 @@ describe('fellowship public serializer', () => {
     });
 
     expect(payload).toMatchObject({
-      summary: 'Email [email redacted] or call [phone redacted].',
-      prepSteps: ['Email [email redacted] or call [phone redacted].'],
+      summary: 'Email prose-contact@yale.edu or call 203-555-1212.',
+      prepSteps: ['Email prep-contact@yale.edu or call 203-555-7777.'],
       links: [
         {
-          label: 'Questions: [email redacted] or [phone redacted].',
+          label: 'Questions: hidden@example.edu or 203-555-0000.',
           url: 'https://example.yale.edu/program',
         },
       ],
-      sourceName: 'Questions: [email redacted] or [phone redacted].',
+      sourceName: 'Questions: source-contact@yale.edu or 203-555-2222.',
     });
     expect(payload.applicationLink).toBeUndefined();
     expect(payload.sourceUrl).toBeUndefined();
@@ -63,13 +64,10 @@ describe('fellowship public serializer', () => {
     expect(payload.createdAt).toBeUndefined();
     expect(payload.updatedAt).toBeUndefined();
     expect(payload.score).toBeUndefined();
-    expect(JSON.stringify(payload)).not.toContain('prose-contact@yale.edu');
-    expect(JSON.stringify(payload)).not.toContain('prep-contact@yale.edu');
-    expect(JSON.stringify(payload)).not.toContain('source-contact@yale.edu');
-    expect(JSON.stringify(payload)).not.toContain('hidden@example.edu');
+    expect(JSON.stringify(payload)).not.toContain('attacker@example.test');
     expect(JSON.stringify(payload)).not.toContain('user:pass');
     expect(JSON.stringify(payload)).not.toContain('javascript:');
-    expect(JSON.stringify(payload)).not.toContain('203-555');
+    expect(JSON.stringify(payload)).not.toContain('203-555-9999');
   });
 
   it('strips curation-rationale description prose the visibility gate rejects', () => {
@@ -129,6 +127,23 @@ describe('fellowship public serializer', () => {
       now,
     );
     expect(payload.isAcceptingApplications).toBe(false);
+  });
+
+  it('serves a program that states only an opening date as closed until that date (#6453)', () => {
+    const now = new Date('2026-11-17T12:00:00.000Z');
+    const served = (applicationOpenDate: string, isAcceptingApplications: boolean) =>
+      publicFellowshipForStudent(
+        {
+          _id: '67d8928150621bcef434a1e1',
+          title: 'Opening-only program',
+          isAcceptingApplications,
+          applicationOpenDate: new Date(applicationOpenDate),
+        },
+        now,
+      ).isAcceptingApplications;
+    expect(served('2026-12-01T05:00:00.000Z', true)).toBe(false);
+    expect(served('2026-11-15T05:00:00.000Z', false)).toBe(false);
+    expect(served('2026-11-15T05:00:00.000Z', true)).toBe(true);
   });
 
   it('keeps isAcceptingApplications when the deadline is in the future or absent', () => {
@@ -309,6 +324,7 @@ describe('fellowship public serializer', () => {
       closed: false,
       projectedNextCycle: false,
       stale: false,
+      rollingReview: false,
     });
   });
 
@@ -706,7 +722,14 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
       closed: true,
       projectedNextCycle: true,
       stale: false,
+      rollingReview: false,
     });
+  });
+
+  it('keeps the opening date beside a deadline that is not projected', () => {
+    const payload = publicFellowshipForStudent(recurring, new Date('2025-07-01T00:00:00.000Z'));
+    expect(payload.deadlineProjectedNextCycle).toBe(false);
+    expect(payload.applicationOpenDate).toEqual(recurring.applicationOpenDate);
   });
 
   it('withholds the deadline once more than twelve months have passed', () => {
@@ -716,6 +739,7 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
       closed: true,
       projectedNextCycle: false,
       stale: true,
+      rollingReview: false,
     });
   });
 
@@ -740,7 +764,7 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
     expect(payload.deadline).toEqual(oneCycleLater);
     expect(payload.deadlineProjectedNextCycle).toBe(true);
     expect(payload.deadlineStale).toBe(false);
-    expect(payload.applicationOpenDate).toEqual(recurring.applicationOpenDate);
+    expect(payload.applicationOpenDate).toBeUndefined();
   });
 
   it('leaves an upcoming deadline unchanged', () => {
@@ -750,6 +774,7 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
       closed: false,
       projectedNextCycle: false,
       stale: false,
+      rollingReview: false,
     });
   });
 
@@ -800,5 +825,126 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
       publicFellowshipForStudent(recurring, new Date('2025-09-01T12:00:00.000Z')),
     );
     expect(reader.deadlineStale).toBe(false);
+  });
+});
+
+describe('a rolling-review program serves its date as the close of the window (#6407)', () => {
+  const now = new Date('2026-11-17T12:00:00.000Z');
+  const program = (overrides: Record<string, unknown>) => ({
+    _id: '67d8928150621bcef434a1d7',
+    title: 'Synthetic research fund',
+    deadline: new Date('2027-03-09T18:00:00.000Z'),
+    isAcceptingApplications: true,
+    ...overrides,
+  });
+
+  it('marks the served deadline as a rolling window when the stored source text says so', () => {
+    const payload = publicFellowshipForStudent(
+      program({
+        fullSourceDescription:
+          'Applications are accepted throughout the semester on a rolling basis.',
+      }),
+      now,
+    );
+    expect(payload.deadline).toEqual(new Date('2027-03-09T18:00:00.000Z'));
+    expect(payload.deadlineRollingReview).toBe(true);
+    expect(publicProgramForReader(payload).deadlineRollingReview).toBe(true);
+  });
+
+  it('keeps a fixed deadline whose text says it is not reviewed on a rolling basis', () => {
+    const payload = publicFellowshipForStudent(
+      program({
+        description:
+          'Applications are reviewed once per year. NB: Applications are not reviewed on a rolling basis.',
+      }),
+      now,
+    );
+    expect(payload.deadlineRollingReview).toBe(false);
+  });
+
+  it('keeps a per-college copy whose shared schedule text never states rolling review', () => {
+    const payload = publicFellowshipForStudent(
+      program({
+        fullSourceDescription:
+          'Each college determines its own schedule for accepting applications and for student presentations.',
+      }),
+      now,
+    );
+    expect(payload.deadline).toEqual(new Date('2027-03-09T18:00:00.000Z'));
+    expect(payload.deadlineRollingReview).toBe(false);
+  });
+
+  it('never marks a projected or a passed deadline as a rolling window', () => {
+    const passed = servedProgramDeadline(
+      program({
+        deadline: new Date('2026-10-01T18:00:00.000Z'),
+        description: 'Applications are accepted on a rolling basis.',
+      }),
+      now,
+    );
+    expect(passed.rollingReview).toBe(false);
+
+    const projected = servedProgramDeadline(
+      program({
+        title: 'Synthetic Annual Research Fund',
+        applicationLink: 'https://funding.example.edu/synthetic-fund',
+        deadline: new Date('2026-10-01T18:00:00.000Z'),
+        description: 'Applications are accepted on a rolling basis.',
+      }),
+      now,
+    );
+    expect(projected.projectedNextCycle).toBe(true);
+    expect(projected.rollingReview).toBe(false);
+  });
+});
+
+describe('a department-page program that is not a department guide (#6454)', () => {
+  const lane = (overrides: Record<string, unknown>) => ({
+    _id: '67d8928150621bcef434a1d9',
+    title: 'Synthetic Department Research Award',
+    sourcePageTitle: 'Undergraduate Research',
+    summary:
+      'Supports undergraduate research in Synthetic Studies through department guidance on finding faculty research opportunities.',
+    description:
+      'Supports undergraduate research in Synthetic Studies. The award funds a student research project of up to one thousand dollars each fall.',
+    ...overrides,
+  });
+
+  it('reads an award card from its own description, not the guidance template', () => {
+    const payload = publicFellowshipForStudent(lane({ programKind: 'FELLOWSHIP_FUNDING' }));
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload.cardSummary).not.toMatch(/department guidance/);
+    expect(payload.cardSummary).toMatch(/award funds a student research project/);
+    expect(JSON.stringify(payload)).not.toMatch(/through department guidance/);
+  });
+
+  it('keeps the guidance card on a department research guide', () => {
+    const payload = publicFellowshipForStudent(lane({ programKind: 'DEPARTMENT_RESEARCH_GUIDE' }));
+    expect(payload.departmentResearchGuidance).toBe(true);
+    expect(payload.cardSummary).toMatch(/through department guidance on finding faculty/);
+  });
+
+  it('serves no card rather than the template when a non-guide has no description of its own', () => {
+    const payload = publicFellowshipForStudent(
+      lane({
+        programKind: 'MENTOR_MATCHING',
+        description: 'Supports undergraduate research in Synthetic Studies.',
+      }),
+    );
+    expect(payload.cardSummary).toBe('');
+    expect(payload.summary).toBeUndefined();
+  });
+
+  it('leaves a card that does not use the guidance template unchanged', () => {
+    const program = lane({
+      programKind: 'FELLOWSHIP_FUNDING',
+      summary: 'Funds a synthetic research project.',
+    });
+    expect(publicFellowshipForStudent(program).cardSummary).toBe(
+      programLikeCardShortDescription({
+        shortDescription: program.summary,
+        fullDescription: program.description,
+      }),
+    );
   });
 });

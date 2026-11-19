@@ -1,6 +1,6 @@
-import axios from 'axios';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import { sitePage } from '../siteSharedPageName';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../../models/researchEntity';
 import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueItem';
@@ -10,6 +10,7 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { proseWithPageContactsRestored } from '../../utils/quotedContactRestoration';
 import { isTlsVerificationError } from '../../utils/tlsVerificationErrors';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import {
@@ -114,6 +115,7 @@ import { isProfileTemplateChrome } from '../../utils/profileTemplateChrome';
 import { DESCRIPTION_EXTRACTION_PROMPT, DESCRIPTION_EXTRACTION_PROMPT_HASH } from '../prompts';
 import { groundMethods, isMethodGroundedInText } from '../utils/methodGrounding';
 import {
+  isCoursePageUrl,
   isPersonCmsProfileUrl,
   isPersonProfileOrDirectoryUrl,
   isPostingPageUrl,
@@ -131,7 +133,6 @@ import {
   pageStatesPersonAsPrincipalInvestigator,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
   personScopedResearchEntityNameFromPersonName,
-  personSurnamesFromDisplayNames,
   researchHomeIdentityTokens,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import {
@@ -155,6 +156,19 @@ import {
   isRelatedEntityTeaserTextOnPage,
   removeRelatedEntityTeaserCards,
 } from '../../utils/relatedEntityTeaserCards';
+import { postChatCompletion } from '../../utils/modelClient';
+import {
+  comparableName,
+  isYaleHostedPage,
+  leadSurname,
+  nonYaleMicrositeOwnership,
+  rowIsScopedToLead,
+  urlCarriesSurname as urlCarriesPersonSurname,
+  urlHostAndPath,
+} from '../utils/nonYaleMicrositeOwnership';
+import { LEAD_TITLE_CORE } from '../utils/labSiteLeadStatements';
+import { isPersonalNameDomainWebsite } from '../../utils/personalNameWebsite';
+import { isLikelyOfficialPersonProfileUrl } from '../../services/leadProfileIdentity';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 export const DEFAULT_MODEL = 'gpt-5-mini';
@@ -230,6 +244,7 @@ export interface CandidateDescriptionLabDoc {
 export interface FetchedDescriptionPage {
   url: string;
   html: string;
+  reused?: true;
 }
 
 export interface DescriptionExtraction {
@@ -483,8 +498,8 @@ export function isRejectedDescriptionSourceUrl(value: unknown): boolean {
   }
 }
 
-function isRefusedDescriptionLaneSourceUrl(value: unknown): boolean {
-  return isRejectedDescriptionSourceUrl(value) || isPostingPageUrl(value);
+export function isRefusedDescriptionLaneSourceUrl(value: unknown): boolean {
+  return isRejectedDescriptionSourceUrl(value) || isPostingPageUrl(value) || isCoursePageUrl(value);
 }
 
 const idValue = (value: unknown): string => {
@@ -1060,30 +1075,6 @@ async function storedLaneDescriptionPageNotNamingRowLead(
     : cited.page;
 }
 
-const withoutDiacriticsOrApostrophes = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/['’`]/g, '');
-
-const comparableName = (value: string): string =>
-  withoutDiacriticsOrApostrophes(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
-const leadSurname = (personName: string | undefined): string =>
-  [...personSurnamesFromDisplayNames([withoutDiacriticsOrApostrophes(personName || '')])][0] ?? '';
-
-const urlHostAndPath = (pageUrl: string): string => {
-  try {
-    const url = new URL(pageUrl);
-    return `${url.host} ${url.pathname}`;
-  } catch {
-    return pageUrl;
-  }
-};
-
 const MIN_AFFIX_MATCHED_SURNAME_LENGTH = 4;
 
 const urlCarriesSurname = (pageUrl: string, surname: string): boolean =>
@@ -1102,7 +1093,7 @@ interface RowLead {
   kind?: unknown;
 }
 
-const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
+export const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
   try {
     const page = new URL(pageUrl);
     const own = new URL(String(websiteUrl || ''));
@@ -1121,24 +1112,298 @@ const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
  * page that names that person (#4809): on 454 person-named Development lab rows, the
  * cited page of 10 never named the surname, and the ones not on the row's own website
  * were a working group's page, a department research index and an art-school
- * opportunities page. The row's own website is exempt, because a lab site may name its
- * lead only in an image, a frame or a rendered script.
+ * opportunities page. The row's own website is exempt on a Yale host, because a lab site
+ * may name its lead only in an image, a frame or a rendered script. Off Yale's hosts the
+ * stored website may be one a roster lane linked wrongly, so the page must confirm the
+ * lead itself through the shared ownership rule (#5777).
  */
 export function descriptionPageNamesRowLead(
   input: RowLead & { pageUrl: string; pageText: string },
 ): boolean {
   const surname = leadSurname(input.personName);
   if (!surname) return true;
-  // Only a row named for its lead is the lead's to describe. A center, a program or a
-  // lab named for its work describes the unit, and its own page need not name the
-  // director: on the same 637 rows those were most of the pages this would refuse.
-  const personScoped =
-    input.kind === 'individual' ||
-    ` ${comparableName(String(input.rowName || ''))} `.includes(` ${surname} `);
-  if (!personScoped) return true;
+  if (!rowIsScopedToLead(input, surname)) return true;
+  if (!isYaleHostedPage(input.pageUrl)) {
+    return (
+      nonYaleMicrositeOwnership({
+        sourceUrl: input.pageUrl,
+        text: input.pageText,
+        lead: { names: [input.personName] },
+      }).decision === 'admit'
+    );
+  }
   if (isUnderOwnWebsite(input.pageUrl, input.websiteUrl)) return true;
   if (urlCarriesSurname(input.pageUrl, surname)) return true;
   return ` ${comparableName(input.pageText)} `.includes(` ${surname} `);
+}
+
+const LEAD_SEGMENT_PARENTS = new Set(['lab', 'labs']);
+
+function hostAndLabSegment(pageUrl: string): string {
+  try {
+    const url = new URL(pageUrl);
+    const segments = url.pathname.split('/').filter(Boolean);
+    const labIndex = segments.findIndex((segment) =>
+      LEAD_SEGMENT_PARENTS.has(segment.toLowerCase()),
+    );
+    const labSegment = labIndex >= 0 ? (segments[labIndex + 1] ?? '') : '';
+    return `https://${url.hostname}/${labSegment}`;
+  } catch {
+    return '';
+  }
+}
+
+function profileLeaf(pageUrl: string): string {
+  try {
+    const url = new URL(pageUrl);
+    const leaf = url.pathname.split('/').filter(Boolean).pop() ?? '';
+    return `https://profile.invalid/${leaf}`;
+  } catch {
+    return '';
+  }
+}
+
+const LEAD_ROLE_PHRASE =
+  /\b(?:led|directed|overseen|headed|run)\s+by\s+|\bunder\s+the\s+(?:direction|leadership|supervision)\s+of\s+/i;
+const LEAD_TITLE_PATTERN = new RegExp(`\\b(?:${LEAD_TITLE_CORE})\\b`, 'i');
+const MAX_LEAD_ROLE_GAP = 60;
+
+/**
+ * Whether a line states the person in a lead role: a lead title beside the name
+ * ("Principal Investigator: <name>", "<name>, Director") or a lead phrase governing it
+ * ("led by <name>"). A name in a list, an author line or a byline is presence, not a role.
+ */
+function lineNamesPersonInLeadRole(line: string, personName: string): boolean {
+  const tokens = comparableName(personName).split(' ').filter(Boolean);
+  if (tokens.length < 2) return false;
+  const given = tokens[0];
+  const surname = tokens[tokens.length - 1];
+  const words = comparableName(line).split(' ').filter(Boolean);
+  return words.some((word, index) => {
+    if (word !== surname) return false;
+    const lead = words.slice(Math.max(0, index - 3), index);
+    const namesPerson =
+      lead.includes(given) ||
+      lead.some((token) => token.length === 1 && token === given[0]) ||
+      lead.some((token) => ['dr', 'prof', 'professor'].includes(token));
+    if (!namesPerson) return false;
+    const before = words.slice(0, index).join(' ').slice(-MAX_LEAD_ROLE_GAP);
+    const after = words
+      .slice(index + 1)
+      .join(' ')
+      .slice(0, MAX_LEAD_ROLE_GAP);
+    return (
+      LEAD_TITLE_PATTERN.test(before) ||
+      LEAD_ROLE_PHRASE.test(`${before} `) ||
+      LEAD_TITLE_PATTERN.test(after)
+    );
+  });
+}
+
+function pageNamesPersonInLeadRole(pageText: string, personName: string): boolean {
+  return pageText.split('\n').some((line) => lineNamesPersonInLeadRole(line, personName));
+}
+
+/**
+ * Whether a page the writer reads is the person's own (#6316, the #6315 evidence rule): it
+ * names them in a lead role, is named for them (an eponymous host or `/lab/` segment), is their
+ * own name-domain, or is their official profile, whose address names them and whose heading the
+ * capture checked (#5974). Being under the row's stored website, a Yale source stating that
+ * website, or the surname merely appearing in the text never counts, because a department or
+ * school homepage stored as a person's website passed all three. Only the writer judges pages
+ * this way; the lane gate and topic derivation keep `descriptionPageNamesRowLead`.
+ */
+function siteOrigin(pageUrl: string): string {
+  try {
+    return `${new URL(pageUrl).origin}/`;
+  } catch {
+    return '';
+  }
+}
+
+const NAME_SLUG_PART = /^[a-z]{2,}$/;
+const NON_NAME_SEGMENT_WORDS = new Set([
+  'research',
+  'publications',
+  'projects',
+  'project',
+  'people',
+  'person',
+  'team',
+  'members',
+  'member',
+  'lab',
+  'labs',
+  'about',
+  'home',
+  'index',
+  'news',
+  'contact',
+  'bio',
+  'biography',
+  'profile',
+  'profiles',
+  'faculty',
+  'staff',
+  'students',
+  'site',
+  'view',
+  'page',
+  'pages',
+  'teaching',
+  'courses',
+  'cv',
+  'group',
+  'center',
+  'program',
+  'department',
+  'school',
+]);
+
+function segmentParts(segment: string): string[] {
+  return segment
+    .toLowerCase()
+    .split(/[-_.~+]+/)
+    .map((part) => part.replace(/\d+$/, ''))
+    .filter(Boolean);
+}
+
+function segmentNamesPersonInFull(segment: string, tokens: readonly string[]): boolean {
+  const parts = segmentParts(segment);
+  const given = tokens[0];
+  const surname = tokens[tokens.length - 1];
+  const surnameJoined = tokens.slice(1).join('');
+  const joined = parts.join('');
+  return (
+    (parts.includes(given) && (parts.includes(surname) || parts.includes(surnameJoined))) ||
+    joined === `${given}${surnameJoined}` ||
+    joined === `${surnameJoined}${given}`
+  );
+}
+
+const looksLikePersonNameSlug = (segment: string): boolean => {
+  const parts = segmentParts(segment);
+  return (
+    parts.length >= 2 &&
+    parts.length <= 4 &&
+    parts.every((part) => NAME_SLUG_PART.test(part) && !NON_NAME_SEGMENT_WORDS.has(part))
+  );
+};
+
+/**
+ * Whether a path segment names the person in full (given name and surname, a trailing digit
+ * allowed), and no later segment names someone else, as on `/lab/<lead>/people/<member>`,
+ * where the page belongs to the member (#6316).
+ */
+function pathSegmentsOf(pageUrl: string): string[] {
+  try {
+    return new URL(pageUrl).pathname.split('/').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+const personTokensOf = (personName: string): string[] =>
+  comparableName(personName)
+    .split(' ')
+    .filter((token) => token.length >= 2);
+
+/**
+ * Whether a segment after the lead's own (their name, or `/lab/<lead>`) names someone else, as
+ * on `/lab/<lead>/people/<member>`: the page is the member's, not the lead's (#6316).
+ */
+function laterSegmentNamesSomeoneElse(pageUrl: string, personName: string): boolean {
+  const tokens = personTokensOf(personName);
+  if (tokens.length < 2) return false;
+  const segments = pathSegmentsOf(pageUrl);
+  const anchor = segments.findIndex(
+    (segment, index) =>
+      segmentNamesPersonInFull(segment, tokens) ||
+      (index > 0 && LEAD_SEGMENT_PARENTS.has(segments[index - 1].toLowerCase())),
+  );
+  if (anchor < 0) return false;
+  return segments
+    .slice(anchor + 1)
+    .some(
+      (segment) => looksLikePersonNameSlug(segment) && !segmentNamesPersonInFull(segment, tokens),
+    );
+}
+
+const MIN_LATER_NAME_TOKEN_LENGTH = 3;
+
+/**
+ * Whether an official profile's slug carries the given name and any later token of the
+ * person's name, so a split compound, hyphenated or extra-token surname still matches its own
+ * profile (#6316). A slug that shares only the given name is someone else.
+ */
+function profileSlugNamesPersonVariant(pageUrl: string, personName: string): boolean {
+  const tokens = personTokensOf(personName);
+  if (tokens.length < 2) return false;
+  const segments = pathSegmentsOf(pageUrl);
+  const leaf = segments[segments.length - 1] ?? '';
+  const parts = segmentParts(leaf);
+  if (!parts.includes(tokens[0])) return false;
+  return tokens
+    .slice(1)
+    .some((token) => token.length >= MIN_LATER_NAME_TOKEN_LENGTH && parts.includes(token));
+}
+
+/** Whether a path segment names the person in full (given name and surname, a trailing digit allowed). */
+function pathNamesPersonInFull(pageUrl: string, personName: string): boolean {
+  const tokens = personTokensOf(personName);
+  if (tokens.length < 2) return false;
+  return pathSegmentsOf(pageUrl).some((segment) => segmentNamesPersonInFull(segment, tokens));
+}
+
+const NETID_PAGE_PARENTS = new Set(['people', 'profile']);
+
+/** A Yale `/people/<netid>` or `/profile/<netid>` page whose netid is exactly a lead's (#6316). */
+function isYalePeoplePageForNetid(pageUrl: string, leadNetids: readonly string[]): boolean {
+  if (leadNetids.length === 0) return false;
+  try {
+    const url = new URL(pageUrl);
+    if (!isYaleHostedPage(pageUrl)) return false;
+    const segments = url.pathname.toLowerCase().split('/').filter(Boolean);
+    return segments.some(
+      (segment, index) =>
+        NETID_PAGE_PARENTS.has(segment) && leadNetids.includes(segments[index + 1] ?? ''),
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function descriptionPageIsRowLeadsOwn(
+  input: RowLead & {
+    pageUrl: string;
+    pageText: string;
+    leadFullNameShared?: boolean;
+    leadNetids?: readonly string[];
+  },
+): boolean {
+  const personName = input.personName ?? '';
+  const surname = leadSurname(personName);
+  if (!surname) return true;
+  if (!rowIsScopedToLead(input, surname)) return true;
+  if (laterSegmentNamesSomeoneElse(input.pageUrl, personName)) return false;
+  if (urlCarriesPersonSurname(hostAndLabSegment(input.pageUrl), personName)) return true;
+  if (isPersonalNameDomainWebsite(siteOrigin(input.pageUrl), personName)) return true;
+  if (
+    isLikelyOfficialPersonProfileUrl(input.pageUrl) &&
+    urlCarriesPersonSurname(profileLeaf(input.pageUrl), personName)
+  ) {
+    return true;
+  }
+  if (
+    !input.leadFullNameShared &&
+    isLikelyOfficialPersonProfileUrl(input.pageUrl) &&
+    profileSlugNamesPersonVariant(input.pageUrl, personName)
+  ) {
+    return true;
+  }
+  if (!input.leadFullNameShared && pathNamesPersonInFull(input.pageUrl, personName)) return true;
+  if (isYalePeoplePageForNetid(input.pageUrl, input.leadNetids ?? [])) return true;
+  return pageNamesPersonInLeadRole(input.pageText, personName);
 }
 
 /**
@@ -1516,12 +1781,16 @@ export function groundDescriptionExtraction(
   extraction: DescriptionExtraction,
   pageText: string,
 ): DescriptionExtraction {
-  const groundedFull = isDescriptionGroundedInSource(extraction.fullDescription, pageText)
-    ? extraction.fullDescription
-    : '';
-  const groundedShort = isDescriptionGroundedInSource(extraction.shortDescription, pageText)
-    ? extraction.shortDescription
-    : '';
+  const restoredFull = proseWithPageContactsRestored(
+    textValue(extraction.fullDescription),
+    pageText,
+  );
+  const restoredShort = proseWithPageContactsRestored(
+    textValue(extraction.shortDescription),
+    pageText,
+  );
+  const groundedFull = isDescriptionGroundedInSource(restoredFull, pageText) ? restoredFull : '';
+  const groundedShort = isDescriptionGroundedInSource(restoredShort, pageText) ? restoredShort : '';
   // The model names whose prose it copied. An organization's mission or a department's
   // overview on a person's row is not that row's research however verbatim it is, and a
   // classification field is followed where an instruction to return nothing was not
@@ -1778,13 +2047,19 @@ const comparableHeadingText = (value: string): string =>
     .replace(/^\s*the\s+/, '')
     .trim()} `;
 
-export function pageIdentityHeadings(html: string): string[] {
+function namesTheWholeSite(pageUrl: string | undefined): boolean {
+  const page = pageUrl ? sitePage(pageUrl) : null;
+  return page === null || page.segments.length === 0;
+}
+
+export function pageIdentityHeadings(html: string, pageUrl?: string): string[] {
   const $ = cheerio.load(html);
-  return [
-    $('title').first().text(),
-    $('meta[property="og:site_name"]').attr('content'),
-    $('h1').first().text(),
-  ]
+  // On a sub-path page `og:site_name` names the whole site, which on a shared host is
+  // the parent organization rather than the unit the page is for (#5618).
+  const siteName = namesTheWholeSite(pageUrl)
+    ? $('meta[property="og:site_name"]').attr('content')
+    : undefined;
+  return [$('title').first().text(), siteName, $('h1').first().text()]
     .map((heading) =>
       textValue(heading)
         .replace(PAGE_HEADING_CHROME_SUFFIX_RE, '')
@@ -1794,10 +2069,14 @@ export function pageIdentityHeadings(html: string): string[] {
     .filter(Boolean);
 }
 
-export function labNameIsStatedInPageHeadings(labName: string, html: string): boolean {
+export function labNameIsStatedInPageHeadings(
+  labName: string,
+  html: string,
+  pageUrl?: string,
+): boolean {
   const target = comparableHeadingText(labName);
   if (!target.trim()) return false;
-  return pageIdentityHeadings(html).some((heading) =>
+  return pageIdentityHeadings(html, pageUrl).some((heading) =>
     comparableHeadingText(heading).includes(target),
   );
 }
@@ -1837,7 +2116,7 @@ export function pageStatedLabNameObservations(
   ) {
     return [];
   }
-  if (!labNameIsStatedInPageHeadings(labName, pageHtml)) return [];
+  if (!labNameIsStatedInPageHeadings(labName, pageHtml, context.sourceUrl)) return [];
   const fullDescription = extractedFullDescription(extraction, context);
   if (fullDescription && bodyDescribesAnotherOrganization(fullDescription, context, unitName)) {
     return [];
@@ -2025,7 +2304,6 @@ async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null
   // SSRF guard, per-host rate limiting, and retry-on-403 live in fetchPageWithPolicy.
   // It throws after retries are exhausted so the caller advances to the next candidate URL.
   const page = await fetchPageWithPolicy(url, {
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     timeoutMs: 10_000,
   });
   return { url: page.url, html: page.html };
@@ -2064,9 +2342,11 @@ async function defaultCallLLM(input: {
   const safeLabName = redactDirectContactInfo(input.labName).slice(0, 240);
   const safeSourceUrl = redactDirectContactInfo(input.sourceUrl).slice(0, 2048);
   const safePageText = redactDirectContactInfo(input.pageText).slice(0, MAX_PROMPT_CHARS);
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'lab-microsite-description-llm',
+    apiKey: input.apiKey,
+    timeoutMs: 30_000,
+    body: {
       model: input.model,
       response_format: { type: 'json_object' },
       messages: [
@@ -2089,14 +2369,7 @@ async function defaultCallLLM(input: {
       ],
       ...openAiChatSampling(input.model),
     },
-    {
-      headers: {
-        Authorization: `Bearer ${input.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 30_000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== 'string') throw new Error('LLM returned empty content');
   return JSON.parse(content) as DescriptionExtraction;
@@ -2805,14 +3078,12 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           observations = llmOutcome.observations;
           guardRefusal = guardRefusal ?? llmOutcome.refusal;
         }
-        if (
-          observations.length > 0 &&
-          !descriptionPageNamesRowLead({
-            ...rowLead,
-            pageUrl: page.url,
-            pageText: [pageText, officialProse?.fullDescription ?? ''].join('\n'),
-          })
-        ) {
+        const pageNamesRowLead = descriptionPageNamesRowLead({
+          ...rowLead,
+          pageUrl: page.url,
+          pageText: [pageText, officialProse?.fullDescription ?? ''].join('\n'),
+        });
+        if (observations.length > 0 && !pageNamesRowLead) {
           observations = [];
           guardRefusal = guardRefusal ?? 'page_does_not_name_row';
         }
@@ -2850,6 +3121,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           const foreignLabPage = groundedLlmExtraction
             ? extractedPageDescribesAnotherPersonsLab(groundedLlmExtraction, identity)
             : false;
+          const pageIsNotRowLeads = foreignLabPage || !pageNamesRowLead;
           const slotAttestation = storedLaneDescriptionIsRetracted
             ? 'empty'
             : descriptionSlotAttestation({
@@ -2887,7 +3159,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               : hashObservations,
             slotAttestation,
           );
-          const nameObservations = foreignLabPage ? [] : pageStatedNameObservations;
+          const nameObservations = pageIsNotRowLeads ? [] : pageStatedNameObservations;
           const methodsObservation: ObservationInput | null =
             methods.length > 0
               ? {
@@ -2900,7 +3172,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
                   value: methods,
                 }
               : storedDescriptionMethodsObservation;
-          if (methodsObservation && !foreignLabPage) {
+          if (methodsObservation && !pageIsNotRowLeads) {
             await ctx.emit([methodsObservation, ...nameObservations, ...attestedHashObservations]);
             observationCount += 1 + nameObservations.length;
             entitiesObserved += 1;

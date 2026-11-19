@@ -37,13 +37,14 @@ import {
   pageStatesPersonAsPrincipalInvestigator,
   personIdentityTokens,
   personScopedResearchEntityNameNamesSomethingElse,
+  nameIsTheRecordsOwnKeyDesignation,
   personSurnamesFromDisplayNames,
   researchHomeIdentityTokens,
-  isClinicalCareServicePageUrl,
   namesASupportServiceUnit,
   personScopedNameIsACampusBuilding,
   personScopedResearchEntityNameFromLeadPersonName,
 } from '../researchHomeNameIdentityAuthority';
+import { isPatientCarePageUrl } from '../researchHomeWebsiteUrl';
 
 describe('namesAServiceFacility', () => {
   it('flags a diagnostic, specimen or shared-instrumentation service', () => {
@@ -2251,12 +2252,10 @@ describe('a profile lab slot that links a service rather than a lab (#4916)', ()
     expect(namesASupportServiceUnit('Fixture Advisors LLC')).toBe(true);
     expect(namesASupportServiceUnit('Social Support and Health Lab')).toBe(false);
     expect(namesASupportServiceUnit('Computational Fixture Lab')).toBe(false);
-    expect(isClinicalCareServicePageUrl('https://med.example.edu/care/fixture/')).toBe(true);
-    expect(isClinicalCareServicePageUrl('https://med.example.edu/research/care/fixture/')).toBe(
-      false,
-    );
-    expect(isClinicalCareServicePageUrl('https://med.example.edu/lab/fixture/')).toBe(false);
-    expect(isClinicalCareServicePageUrl('not a url')).toBe(false);
+    expect(isPatientCarePageUrl('https://med.example.edu/care/fixture/')).toBe(true);
+    expect(isPatientCarePageUrl('https://med.example.edu/research/care/fixture/')).toBe(false);
+    expect(isPatientCarePageUrl('https://med.example.edu/lab/fixture/')).toBe(false);
+    expect(isPatientCarePageUrl('not a url')).toBe(false);
   });
 });
 
@@ -2309,6 +2308,37 @@ describe('a campus building is not a person-scoped name (#4916)', () => {
         currentName: 'Chemistry Fixture Lab',
       }),
     ).toBe('');
+  });
+});
+
+describe('a lead-derived research name keeps a generational suffix and every given name (#6540)', () => {
+  const nameFor = (leadPersonName: string) =>
+    personScopedResearchEntityNameFromLeadPersonName({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      slug: 'ysm-faculty-fixture-row',
+      leadPersonName,
+      currentName: 'Stale Heading Faculty Research',
+    });
+
+  it('keeps a comma-separated generational suffix at the end', () => {
+    expect(nameFor('Quill Fixture, Jr.')).toBe('Quill Fixture, Jr. Faculty Research');
+    expect(nameFor('Quill Fixture, Sr.')).toBe('Quill Fixture, Sr. Faculty Research');
+    expect(nameFor('Quill Fixture Jr.')).toBe('Quill Fixture Jr. Faculty Research');
+    expect(nameFor('Quill Fixture, III')).toBe('Quill Fixture, III Faculty Research');
+  });
+
+  it('still reorders an inverted family-and-given name, with or without a suffix', () => {
+    expect(nameFor('Fixture, Quill')).toBe('Quill Fixture Faculty Research');
+    expect(nameFor('Fixture, Quill, Jr.')).toBe('Quill Fixture, Jr. Faculty Research');
+    expect(nameFor('Fixture, Quill III')).toBe('Quill Fixture III Faculty Research');
+    expect(nameFor('Fixture, Quill Jr.')).toBe('Quill Fixture Jr. Faculty Research');
+  });
+
+  it('keeps a given name that is also an article, a particle and a multi-part given name', () => {
+    expect(nameFor('An Hoa Fixture')).toBe('An Hoa Fixture Faculty Research');
+    expect(nameFor('A Quill Fixture')).toBe('A Quill Fixture Faculty Research');
+    expect(nameFor('Quill van Fixture')).toBe('Quill van Fixture Faculty Research');
+    expect(nameFor('Mary-Quill Ada Fixture')).toBe('Mary-Quill Ada Fixture Faculty Research');
   });
 });
 
@@ -2403,5 +2433,89 @@ describe('a URL path segment that only spells the lab name is not evidence of a 
     expect([
       ...personSurnamesFromDisplayNames(['Quill Lab', 'Avery Sloan', 'Rowan Group']),
     ]).toEqual(['sloan']);
+  });
+});
+
+describe('a programme name the record key spells is the record own designation', () => {
+  const programmeLab = {
+    entityType: 'LAB',
+    kind: 'lab',
+    slug: 'ysm-quorvane',
+    personName: 'Avery Fixture',
+    candidateName: 'Quorvane Imaging Program',
+    websiteUrl: 'https://medicine.yale.edu/lab/quorvane/',
+    recordCitedUrls: ['https://medicine.yale.edu/lab/quorvane/'],
+    knownPersonSurnames: new Set<string>(),
+  };
+  const programmeOnPersonKey = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    slug: 'dept-quorvane-associate-program-avery-fixture-phd',
+    personName: 'Avery Fixture',
+    candidateName: 'Quorvane Associate Program',
+    websiteUrl: 'https://medicine.yale.edu/fixture-studies/',
+    recordCitedUrls: ['https://medicine.yale.edu/fixture-studies/'],
+    knownPersonSurnames: new Set<string>(),
+  };
+
+  it('reads a key minted for the organization as the name own designation', () => {
+    expect(
+      nameIsTheRecordsOwnKeyDesignation({
+        name: programmeLab.candidateName,
+        slug: programmeLab.slug,
+        leadPersonName: programmeLab.personName,
+      }),
+    ).toBe(true);
+    expect(personScopedResearchEntityNameNamesSomethingElse(programmeLab)).toBe(false);
+  });
+
+  it('does not read a key minted for the lead as a programme designation', () => {
+    expect(
+      nameIsTheRecordsOwnKeyDesignation({
+        name: programmeOnPersonKey.candidateName,
+        slug: programmeOnPersonKey.slug,
+        leadPersonName: programmeOnPersonKey.personName,
+      }),
+    ).toBe(false);
+    expect(personScopedResearchEntityNameNamesSomethingElse(programmeOnPersonKey)).toBe(true);
+  });
+
+  it('refuses the programme name without an own lab site that spells the key', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        ...programmeLab,
+        websiteUrl: 'https://medicine.yale.edu/radiology/',
+        recordCitedUrls: ['https://medicine.yale.edu/radiology/'],
+      }),
+    ).toBe(true);
+  });
+
+  it('needs every distinctive key word in the name, so a parent centre stays a graft', () => {
+    expect(
+      nameIsTheRecordsOwnKeyDesignation({
+        name: 'Yale Quorvane Center',
+        slug: 'ysm-quorvane-imaging-lab',
+        leadPersonName: 'Avery Fixture',
+      }),
+    ).toBe(false);
+  });
+
+  it('substitutes the lead for a programme name on a person key and keeps the organization own', () => {
+    expect(
+      personScopedResearchEntityNameFromLeadPersonName({
+        entityType: 'FACULTY_RESEARCH_AREA',
+        slug: programmeOnPersonKey.slug,
+        leadPersonName: 'Avery Fixture',
+        currentName: programmeOnPersonKey.candidateName,
+      }),
+    ).toBe('Avery Fixture Faculty Research');
+    expect(
+      personScopedResearchEntityNameFromLeadPersonName({
+        entityType: 'LAB',
+        slug: programmeLab.slug,
+        leadPersonName: programmeLab.personName,
+        currentName: programmeLab.candidateName,
+      }),
+    ).toBe('');
   });
 });

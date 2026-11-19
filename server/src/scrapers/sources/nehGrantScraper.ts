@@ -40,11 +40,12 @@ import {
   resolveGrantEnrichmentTarget,
 } from '../utils/grantEnrichmentTarget';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
+import { withCreditedInvestigator, type GrantInvestigator } from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { awardDateOfCalendarDay } from '../../utils/awardCalendarDay';
 
 export const NEH_AWARD_SEARCH_BASE = 'https://awardsearch.neh.gov';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 60_000;
 const DEFAULT_LOOKBACK_YEARS = 6;
 const MAX_GRANTS_PER_PI = 10;
@@ -102,6 +103,7 @@ export interface RecentGrantRecord {
   dollarAmount?: number;
   url: string;
   role: 'pi' | 'copi';
+  investigators?: GrantInvestigator[];
 }
 
 export type NehGridRecord = Record<string, string>;
@@ -172,8 +174,7 @@ export function parseNehDate(s: string | undefined | null): Date | undefined {
     .match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (!m) return undefined;
   const [, mm, dd, yyyy] = m;
-  const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-  return Number.isFinite(d.getTime()) ? d : undefined;
+  return awardDateOfCalendarDay(Number(yyyy), Number(mm), Number(dd));
 }
 
 export function parseAwardPeriod(s: string | undefined | null): { begin?: Date; end?: Date } {
@@ -383,7 +384,7 @@ async function fetchAwardSearchYear(
       responseType: 'text',
       transformResponse: [(data) => data],
       maxRedirects: 0,
-      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
+      headers: { Accept: 'text/html,*/*' },
     }),
   );
   const html = typeof res.data === 'string' ? res.data : String(res.data ?? '');
@@ -396,7 +397,9 @@ export function buildResearchEntityObservations(
   piUserId: string,
   canonicalResearchHomeSlug: string,
 ): ObservationInput[] {
-  const records = group.awards.map((a) => grantToRecord(a, 'pi'));
+  const records = group.awards.map((a) =>
+    withCreditedInvestigator(grantToRecord(a, 'pi'), piUserId),
+  );
   const top = sortGrantsByRecency(records).slice(0, MAX_GRANTS_PER_PI);
 
   const base = {

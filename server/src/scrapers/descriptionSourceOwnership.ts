@@ -1,8 +1,10 @@
 import type { ObservedEntityType } from '../models/observation';
 import {
+  genericYaleWebsiteSubdomains,
   isDepartmentCollectivePageUrl,
   isPersonProfileOrDirectoryUrl,
 } from '../utils/researchHomeWebsiteUrl';
+import { isPersonResearchRow } from '../utils/researchStatementPassage';
 import { LLM_AUTHORED_SOURCE_NAMES } from './seedSources';
 import { normalizeEvidenceUrl } from './utils/sharedEvidenceUrls';
 
@@ -54,6 +56,13 @@ export interface DescriptionOwnershipCandidate {
   sourceUrl?: unknown;
   /** The name of the row being written, so subject identity covers it too. */
   ownName?: unknown;
+  ownSite?: DescriptionOwnershipSite;
+}
+
+export interface DescriptionOwnershipSite {
+  websiteUrl?: unknown;
+  entityType?: unknown;
+  kind?: unknown;
 }
 
 /** Whether this observation is one the ownership bar applies to at all. */
@@ -140,6 +149,37 @@ export function citersAreOneSubject(citerNames: readonly unknown[]): boolean {
   return true;
 }
 
+const withoutScheme = (normalizedUrl: string): string => normalizedUrl.replace(/^https?:\/\//, '');
+
+const hasStatedRowType = (site: DescriptionOwnershipSite): boolean =>
+  [site.entityType, site.kind].some((value) => typeof value === 'string' && value.trim() !== '');
+
+const isSchoolOrDepartmentSiteRoot = (normalizedWebsite: string): boolean => {
+  const [host, ...path] = withoutScheme(normalizedWebsite).split('/');
+  const schoolLabel = /^([^.]+)\.yale\.edu$/.exec(host)?.[1];
+  return (
+    path.length === 0 && schoolLabel !== undefined && genericYaleWebsiteSubdomains.has(schoolLabel)
+  );
+};
+
+/**
+ * A lab's members are minted as person rows that each cite the lab's site, so the citer
+ * count alone reads the lab's own site as institutional and strips the lab of every
+ * description. The row whose website the page is owns it however many members cite it.
+ * A person row (which often stores its lab's site as its website), an untyped row and a
+ * school or department site root never own a page this way.
+ */
+export function citesOwnWebsite(candidate: DescriptionOwnershipCandidate): boolean {
+  const site = candidate.ownSite;
+  if (!site || !hasStatedRowType(site) || isPersonResearchRow(site)) return false;
+  const website = normalizeEvidenceUrl(site.websiteUrl);
+  if (!website || isPersonProfileOrDirectoryUrl(website) || isSchoolOrDepartmentSiteRoot(website))
+    return false;
+  const ownSite = withoutScheme(website);
+  const cited = withoutScheme(normalizeEvidenceUrl(candidate.sourceUrl));
+  return cited === ownSite || cited.startsWith(`${ownSite}/`);
+}
+
 /**
  * Refuse when the cited page is already the description source for at least
  * `DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS` other entities.
@@ -153,6 +193,7 @@ export function refusesDescriptionOnSharedPage(
 ): boolean {
   if (!isOwnershipGuardedDescription(candidate)) return false;
   if (foreignCiterNames.length < DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS) return false;
+  if (citesOwnWebsite(candidate)) return false;
   // The row being written is a citer too, so subject identity is decided over the whole
   // set. Passing only the foreign names would let a page cited by one lab's three member
   // rows read as one subject and still refuse the lab itself.

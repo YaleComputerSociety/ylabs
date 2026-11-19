@@ -20,6 +20,7 @@
     "dev:client": "cd client && yarn dev",
     "research-entity:audit-duplicate-action-links": "yarn --cwd server research-entity:dump-action-link-inputs && cd client && npx vitest run src/audits/__tests__/duplicateActionLinkAudit.test.ts",
     "dev:server": "node scripts/run-data-profile.mjs development -- yarn --cwd server dev",
+    "served-check": "node scripts/served-check.mjs",
     "dev:server:local": "node scripts/run-data-profile.mjs local -- yarn --cwd server dev",
     "local:setup": "node scripts/setup-local-env.mjs && docker compose up -d --wait mongodb meilisearch && yarn local:seed",
     "local:seed": "node scripts/run-data-profile.mjs local -- yarn --cwd server db:build-indexes --apply && node scripts/run-data-profile.mjs local -- yarn --cwd server e2e:seed-smoke && node scripts/run-data-profile.mjs local -- yarn --cwd server meili:seed",
@@ -94,8 +95,8 @@
     "security:audit:all-environments": "node scripts/run-dependency-audit.mjs . server client -- --recursive --severity moderate",
     "security:preflight": "yarn security:policy && yarn security:secrets && yarn security:identifiers && yarn security:audit:production",
     "security:smoke:production": "node client/scripts/productionPromotionSmoke.mjs --api-base ${SMOKE_API_BASE:-https://yalelabs.io/api} --app-base ${SMOKE_APP_BASE:-https://yalelabs.io} --ui=false",
-    "lint": "eslint --cache --cache-location .eslintcache \"client/src/**/*.ts\" \"client/src/**/*.tsx\" \"server/src/**/*.ts\" \"scripts/**/*.mjs\" \"client/scripts/**/*.mjs\"",
-    "lint:fix": "eslint --fix --cache --cache-location .eslintcache \"client/src/**/*.ts\" \"client/src/**/*.tsx\" \"server/src/**/*.ts\" \"scripts/**/*.mjs\" \"client/scripts/**/*.mjs\"",
+    "lint": "node --max-old-space-size=6144 node_modules/eslint/bin/eslint.js --cache --cache-location .eslintcache \"client/src/**/*.ts\" \"client/src/**/*.tsx\" \"server/src/**/*.ts\" \"scripts/**/*.mjs\" \"client/scripts/**/*.mjs\"",
+    "lint:fix": "node --max-old-space-size=6144 node_modules/eslint/bin/eslint.js --fix --cache --cache-location .eslintcache \"client/src/**/*.ts\" \"client/src/**/*.tsx\" \"server/src/**/*.ts\" \"scripts/**/*.mjs\" \"client/scripts/**/*.mjs\"",
     "format": "prettier --write \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\"",
     "format:check": "prettier --check \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\"",
     "verify:fast": "yarn format:check && yarn lint && npx tsc --noEmit -p server/tsconfig.json && npx tsc --noEmit -p client/tsconfig.json && yarn --cwd server test:guards",
@@ -104,13 +105,13 @@
   "dependencies": {
     "concurrently": "^10.0.5",
     "dotenv": "^18.0.5",
-    "mongoose": "^9.10.3"
+    "mongoose": "^9.11.4"
   },
   "resolutions": {
-    "mongoose": "9.10.3",
+    "mongoose": "9.11.4",
     "shell-quote": "1.12.0",
-    "brace-expansion@npm:^5.0.5": "5.0.12",
-    "js-yaml": "5.4.2"
+    "js-yaml": "5.4.2",
+    "minimatch": "11.0.4"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

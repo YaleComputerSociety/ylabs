@@ -1,8 +1,11 @@
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import {
   canonicalSchemaVersionField,
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
+import { fieldValueRefusalSchema } from './modelPrimitives';
+import { MAX_STORED_PERSON_TITLE_LENGTH } from '../utils/titleHygiene';
 
 export const researcherSchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
 
@@ -33,10 +36,17 @@ export interface ResearcherProfileLink {
 export const researcherStatuses = ['ACTIVE', 'DEPARTED', 'UNKNOWN'] as const;
 export type ResearcherStatus = (typeof researcherStatuses)[number];
 
+export interface ResearcherEmailSupport {
+  supported: boolean;
+  sources: string[];
+  computedForEmail: string;
+}
+
 export interface ResearcherIdentifiers {
   orcid?: string;
   netid?: string;
   email?: string;
+  emailSupport?: ResearcherEmailSupport;
 }
 
 export interface ResearcherDisplayProfile {
@@ -56,6 +66,23 @@ export interface ResearcherRecord {
   archived: boolean;
   dedupedIntoResearcherId?: mongoose.Types.ObjectId;
   dedupedAt?: Date;
+  /**
+   * Researchers an operator recorded as a different person from this one. Every researcher
+   * fold arm refuses a pair recorded here, so an unmerged pair is never folded again (#5592).
+   */
+  distinctFromResearcherIds?: mongoose.Types.ObjectId[];
+  /**
+   * Values an operator or a named rule refused at one field of this person, keyed by
+   * `RESEARCHER_REFUSABLE_FIELDS` (#5641). Archived researchers keep theirs, so a restore or
+   * an unmerge cannot bring a refused value back, and a fold copies the shell's onto the
+   * survivor.
+   */
+  fieldValueRefusals?: Map<string, unknown[]>;
+  /** The `user` key that wrote each display field and the rank it wrote with (#5706). */
+  profileFieldWriters?: Map<
+    string,
+    { userKey: string; joinRank: number; confidence: number; fillOnly?: boolean }
+  >;
 }
 
 const PROFILE_LINK_PURPOSE_BY_KIND: Record<
@@ -201,6 +228,18 @@ export const researcherIdentifiersSchema = new mongoose.Schema<ResearcherIdentif
       maxlength: 254,
       match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
     },
+    emailSupport: {
+      type: new mongoose.Schema(
+        {
+          supported: { type: Boolean, required: true },
+          sources: { type: [String], default: [] },
+          computedForEmail: { type: String, required: true, trim: true, lowercase: true },
+        },
+        { _id: false },
+      ),
+      required: false,
+      default: undefined,
+    },
   },
   {
     _id: false,
@@ -238,7 +277,7 @@ function orcidProfileMatchesIdentifier(
 
 export const researcherDisplayProfileSchema = new mongoose.Schema<ResearcherDisplayProfile>(
   {
-    title: { type: String, trim: true, maxlength: 400 },
+    title: { type: String, trim: true, maxlength: MAX_STORED_PERSON_TITLE_LENGTH },
     primaryDepartment: { type: String, trim: true, maxlength: 240 },
     imageUrl: { type: String, trim: true, maxlength: 2048 },
     websiteUrl: { type: String, trim: true, maxlength: 2048 },
@@ -298,6 +337,28 @@ export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
       type: Date,
       required: false,
     },
+    distinctFromResearcherIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Researcher' }],
+      default: undefined,
+    },
+    fieldValueRefusals: {
+      type: Map,
+      of: [fieldValueRefusalSchema],
+      default: undefined,
+    },
+    profileFieldWriters: {
+      type: Map,
+      of: new mongoose.Schema(
+        {
+          userKey: { type: String, required: true },
+          joinRank: { type: Number, default: 0 },
+          confidence: { type: Number, default: 0 },
+          fillOnly: { type: Boolean },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
   },
   {
     timestamps: true,
@@ -308,6 +369,7 @@ researcherSchema.index({ 'identifiers.orcid': 1 }, { unique: true, sparse: true 
 researcherSchema.index({ 'identifiers.netid': 1 }, { unique: true, sparse: true });
 researcherSchema.index({ 'identifiers.email': 1 }, { sparse: true });
 researcherSchema.index({ displayName: 1, status: 1, archived: 1 });
+researcherSchema.index({ dedupedIntoResearcherId: 1 }, { sparse: true });
 /**
  * Identity by profile URL, which the roster member materializer, the PI backfill and the
  * repair queue all ask as one `$or` over these two paths. Both paths need their own index

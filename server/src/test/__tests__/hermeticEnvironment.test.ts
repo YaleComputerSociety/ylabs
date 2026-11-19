@@ -4,10 +4,12 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getMeiliClient, getMeiliIndex } from '../../utils/meiliClient';
+import { scraperRequestLogFromEnv } from '../../scrapers/utils/scraperRequestLog';
 import {
+  INERT_FENCED_VALUE,
   UNREACHABLE_SEARCH_INDEX_MESSAGE,
   applyEnvironmentFence,
   fencedEnvironmentKeys,
@@ -127,5 +129,32 @@ describe('the server suite never resolves a live backend from the environment (#
       [SYNTHETIC_KEY]: 'parsed',
     });
     expect(process.env[SYNTHETIC_KEY]).toBeUndefined();
+  });
+});
+
+describe('a fenced child never writes the inert value into the tree (#6278)', () => {
+  it('uses an absolute inert value under a directory that does not exist', () => {
+    expect(path.isAbsolute(INERT_FENCED_VALUE)).toBe(true);
+    expect(fs.existsSync(path.dirname(INERT_FENCED_VALUE))).toBe(false);
+  });
+
+  it('gives a fenced child an empty request log, which is off', () => {
+    expect(hermeticChildEnvironment().SCRAPER_REQUEST_LOG).toBe('');
+  });
+
+  it('opens nothing and creates no file in the working directory when a child reads the request log', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-fence-cwd-'));
+    const previous = process.cwd();
+    try {
+      process.chdir(cwd);
+      const warn = vi.fn();
+      const env = { ...hermeticChildEnvironment(), SCRAPER_REQUEST_LOG: INERT_FENCED_VALUE };
+      expect(scraperRequestLogFromEnv(env, warn)).toBeUndefined();
+      expect(scraperRequestLogFromEnv(hermeticChildEnvironment(), warn)).toBeUndefined();
+      expect(fs.readdirSync(cwd)).toEqual([]);
+    } finally {
+      process.chdir(previous);
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });

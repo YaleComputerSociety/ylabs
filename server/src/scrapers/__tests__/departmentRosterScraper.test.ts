@@ -43,17 +43,21 @@ import {
   referenceCardExtractor,
   rosterDeptNameNamesItsOwnSchool,
   rosterResearchEntitySlug,
+  withoutUnheldSceneIdentity,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
   csRenderedExtractor,
   csFacultyDataExtractor,
   chemEnvFacultyExtractor,
+  engineeringDepartmentFacultyExtractor,
+  rosterUnitYields,
   collapseLaneOutcomesByDepartment,
   type DeptConfig,
   type FacultyEntry,
   type FacultyExtractor,
   withoutSharedGroupWebsites,
+  withoutSharedRosterEmails,
 } from '../sources/departmentRosterScraper';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -64,6 +68,9 @@ import {
 } from '../utils/scraperHelpers';
 import type { ScraperContext, ObservationInput } from '../types';
 import { isYaleOfficialProfileUrl } from '../../scripts/backfillResearcherOfficialProfileLinksCore';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 
 // ---------------------------------------------------------------------------
 // Helper sample HTML
@@ -512,6 +519,16 @@ describe('normalizeName', () => {
 describe('splitName', () => {
   it('splits two-word name', () => {
     expect(splitName('Samuel Kortum')).toEqual({ first: 'Samuel', last: 'Kortum' });
+  });
+  it('never stores a credential the normalizer does not list as the surname (#5412)', () => {
+    expect(splitName('Avery Sloan, MD, MPH, FACEP')).toEqual({ first: 'Avery', last: 'Sloan' });
+    expect(splitName('Avery Sloan, BS')).toEqual({ first: 'Avery', last: 'Sloan' });
+    expect(splitName('Avery Sloan, MSN, APRN')).toEqual({ first: 'Avery', last: 'Sloan' });
+    expect(splitName('Avery Sloan, MD MHS')).toEqual({ first: 'Avery', last: 'Sloan' });
+  });
+  it('keeps an all-caps surname and an inverted directory name intact (#5412)', () => {
+    expect(splitName('Avery Quinn LI')).toEqual({ first: 'Avery Quinn', last: 'LI' });
+    expect(splitName('SLOAN, AVERY')).toEqual({ first: 'SLOAN,', last: 'AVERY' });
   });
   it('keeps suffix with last name', () => {
     expect(splitName('John Doe Jr.')).toEqual({ first: 'John', last: 'Doe Jr.' });
@@ -1065,6 +1082,65 @@ describe('fieldCollectionPersonExtractor', () => {
   });
 });
 
+describe('fieldCollectionPersonExtractor title continuation (#5109)', () => {
+  const row = (description: string) => `
+    <div class="field-collection-item-field-person-info">
+      <div class="field field-name-field-person-description"><div class="field-items"><div class="field-item even">
+        <h3><a href="https://example.yale.edu/" target="_blank">Robin Fixture</a></h3>
+        ${description}
+      </div></div></div>
+    </div>`;
+  const titleOf = (description: string) =>
+    fieldCollectionPersonExtractor(row(description), {
+      pageUrl: 'https://yibs.yale.edu/people/faculty-affiliates',
+    })[0]?.title;
+
+  it('completes a rank whose department is a sibling link', () => {
+    expect(
+      titleOf(
+        '<p><em><span>Example Chair Professor of</span></em><a href="https://example.yale.edu/"> Ecology &amp; Evolutionary Biology</a></p>',
+      ),
+    ).toBe('Example Chair Professor of Ecology & Evolutionary Biology');
+  });
+
+  it('keeps a linked department whole when its name carries commas', () => {
+    expect(
+      titleOf(
+        '<p><em>Assistant Professor of</em><a href="https://example.yale.edu/"> Molecular, Cellular, and Developmental Biology</a></p>',
+      ),
+    ).toBe('Assistant Professor of Molecular, Cellular, and Developmental Biology');
+  });
+
+  it('joins a title split across several emphasised spans and stops at the unit', () => {
+    expect(
+      titleOf(
+        '<p><em>Professor of Example </em><em>Plant </em><em>Ecology and Chair of Example Studies, </em><a href="https://example.yale.edu/">Example School</a></p>',
+      ),
+    ).toBe('Professor of Example Plant Ecology and Chair of Example Studies');
+    expect(titleOf('<p><em>Example</em> Professor of Biogeochemistry, Example School</p>')).toBe(
+      'Example Professor of Biogeochemistry',
+    );
+  });
+
+  it('leaves a complete title followed by its unit unchanged', () => {
+    expect(
+      titleOf(
+        '<p><em>Director,</em> <a href="https://example.yale.edu/">Example Institute</a></p>',
+      ),
+    ).toBe('Director');
+    expect(titleOf('<p><em>Example Dean</em>, Example School</p>')).toBe('Example Dean');
+  });
+
+  it('does not join a complete title to a following line or a link', () => {
+    expect(
+      titleOf('<p><em>Professor of Ecology</em><br>Example School of the Environment</p>'),
+    ).toBe('Professor of Ecology');
+    expect(
+      titleOf('<p><em>Lecturer</em> <a href="https://example.yale.edu/">Lab website</a></p>'),
+    ).toBe('Lecturer');
+  });
+});
+
 describe('facultyThumbnailExtractor', () => {
   it('emits a slug placeholder name plus profile URL for headshot-only cards', () => {
     const html = `
@@ -1194,6 +1270,76 @@ describe('nodePersonCardExtractor never takes a photo scene description as a nam
   });
 });
 
+describe('a headshot caption never mints a research row slug (#5808)', () => {
+  const music = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'school-of-music') as DeptConfig;
+  const captionCard = (heading: string) => `
+    <article about="/people/robin-fixture" class="node node--type-person node--view-mode-card">
+      <div class="top"><div class="field field--name-field-profile-image field__item">
+        <img src="/img/robin-fixture.jpg" alt="Photo of Dean Robin Fixture."></div></div>
+      <div class="card-content"><h2><span>${heading}</span></h2>
+        <div class="paragraph--type--title-affiliation">Professor of Synthetic Music</div></div>
+    </article>`;
+
+  const runCaptionRoster = async (corpusSlugs: string[], heading = 'Robin Fixture') => {
+    const htmlFetcher = vi.fn(async () => captionCard(heading));
+    const scraper = new DepartmentRosterScraper(
+      [{ ...music, renderedExtractor: undefined }],
+      null,
+      htmlFetcher,
+      async () => new Map(corpusSlugs.map((slug) => [slug, {}])),
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+    return {
+      userKeys: new Set(emitted.filter((o) => o.entityType === 'user').map((o) => o.entityKey)),
+    };
+  };
+
+  it('keys a new person by the heading name, not the caption', async () => {
+    const { userKeys } = await runCaptionRoster([]);
+    expect(userKeys).toEqual(new Set(['dept:school-of-music:robin-fixture']));
+  });
+
+  it('gives a new research row the slug of the heading name', () => {
+    const [entry] = nodePersonCardExtractor(captionCard('Robin Fixture'), {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(
+      rosterResearchEntitySlug(withoutUnheldSceneIdentity(entry, music, new Map()), music),
+    ).toBe('dept-school-of-music-robin-fixture');
+  });
+
+  it('keeps the caption slug only for a row the corpus still holds under it', () => {
+    const [entry] = nodePersonCardExtractor(captionCard('Robin Fixture'), {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    const held = new Map([['dept-school-of-music-photo-of-dean-robin-fixture', {}]]);
+    expect(rosterResearchEntitySlug(withoutUnheldSceneIdentity(entry, music, held), music)).toBe(
+      'dept-school-of-music-photo-of-dean-robin-fixture',
+    );
+  });
+
+  it('derives the same key on a second run over the same page', async () => {
+    const first = await runCaptionRoster([]);
+    const second = await runCaptionRoster([]);
+    expect(second).toEqual(first);
+  });
+
+  it('keeps the caption key of a row the corpus still holds under it, until it is reslugged', async () => {
+    const { userKeys } = await runCaptionRoster([
+      'dept-school-of-music-photo-of-dean-robin-fixture',
+    ]);
+    expect(userKeys).toEqual(new Set(['dept:school-of-music:photo-of-dean-robin-fixture']));
+  });
+
+  it('takes the name inside the caption when the card has no heading', () => {
+    const [entry] = nodePersonCardExtractor(captionCard(''), {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.name).toBe('Robin Fixture');
+  });
+});
+
 describe('nodePersonCardExtractor reads the card heading, not the headshot caption', () => {
   const captionedCard = `
     <article about="/people/robin-fixture" class="node node--type-person node--view-mode-card">
@@ -1211,7 +1357,7 @@ describe('nodePersonCardExtractor reads the card heading, not the headshot capti
     expect(entry.name).toBe('Robin Fixture');
   });
 
-  it('keeps the slug the caption-derived name first minted, so the row is not re-keyed', () => {
+  it('records the caption-derived key, which a run keeps only for a row still held under it', () => {
     const [entry] = nodePersonCardExtractor(captionedCard, {
       pageUrl: 'https://music.yale.edu/meet-our-faculty',
     });
@@ -2038,6 +2184,40 @@ describe('chemEnvFacultyExtractor', () => {
       },
     ]);
   });
+  it('reads the applied and computational mathematics cards, including off-site profiles (#6423)', () => {
+    const cards = `
+      <div id="8616" class="window-shade-container py-8 lg:py-16">
+        <div class="stories justify-center grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <a class="block stories-item py-2 !no-underline" target="_self" href="/research-and-faculty/faculty-directory/alpha-example">
+            <picture><img class="img-fluid" width="704" height="704" src="/application/files/thumbnails/alpha-example.webp" /></picture>
+            <h3 class="!pb-0 block text-brand-blue">Alpha Example <em class="fa fa-arrow-right text-light-blue"></em></h3>
+            <span class="text-black block font-bold">Professor of Applied Mathematics</span>
+          </a>
+          <a class="block stories-item py-2 !no-underline" target="_blank" href="https://math.yale.edu/profile/beta-sample">
+            <h3 class="!pb-0 block text-brand-blue">Beta Sample <em class="fa fa-arrow-right text-light-blue"></em></h3>
+            <span class="text-black block font-bold">Professor of Mathematics</span>
+          </a>
+        </div>
+      </div>
+    `;
+    const out = chemEnvFacultyExtractor(cards, {
+      pageUrl:
+        'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
+    });
+    expect(out.map(({ name, profileUrl, title }) => ({ name, profileUrl, title }))).toEqual([
+      {
+        name: 'Alpha Example',
+        profileUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/alpha-example',
+        title: 'Professor of Applied Mathematics',
+      },
+      {
+        name: 'Beta Sample',
+        profileUrl: 'https://math.yale.edu/profile/beta-sample',
+        title: 'Professor of Mathematics',
+      },
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2200,8 +2380,8 @@ describe('DepartmentRosterScraper.run', () => {
     });
     expect(configsByKey.get('applied-mathematics')).toMatchObject({
       deptName: 'Applied Mathematics',
-      url: 'https://applied.math.yale.edu/people/faculty',
-      extractor: viewsTableRowExtractor,
+      url: 'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
+      extractor: engineeringDepartmentFacultyExtractor,
     });
     expect(configsByKey.get('history-science-medicine-public-health')).toMatchObject({
       deptName: 'History of Science, Medicine & Public Health',
@@ -2256,6 +2436,29 @@ describe('DepartmentRosterScraper.run', () => {
     expect(
       logs.some((l) => /WARNING:.*yielded no faculty/.test(l) && l.includes('physics(empty)')),
     ).toBe(true);
+    expect(result.partialFailures).toBeUndefined();
+    expect(result.metrics?.unitYields).toEqual({ physics: 0 });
+  });
+
+  it('reports each read department as a unit yield and leaves an unread one out (#6423)', () => {
+    expect(
+      rosterUnitYields([
+        { deptKey: 'read', status: 'ok', count: 12 },
+        { deptKey: 'truncated', status: 'partial-read', count: 4 },
+        { deptKey: 'truncated-empty', status: 'partial-read', count: 0 },
+        { deptKey: 'migrated', status: 'empty', count: 0 },
+        { deptKey: 'one-tab-migrated', status: 'empty', count: 9 },
+        { deptKey: 'broken-parser', status: 'extractor-error', count: 0 },
+        { deptKey: 'unreachable', status: 'fetch-failed', count: 0 },
+        { deptKey: 'limited', status: 'skipped-by-limit', count: 0 },
+      ]),
+    ).toEqual({
+      read: 12,
+      truncated: 4,
+      migrated: 0,
+      'one-tab-migrated': 9,
+      'broken-parser': 0,
+    });
   });
 
   // The whole lane read, not just the mint: a support-staff roster entry carrying the
@@ -2984,6 +3187,32 @@ describe('DepartmentRosterScraper.run', () => {
       'https://cogsci.yale.edu/people/faculty',
       'https://cogsci.yale.edu/people/emeritus-faculty',
     ]);
+  });
+
+  it('keys a person on a dotted email alias without stating it as their netid', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Robin Fixture', email: 'robin.fixture@yale.edu' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'FAS',
+        url: 'https://example.invalid/econ',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs.length).toBeGreaterThan(0);
+    expect(userObs.every((o) => o.entityKey === 'netid:robin.fixture')).toBe(true);
+    expect(userObs.find((o) => o.field === 'email')?.value).toBe('robin.fixture@yale.edu');
+    expect(userObs.some((o) => o.field === 'netid')).toBe(false);
   });
 
   it('suppresses department claims on a derived research entity for an affiliates-only roster', async () => {
@@ -3949,12 +4178,14 @@ describe('DepartmentRosterScraper.run', () => {
   it('follows official profile pages for canonical profile URLs and lab websites', async () => {
     const profileHtml = `
       <html><head>
+        <title>Ada Lovelace | Mathematics</title>
         <link rel="canonical" href="/people/ada-lovelace" />
       </head><body>
+        <h1>Ada Lovelace</h1>
         <div class="person-title">Associate Professor of Applied Mathematics</div>
         <div class="profile-body">Ada works on computation, algebraic geometry, and foundations of mathematical modeling.</div>
         <div class="research-interests"><a href="/topics/algebraic-geometry">Algebraic Geometry</a><a href="/topics/topology">Topology</a></div>
-        <a href="https://orcid.org/0000-0000-0000-0001">ORCID</a>
+        <a href="https://orcid.org/${SYNTHETIC_ORCID_1}">ORCID</a>
         <a href="https://scholar.google.com/citations?user=adaCandidate">Google Scholar</a>
         <a href="mailto:ada.lovelace@yale.edu">ada.lovelace@yale.edu</a>
         <a href="https://lovelacelab.yale.edu">Lab Website</a>
@@ -4010,7 +4241,7 @@ describe('DepartmentRosterScraper.run', () => {
       'Associate Professor of Applied Mathematics',
     );
     expect(userObs.find((o) => o.field === 'website')?.value).toBe('https://lovelacelab.yale.edu/');
-    expect(userObs.find((o) => o.field === 'orcid')?.value).toBe('0000-0000-0000-0001');
+    expect(userObs.find((o) => o.field === 'orcid')?.value).toBe(SYNTHETIC_ORCID_1);
     expect(userObs.find((o) => o.field === 'bio')?.sourceUrl).toBe(
       'https://math.yale.edu/people/ada-lovelace',
     );
@@ -4036,6 +4267,94 @@ describe('DepartmentRosterScraper.run', () => {
       'https://lovelacelab.yale.edu/',
     );
     expect(labObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('netid:ada.lovelace');
+  });
+
+  it('cites a listing title at the listing and a profile title at the profile page (#5578)', async () => {
+    const profileHtml = (slug: string) => `
+      <html><head><link rel="canonical" href="/people/${slug}" /></head><body>
+        <div class="person-title">Professor of Fixture Studies</div>
+        <a href="mailto:${slug.replace('-', '.')}@yale.edu">${slug}@yale.edu</a>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://math.yale.edu/people/rowan-listed') return profileHtml('rowan-listed');
+      if (url === 'https://math.yale.edu/people/sage-profiled') return profileHtml('sage-profiled');
+      return '<html><body>listing</body></html>';
+    });
+    const listing = 'https://math.yale.edu/people/faculty';
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'math',
+        deptName: 'Mathematics',
+        schoolName: 'FAS',
+        url: listing,
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Rowan Listed',
+            profileUrl: 'https://math.yale.edu/people/rowan-listed',
+            title: 'Lecturer in Fixture Studies',
+          },
+          { name: 'Sage Profiled', profileUrl: 'https://math.yale.edu/people/sage-profiled' },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const titleOf = (entityKey: string) =>
+      emitted.find(
+        (o) => o.entityType === 'user' && o.entityKey === entityKey && o.field === 'title',
+      );
+    expect(titleOf('netid:rowan.listed')).toMatchObject({
+      value: 'Lecturer in Fixture Studies',
+      sourceUrl: listing,
+    });
+    expect(titleOf('netid:sage.profiled')).toMatchObject({
+      value: 'Professor of Fixture Studies',
+      sourceUrl: 'https://math.yale.edu/people/sage-profiled',
+    });
+  });
+
+  it('marks a title taken from the profile title block and leaves a listing title unmarked (#5578)', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.endsWith('/people/faculty')
+        ? '<html><body>listing</body></html>'
+        : `<html><head><link rel="canonical" href="${new URL(url).pathname}" /></head><body>
+            <div class="person-title">Professor of Fixture Studies</div>
+            <a href="mailto:${url.split('/').pop()!.replace('-', '.')}@yale.edu">profile</a>
+          </body></html>`,
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'math',
+        deptName: 'Mathematics',
+        schoolName: 'FAS',
+        url: 'https://math.yale.edu/people/faculty',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Rowan Listed',
+            profileUrl: 'https://math.yale.edu/people/rowan-listed',
+            title: 'Lecturer in Fixture Studies',
+          },
+          { name: 'Sage Profiled', profileUrl: 'https://math.yale.edu/people/sage-profiled' },
+        ],
+      },
+    ];
+
+    const { ctx, emitted } = makeContext();
+    await new DepartmentRosterScraper(configs, null, htmlFetcher).run(ctx);
+
+    const titleOf = (entityKey: string) =>
+      emitted.find(
+        (o) => o.entityType === 'user' && o.entityKey === entityKey && o.field === 'title',
+      );
+    expect(titleOf('netid:rowan.listed')?.extraction).toBeUndefined();
+    expect(titleOf('netid:sage.profiled')?.extraction).toEqual({ source: 'profileTitleBlock' });
+    expect(emitted.filter((o) => o.field !== 'title' && o.extraction !== undefined)).toEqual([]);
   });
 
   it('preserves Scholar discovery without mirroring Engineering publications', async () => {
@@ -5702,5 +6021,252 @@ describe('collapseLaneOutcomesByDepartment', () => {
       lane('fetch-failed', 0),
     ]);
     expect(collapsed.status).toBe('partial-read');
+  });
+});
+
+describe('department roster refuses office mailboxes as a person email', () => {
+  const lane = (entries: FacultyEntry[]): DeptConfig => ({
+    deptKey: 'fixture',
+    deptName: 'Fixture Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://fixture.yale.edu/people',
+    paginated: false,
+    extractor: () => entries,
+  });
+  const run = async (entries: FacultyEntry[]) => {
+    const scraper = new DepartmentRosterScraper(
+      [lane(entries)],
+      null,
+      vi.fn(async () => '<html></html>'),
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+    return emitted.filter((o) => o.entityType === 'user');
+  };
+
+  it('never keys a person by the unit mailbox printed on their profile', async () => {
+    const userObs = await run([
+      { name: 'Ann Alpha', email: 'fixture@yale.edu', title: 'Professor of Physics' },
+    ]);
+    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(new Set(['dept:fixture:ann-alpha']));
+    expect(userObs.some((o) => o.field === 'email' || o.field === 'netid')).toBe(false);
+  });
+
+  it('keeps two people who share one netid-shaped address apart and gives it to neither', async () => {
+    const userObs = await run([
+      { name: 'Ann Alpha', email: 'zz901@yale.edu', title: 'Professor of Physics' },
+      { name: 'Bob Beta', email: 'zz901@yale.edu', title: 'Professor of Physics' },
+    ]);
+    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(
+      new Set(['dept:fixture:ann-alpha', 'dept:fixture:bob-beta']),
+    );
+    expect(userObs.some((o) => o.field === 'email')).toBe(false);
+  });
+
+  it('still keys a person by their own address', async () => {
+    const userObs = await run([
+      { name: 'Ann Fixture', email: 'ann.fixture@yale.edu', title: 'Professor of Physics' },
+    ]);
+    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(new Set(['netid:ann.fixture']));
+  });
+});
+
+describe('withoutSharedRosterEmails', () => {
+  const item = (name: string, email?: string) => ({ entry: { name, email } as FacultyEntry });
+
+  it('refuses an address listed for two different people, for both', () => {
+    const out = withoutSharedRosterEmails([
+      item('Ann Alpha', 'zz901@yale.edu'),
+      item('Bob Beta', 'ZZ901@yale.edu'),
+      item('Cal Gamma', 'cg12@yale.edu'),
+    ]);
+    expect(out.map((o) => o.entry.email)).toEqual([undefined, undefined, 'cg12@yale.edu']);
+  });
+
+  it('keeps an address one person is listed with twice', () => {
+    const out = withoutSharedRosterEmails([
+      item('Ann Alpha', 'aa1@yale.edu'),
+      item('Ann Alpha', 'aa1@yale.edu'),
+    ]);
+    expect(out.map((o) => o.entry.email)).toEqual(['aa1@yale.edu', 'aa1@yale.edu']);
+  });
+});
+
+describe('dept-faculty-roster userType comes from the person, not the page (#5750)', () => {
+  const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+  const deptListing = (deptKey: string, deptName: string, title: string): DeptConfig => ({
+    deptKey,
+    deptName,
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: `https://${deptKey}.yale.edu/people/faculty`,
+    paginated: false,
+    extractor: () => [
+      {
+        name: 'Test Lister',
+        email: 'tl123@yale.edu',
+        profileUrl: `https://${deptKey}.yale.edu/people/test-lister`,
+        title,
+      },
+    ],
+  });
+  const typingsOf = async (configs: DeptConfig[]) => {
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+    return emitted
+      .filter((o) => o.entityType === 'user' && o.field === 'userType')
+      .map((o) => o.value);
+  };
+
+  it.each([
+    'Senior Administrative Assistant',
+    'Program Coordinator',
+    'Financial Analyst',
+    'Clinical Technologist',
+    'Subject Librarian',
+  ])('types a person titled %s as staff', async (title) => {
+    expect(await typingsOf([deptListing('chem', 'Chemistry', title)])).toEqual(['staff']);
+  });
+
+  it.each(['Professor of Chemistry', 'Associate Professor of Medicine; Clinical Program Manager'])(
+    'keeps faculty for %s',
+    async (title) => {
+      expect(await typingsOf([deptListing('chem', 'Chemistry', title)])).toEqual(['faculty']);
+    },
+  );
+
+  it('keeps faculty for a person one roster lists as faculty and a later one as staff', async () => {
+    expect(
+      await typingsOf([
+        deptListing('chem', 'Chemistry', 'Professor of Chemistry'),
+        deptListing('physics', 'Physics', 'Department Administrator'),
+      ]),
+    ).toEqual(['faculty']);
+  });
+
+  it('ends on faculty when the faculty listing is read after the staff one', async () => {
+    const typings = await typingsOf([
+      deptListing('physics', 'Physics', 'Department Administrator'),
+      deptListing('chem', 'Chemistry', 'Professor of Chemistry'),
+    ]);
+    expect(typings.at(-1)).toBe('faculty');
+  });
+});
+
+describe('engineeringDepartmentFacultyExtractor (#6423)', () => {
+  const page = `
+    <main>
+      <h2>Faculty</h2>
+      <div class="stories">
+        <a class="block stories-item py-2 !no-underline" href="/research-and-faculty/faculty-directory/alpha-example">
+          <h3 class="!pb-0 block text-brand-blue">Alpha Example <em class="fa fa-arrow-right"></em></h3>
+          <span class="text-black block font-bold">Professor of Applied Mathematics</span>
+        </a>
+      </div>
+      <div><h2 class="text-brand-blue">Gibbs Assistant Professors</h2></div>
+      <div class="grid gap-8 content-columns grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 bordered columns4">
+        <div class="content1 px-4"><h3>Gamma Sample</h3><p><a href="mailto:gamma.sample@example.edu">gamma.sample@example.edu</a></p></div>
+        <div class="content2 px-4"><h3>Delta Placeholder</h3><p><a href="mailto:delta.placeholder@example.edu">delta.placeholder@example.edu</a></p></div>
+      </div>
+      <div><h2>Contact Us</h2></div>
+      <div class="grid content-columns columns2">
+        <div class="content1 px-4"><h3>Epsilon Office</h3><p><a href="mailto:office@example.edu">office@example.edu</a></p></div>
+      </div>
+    </main>
+  `;
+  const ctx = {
+    pageUrl:
+      'https://engineering.yale.edu/academic-study/departments/applied-and-computational-mathematics/faculty',
+  };
+
+  it('reads the cards and a named rank section, titling its people from the heading', () => {
+    expect(
+      engineeringDepartmentFacultyExtractor(page, ctx).map(({ name, title, email }) => ({
+        name,
+        title,
+        email,
+      })),
+    ).toEqual([
+      { name: 'Alpha Example', title: 'Professor of Applied Mathematics', email: undefined },
+      {
+        name: 'Gamma Sample',
+        title: 'Gibbs Assistant Professor',
+        email: 'gamma.sample@example.edu',
+      },
+      {
+        name: 'Delta Placeholder',
+        title: 'Gibbs Assistant Professor',
+        email: 'delta.placeholder@example.edu',
+      },
+    ]);
+  });
+
+  it('reads no one from a column section whose heading names no faculty rank', () => {
+    const names = engineeringDepartmentFacultyExtractor(page, ctx).map((entry) => entry.name);
+    expect(names).not.toContain('Epsilon Office');
+  });
+});
+
+describe('a roster title cut off before the field it names (#6426)', () => {
+  const mathConfig = (entry: FacultyEntry): DeptConfig[] => [
+    {
+      deptKey: 'math',
+      deptName: 'Mathematics',
+      schoolName: 'FAS',
+      url: 'https://math.yale.edu/people/faculty',
+      paginated: false,
+      extractor: () => [entry],
+    },
+  ];
+  const titleOf = (emitted: Array<{ entityType: string; field: string; value: unknown }>) =>
+    emitted.find((o) => o.entityType === 'user' && o.field === 'title')?.value;
+
+  it('emits no title when the roster title is truncated and nothing states it whole', async () => {
+    const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
+    const scraper = new DepartmentRosterScraper(
+      mathConfig({ name: 'Sam Fixture', title: 'Assistant Professor of' }),
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'lname')?.value).toBe('Fixture');
+    expect(titleOf(emitted)).toBeUndefined();
+  });
+
+  it('takes the whole title from the person page when the roster title is truncated', async () => {
+    const profileUrl = 'https://math.yale.edu/people/sam-fixture';
+    const profileHtml = `
+      <html><head><title>Sam Fixture | Mathematics</title></head><body>
+        <h1>Sam Fixture</h1>
+        <div class="person-title">Assistant Professor of Applied Mathematics</div>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url === profileUrl ? profileHtml : '<html><body>listing</body></html>',
+    );
+    const scraper = new DepartmentRosterScraper(
+      mathConfig({ name: 'Sam Fixture', title: 'Assistant Professor of', profileUrl }),
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(titleOf(emitted)).toBe('Assistant Professor of Applied Mathematics');
+  });
+
+  it('keeps a complete roster title as it is', async () => {
+    const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
+    const scraper = new DepartmentRosterScraper(
+      mathConfig({ name: 'Sam Fixture', title: 'Assistant Professor of Mathematics' }),
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(titleOf(emitted)).toBe('Assistant Professor of Mathematics');
   });
 });

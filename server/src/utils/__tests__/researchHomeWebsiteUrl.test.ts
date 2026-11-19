@@ -28,6 +28,9 @@ import {
   isResearchGroupHostRootUrl,
   isOffsiteInstitutionPersonProfileUrl,
   isPostingPageUrl,
+  isCoursePageUrl,
+  isInadmissiblePersonWebsiteUrl,
+  isWithheldResearchWebsiteUrl,
   isSameHostShallowChromeUrl,
   isSharedPeopleRosterUrl,
   isSiteNavigationOrFooterChromeUrl,
@@ -1773,5 +1776,60 @@ describe('a job or fellowship posting is never a research website', () => {
       researchHomeWebsiteUrlWriteRefusal(departmentJobs, { entityType: 'CORE_FACILITY' }),
     ).toBeNull();
     expect(researchHomeWebsiteUrlWriteRefusal(departmentJobs, LAB_ROW)).not.toBeNull();
+  });
+});
+
+describe('a course page is never a research website', () => {
+  const FACULTY_ROW = { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' };
+  const LAB_ROW = { entityType: 'LAB', kind: 'lab' };
+  const coursePage = 'https://fixturedept.yale.edu/courses/laboratory-fixture-anatomy';
+
+  it.each([
+    coursePage,
+    'https://fixturedept.yale.edu/course/fixture-ecology-101/',
+    'https://fixturelab.yale.edu/courses/fixture-methods',
+    'https://courses.yale.edu/?details&srcdb=fixture',
+  ])('recognises %s as a course page', (url) => {
+    expect(isCoursePageUrl(url)).toBe(true);
+  });
+
+  it.each([
+    'https://fixturelab.yale.edu/',
+    'https://fixturelab.yale.edu/courses',
+    'https://fixturedept.yale.edu/research/coursework-and-fixtures/',
+    'https://medicine.yale.edu/lab/fixture/',
+    'not a url',
+  ])('leaves %s alone', (url) => {
+    expect(isCoursePageUrl(url)).toBe(false);
+  });
+
+  it('refuses a course page as a research website for any row', () => {
+    expect(researchHomeWebsiteUrlWriteRefusal(coursePage, FACULTY_ROW)).toBe('course-page');
+    expect(researchHomeWebsiteUrlWriteRefusal(coursePage, LAB_ROW)).toBe('course-page');
+    expect(researchHomeWebsiteUrlWriteRefusal(coursePage, { entityType: 'CENTER' })).toBe(
+      'course-page',
+    );
+    expect(sourceUrlToResearchHomeWebsiteUrl(coursePage, FACULTY_ROW)).toBe('');
+  });
+
+  it("refuses a department programme's courses listing as a person's website (#5860)", () => {
+    const programmeCourses = 'https://fixturedept.yale.edu/fixtureprogramme/courses';
+    expect(isInadmissiblePersonWebsiteUrl(programmeCourses)).toBe(true);
+    expect(isInadmissiblePersonWebsiteUrl('https://fixturedept.yale.edu/course/')).toBe(true);
+    expect(isInadmissiblePersonWebsiteUrl('https://fixturelab.yale.edu/')).toBe(false);
+  });
+
+  it("still cites a lab's own courses listing as the lab's research website (#5213, #5860)", () => {
+    const labCourses = 'https://fixturelab.yale.edu/courses';
+    expect(isCoursePageUrl(labCourses)).toBe(false);
+    expect(isWithheldResearchWebsiteUrl(labCourses, LAB_ROW)).toBe(false);
+    expect(researchHomeWebsiteUrlWriteRefusal(labCourses, LAB_ROW)).toBeNull();
+  });
+
+  it("still refuses a course's own page everywhere (#5213, #5860)", () => {
+    expect(isInadmissiblePersonWebsiteUrl(coursePage)).toBe(true);
+    expect(isWithheldResearchWebsiteUrl(coursePage, LAB_ROW)).toBe(true);
+    expect(isWithheldResearchWebsiteUrl(coursePage, { entityType: 'CENTER' })).toBe(true);
+    expect(researchHomeWebsiteUrlWriteRefusal(coursePage, LAB_ROW)).toBe('course-page');
   });
 });

@@ -3,13 +3,14 @@
  *
  * Usage:
  *   npx tsx server/src/scrapers/cli.ts list
- *   npx tsx server/src/scrapers/cli.ts run --source nih-reporter [flags] [--output <path>]
- *   npx tsx server/src/scrapers/cli.ts materialize --run <runId> [--dry-run|--confirm-materialize] [--output <path>]
+ *   npx tsx server/src/scrapers/cli.ts run --source nih-reporter [--apply] [flags] [--output <path>]
+ *   npx tsx server/src/scrapers/cli.ts materialize --run <runId> [--dry-run|--apply --confirm-materialize] [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts report --run <runId> [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts prune-observations [--apply --confirm-observation-prune] [--output <path>]
  *
  * Flags for `run`:
- *   --dry-run       Don't write Observations (just log what would be inserted)
+ *   --apply         Write Observations (also needs ALLOW_NON_PROD_SCRAPER_WRITES=true)
+ *   --dry-run       Don't write Observations (the default without --apply)
  *   --use-cache     Memoize external fetches in ScrapeSnapshot collection (dev only)
  *   --release       Release mode (caches off, errors surface)
  *   --limit <n>     Cap the number of entities the scraper processes
@@ -21,16 +22,32 @@
  *   --force-llm      Re-run paid LLM extraction even when source content is unchanged
  *   --auto-materialize   After successful run, immediately materialize observations
  */
+import {
+  splitHorizonRefusalReport,
+  splitHorizonRefusalWarning,
+} from './utils/splitHorizonRefusals';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { buildOrchestrator } from './registry';
-import { installScraperHostConcurrencyInterceptor } from './utils/hostConcurrencyLimiter';
+import { ChainedHostSlotLimiter, type HostSlotLimiter } from './utils/hostConcurrencyLimiter';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
-import { installScraperHttpValidatorCache } from './utils/httpValidatorCache';
 import { installSweepPageReuse } from './utils/sweepPageReuse';
-import { materializeFromRun } from './entityMaterializer';
+import { installScraperFetchHooks } from './utils/scraperFetchHooks';
+import {
+  materializeFromRun,
+  withoutProgramFieldScopeRows,
+  withoutUserFieldScopeRows,
+} from './entityMaterializer';
+import {
+  autoMaterializeCenterRosterRefusal,
+  CENTER_PLAN_HELD_BACK_EXIT_CODE,
+  centerPlanHeldBack,
+  resolveAutoMaterializeCenterRosterRefusal,
+  resolveMaterializeCenterPlanGuard,
+  runContainsCenterRosterHealth,
+} from './centerPlanGuard';
 import { ScrapeRun } from '../models/scrapeRun';
 import { getScrapeRunReport } from './runReport';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
@@ -58,6 +75,7 @@ import {
   parseArgs,
   scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
+  visibilityGateCollectionAfterSkipping,
   type ScrapeCliCompletionOutcome,
   type ScraperCliPreflight,
 } from './cliHelpers';
@@ -72,7 +90,14 @@ export {
   scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
 } from './cliHelpers';
-import { connectScriptMongo } from '../db/connections';
+import { programFieldScopeRegateFields } from './programMaterializerFieldScope';
+import { connectScriptMongo, devWriteLeaseDescriptor, runScriptMain } from '../db/connections';
+import {
+  armDevHostLeases,
+  ensureDevHostLease,
+  recordDevApplyIntent,
+  releaseHeldDevWriteLeases,
+} from '../db/devWriteLease';
 import { SCRAPE_RUN_SOCKET_TIMEOUT_MS } from './scrapeRunProgress';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -176,11 +201,50 @@ async function warnWhenSourceIsBeingWritten(
   );
 }
 
+/**
+ * Which writes a scrape CLI command will make, read from its preflight before it connects: a
+ * writing `run` writes observations and takes per-host leases, and a materialize, an
+ * auto-materialize or a prune is apply-class and takes the Development write lease (#5756).
+ */
+export function scraperCliWrites(preflight: ScraperCliPreflight): {
+  observations: boolean;
+  apply: boolean;
+} {
+  if (preflight.command === 'run') {
+    const { guard } = preflight as Extract<ScraperCliPreflight, { command: 'run' }>;
+    return { observations: guard.writes, apply: guard.writes && guard.autoMaterialize };
+  }
+  if (preflight.command === 'materialize') {
+    const { guard } = preflight as Extract<ScraperCliPreflight, { command: 'materialize' }>;
+    return { observations: false, apply: guard.writes };
+  }
+  if (preflight.command === 'prune-observations') {
+    const { guard } = preflight as Extract<ScraperCliPreflight, { command: 'prune-observations' }>;
+    return { observations: false, apply: guard.apply };
+  }
+  return { observations: false, apply: false };
+}
+
+export function scraperCliBanner(preflight: ScraperCliPreflight): string | undefined {
+  if (preflight.command !== 'run' && preflight.command !== 'materialize') return undefined;
+  const { guard } = preflight as Extract<ScraperCliPreflight, { command: 'run' | 'materialize' }>;
+  return guard.banner;
+}
+
+const devHostLeaseLimiter: HostSlotLimiter = {
+  async acquire(host) {
+    await ensureDevHostLease(host);
+    return () => undefined;
+  },
+};
+
 export async function main(): Promise<void> {
-  installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
   const { command, flags } = parseArgs(process.argv);
+  installScraperFetchHooks({
+    validatorCache: !flags.release,
+    hostSlotLimiter: new ChainedHostSlotLimiter([devHostLeaseLimiter, scraperHostSlotLimiter()]),
+  });
   if (!flags.release) {
-    installScraperHttpValidatorCache();
     // Must stay last: axios runs request interceptors in reverse, so a reused page is answered
     // before the host slot and validator interceptors run.
     installSweepPageReuse();
@@ -191,14 +255,15 @@ export async function main(): Promise<void> {
 ylabs scraper CLI
 
   list                                       List registered scrapers
-  run --source <name> [flags]                Run a scraper
-  materialize --run <runId> [--output <path>]
+  run --source <name> [--apply] [flags]      Run a scraper (a dry run without --apply)
+  materialize --run <runId> [--apply --confirm-materialize] [--output <path>] [--only-fields <paths> | --only-program-fields <paths>] [--skip-entity-types <types>] [--skip-center-roster-retirement] [--expect-center-plan <path>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
   prune-observations [flags]                 Prune old unreferenced superseded Observation rows
 
 Run flags:
-  --dry-run            Skip Observation writes (preview only)
+  --apply              Write Observations; without it the run is a dry run
+  --dry-run            Skip Observation writes (preview only, the default)
   --use-cache          Cache external fetches in ScrapeSnapshot (dev)
   --release            Release mode (caches off, errors surface)
   --limit <n>          Cap entities processed
@@ -222,10 +287,43 @@ Run flags:
   --output <path>      Save the ScrapeRun report JSON
 
 Materialize flags:
-  --dry-run            Preview materialization without writing derived records
+  --apply              Write derived records; without it materialize is a dry run
+  --dry-run            Preview materialization without writing (the default)
   --confirm-materialize
-                       Required when standalone materialize writes derived records.
+                       Required with --apply when standalone materialize writes.
   --output <path>      Save the materialize result, visibility gate, and run report JSON
+  --skip-entity-types <types>
+                       Comma-separated observed entity types the run materialize leaves untouched
+  --skip-center-roster-retirement
+                       Plan and report center roster retirement without applying it
+  --expect-center-plan <path>
+                       Hold the apply to the centerPlan section of this run's dry-run
+                       --output: the projection ends only the role edges it lists and a
+                       center retires only when its plan still matches. Required for a
+                       Development apply of a run with center roster reads (#6348).
+  --only-fields <paths>
+                       Write only these researcher paths on the run's user rows:
+                       displayName, profile.title, profile.primaryDepartment,
+                       profile.imageUrl, profile.websiteUrl, identifiers.email,
+                       identifiers.emailSupport, identifiers.orcid, profileLinks,
+                       profileFieldWriters (or profileFieldWriters.<field>); aliases
+                       email, emailSupport, orcid, title, primaryDepartment, imageUrl,
+                       websiteUrl. identifiers.orcid also writes only the ORCID
+                       entries of profileLinks. Planned paths
+                       outside the scope are left as stored and reported as
+                       outOfScopePaths (not written, not deleted); other entity
+                       types, mints, run reconciliations and the visibility gate
+                       are skipped. Per-key paths go to --output only.
+  --only-program-fields <paths>
+                       Write only these Fellowship paths on the run's program rows (a
+                       field an observation sets, for example contactOffice or deadline);
+                       user and research rows and every run reconciliation are skipped,
+                       and the program visibility gate re-runs after a write that touches
+                       a gate or duplicate-copy input (PROGRAM_REGATE_TRIGGER_FIELDS).
+                       Name isAcceptingApplications together with deadline and
+                       applicationOpenDate, since the served flag is derived from them.
+                       An unknown or denied path fails and lists the valid ones.
+                       Requires --output.
 
 Prune flags:
   --apply              Delete matching rows. Omit for dry-run.
@@ -240,8 +338,11 @@ Prune flags:
 
 Environment guardrails:
   SCRAPER_ENV=development|beta|production
-  Development runs default to --dry-run and disable --auto-materialize;
-  set ALLOW_NON_PROD_SCRAPER_WRITES=true to write.
+  run and materialize write only with --apply on the command line AND
+  ALLOW_NON_PROD_SCRAPER_WRITES=true in the environment. Without --apply they
+  are dry runs; with the environment flag but no --apply they refuse.
+  Every run and materialize prints one banner line, "WILL WRITE to <db>" or
+  "DRY RUN: nothing will be written (<reason>)", before it connects.
   Beta and Production refuse run and materialize writes: they receive
   data only through promotion (docs/data-refresh-runbook.md).
 
@@ -271,11 +372,22 @@ Concurrency:
   }
 
   const preflight = buildScraperCliPreflight(command, flags, url);
+  const banner = scraperCliBanner(preflight);
+  if (banner) console.log(banner);
+  const writes = scraperCliWrites(preflight);
+  if (writes.apply) recordDevApplyIntent(`scrape ${command}`);
 
   await connectScriptMongo(
     url,
     command === 'run' ? { socketTimeoutMS: SCRAPE_RUN_SOCKET_TIMEOUT_MS } : undefined,
   );
+  const leaseConnection = devWriteLeaseDescriptor(mongoose.connection);
+  if (writes.observations && leaseConnection) {
+    armDevHostLeases(
+      leaseConnection,
+      `scrape run ${process.argv.slice(3).join(' ')}`.slice(0, 300),
+    );
+  }
 
   try {
     const connectedDbLabel = (): string =>
@@ -291,6 +403,17 @@ Concurrency:
         `Running scraper "${sourceName}" with options:`,
         JSON.stringify(guard.options, null, 2),
       );
+      const autoMaterializeRefusal = resolveAutoMaterializeCenterRosterRefusal({
+        sourceName,
+        environment: guard.environment,
+        writes: guard.writes,
+        autoMaterialize: guard.autoMaterialize,
+      });
+      if (autoMaterializeRefusal) {
+        console.error(`ERROR: ${autoMaterializeRefusal}`);
+        process.exitCode = 1;
+        return;
+      }
       const performRun = async (lockOwnerId?: string): Promise<ScrapeCliLockedOutcome> => {
         const { runId, status, result, explainedObservations, explainTruncated } =
           await orchestrator.run(sourceName, guard.options, { lockOwnerId });
@@ -298,7 +421,15 @@ Concurrency:
         console.log(JSON.stringify(result, null, 2));
 
         let materializationErrors: number | undefined;
-        if (guard.autoMaterialize && !guard.options.dryRun) {
+        const autoMaterializesACenterRosterRun =
+          guard.autoMaterialize &&
+          !guard.options.dryRun &&
+          guard.environment === 'development' &&
+          (await runContainsCenterRosterHealth(runId));
+        if (autoMaterializesACenterRosterRun) {
+          console.error(`\nERROR: ${autoMaterializeCenterRosterRefusal(sourceName)}`);
+          process.exitCode = 1;
+        } else if (guard.autoMaterialize && !guard.options.dryRun) {
           console.log(`\nMaterializing observations from run ${runId}...`);
           const matResult = await materializeFromRun(runId, { dryRun: false });
           console.log(JSON.stringify(matResult, null, 2));
@@ -338,9 +469,13 @@ Concurrency:
           observationCount: report.observations.total,
         });
         if (deferredMaterialization) console.warn(`\nWARNING: ${deferredMaterialization}`);
+        const addressRefusals = await splitHorizonRefusalReport();
+        const splitHorizonWarning = splitHorizonRefusalWarning(addressRefusals);
+        if (splitHorizonWarning) console.warn(`\nWARNING: ${splitHorizonWarning}`);
+        const reportWithRefusals = { ...report, addressRefusals };
         const explainedReport = explainedObservations
           ? {
-              ...report,
+              ...reportWithRefusals,
               dryRunPreview: {
                 ...(report.dryRunPreview ?? {}),
                 observations: explainedObservations,
@@ -348,7 +483,7 @@ Concurrency:
                 explainTruncated: explainTruncated === true,
               },
             }
-          : report;
+          : reportWithRefusals;
         const output = await writeOptionalJsonOutput({
           outputPath: flags.output,
           payload: buildScraperCliOutputPayload(explainedReport, {
@@ -409,22 +544,105 @@ Concurrency:
         ScraperCliPreflight,
         { command: 'materialize' }
       >;
-      const { runId, confirmMaterialize, guard } = materializePreflight;
+      const {
+        runId,
+        confirmMaterialize,
+        onlyFields,
+        onlyProgramFields,
+        skipEntityTypes,
+        skipCenterRosterRetirement,
+        expectCenterPlanPath,
+        guard,
+      } = materializePreflight;
+      const fieldScoped = onlyFields.length > 0;
+      const programFieldScoped = onlyProgramFields.length > 0;
+      const programRegateFields = programFieldScopeRegateFields(onlyProgramFields);
+      const visibilityGateCollection = visibilityGateCollectionAfterSkipping(skipEntityTypes);
       console.log(`Materializing observations from run ${runId}...`);
+      if (fieldScoped) {
+        console.log(
+          `Field-scoped user materialize: ${onlyFields.join(', ')}. Only user rows are materialized, no researcher is minted, and no run reconciliation or visibility gate runs.`,
+        );
+      }
+      if (programFieldScoped) {
+        console.log(
+          `Field-scoped program materialize: ${onlyProgramFields.join(', ')}. Only program rows are materialized, only these fields are written, and no run reconciliation runs. ${
+            programRegateFields.length > 0
+              ? `The program visibility gate runs after any write, because it reads ${programRegateFields.join(', ')}.`
+              : 'The program visibility gate does not run, because it reads none of these fields.'
+          }`,
+        );
+      }
+      if (skipCenterRosterRetirement) {
+        console.log(
+          'Center roster retirement is planned and reported but not applied (--skip-center-roster-retirement).',
+        );
+      }
+      if (skipEntityTypes.length > 0) {
+        console.log(
+          `Skipping entity types: ${skipEntityTypes.join(', ')}. Their rows are neither materialized nor re-gated; every other observed type and the run reconciliation still run.`,
+        );
+      }
       for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
       console.log(`Scraper environment: ${guard.environment}; Mongo target: ${guard.dbLabel}`);
+      const centerPlanDecision = await resolveMaterializeCenterPlanGuard({
+        runId,
+        environment: guard.environment,
+        dryRun: Boolean(guard.options.dryRun),
+        writes: guard.writes,
+        fieldScoped,
+        ...(expectCenterPlanPath ? { expectCenterPlanPath } : {}),
+      });
+      if (centerPlanDecision.refusal !== undefined) {
+        console.error(`ERROR: ${centerPlanDecision.refusal}`);
+        process.exitCode = 1;
+        return;
+      }
+      const centerPlanGuard = centerPlanDecision.guard;
+      if (centerPlanGuard?.mode === 'enforce') {
+        console.log(
+          `Held to the approved center plan in ${expectCenterPlanPath}: only the role edges it lists are ended, and a center whose plan diverged is left untouched.`,
+        );
+      }
       const performMaterialize = async (): Promise<ScrapeCliLockedOutcome> => {
-        const result = await materializeFromRun(runId, { dryRun: guard.options.dryRun });
-        console.log(JSON.stringify(result, null, 2));
+        const result = await materializeFromRun(runId, {
+          dryRun: guard.options.dryRun,
+          ...(fieldScoped ? { userWriteOnlyFields: onlyFields } : {}),
+          ...(programFieldScoped ? { programWriteOnlyFields: onlyProgramFields } : {}),
+          ...(skipEntityTypes.length > 0 ? { skipEntityTypes } : {}),
+          ...(skipCenterRosterRetirement ? { skipCenterRosterRetirement } : {}),
+          ...(centerPlanGuard ? { centerPlanGuard } : {}),
+        });
+        console.log(
+          JSON.stringify(withoutProgramFieldScopeRows(withoutUserFieldScopeRows(result)), null, 2),
+        );
         const report = await getScrapeRunReport(runId);
         let visibilityGate: unknown | undefined;
-        if (!guard.options.dryRun && result.errors === 0) {
+        const programWrittenRecordIds = result.programFieldScope?.writtenRecordIds ?? [];
+        if (
+          programFieldScoped &&
+          programRegateFields.length > 0 &&
+          !guard.options.dryRun &&
+          programWrittenRecordIds.length > 0
+        ) {
+          console.log(
+            `\nRunning the program visibility gate over the ${programWrittenRecordIds.length} written program row(s) and their fund mates...`,
+          );
+          visibilityGate = await runStudentVisibilityGate({
+            collection: 'programs',
+            mode: 'apply',
+            recordIds: programWrittenRecordIds,
+          });
+          console.log(JSON.stringify(visibilityGate, null, 2));
+        }
+        const gateCollection = programFieldScoped ? undefined : visibilityGateCollection;
+        if (!guard.options.dryRun && result.errors === 0 && !fieldScoped && gateCollection) {
           const sourceName = (report as any).run?.sourceName;
           console.log(
             `\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`,
           );
           visibilityGate = await runStudentVisibilityGate({
-            collection: 'all',
+            collection: gateCollection,
             mode: 'apply',
             sourceName,
           });
@@ -438,6 +656,7 @@ Concurrency:
               materialization: result,
               report,
               visibilityGate,
+              ...(result.centerPlan ? { centerPlan: result.centerPlan } : {}),
             }),
             {
               command: 'materialize',
@@ -447,6 +666,11 @@ Concurrency:
                 runId,
                 ...guard.options,
                 confirmMaterialize,
+                ...(fieldScoped ? { onlyFields } : {}),
+                ...(programFieldScoped ? { onlyProgramFields } : {}),
+                ...(skipEntityTypes.length > 0 ? { skipEntityTypes } : {}),
+                ...(skipCenterRosterRetirement ? { skipCenterRosterRetirement } : {}),
+                ...(expectCenterPlanPath ? { expectCenterPlanPath } : {}),
                 output: typeof flags.output === 'string' ? flags.output : undefined,
               },
             },
@@ -463,6 +687,13 @@ Concurrency:
           visibilityGateSkipped: !guard.options.dryRun && result.errors > 0,
         });
         reportScrapeCliCompletion(completion);
+        const heldBack = centerPlanHeldBack(result.centerPlan);
+        if (heldBack.divergedCenters > 0 || heldBack.skippedProjectionEndings > 0) {
+          console.error(
+            `\nERROR: the approved center plan held back ${heldBack.divergedCenters} plan-diverged center(s) and ${heldBack.skippedProjectionEndings} unapproved projection ending(s); the approved writes landed, the rest needs a fresh dry run and plan (#6348).`,
+          );
+          if (!process.exitCode) process.exitCode = CENTER_PLAN_HELD_BACK_EXIT_CODE;
+        }
         return { runId, failed: completion.exitCode !== 0 };
       };
 
@@ -582,6 +813,7 @@ Concurrency:
     console.error(`Unknown command: ${command}. Use "help" for usage.`);
     process.exit(1);
   } finally {
+    await releaseHeldDevWriteLeases().catch(() => undefined);
     await disconnectWithin(MONGO_DISCONNECT_DEADLINE_MS);
   }
 }
@@ -604,8 +836,5 @@ async function disconnectWithin(deadlineMs: number): Promise<void> {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  main().catch((err) => {
-    console.error(sanitizeLogValue(err));
-    process.exit(1);
-  });
+  void runScriptMain(main, { logFailure: (err) => console.error(sanitizeLogValue(err)) });
 }

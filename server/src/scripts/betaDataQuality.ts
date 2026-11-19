@@ -51,13 +51,14 @@ import {
 } from './userEmailHygieneCore';
 import { auditStudentReadyPublicDescriptions } from '../services/researchEntityPublicDescriptionAuditService';
 import { connectScriptMongo } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const ACTIVE_FILTER: Filter<Document> = { archived: { $ne: true } };
-const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
+export const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
   {
     name: 'observations.sourceId',
     collectionName: 'observations',
@@ -94,6 +95,28 @@ const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
     required: false,
   },
   ...SIGNAL_TARGET_REFERENCE_EDGES,
+  {
+    name: 'role_assignments.target.id',
+    collectionName: 'role_assignments',
+    localField: 'target.id',
+    targetCollectionName: 'research_entities',
+    required: true,
+    ownerFilter: { 'target.kind': 'RESEARCH_ENTITY' },
+  },
+  {
+    name: 'research_entity_relationships.sourceResearchEntityId',
+    collectionName: 'research_entity_relationships',
+    localField: 'sourceResearchEntityId',
+    targetCollectionName: 'research_entities',
+    required: true,
+  },
+  {
+    name: 'research_entity_relationships.targetResearchEntityId',
+    collectionName: 'research_entity_relationships',
+    localField: 'targetResearchEntityId',
+    targetCollectionName: 'research_entities',
+    required: true,
+  },
   {
     name: 'signals.source.evidenceIds',
     collectionName: 'signals',
@@ -206,6 +229,7 @@ interface LiveLinkCheckResult {
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseBetaDataQualityArgs(process.argv.slice(2));
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) {
@@ -584,7 +608,7 @@ async function buildSourceHealthSummary(
     startedAt: { $gte: since },
   })
     .select(
-      'sourceName status startedAt finishedAt heartbeatAt observationCount materializationErrors materializationConflicts invalidated',
+      'sourceName status startedAt finishedAt heartbeatAt observationCount storedObservationCountAtReconcile materializationErrors materializationConflicts invalidated',
     )
     .sort({ sourceName: 1, startedAt: -1 })
     .lean();

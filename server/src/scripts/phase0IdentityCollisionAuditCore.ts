@@ -1,5 +1,5 @@
 import { createHmac } from 'crypto';
-import { normalizeOrcid } from '../utils/orcid';
+import { plausiblePersonOrcid } from '../utils/orcid';
 import type { Phase0SummaryOnlyEnvironment } from './phase0SummaryOnlyAudit';
 
 export const PHASE0_IDENTITY_FIELDS = [
@@ -170,7 +170,7 @@ export function normalizePhase0IdentityValue(
     } catch {
       normalized = normalized.replace(/^(?:https?:\/\/)?(?:www\.)?orcid\.org\//i, '');
     }
-    return normalizeOrcid(normalized.split(/[/?#]/)[0] || '') || undefined;
+    return plausiblePersonOrcid(normalized.split(/[/?#]/)[0] || '') || undefined;
   }
 
   if (field === 'openAlexId') {

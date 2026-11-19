@@ -18,9 +18,14 @@ const WITHHOLDING_CHECK_LABELS: Record<ResearchDetailWithholdingCheck, string> =
 
 const humanizeReason = (reason: string): string => reason.replace(/[_-]+/g, ' ').trim();
 
+const humanizeReasons = (reasons: string[] | undefined): string[] =>
+  (reasons ?? []).map(humanizeReason).filter(Boolean);
+
 const OperatorPreviewNotice = ({ preview }: { preview: ResearchDetailOperatorPreview }) => {
   const tierLabel = TIER_LABELS[preview.studentVisibilityTier] ?? preview.studentVisibilityTier;
-  const reasons = preview.studentVisibilityReasons.map(humanizeReason).filter(Boolean);
+  const blockingReasons = humanizeReasons(preview.studentVisibilityBlockingReasons);
+  const signalReasons = humanizeReasons(preview.studentVisibilitySignalReasons);
+  const hasGateReasons = blockingReasons.length > 0 || signalReasons.length > 0;
 
   return (
     <section
@@ -38,7 +43,19 @@ const OperatorPreviewNotice = ({ preview }: { preview: ResearchDetailOperatorPre
       {preview.studentVisibilitySuppressionReason && (
         <p className="mt-2">Suppression reason: {preview.studentVisibilitySuppressionReason}</p>
       )}
-      {reasons.length > 0 && <p className="mt-2">Gate reasons: {reasons.join(', ')}</p>}
+      {hasGateReasons && (
+        <p className="mt-2">
+          <span className="font-medium">Held because:</span>{' '}
+          {blockingReasons.length > 0
+            ? blockingReasons.join(', ')
+            : 'no blocking reason is recorded, only the signals below.'}
+        </p>
+      )}
+      {signalReasons.length > 0 && (
+        <p className="mt-1 text-amber-800">
+          <span className="font-medium">Signals:</span> {signalReasons.join(', ')}
+        </p>
+      )}
     </section>
   );
 };

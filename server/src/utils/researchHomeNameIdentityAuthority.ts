@@ -16,12 +16,14 @@ import { isExternalScholarlyPlatformName } from './externalScholarlyPlatforms';
 import {
   isMultiTenantAcademicHostRootUrl,
   isMultiTenantAcademicHostTenantPageUrl,
+  isPatientCarePageUrl,
   multiTenantAcademicHostLabelIsDistinctive,
   multiTenantAcademicHostNameMatch,
 } from './researchHomeWebsiteUrl';
 import { isOrganizationalResearchEntity } from './researchEntityOrganizational';
 import { researchEntityDisplayName } from './servedResearchEntityTitle';
 import { isNavigationMenuPhrase } from './titleHygiene';
+import { isSentenceShapedName as isSentenceShapedResearchEntityName } from './sentenceShapedName';
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
 
@@ -176,6 +178,62 @@ export function isPersonPageLinkLabelName(value: unknown): boolean {
   const remainder = name.replace(LINK_CHROME_SUFFIX_RE, '').trim();
   if (!remainder) return true;
   return !RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.test(remainder);
+}
+
+const PROFILE_HOME_CALL_TO_ACTION_RE = /^learn\s+more$/i;
+const MIN_SENTENCE_NAME_WORDS = 6;
+const FIRST_PERSON_CLAUSE_IN_NAME_RE = /\S\s+(?:We|Our|My)\s+[a-z]/;
+
+function isSentenceShapedName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  if (FIRST_PERSON_CLAUSE_IN_NAME_RE.test(name)) return true;
+  return name.endsWith('.') && name.split(/\s+/).length >= MIN_SENTENCE_NAME_WORDS;
+}
+
+/**
+ * A value `official-profile-pi-backfill` would assert as a profile-linked home's name at
+ * 0.96 that names no organization: a link label ("Lab", "Author Website"), a placeholder
+ * ("n/a"), a person-page label, a site menu item ("About Us"), or prose. The lane refuses
+ * one in every arm, and the materializer ignores one the lane stored before it did (#5226).
+ */
+export function isInadmissibleProfileLinkedHomeName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  return (
+    isNonIdentifyingLinkLabelName(name) ||
+    PROFILE_HOME_CALL_TO_ACTION_RE.test(name) ||
+    isPlaceholderEntityName(name) ||
+    isPersonPageLinkLabelName(name) ||
+    isNavigationMenuPhrase(name) ||
+    isSentenceShapedName(name)
+  );
+}
+
+const PROFILE_LINKED_HOME_SOURCE_NAME = 'official-profile-pi-backfill';
+
+/**
+ * A name `official-profile-pi-backfill` asserted that `isInadmissibleProfileLinkedHomeName`
+ * now refuses. The materializer ignores such an observation, refuses such a served name, and
+ * the gate withholds a row still headed by one when nothing can replace it (#5226).
+ */
+export function isRefusedProfileLinkedHomeName(value: unknown, sourceName: unknown): boolean {
+  return (
+    sourceName === PROFILE_LINKED_HOME_SOURCE_NAME && isInadmissibleProfileLinkedHomeName(value)
+  );
+}
+
+/**
+ * A research row name the engine refuses from the lane that asserted it: the
+ * profile-linked home shapes from `official-profile-pi-backfill` (#5226), and a
+ * sentence-shaped name from every lane (#5739). The materializer ignores the observation,
+ * replaces a served name with the next admissible one, and the gate holds a row still
+ * headed by one.
+ */
+export function isRefusedResearchEntityName(value: unknown, sourceName: unknown): boolean {
+  return (
+    isRefusedProfileLinkedHomeName(value, sourceName) || isSentenceShapedResearchEntityName(value)
+  );
 }
 
 // The furniture a page hangs off a brand ("Google Scholar Profile", "ORCID
@@ -476,25 +534,6 @@ export function namesASupportServiceUnit(value: unknown): boolean {
   return namesAServiceFacility(name) || SUPPORT_OR_CONSULTING_UNIT_RE.test(name);
 }
 
-const CLINICAL_CARE_PATH_SEGMENT_RE =
-  /^(?:care|patient-care|patient-services|clinical-services?|clinical-care)$/i;
-
-/**
- * A page in a school's clinical-care or clinical-service section, which describes a service
- * patients use rather than a lab (#4916). A path that also carries a research segment is
- * a research page that happens to sit under a services section, so it never counts.
- */
-export function isClinicalCareServicePageUrl(value: unknown): boolean {
-  let segments: string[];
-  try {
-    segments = new URL(textValue(value)).pathname.split('/').filter(Boolean);
-  } catch {
-    return false;
-  }
-  if (segments.some((segment) => /research/i.test(segment))) return false;
-  return segments.some((segment) => CLINICAL_CARE_PATH_SEGMENT_RE.test(segment));
-}
-
 // A blurb is prose, so an organizational word inside it can merely MENTION an
 // organization ("Research in the Department of Psychiatry on adolescent sleep")
 // instead of declaring what the slot links. Requiring the head noun to be the
@@ -589,7 +628,7 @@ const PERSON_NAME_PARTICLES = new Set([
 
 const PERSON_NAME_GENERATIONAL_SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
 
-const PERSON_NAME_WORD_RE = /^\p{Lu}[\p{L}'’]*(?:[-'’]\p{Lu}?[\p{L}'’]*)*\.?$/u;
+const PERSON_NAME_WORD_RE = /^\p{Lu}[\p{L}'’-]*\.?$/u;
 
 const PERSON_NAME_INITIAL_RE = /^\p{Lu}\.?$/u;
 
@@ -601,14 +640,51 @@ const COMPOUND_LABEL_PUNCTUATION_RE = /[&/:;+|]|--|\d/;
 const MIN_PERSON_NAME_WORDS = 2;
 const MAX_PERSON_NAME_TOKENS = 4;
 
-function personNameOrderedTokens(value: string): string[] | null {
-  const commaParts = value.split(',');
+const isGenerationalSuffixPart = (part: string): boolean =>
+  PERSON_NAME_GENERATIONAL_SUFFIXES.has(part.trim().toLowerCase().replace(/\.$/, ''));
+
+// A comma before a generational suffix ("Smith, Jr.") ends the name rather than
+// inverting it, so only a comma between two name parts reads as "Family, Given"
+// (#6540). "A" and "An" are given names as well as articles, so only "The" is dropped.
+function personNameOrderedParts(value: string): string | null {
+  const commaParts = value.split(',').map((part) => part.trim());
+  const suffix =
+    commaParts.length > 1 && isGenerationalSuffixPart(commaParts[commaParts.length - 1])
+      ? commaParts.pop()
+      : undefined;
   if (commaParts.length > 2) return null;
-  const ordered =
-    commaParts.length === 2 ? `${commaParts[1].trim()} ${commaParts[0].trim()}` : commaParts[0];
+  if (commaParts.length === 1) return suffix ? `${commaParts[0]} ${suffix}` : commaParts[0];
+  const givenTokens = commaParts[1].split(/\s+/).filter(Boolean);
+  const givenSuffix =
+    !suffix &&
+    givenTokens.length > 1 &&
+    isGenerationalSuffixPart(givenTokens[givenTokens.length - 1])
+      ? givenTokens.pop()
+      : undefined;
+  const trailing = suffix ?? givenSuffix;
+  const ordered = `${givenTokens.join(' ')} ${commaParts[0]}`;
+  return trailing ? `${ordered} ${trailing}` : ordered;
+}
+
+// Writes the ordered tokens back as a name, keeping the comma before a generational suffix
+// when the source name carried one, so a derived name matches the person's own spelling.
+function personNameFromOrderedTokens(source: string, tokens: string[]): string {
+  const last = tokens[tokens.length - 1] ?? '';
+  const sourceCommaSuffix =
+    isGenerationalSuffixPart(source.split(',').pop() ?? '') &&
+    source.includes(',') &&
+    isGenerationalSuffixPart(last);
+  return sourceCommaSuffix && tokens.length > 1
+    ? `${tokens.slice(0, -1).join(' ')}, ${last}`
+    : tokens.join(' ');
+}
+
+function personNameOrderedTokens(value: string): string[] | null {
+  const ordered = personNameOrderedParts(value);
+  if (ordered === null) return null;
   return ordered
     .trim()
-    .replace(/^(?:the|a|an)\s+/i, '')
+    .replace(/^the\s+/i, '')
     .replace(/\((?:[^()]*)\)/g, ' ')
     .split(/\s+/)
     .filter(Boolean);
@@ -732,7 +808,7 @@ export function personScopedResearchEntityNameFromPersonName(entity: {
   if (!isBarePersonNameEntityName(name)) return '';
   const tokens = personNameOrderedTokens(name);
   if (!tokens) return '';
-  return `${tokens.join(' ')} ${researchEntityNameSuffix(entity)}`;
+  return `${personNameFromOrderedTokens(name, tokens)} ${researchEntityNameSuffix(entity)}`;
 }
 
 const HYPHEN_RESEARCH_SUFFIX_RE = /^(.*\S)\s+[-\u2013\u2014]\s*Research$/i;
@@ -863,14 +939,15 @@ export function facultyResearchNameFromUnassertedLabSuffix(entity: {
  * substitute available for that reason (#2913, #3132).
  *
  * `currentName` is the value being replaced, and the substitution declines when that
- * value carries the record's OWN key token. The refusal upstream only ever compares a
- * name against PERSON identity, so it cannot tell a graft from a record whose name is
- * genuinely its own: `ysm-neuropet` is typed LAB, is named for a programme, and cites
- * `medicine.yale.edu/lab/neuropet/`, so the type arm opened and the name read as naming
- * something else. That refusal was wrong before this substitution existed and merely
- * inert; wiring the substitution into the serve path made it overwrite a source-backed
- * name with its director's (#3132). A name sharing a token with the key is the record's
- * own designation, and it is the one piece of self-evidence available with no lead.
+ * value carries the lead's own name or is the designation the record's own key spells
+ * (`nameIsTheRecordsOwnKeyDesignation`): `ysm-neuropet` is typed LAB, is named for a
+ * programme, and cites
+ * `medicine.yale.edu/lab/neuropet/`, and overwriting that source-backed name with its
+ * director's was the #3132 regression. The refusal upstream now honours the same
+ * self-evidence, so this check is the backstop for a caller that reaches here without it.
+ * Sharing any one token with the key is not enough, because a key minted from a
+ * person's roster listing carries the listing's programme words, and declining on those
+ * left a degree programme's name on that person's record.
  */
 export function personScopedResearchEntityNameFromLeadPersonName(entity: {
   leadPersonName: unknown;
@@ -887,7 +964,12 @@ export function personScopedResearchEntityNameFromLeadPersonName(entity: {
   });
   if (
     !currentNameIsABuilding &&
-    nameCarriesIdentityToken(entity.currentName, entityKeyPersonTokens(entity.slug))
+    (nameCarriesIdentityToken(entity.currentName, personIdentityTokens(entity.leadPersonName)) ||
+      nameIsTheRecordsOwnKeyDesignation({
+        name: entity.currentName,
+        slug: entity.slug,
+        leadPersonName: entity.leadPersonName,
+      }))
   ) {
     return '';
   }
@@ -895,7 +977,7 @@ export function personScopedResearchEntityNameFromLeadPersonName(entity: {
   if (!isBarePersonNameEntityName(leadPersonName)) return '';
   const tokens = personNameOrderedTokens(leadPersonName);
   if (!tokens) return '';
-  return `${tokens.join(' ')} ${researchEntityNameSuffix(entity)}`;
+  return `${personNameFromOrderedTokens(leadPersonName, tokens)} ${researchEntityNameSuffix(entity)}`;
 }
 
 // A benefactor whose gift names the appointment ("Frank Altschul Professor ...").
@@ -1057,6 +1139,26 @@ export function isOffSitePageTitleForPersonScopedName(args: {
     return false;
   }
   return !namesAnOrganizationalResearchHome(args.candidateName);
+}
+
+const LAB_SHAPED_HOME_NAME_RE = /\b(?:groups?|teams?|units?|labs?|laborator(?:y|ies))\b/i;
+const GLUED_LAB_HOME_NAME_RE = /(?<=[a-z])(?<!\bCo|\bCol)Labs?\b/;
+const LAB_SHAPED_HOME_URL_RE = /(?<=\b|[a-z])(?<!col?)(?:labs?|laboratory)\b/i;
+
+/**
+ * Whether a home a person's profile links is shaped as that person's own lab: its name says
+ * lab, laboratory, group, team or unit, or its URL says lab, including a lab glued onto a
+ * name ("<Surname>Lab", `<surname>lab.org`) but never a collab or colab. Anything else a lab
+ * slot links is a program, project, collaborative or other organization, and a person who
+ * leads one keeps their own row beside the organization's (owner decision 2026-10-17,
+ * #5283), so only a lab-shaped home may name or type the person's row.
+ */
+export function isLabShapedResearchHome(name: unknown, url?: unknown): boolean {
+  return (
+    LAB_SHAPED_HOME_NAME_RE.test(textValue(name)) ||
+    GLUED_LAB_HOME_NAME_RE.test(textValue(name)) ||
+    LAB_SHAPED_HOME_URL_RE.test(textValue(url))
+  );
 }
 
 export function nameCarriesPersonIdentity(value: unknown, personName: unknown): boolean {
@@ -1292,6 +1394,31 @@ export function entityKeyPersonTokens(entityKey: unknown): string[] {
   return nameWords(textValue(entityKey).replace(/-/g, ' ')).filter(
     (word) => word.length >= 2 && !/\d/.test(word) && !ENTITY_KEY_SOURCE_WORDS.has(word),
   );
+}
+
+/**
+ * Whether a name is the designation the record's own key spells, for a key minted for an
+ * organization rather than for the record's lead: every distinctive token of the key is a
+ * word of the name, and none of them is a word of the lead's name.
+ *
+ * This is the self-evidence #3132 found on `ysm-neuropet`, a lab whose own index entry and
+ * site call it a programme. It is narrower than sharing a token with the key, because a
+ * key minted from a person's roster listing carries that listing's department words too,
+ * so a programme name sharing those words is still a graft onto the person's record.
+ */
+export function nameIsTheRecordsOwnKeyDesignation(args: {
+  name: unknown;
+  slug: unknown;
+  leadPersonName: unknown;
+}): boolean {
+  const keyTokens = entityKeyPersonTokens(args.slug).filter(
+    (token) => !UMBRELLA_ORGANIZATION_HEAD_RE.test(token),
+  );
+  if (keyTokens.length === 0) return false;
+  const leadTokens = new Set(personIdentityTokens(args.leadPersonName));
+  if (keyTokens.some((token) => leadTokens.has(token))) return false;
+  const nameWordSet = new Set(nameWords(args.name));
+  return keyTokens.every((token) => nameWordSet.has(token));
 }
 
 // A slug can glue the research-home head noun straight onto the surname with no
@@ -1577,13 +1704,15 @@ export function classifyHarvestedResearchHomeName(args: {
 }): HarvestedNameIdentityVerdict {
   const name = stripResearchHomeNameLinkWrapper(args.harvestedName);
   if (name.length < 2) return 'UNUSABLE';
+  // Ahead of the label and own-name checks, because a patient-care page is never anyone's
+  // research home whatever the slot calls it: read after them, a bare "lab website" label
+  // linking a clinic minted a "<person> Lab" (#5364).
+  if (isPatientCarePageUrl(args.websiteUrl)) return 'AFFILIATED_ORGANIZATION';
   if (isNonIdentifyingLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (isPersonPageLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (isHarvestedPageFurnitureName(name, args.personName)) return 'NON_IDENTIFYING_LABEL';
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
-  if (namesASupportServiceUnit(name) || isClinicalCareServicePageUrl(args.websiteUrl)) {
-    return 'AFFILIATED_ORGANIZATION';
-  }
+  if (namesASupportServiceUnit(name)) return 'AFFILIATED_ORGANIZATION';
   if (isUmbrellaOrganizationName(name)) return 'AFFILIATED_ORGANIZATION';
   if (describesAffiliatedOrganization(args.harvestedDescription)) {
     return 'AFFILIATED_ORGANIZATION';
@@ -1715,6 +1844,29 @@ const citedUrlList = (value: unknown): unknown[] =>
     Array.isArray(entry) ? entry : [entry],
   );
 
+const OWN_LAB_SITE_PATH_RE = /\/labs?\/([a-z0-9-]+)\/?$/i;
+
+/**
+ * Whether the record cites a lab site of its own whose address spells its key, as
+ * `/lab/<key>/`. A topical key word shared with a parent centre's name ("cancer" on a
+ * cancer lab named "Yale Cancer Center") has no such site behind it, so the key alone
+ * does not make an umbrella name the record's own.
+ */
+function citesOwnLabSiteSpellingTheKey(recordCitedUrls: unknown, slug: unknown): boolean {
+  const keyTokens = new Set(entityKeyPersonTokens(slug));
+  return citedUrlList(recordCitedUrls).some((value) => {
+    let pathname: string;
+    try {
+      pathname = new URL(textValue(value)).pathname;
+    } catch {
+      return false;
+    }
+    const segment = OWN_LAB_SITE_PATH_RE.exec(pathname)?.[1] || '';
+    const segmentTokens = nameWords(segment.replace(/-/g, ' '));
+    return segmentTokens.length > 0 && segmentTokens.every((token) => keyTokens.has(token));
+  });
+}
+
 /**
  * The two citation shapes that identify the shared host itself: its root, and a
  * `~user` tenant page under it. A deep page on the same host
@@ -1837,6 +1989,13 @@ function personScopedNameIdentityPrelude(
     !(
       isPrincipalInvestigatorLedUnitName(name) &&
       organizationNameIsAmong(name, args.siteDeclaredOwnNames)
+    ) &&
+    !(
+      nameIsTheRecordsOwnKeyDesignation({
+        name,
+        slug: args.slug,
+        leadPersonName: args.personName,
+      }) && citesOwnLabSiteSpellingTheKey(args.recordCitedUrls, args.slug)
     )
   ) {
     return { settled: !nameNamesThisRecordsOwnPerson(name, identityTokens) };

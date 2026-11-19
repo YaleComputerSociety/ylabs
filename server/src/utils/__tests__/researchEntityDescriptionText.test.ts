@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { STUDIES_LEAD_VERB_GERUNDS } from '../studiesVerbGerundLead';
+
 import {
   LEAD_SUBJECT_MARKER_PATTERN,
   isAcademicAppointmentDescription,
@@ -425,6 +427,59 @@ describe('sanitizeFacultyResearchEntityText', () => {
     ).toBe('This research includes genomic screening. This research addresses cilia.');
   });
 
+  describe('a possessive that is the object of "Research at" keeps its lab (#6393)', () => {
+    const facultyResearch = {
+      name: 'Fixture Exemplar Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    };
+
+    it.each([
+      "Research at Fixture Exemplar's lab studies tidal sediment transport.",
+      "Research at Professor Exemplar's lab focuses on tidal sediment transport.",
+      "Research at Dr. Exemplar's lab uses tidal sediment cores.",
+      "Undergraduate research at Exemplar's lab develops tidal sensors.",
+      "Research at Exemplars' lab investigates tidal sediment transport.",
+      'Research at her lab studies tidal sediment transport.',
+      'Research at their lab is interested in tidal sediment transport.',
+    ])('leaves %j reading "lab"', (copy) => {
+      expect(sanitizeFacultyResearchEntityText(copy, facultyResearch)).toBe(copy);
+    });
+
+    it('still swaps a possessive lab that is the sentence subject', () => {
+      expect(
+        sanitizeFacultyResearchEntityText(
+          "Fixture Exemplar's lab studies tidal sediment transport. Her lab uses sediment cores.",
+          facultyResearch,
+        ),
+      ).toBe(
+        "Fixture Exemplar's research studies tidal sediment transport. Her research uses sediment cores.",
+      );
+    });
+
+    it('swaps a subject possessive after a sentence ending in "research at <Name>."', () => {
+      expect(
+        sanitizeFacultyResearchEntityText(
+          "Fixture Exemplar conducts research at Coastal. Exemplar's lab studies tidal sediment transport.",
+          facultyResearch,
+        ),
+      ).toBe(
+        "Fixture Exemplar conducts research at Coastal. Exemplar's research studies tidal sediment transport.",
+      );
+    });
+
+    it('swaps a later subject possessive after an earlier "research at" sentence', () => {
+      expect(
+        sanitizeFacultyResearchEntityText(
+          "Fixture Exemplar's research at her field station is ongoing. Her lab studies tidal sediment transport.",
+          facultyResearch,
+        ),
+      ).toBe(
+        "Fixture Exemplar's research at her field station is ongoing. Her research studies tidal sediment transport.",
+      );
+    });
+  });
+
   it('strips a trailing "Research" suffix (with or without a dash separator) from the possessive name', () => {
     const dashSuffixEntity = {
       name: 'Tara Boroushaki - Research',
@@ -654,6 +709,48 @@ describe('stripSelfReferencePlaceholderNoun reaches a row the faculty relabel sk
 });
 
 describe('sanitizeResearchEntityPublicDescriptionFields', () => {
+  it('serves a grammatical lead when a subject-less lead precedes a verb gerund (#6393)', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields({
+      shortDescription: 'Research focuses on improving outcomes for coastal flood planning.',
+      fullDescription:
+        'Research on developing tidal sediment models for coastal flood planning and harbor design.',
+    });
+
+    expect(sanitized.shortDescription).toBe(
+      'Focuses on improving outcomes for coastal flood planning.',
+    );
+    expect(sanitized.fullDescription).toBe(
+      'Focuses on developing tidal sediment models for coastal flood planning and harbor design.',
+    );
+  });
+
+  it('serves "Focuses on" for a "Studies" lead before a listed verb gerund (#6418)', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields({
+      shortDescription: 'Studies improving tidal flood forecasts for harbor towns.',
+      fullDescription:
+        'Studies training harbor pilots in tidal navigation. Studies how standardizing gauge data helps coastal planners.',
+    });
+
+    expect(sanitized.shortDescription).toBe(
+      'Focuses on improving tidal flood forecasts for harbor towns.',
+    );
+    expect(sanitized.fullDescription).toBe(
+      'Focuses on training harbor pilots in tidal navigation. Focuses on how standardizing gauge data helps coastal planners.',
+    );
+  });
+
+  it('keeps a served "Studies" lead before a noun gerund (#6418)', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields({
+      shortDescription: 'Studies eating disorders in coastal towns.',
+      fullDescription: 'Studies imaging of tidal sediment cores and signaling in tidal plankton.',
+    });
+
+    expect(sanitized.shortDescription).toBe('Studies eating disorders in coastal towns.');
+    expect(sanitized.fullDescription).toBe(
+      'Studies imaging of tidal sediment cores and signaling in tidal plankton.',
+    );
+  });
+
   it('drops PI profile synthesis summaries that are not research-focused', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(
       {
@@ -2541,6 +2638,171 @@ describe('repairSubjectlessResearchLead', () => {
     expect(repairSubjectlessResearchLead('Research in the Altman Lab centers on catalysis.')).toBe(
       'Research in the Altman Lab centers on catalysis.',
     );
+  });
+
+  describe('an -ing word after the lead keeps a grammatical "Focuses on" lead (#6393)', () => {
+    const verbGerunds = [
+      'combatting',
+      'detecting',
+      'developing',
+      'diagnosing',
+      'identifying',
+      'imaging',
+      'improving',
+      'investigating',
+      'optimizing',
+      'preventing',
+      'teaching',
+    ];
+    const leads = ['Research focuses on', 'Focuses on', 'Research on'];
+
+    it.each(leads.flatMap((lead) => verbGerunds.map((gerund) => [lead, gerund] as const)))(
+      'rewrites "%s %s ..." to "Focuses on %s ..."',
+      (lead, gerund) => {
+        expect(repairSubjectlessResearchLead(`${lead} ${gerund} the tidal sediment record.`)).toBe(
+          `Focuses on ${gerund} the tidal sediment record.`,
+        );
+      },
+    );
+
+    it('reads a capitalized gerund and keeps the rest of the text', () => {
+      expect(
+        repairSubjectlessResearchLead(
+          'Research on Developing tidal sensors. Research interests include coastal hazards.',
+        ),
+      ).toBe('Focuses on Developing tidal sensors. Research interests include coastal hazards.');
+    });
+
+    it.each([
+      ['Research focuses on neuroimaging of tidal fish.', 'Focuses on neuroimaging of tidal fish.'],
+      ['Focuses on sensing in coastal waters.', 'Focuses on sensing in coastal waters.'],
+      ['Research on self-healing tidal barriers.', 'Focuses on self-healing tidal barriers.'],
+    ])('keeps "Focuses on", which reads before a noun gerund too: %j', (input, expected) => {
+      expect(repairSubjectlessResearchLead(input)).toBe(expected);
+    });
+
+    it.each([
+      ['Research focuses on tidal sediment transport.', 'Studies tidal sediment transport.'],
+      [
+        'Focuses on coastal hazards, sea ice, and tidal sediment.',
+        'Studies coastal hazards, sea ice, and tidal sediment.',
+      ],
+      ['Research on remote sensing of sea ice.', 'Studies remote sensing of sea ice.'],
+    ])('keeps the "Studies" lead when no -ing word follows the lead: %j', (input, expected) => {
+      expect(repairSubjectlessResearchLead(input)).toBe(expected);
+    });
+
+    it('does not read an -ing word that is only a prefix of the next word', () => {
+      expect(repairSubjectlessResearchLead('Research on teachings of early coastal law.')).toBe(
+        'Studies teachings of early coastal law.',
+      );
+    });
+
+    it('leaves an -ing word that is not right after the lead alone', () => {
+      expect(
+        repairSubjectlessResearchLead('Research focuses on methods for detecting tidal surges.'),
+      ).toBe('Studies methods for detecting tidal surges.');
+    });
+
+    it('is a no-op on its own output', () => {
+      const once = repairSubjectlessResearchLead('Research focuses on developing tidal sensors.');
+      expect(repairSubjectlessResearchLead(once)).toBe(once);
+    });
+  });
+
+  describe('a "Studies" lead before a listed verb gerund serves "Focuses on" (#6418)', () => {
+    const measuredVerbGerunds = [
+      'improving',
+      'training',
+      'tailoring',
+      'strengthening',
+      'optimizing',
+      'expanding',
+      'standardizing',
+    ];
+    const sampledVerbGerunds = [
+      'examining',
+      'understanding',
+      'developing',
+      'reducing',
+      'treating',
+      'enhancing',
+      'characterising',
+      'modelling',
+    ];
+
+    it.each([...measuredVerbGerunds, ...sampledVerbGerunds])(
+      'rewrites "Studies %s ..." to a "Focuses on" lead',
+      (gerund) => {
+        expect(repairSubjectlessResearchLead(`Studies ${gerund} tidal flood forecasts.`)).toBe(
+          `Focuses on ${gerund} tidal flood forecasts.`,
+        );
+      },
+    );
+
+    it.each(measuredVerbGerunds)('rewrites "Studies how %s ..." keeping "how"', (gerund) => {
+      expect(repairSubjectlessResearchLead(`Studies how ${gerund} harbor sensors helps.`)).toBe(
+        `Focuses on how ${gerund} harbor sensors helps.`,
+      );
+    });
+
+    it.each(['.', '!', '?'])('rewrites the lead of a later sentence after "%s"', (stop) => {
+      expect(
+        repairSubjectlessResearchLead(
+          `Maps coastal erosion${stop} Studies improving tidal gauges.`,
+        ),
+      ).toBe(`Maps coastal erosion${stop} Focuses on improving tidal gauges.`);
+    });
+
+    it('rewrites the lead a "Research studies" repair leaves behind', () => {
+      expect(repairSubjectlessResearchLead('Research studies reducing tidal flood risk.')).toBe(
+        'Focuses on reducing tidal flood risk.',
+      );
+    });
+
+    it.each([
+      'Studies eating disorders in coastal towns.',
+      'Studies emerging technologies for harbor design.',
+      'Studies signaling in tidal plankton.',
+      'Studies imaging of tidal sediment cores.',
+      'Studies tidal sediment transport.',
+      'Studies coastal hazards, sea ice and tidal sediment.',
+      'Studies how tidal sediment moves.',
+      'Studies',
+      'Studies.',
+    ])('keeps a "Studies" lead before a noun, adjective or nothing: %j', (input) => {
+      expect(repairSubjectlessResearchLead(input)).toBe(input);
+    });
+
+    it('keeps a listed gerund that only prefixes a longer word', () => {
+      expect(repairSubjectlessResearchLead('Studies trainingset bias in tidal models.')).toBe(
+        'Studies trainingset bias in tidal models.',
+      );
+    });
+
+    it('keeps a "Studies" that is not at the start of a sentence', () => {
+      const midSentence = 'The Center for Coastal Studies training program funds tidal fieldwork.';
+      expect(repairSubjectlessResearchLead(midSentence)).toBe(midSentence);
+    });
+
+    it('keeps a lowercase "studies" before a listed gerund', () => {
+      expect(repairSubjectlessResearchLead('studies improving tidal gauges.')).toBe(
+        'studies improving tidal gauges.',
+      );
+    });
+
+    it('is a no-op on its own output', () => {
+      const once = repairSubjectlessResearchLead(
+        'Studies improving tidal gauges. Studies how training helps.',
+      );
+      expect(once).toBe('Focuses on improving tidal gauges. Focuses on how training helps.');
+      expect(repairSubjectlessResearchLead(once)).toBe(once);
+    });
+
+    it('lists only distinct -ing words', () => {
+      expect(new Set(STUDIES_LEAD_VERB_GERUNDS).size).toBe(STUDIES_LEAD_VERB_GERUNDS.length);
+      for (const gerund of STUDIES_LEAD_VERB_GERUNDS) expect(gerund).toMatch(/^[a-z]+ing$/);
+    });
   });
 });
 

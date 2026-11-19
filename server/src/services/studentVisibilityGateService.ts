@@ -1,3 +1,4 @@
+import { rostersWithDepartedLeadsRetired } from './departedLeadServing';
 import { Signal } from '../models/signal';
 import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 import { accessSignalTypes } from '../models/researchAccessTypes';
@@ -19,6 +20,10 @@ import {
 import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import {
+  directoryRemovalServingForGate,
+  rosterWithoutWithheldPeople,
+} from './directoryRemovalServing';
 import { researchEntityLeadStateForMembers } from './researchEntityQuality';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
@@ -26,6 +31,7 @@ import {
   publicStudentVisibilityTiers,
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
+import { isHoldWithoutRecordedReason } from '../models/holdOverrideReasonGuard';
 import {
   archivedProgramStudentVisibilityVerdictFilter,
   archivedStudentVisibilityVerdictFilter,
@@ -45,7 +51,8 @@ import {
   computeResearchEntityStudentVisibility,
   hasProfileAreaShellDuplicateRisk,
   isStudentReadyHardBlockerReason,
-  isStudentReadySoftSignalReason,
+  isStudentVisibilitySignalReason,
+  LEAD_IS_STAFF_OF_SERVED_LAB_REASON,
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
 } from './studentVisibilityTier';
 import { loadKnownPersonSurnameRoster } from '../utils/researchHomeNameIdentityRoster';
@@ -65,7 +72,10 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 import { readIndexedFieldByDocumentId, syncEntities } from './meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
+import {
+  entityNameWordsWithoutKindNouns,
+  isConcreteResearchHomeEntity,
+} from '../utils/profileAreaDuplicateRisk';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import {
@@ -73,6 +83,11 @@ import {
   officialProfileUrlFromRosterEntry,
 } from './leadProfileIdentity';
 import { nameDenotesOrganization } from '../utils/researchHomeNameIdentityAuthority';
+import {
+  liveFieldValueRefusals,
+  refusedValueRule,
+} from '../utils/researchEntityFieldValueRefusals';
+import { statesResearchOwningAppointment } from '../utils/researchHomeOwnership';
 import { servableOrcid } from '../utils/orcid';
 import {
   RE_DERIVED_ACCESS_SIGNAL_TYPES,
@@ -80,6 +95,7 @@ import {
 } from '../scrapers/accessMaterializer';
 import { SCHOOL_PROFILE_HOSTS } from '../scrapers/orgUnitCanonicalization';
 import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
+import { isExcludedFromSearchIndex } from './directoryRemovalReason';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
@@ -127,6 +143,7 @@ export interface StudentVisibilityGatePlan {
   sourceNames: string[];
   nextRepairAction: string;
   hasResolvedLead?: boolean;
+  holdWithoutRecordedReason?: boolean;
   /**
    * The per-row inputs this verdict was reached on, reported so the engine benchmark can
    * freeze them (#3589). Every one of them is either corpus-wide (the duplicate and
@@ -153,6 +170,8 @@ export interface ResearchEntityGateRowInput {
   exactUrlDuplicateRisk: boolean;
   citationsSharedAcrossPersonRows: boolean;
   relatedEntityAccessPathCount: number;
+  everyLeadRemovedByRequest?: boolean;
+  leadIsStaffOfServedLab?: boolean;
 }
 
 export interface VisibilityQueueUpsert {
@@ -201,6 +220,7 @@ export interface StudentVisibilityGateReport {
     resolved: number;
     changed: number;
     unexplainedHeld: number;
+    holdsWithoutRecordedReason: number;
     upcomingDuplicateWindowsChanged: number;
   };
   reasonCounts: Record<string, number>;
@@ -210,14 +230,6 @@ export interface StudentVisibilityGateReport {
 }
 
 const PUBLIC_TIERS = new Set<string>(publicStudentVisibilityTiers);
-
-const evidenceReasons = new Set([
-  'application_route',
-  'graduate_relevant',
-  'official_source',
-  'source_backed_description',
-  'undergraduate_relevant',
-]);
 
 // The single definition of the source-description repair lane. The repair queue
 // classifies the same reasons (`classifyVisibilityRepairStage`) and clears them
@@ -256,18 +268,19 @@ export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   PRIZE_FOR_COMPLETED_WORK_REASON,
   PROGRAM_LISTING_PAGE_REASON,
   'exact_url_duplicate_risk',
+  LEAD_IS_STAFF_OF_SERVED_LAB_REASON,
   'generic_directory_shell',
   'inactive_at_yale',
   'non_owner_grant_shell',
   'grant_only_no_current_yale_source',
   'permanently_closed',
+  'researcher_removed',
   'non_research_entity',
   'non_research_program',
   'not_undergraduate_relevant',
   'profile_biography_shell',
   'research_infrastructure_only',
 ]);
-export const REVIEW_EXCEPTION_REPAIR_REASONS: ReadonlySet<string> = new Set(['formalization_only']);
 // Every field the tier computation reads must be listed here. A field the
 // computation consults but the projection omits arrives as `undefined`, so the
 // branch depending on it silently never fires and the gate reports a clean
@@ -289,7 +302,7 @@ export const REVIEW_EXCEPTION_REPAIR_REASONS: ReadonlySet<string> = new Set(['fo
 // citation is a known 404. Composing the shared list means a future gate input is
 // inherited instead of waiting to be noticed a fourth time.
 export const researchEntityGateProjection = withPublicDescriptionGateFields(
-  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls sourceLinkHealth descriptionGrounding departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason leadVerification',
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls fieldValueRefusals sourceLinkHealth descriptionGrounding departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason leadVerification',
 );
 
 /**
@@ -348,7 +361,9 @@ export async function researchEntityIdsWithGateAttachedLead(
 ): Promise<Set<string>> {
   const attached = new Set<string>();
   if (entityIds.length === 0) return attached;
-  const roster = await getResearchEntityRosterByEntityId([...entityIds]);
+  const roster = await rostersWithDepartedLeadsRetired(
+    await getResearchEntityRosterByEntityId([...entityIds]),
+  );
   for (const [entityId, entries] of roster) {
     const leadMembers = studentVisibilityGateLeadRows(entries);
     if (researchEntityLeadStateForMembers(leadMembers) === 'lead_attached') {
@@ -359,8 +374,6 @@ export async function researchEntityIdsWithGateAttachedLead(
 }
 
 export const repairStageForReasons = (reasons: string[]) => {
-  if (reasons.some((reason) => REVIEW_EXCEPTION_REPAIR_REASONS.has(reason)))
-    return 'review_exception';
   if (reasons.includes('exact_url_duplicate_risk')) return 'suppression';
   if (reasons.includes('generic_directory_shell')) return 'suppression';
   if (reasons.includes('profile_biography_shell')) return 'suppression';
@@ -378,11 +391,10 @@ export const repairStageForReasons = (reasons: string[]) => {
 // `startsWith('missing_')` rule would otherwise sweep in. The single source of
 // truth is STUDENT_READY_HARD_BLOCKER_REASONS / STUDENT_READY_SOFT_SIGNAL_REASONS
 // in studentVisibilityTier.ts. The residual `_only` clause keeps
-// review-exception reasons (formalization_only, application_source_only,
-// profile_fallback_only) blocking without enumerating each here.
+// review-exception reasons (application_source_only, profile_fallback_only)
+// blocking without enumerating each here.
 export function isBlockingVisibilityReason(reason: string): boolean {
-  if (evidenceReasons.has(reason)) return false;
-  if (isStudentReadySoftSignalReason(reason)) return false;
+  if (isStudentVisibilitySignalReason(reason)) return false;
   if (isStudentReadyHardBlockerReason(reason)) return true;
   return reason.endsWith('_only');
 }
@@ -450,6 +462,18 @@ const stringSetsEqual = (left: string[], right: string[]): boolean => {
   const sortedRight = sortedStrings(right);
   return sortedLeft.every((value, index) => value === sortedRight[index]);
 };
+
+/**
+ * A hold that records no reason cannot be re-decided by anyone, and a raw-driver write
+ * can still mint one past the model guard, so the gate counts them on every run rather
+ * than refusing: the existing ones are left for an operator to explain (#5856).
+ */
+export function studentVisibilityGateHoldsWithoutReasonWarning(
+  holdsWithoutRecordedReason: number,
+): string | undefined {
+  if (holdsWithoutRecordedReason <= 0) return undefined;
+  return `${holdsWithoutRecordedReason} row(s) carry a holding studentVisibilityOverrideTier with no recorded studentVisibilitySuppressionReason; record one with student-visibility:override`;
+}
 
 export function isStudentVisibilityGatePlanMateriallyChanged(
   plan: StudentVisibilityGatePlan,
@@ -574,7 +598,7 @@ const isSchoolLandingPage = (url: URL, path: string): boolean =>
   Object.hasOwn(SCHOOL_PROFILE_HOSTS, hostWithoutWww(url.hostname)) &&
   schoolLandingPagePath.test(path);
 
-function normalizedExactDuplicateUrl(value: unknown): string {
+export function normalizedExactDuplicateUrl(value: unknown): string {
   const raw = unwrapMicrosoftSafeLinksUrl(value);
   if (!/^https?:\/\//i.test(raw)) return '';
   try {
@@ -627,6 +651,178 @@ const entityDuplicateUrls = (entity: any): string[] =>
       ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
     ]).map(normalizedExactDuplicateUrl),
   ).filter(isSpecificDuplicateSignalUrl);
+
+const WEBSITE_REFUSAL_FIELDS = ['websiteUrl', 'website'] as const;
+
+const refusesUrlAsWrongOwner = (entity: any, url: unknown): boolean =>
+  WEBSITE_REFUSAL_FIELDS.some(
+    (field) => refusedValueRule(entity.fieldValueRefusals, field, url) === 'wrong_owner',
+  );
+
+const hasWrongOwnerWebsiteRefusal = (entity: any): boolean =>
+  WEBSITE_REFUSAL_FIELDS.some((field) =>
+    liveFieldValueRefusals(entity.fieldValueRefusals, field).some(
+      (refusal) => refusal?.rule === 'wrong_owner',
+    ),
+  );
+
+const urlsRefusedAsWrongOwner = (entity: any): Set<string> =>
+  new Set(
+    uniqueStrings([
+      entity.websiteUrl,
+      entity.website,
+      ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+    ])
+      .filter((value) => refusesUrlAsWrongOwner(entity, value))
+      .map(normalizedExactDuplicateUrl),
+  );
+
+// A row refused as the wrong owner of a URL still cites it, because the materializer
+// carries `sourceUrls` forward, but the refusal says the address is not this row's, so
+// the citation makes it no party to a contest over that address (#5858).
+const entityClaimedDuplicateUrls = (entity: any): string[] => {
+  const refused = urlsRefusedAsWrongOwner(entity);
+  return entityDuplicateUrls(entity).filter((url) => !refused.has(url));
+};
+
+export interface LeadIsStaffOfServedLabInput {
+  entities: readonly any[];
+  leadsByEntityId: ReadonlyMap<string, readonly any[]>;
+  rosterByEntityId: ReadonlyMap<string, readonly any[]>;
+  servedEntityIds: ReadonlySet<string>;
+  candidateEntityIds: Iterable<string>;
+}
+
+export type LeadIsStaffOfServedLabArm = 'website' | 'wrong_owner_refusal' | 'role_edge';
+
+export interface LeadIsStaffOfServedLabLink {
+  entityId: string;
+  arm: LeadIsStaffOfServedLabArm;
+}
+
+const gateLeadTitle = (lead: any): string =>
+  String(lead?.title || lead?.user?.title || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const leadIsStaffTitled = (lead: any): boolean => {
+  const title = gateLeadTitle(lead);
+  return Boolean(title) && !statesResearchOwningAppointment(title);
+};
+
+const entityOwnSiteUrls = (entity: any): string[] =>
+  uniqueStrings([entity.websiteUrl, entity.website]);
+
+const entityNormalizedOwnSites = (entity: any): string[] =>
+  uniqueStrings(entityOwnSiteUrls(entity).map(normalizedExactDuplicateUrl)).filter(
+    isSpecificDuplicateSignalUrl,
+  );
+
+const STAFF_ROLE = 'staff';
+const LAB_ENTITY_TYPE = 'LAB';
+
+/**
+ * The served rows each candidate links to through the #5876 arms: its own website is
+ * that row's site, a live `wrong_owner` refusal on its website names that row's site, or
+ * its lead holds a staff edge on that row or any edge on a lab. Exported so a partial
+ * gate run can find the rows outside its page whose tiers it must know first.
+ */
+export function leadIsStaffOfServedLabLinks({
+  entities,
+  leadsByEntityId,
+  rosterByEntityId,
+  servedEntityIds,
+  candidateEntityIds,
+}: LeadIsStaffOfServedLabInput): Map<string, LeadIsStaffOfServedLabLink[]> {
+  const entityById = new Map(
+    entities.map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]),
+  );
+  const servedSites = [...servedEntityIds]
+    .map((servedId) => ({ servedId, entity: entityById.get(servedId) }))
+    .filter(({ entity }) => entity && entityNormalizedOwnSites(entity).length > 0)
+    .map(({ servedId, entity }) => ({
+      servedId,
+      rawSites: entityOwnSiteUrls(entity),
+      normalizedSites: entityNormalizedOwnSites(entity),
+    }));
+  const servedIdsBySite = new Map<string, string[]>();
+  for (const { servedId, normalizedSites } of servedSites) {
+    for (const site of normalizedSites) {
+      servedIdsBySite.set(site, [...(servedIdsBySite.get(site) || []), servedId]);
+    }
+  }
+  const edgesByPersonId = new Map<string, Array<{ entityId: string; role: string }>>();
+  for (const [entityId, entries] of rosterByEntityId) {
+    for (const entry of entries) {
+      if (entry?.state === 'HISTORICAL') continue;
+      const personId = studentVisibilityGateDocumentId(entry?.personId);
+      if (!personId) continue;
+      edgesByPersonId.set(personId, [
+        ...(edgesByPersonId.get(personId) || []),
+        { entityId, role: String(entry.role || '') },
+      ]);
+    }
+  }
+
+  const linksByEntityId = new Map<string, LeadIsStaffOfServedLabLink[]>();
+  for (const id of new Set(candidateEntityIds)) {
+    const entity = entityById.get(id);
+    const leads = leadsByEntityId.get(id) || [];
+    if (!entity || leads.length === 0 || !leads.every(leadIsStaffTitled)) continue;
+    const links: LeadIsStaffOfServedLabLink[] = [];
+    for (const site of entityNormalizedOwnSites(entity)) {
+      for (const servedId of servedIdsBySite.get(site) || []) {
+        links.push({ entityId: servedId, arm: 'website' });
+      }
+    }
+    if (hasWrongOwnerWebsiteRefusal(entity)) {
+      for (const { servedId, rawSites } of servedSites) {
+        if (rawSites.some((site) => refusesUrlAsWrongOwner(entity, site))) {
+          links.push({ entityId: servedId, arm: 'wrong_owner_refusal' });
+        }
+      }
+    }
+    for (const lead of leads) {
+      for (const edge of edgesByPersonId.get(studentVisibilityGateDocumentId(lead.userId)) || []) {
+        if (!servedEntityIds.has(edge.entityId)) continue;
+        const target = entityById.get(edge.entityId);
+        if (edge.role === STAFF_ROLE || target?.entityType === LAB_ENTITY_TYPE) {
+          links.push({ entityId: edge.entityId, arm: 'role_edge' });
+        }
+      }
+    }
+    const linksToOthers = links.filter((link) => link.entityId !== id);
+    if (linksToOthers.length > 0) linksByEntityId.set(id, linksToOthers);
+  }
+  return linksByEntityId;
+}
+
+/**
+ * Rows held because the lead holds only a staff title and the row links to another
+ * served row that already represents the lab (#5876). A pair that links each other is
+ * left alone, because neither row is then the one that represents the lab. Derived on
+ * every gate run from the pass's own tiers, so it writes nothing and takes no lock.
+ */
+export function selectLeadIsStaffOfServedLabEntityIds(
+  input: LeadIsStaffOfServedLabInput,
+): Set<string> {
+  const candidateLinks = leadIsStaffOfServedLabLinks(input);
+  const linkedEntityIds = uniqueStrings(
+    [...candidateLinks.values()].flat().map((link) => link.entityId),
+  );
+  const reverseLinks = leadIsStaffOfServedLabLinks({
+    ...input,
+    candidateEntityIds: linkedEntityIds,
+  });
+  const held = new Set<string>();
+  for (const [id, links] of candidateLinks) {
+    const unreciprocated = links.some(
+      (link) => !(reverseLinks.get(link.entityId) || []).some((back) => back.entityId === id),
+    );
+    if (unreciprocated) held.add(id);
+  }
+  return held;
+}
 
 /**
  * Sources that publish a research home's own address, so they assert which row
@@ -836,7 +1032,7 @@ const isNamedOrganizationEntity = (entity: any): boolean =>
  * the page as its own home. Such organizations still contest the page among themselves,
  * and two person-scoped rows sharing it still contest it too.
  */
-const contestSetsOnUrl = (url: string, members: any[]): any[][] => {
+const directorPageContestSets = (url: string, members: any[]): any[][] => {
   if (!isPersonPageCitation(url)) return [members];
   if (!members.some((entity) => isPersonScopedResearchEntityType(entity?.entityType))) {
     return [members];
@@ -848,6 +1044,103 @@ const contestSetsOnUrl = (url: string, members: any[]): any[][] => {
     members.filter(isOrganizationReadingThePage),
   ];
 };
+
+type LeadIdsByEntityId = ReadonlyMap<string, ReadonlySet<string>>;
+
+const leadIdsByEntityIdFrom = (leadRows: any[]): LeadIdsByEntityId => {
+  const leadIdsByEntityId = new Map<string, Set<string>>();
+  for (const row of leadRows) {
+    const entityId = studentVisibilityGateDocumentId(row.researchEntityId);
+    const userId = studentVisibilityGateDocumentId(row.userId);
+    if (!entityId || !userId) continue;
+    if (!leadIdsByEntityId.has(entityId)) leadIdsByEntityId.set(entityId, new Set());
+    leadIdsByEntityId.get(entityId)!.add(userId);
+  }
+  return leadIdsByEntityId;
+};
+
+const NAME_COMPARISON_STOP_WORDS = new Set([
+  'and',
+  'of',
+  'for',
+  'at',
+  'in',
+  'on',
+  'the',
+  'lab',
+  'laboratory',
+  'faculty',
+  'research',
+  'group',
+]);
+
+const comparableNameWord = (word: string): string => {
+  const singular =
+    word.length > 3 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word;
+  return singular === 'centre' ? 'center' : singular;
+};
+
+const comparableEntityName = (entity: any): string =>
+  [
+    ...new Set(
+      entityNameWordsWithoutKindNouns(String(entity?.name ?? '').replace(/&/g, ' and '))
+        .map(comparableNameWord)
+        .filter((word) => word && !NAME_COMPARISON_STOP_WORDS.has(word)),
+    ),
+  ]
+    .sort()
+    .join(' ');
+
+/**
+ * On a page none of them publishes as its own home (a center, clinic, core or program
+ * page), rows led by different people and named differently are different research that
+ * happens to cite the same page, not one row stored twice (#6206). They still contest it
+ * when either has no lead, when they share a lead, or when their names agree, so a
+ * duplicate a missing lead edge or a renamed twin hides is still held.
+ */
+const independentlyLedContestSets = (
+  url: string,
+  members: any[],
+  leadIdsByEntityId: LeadIdsByEntityId,
+): any[][] => {
+  if (members.length < 2 || isPersonPageCitation(url)) return [members];
+  if (members.some((entity) => entityPublishesUrlAsItsOwnHome(entity, url))) return [members];
+  const leadsOf = (entity: any) =>
+    leadIdsByEntityId.get(studentVisibilityGateEntityIdKey(entity)) ?? new Set<string>();
+  const contests = (a: any, b: any): boolean => {
+    const aLeads = leadsOf(a);
+    const bLeads = leadsOf(b);
+    if (aLeads.size === 0 || bLeads.size === 0) return true;
+    if ([...aLeads].some((lead) => bLeads.has(lead))) return true;
+    const aName = comparableEntityName(a);
+    return Boolean(aName) && aName === comparableEntityName(b);
+  };
+  const setIndexOf = members.map((_, index) => index);
+  const rootOf = (index: number): number =>
+    setIndexOf[index] === index ? index : (setIndexOf[index] = rootOf(setIndexOf[index]));
+  for (let i = 0; i < members.length; i += 1) {
+    for (let j = i + 1; j < members.length; j += 1) {
+      if (contests(members[i], members[j])) setIndexOf[rootOf(j)] = rootOf(i);
+    }
+  }
+  const sets = new Map<number, any[]>();
+  members.forEach((entity, index) => {
+    const root = rootOf(index);
+    sets.set(root, [...(sets.get(root) ?? []), entity]);
+  });
+  return [...sets.values()];
+};
+
+const contestSetsOnUrl = (
+  url: string,
+  members: any[],
+  leadIdsByEntityId?: LeadIdsByEntityId,
+): any[][] =>
+  directorPageContestSets(url, members).flatMap((contestants) =>
+    leadIdsByEntityId
+      ? independentlyLedContestSets(url, contestants, leadIdsByEntityId)
+      : [contestants],
+  );
 
 /**
  * The members that actually contest ownership of a URL. Applied AFTER the group-size
@@ -879,10 +1172,14 @@ const membersClaimingUrl = (url: string, members: any[]): any[] => {
  * builder was module-local a group-level claim could not be checked against the exported
  * surface: two independent proxy attempts produced a fake zero over 4,780 rows (#3272).
  */
-export const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
+export const exactDuplicateUrlGroups = (
+  entities: any[],
+  leadRows?: any[],
+): ExactDuplicateUrlGroup[] => {
+  const leadIdsByEntityId = leadRows ? leadIdsByEntityIdFrom(leadRows) : undefined;
   const entitiesByUrl = new Map<string, any[]>();
   for (const entity of entities) {
-    for (const url of entityDuplicateUrls(entity)) {
+    for (const url of entityClaimedDuplicateUrls(entity)) {
       entitiesByUrl.set(url, [...(entitiesByUrl.get(url) || []), entity]);
     }
   }
@@ -891,7 +1188,7 @@ export const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup
       ([, members]) => members.length > 1 && members.length <= EXACT_DUPLICATE_URL_GROUP_LIMIT,
     )
     .flatMap(([url, members]) =>
-      contestSetsOnUrl(url, members).map((contestants) => ({
+      contestSetsOnUrl(url, members, leadIdsByEntityId).map((contestants) => ({
         url,
         members: membersClaimingUrl(url, contestants),
       })),
@@ -967,9 +1264,12 @@ type ExactDuplicateUrlIdGroup = {
   indexVouchedIds: string[];
 };
 
-const exactUrlDuplicateGroupEntityIds = (entities: any[]): ExactDuplicateUrlIdGroup[] => {
+const exactUrlDuplicateGroupEntityIds = (
+  entities: any[],
+  leadRows: any[],
+): ExactDuplicateUrlIdGroup[] => {
   const authority = indexUrlAuthorityOver(entities);
-  return exactDuplicateUrlGroups(entities)
+  return exactDuplicateUrlGroups(entities, leadRows)
     .map((group) => {
       const indexVouchesFor = indexVouchesForMemberInUrlContest(group, authority);
       const idsOf = (members: any[]) =>
@@ -1002,7 +1302,7 @@ export function selectExactUrlDuplicateRiskEntityIds(
   // release on the index-published member.
   const authority = indexUrlAuthorityOver(entities);
   const duplicateIds = new Set<string>();
-  for (const group of exactDuplicateUrlGroups(entities)) {
+  for (const group of exactDuplicateUrlGroups(entities, leadRows)) {
     const canonicalId = studentVisibilityGateEntityIdKey(
       exactDuplicateGroupByCanonicalPreference(group, leadCountsByEntityId, authority)[0],
     );
@@ -1114,7 +1414,7 @@ export function selectDuplicateGroupSurvivorEntityIds({
     if (id) entityById.set(id, entity);
   }
 
-  const urlGroups = exactUrlDuplicateGroupEntityIds(entities);
+  const urlGroups = exactUrlDuplicateGroupEntityIds(entities, leadRows);
   const rootById = duplicateClusterRootByEntityId([
     ...urlGroups.map(({ memberIds }) => memberIds),
     ...duplicateRelationGroups
@@ -1271,7 +1571,7 @@ function profileAreaNamesForVisibilityPi(firstName: unknown, lastName: unknown):
   return [`${first} ${last} Lab`, `${first} ${last} Laboratory`, `${first} ${last} Research`];
 }
 
-function buildNameOnlyVisibilityDedupeRows(args: {
+export function buildNameOnlyVisibilityDedupeRows(args: {
   entities: any[];
   leadsByEntityId: Map<string, any[]>;
 }): ResearchEntityPiDedupeRow[] {
@@ -1287,11 +1587,15 @@ function buildNameOnlyVisibilityDedupeRows(args: {
     .map((entry): ResearchEntityPiDedupeRow | null => {
       const [normalizedName, entities] = entry;
       const piUserIds = new Set<string>();
+      const piLedEntityIds = new Set<string>();
       for (const entity of entities) {
-        for (const lead of args.leadsByEntityId.get(studentVisibilityGateDocumentId(entity._id)) ||
-          []) {
+        const entityId = studentVisibilityGateDocumentId(entity._id);
+        for (const lead of args.leadsByEntityId.get(entityId) || []) {
           const userId = studentVisibilityGateDocumentId(lead.userId);
-          if (lead.role === 'pi' && userId) piUserIds.add(userId);
+          if (lead.role === 'pi' && userId) {
+            piUserIds.add(userId);
+            piLedEntityIds.add(entityId);
+          }
         }
       }
       if (piUserIds.size > 1) return null;
@@ -1300,6 +1604,7 @@ function buildNameOnlyVisibilityDedupeRows(args: {
       return {
         userId,
         normalizedName,
+        personLedEntityIds: [...piLedEntityIds],
         entities: entities.map(serializeEntityForDedupe),
       };
     })
@@ -1548,6 +1853,7 @@ export async function runStudentVisibilityGateForPlans(
     resolved: 0,
     changed: 0,
     unexplainedHeld: 0,
+    holdsWithoutRecordedReason: 0,
     upcomingDuplicateWindowsChanged: 0,
   };
 
@@ -1560,6 +1866,7 @@ export async function runStudentVisibilityGateForPlans(
       counts.held += 1;
     }
     if (isUnexplainedHeldVisibilityPlan(plan)) counts.unexplainedHeld += 1;
+    if (plan.holdWithoutRecordedReason) counts.holdsWithoutRecordedReason += 1;
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
     if (materiallyChanged) counts.changed += 1;
     if (isUpcomingDuplicateWindowChanged(plan)) counts.upcomingDuplicateWindowsChanged += 1;
@@ -1867,7 +2174,7 @@ export async function readStudentVisibilityGateIndexDrift(
   const storedRows = (await ResearchEntity.find({
     _id: { $in: plannedIds.map((id) => new mongoose.Types.ObjectId(id)) },
   })
-    .select('_id studentVisibilityTier')
+    .select('_id studentVisibilityTier archived studentVisibilityReasons')
     .lean()) as unknown as Array<{ _id: unknown; studentVisibilityTier?: string }>;
 
   const divergentTierRecordIds: string[] = [];
@@ -1875,6 +2182,10 @@ export async function readStudentVisibilityGateIndexDrift(
   for (const row of storedRows) {
     const recordId = studentVisibilityGateDocumentId(row._id);
     if (!recordId) continue;
+    if (isExcludedFromSearchIndex(row)) {
+      if (indexedTiers.has(recordId)) divergentTierRecordIds.push(recordId);
+      continue;
+    }
     if (!indexedTiers.has(recordId)) {
       missingFromIndex += 1;
       continue;
@@ -1958,11 +2269,13 @@ const orderedByGateLabel = <T extends Record<string, any>>(
     return left < right ? -1 : 1;
   });
 
+type ResearchEntityGatePlanOptions = Pick<
+  StudentVisibilityGateOptions,
+  'sourceName' | 'recordIds' | 'limit' | 'suppressDuplicateRisk'
+> & { withoutLeadIsStaffOfServedLabHold?: boolean };
+
 async function planResearchEntityGateUpdates(
-  options: Pick<
-    StudentVisibilityGateOptions,
-    'sourceName' | 'recordIds' | 'limit' | 'suppressDuplicateRisk'
-  >,
+  options: ResearchEntityGatePlanOptions,
 ): Promise<StudentVisibilityGatePlan[]> {
   const match: Record<string, any> = { archived: { $ne: true } };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
@@ -2030,7 +2343,8 @@ async function planResearchEntityGateUpdates(
       .lean(),
     entities as any[],
   );
-  const [rosterByEntityId, accessRows, alternateAccessPathCounts] = await Promise.all([
+  const [serving, rawRosterByEntityId, accessRows, alternateAccessPathCounts] = await Promise.all([
+    directoryRemovalServingForGate(),
     getResearchEntityRosterByEntityId(entityIds),
     Signal.aggregate([
       {
@@ -2057,11 +2371,28 @@ async function planResearchEntityGateUpdates(
 
   const buildGateLeadRows = (roster: Map<string, any[]>) =>
     Array.from(roster.values()).flatMap((entries) => studentVisibilityGateLeadRows(entries));
+  const rosterByEntityId = await rostersWithDepartedLeadsRetired(
+    rosterWithoutWithheldPeople(rawRosterByEntityId, serving),
+  );
+  const everyLeadRemovedEntityIds = new Set(
+    [...rawRosterByEntityId]
+      .filter(
+        ([entityId, entries]) =>
+          studentVisibilityGateLeadRows(entries).length > 0 &&
+          studentVisibilityGateLeadRows(rosterByEntityId.get(entityId) ?? []).length === 0,
+      )
+      .map(([entityId]) => entityId),
+  );
 
   const leadRows = buildGateLeadRows(rosterByEntityId);
   const duplicateReferenceRosterByEntityId = needsDuplicateReferenceCorpus
-    ? await getResearchEntityRosterByEntityId(
-        duplicateReferenceEntities.map((entity: any) => entity._id),
+    ? await rostersWithDepartedLeadsRetired(
+        rosterWithoutWithheldPeople(
+          await getResearchEntityRosterByEntityId(
+            duplicateReferenceEntities.map((entity: any) => entity._id),
+          ),
+          serving,
+        ),
       )
     : rosterByEntityId;
   const duplicateReferenceLeadRows = needsDuplicateReferenceCorpus
@@ -2232,7 +2563,7 @@ async function planResearchEntityGateUpdates(
     duplicateRiskEntityIds,
   });
 
-  return entities.map((entity: any) => {
+  const planEntity = (entity: any, leadIsStaffOfServedLab: boolean): StudentVisibilityGatePlan => {
     const recordId = studentVisibilityGateDocumentId(entity._id);
     const leadMembers = leadsByEntityId.get(recordId) || [];
     const isDuplicateGroupSurvivor = duplicateGroupSurvivorEntityIds.has(recordId);
@@ -2256,6 +2587,8 @@ async function planResearchEntityGateUpdates(
         exactUrlDuplicateRiskEntityIds.has(recordId),
       citationsSharedAcrossPersonRows: sharedCitationOnlyEntityIds.has(recordId),
       relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
+      everyLeadRemovedByRequest: everyLeadRemovedEntityIds.has(recordId),
+      ...(leadIsStaffOfServedLab ? { leadIsStaffOfServedLab } : {}),
     };
     const result = computeResearchEntityStudentVisibility({
       entity,
@@ -2277,14 +2610,103 @@ async function planResearchEntityGateUpdates(
       sourceNames: sourceNamesByEntityId.get(recordId) || [],
       nextRepairAction: nextRepairActionForReasons(result.reasons),
       hasResolvedLead: leadMembers.length > 0,
+      holdWithoutRecordedReason: isHoldWithoutRecordedReason(entity),
       gateInput,
     };
-  });
+  };
+
+  const plans = entities.map((entity: any) => planEntity(entity, false));
+  if (options.withoutLeadIsStaffOfServedLabHold) return plans;
+
+  const pageEntityIds = plans.map((plan) => plan.recordId);
+  const pageEntityIdSet = new Set(pageEntityIds);
+  const holdInput = {
+    entities: duplicateReferenceEntities as any[],
+    leadsByEntityId: new Map([...duplicateReferenceLeadsByEntityId, ...leadsByEntityId]),
+    rosterByEntityId: new Map([...duplicateReferenceRosterByEntityId, ...rosterByEntityId]),
+    candidateEntityIds: pageEntityIds,
+  };
+  const everyReferenceEntityId = new Set(
+    (duplicateReferenceEntities as any[]).map((entity) =>
+      studentVisibilityGateDocumentId(entity._id),
+    ),
+  );
+  const servedEntityIds = new Set(
+    plans.filter((plan) => plan.tier === 'student_ready').map((plan) => plan.recordId),
+  );
+  const linkedOutsidePage = uniqueStrings(
+    [
+      ...leadIsStaffOfServedLabLinks({
+        ...holdInput,
+        servedEntityIds: everyReferenceEntityId,
+      }).values(),
+    ]
+      .flat()
+      .map((link) => link.entityId),
+  ).filter((id) => !pageEntityIdSet.has(id));
+  if (linkedOutsidePage.length > 0) {
+    const outsidePlans = await planResearchEntityGateUpdates({
+      recordIds: linkedOutsidePage,
+      suppressDuplicateRisk: options.suppressDuplicateRisk,
+      withoutLeadIsStaffOfServedLabHold: true,
+    });
+    for (const plan of outsidePlans) {
+      if (plan.tier === 'student_ready') servedEntityIds.add(plan.recordId);
+    }
+  }
+  const heldEntityIds = selectLeadIsStaffOfServedLabEntityIds({ ...holdInput, servedEntityIds });
+  return entities.map((entity: any, index: number) =>
+    heldEntityIds.has(plans[index].recordId) ? planEntity(entity, true) : plans[index],
+  );
 }
 
 export interface DuplicateProgramCopies {
   keptCopyById: Map<string, string>;
   upcomingWindowByKeptId: Map<string, UpcomingDuplicateWindow>;
+}
+
+export const DUPLICATE_PROGRAM_COPY_INPUT_FIELDS = [
+  'applicationLink',
+  'applicationOpenDate',
+  'deadline',
+  'description',
+  'isAcceptingApplications',
+  'links',
+  'sourceName',
+  'sourceUrl',
+  'title',
+] as const;
+
+export function duplicateProgramCopyCandidate(
+  program: Record<string, any>,
+  id: string,
+  tier: StudentVisibilityTier,
+) {
+  return {
+    id,
+    title: program.title,
+    description: program.description,
+    sourceName: program.sourceName,
+    sourceUrl: program.sourceUrl,
+    applicationLink: program.applicationLink,
+    links: program.links,
+    tier,
+  };
+}
+
+export function upcomingDuplicateWindowCandidate(
+  program: Record<string, any>,
+  id: string,
+  tier: StudentVisibilityTier,
+) {
+  return {
+    id,
+    title: program.title,
+    deadline: program.deadline,
+    applicationOpenDate: program.applicationOpenDate,
+    isAcceptingApplications: program.isAcceptingApplications,
+    servableOnItsOwn: PUBLIC_TIERS.has(tier),
+  };
 }
 
 // Which copy of a fund serves is a corpus-wide question, so it is answered over every live
@@ -2297,26 +2719,10 @@ export async function loadDuplicateProgramCopies(now: Date): Promise<DuplicatePr
     tier: computeProgramStudentVisibility(program, { now }).tier,
   }));
   const keptCopyById = selectDuplicateProgramCopies(
-    copies.map(({ program, id, tier }) => ({
-      id,
-      title: program.title,
-      description: program.description,
-      sourceName: program.sourceName,
-      sourceUrl: program.sourceUrl,
-      applicationLink: program.applicationLink,
-      links: program.links,
-      tier,
-    })),
+    copies.map(({ program, id, tier }) => duplicateProgramCopyCandidate(program, id, tier)),
   );
   const upcomingWindowByKeptId = deriveUpcomingDuplicateWindows(
-    copies.map(({ program, id, tier }) => ({
-      id,
-      title: program.title,
-      deadline: program.deadline,
-      applicationOpenDate: program.applicationOpenDate,
-      isAcceptingApplications: program.isAcceptingApplications,
-      servableOnItsOwn: PUBLIC_TIERS.has(tier),
-    })),
+    copies.map(({ program, id, tier }) => upcomingDuplicateWindowCandidate(program, id, tier)),
     keptCopyById,
     now,
   );
@@ -2412,6 +2818,7 @@ async function planProgramGateUpdates(
       reasons: result.reasons,
       sourceNames: uniqueStrings([program.sourceName]),
       nextRepairAction: nextRepairActionForReasons(result.reasons),
+      holdWithoutRecordedReason: isHoldWithoutRecordedReason(program),
       currentUpcomingDuplicateWindow: storedUpcomingDuplicateWindow(
         program.upcomingDuplicateWindow,
       ),

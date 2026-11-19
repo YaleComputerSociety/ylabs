@@ -26,7 +26,7 @@
  *
  * Usage:
  *   yarn --cwd server research-entity:served-scoreboard \
- *     --baseline ~/ylabs-backups/handoffs/beta-served-hand-read-n100-20260831.json
+ *     --baseline ~/Personal/ylabs-backups/handoffs/beta-served-n65-20261116.json
  *   yarn --cwd server research-entity:served-scoreboard --baseline <path> \
  *     --environment beta --output ./tmp/served-scoreboard.json
  *
@@ -52,6 +52,7 @@ import {
   assertCollectionSetUnchanged,
   assertServedCorpusScoreboardConsistent,
   buildServedCorpusScoreboard,
+  countRowsCitingNothing,
   formatServedCorpusScoreboardReport,
   loadServedCorpusBaseline,
   parseServedCorpusScoreboardArgs,
@@ -63,6 +64,8 @@ import {
   type ServedResearchEntityRow,
 } from './servedCorpusScoreboardCore';
 import { connectScriptMongo } from '../db/connections';
+import { loadServedSustainedRefusalReadings } from './servedSustainedRefusalReadings';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -136,27 +139,25 @@ async function scoreboardForEnvironment(
 
     const collection = db.collection(RESEARCH_ENTITIES_COLLECTION);
     const slugs = baseline.map((entry) => entry.slug);
-    const [researchEntities, studentReadyNotArchived, docs] = await Promise.all([
-      collection.countDocuments({}),
-      collection.countDocuments({
-        studentVisibilityTier: SERVED_CORPUS_SCOREBOARD_SERVED_TIER,
-        archived: { $ne: true },
-      }),
-      collection.find({ slug: { $in: slugs } }).toArray(),
-    ]);
+    const servedFilter = {
+      studentVisibilityTier: SERVED_CORPUS_SCOREBOARD_SERVED_TIER,
+      archived: { $ne: true },
+    };
+    const [researchEntities, studentReadyNotArchived, docs, sustainedRefusal, servedCitations] =
+      await Promise.all([
+        collection.countDocuments({}),
+        collection.countDocuments(servedFilter),
+        collection.find({ slug: { $in: slugs } }).toArray(),
+        loadServedSustainedRefusalReadings(db, servedFilter),
+        collection
+          .find(servedFilter, { projection: { sourceUrls: 1, fieldProvenance: 1 } })
+          .toArray(),
+      ]);
 
     const tierAdmittedSlugs = options.corpusReachability
-      ? (
-          await collection
-            .find(
-              {
-                studentVisibilityTier: SERVED_CORPUS_SCOREBOARD_SERVED_TIER,
-                archived: { $ne: true },
-              },
-              { projection: { slug: 1 } },
-            )
-            .toArray()
-        ).map((doc) => String((doc as any).slug || ''))
+      ? (await collection.find(servedFilter, { projection: { slug: 1 } }).toArray()).map((doc) =>
+          String((doc as any).slug || ''),
+        )
       : [];
 
     await connectScriptMongo(mongoUrl);
@@ -189,6 +190,7 @@ async function scoreboardForEnvironment(
       corpus: {
         researchEntities,
         studentReadyNotArchived,
+        servedWithNoCitation: countRowsCitingNothing(servedCitations),
         ...(reachability
           ? {
               reachable: reachability.reachable,
@@ -199,6 +201,7 @@ async function scoreboardForEnvironment(
       },
       baseline,
       rows,
+      sustainedRefusal,
     });
     assertServedCorpusScoreboardConsistent(scoreboard);
     return scoreboard;
@@ -233,7 +236,7 @@ async function main(): Promise<void> {
 
   if (safeOutput) {
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(
+    writeReportFileSync(
       safeOutput,
       `${JSON.stringify(
         {

@@ -92,6 +92,13 @@ describe('archiving a research entity settles its live role edges (#4752)', () =
         archivedWithoutSurvivor: 0,
         refusedSurvivorNotLive: 0,
       },
+      relationships: {
+        repointed: 0,
+        archivedRedundant: 0,
+        archivedSelfLoop: 0,
+        leftWithoutLiveEndpoint: 0,
+        refusedSurvivorNotLive: 0,
+      },
     });
     const redundant = await stored(shellLead._id);
     expect(redundant).toMatchObject({ state: 'HISTORICAL', archived: true });

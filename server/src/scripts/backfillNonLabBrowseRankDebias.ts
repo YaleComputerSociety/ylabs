@@ -1,3 +1,4 @@
+import { recordDevApplyIntent } from '../db/devWriteLease';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import mongoose from 'mongoose';
@@ -13,6 +14,7 @@ import {
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -156,7 +158,7 @@ function writeOutput(report: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function main(): Promise<void> {
@@ -165,6 +167,7 @@ async function main(): Promise<void> {
   const mongoUrl = process.env.MONGODBURL;
   assertConnectedToDevelopment(mongoUrl);
 
+  if (options.apply) recordDevApplyIntent('research-homes:backfill-non-lab-browse-rank-debias');
   await initializeConnections();
   const db = mongoose.connection.db;
   if (!db) throw new Error('MongoDB connection is not initialized');

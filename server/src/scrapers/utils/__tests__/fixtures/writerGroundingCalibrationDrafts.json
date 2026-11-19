@@ -1,0 +1,134 @@
+[
+  {
+    "label": "regional studies council",
+    "fullDescription": "Supports and promotes research and understanding of historical and contemporary South Asia (Afghanistan, Bangladesh, Bhutan, India, the Maldives, Nepal, Pakistan, and Sri Lanka), and focuses on leadership and service, climate change, good governance, societal resilience, and related international and regional engagement across the university.",
+    "snippets": [
+      {
+        "text": "The South Asian Studies Council at Yale is committed to promoting a comprehensive understanding of historical and contemporary South Asia, encompassing Afghanistan, Bangladesh, Bhutan, India, the Maldives, Nepal, Pakistan, and Sri Lanka.",
+        "sourceName": "lab-microsite-description-llm"
+      }
+    ]
+  },
+  {
+    "label": "japanese literature scholar",
+    "fullDescription": "Studies seventeenth- to nineteenth-century (Edo and Meiji) Japanese literature and cultural history, with a specialization in Literary Sinitic (classical Chinese) poetry and prose composed by Japanese-speaking authors. Current work examines how seventeenth- to nineteenth-century Japanese authors of Sinitic texts used imitations of earlier Japanese and Chinese literary models as means of self-fashioning and empowerment.",
+    "snippets": [
+      {
+        "text": "He specializes in Edo and Meiji (seventeenth- to nineteenth-century) Japanese literature and cultural history, with a focus on Literary Sinitic (classical Chinese) poetry and prose by Japanese-speaking authors.",
+        "sourceName": "research-page-text"
+      }
+    ]
+  },
+  {
+    "label": "screenwriting scholar",
+    "fullDescription": "Studies the craft of storytelling and screenwriting, including adaptation, Classical Hollywood movies and moviegoing, desire in film, biography, and young children’s empathy for screen characters; investigates creative pedagogical methods for teaching screenwriting and film studies.",
+    "snippets": [
+      {
+        "text": "The craft of storytelling; biography; adaptation; movies and moviegoing in the Classical Hollywood era; young children’s empathy for screen characters; desire in film; creative pedagogical methods",
+        "sourceName": "research-page-text"
+      }
+    ]
+  },
+  {
+    "label": "genome engineering lab",
+    "fullDescription": "Studies development of foundational genomic and cellular engineering technologies to understand and program biological systems. Work includes multiplex automated genome engineering (MAGE) and conjugative assembly genome engineering (CAGE) to generate combinatorial genomic diversity and build genomes (including efforts to engineer new genetic codes), design of engineered RNA-based post-transcriptional regulators as modular sensors and circuit elements, and development of systems-specific quantitative models to analyze engineered and natural networks, genomes and populations.",
+    "snippets": [
+      {
+        "text": "Multiplex Automated Genome Engineering (MAGE) simultaneously targets many locations on the chromosome for modification in a single cell or across a population of cells, thus producing combinatorial genomic diversity.",
+        "sourceName": "research-page-text"
+      },
+      {
+        "text": "Exploiting the structural and functional diversity of RNA molecules, we design and construct RNA-based systems that can be integrated into biological networks to address these challenges.",
+        "sourceName": "research-page-text"
+      }
+    ]
+  },
+  {
+    "label": "electrochemical flow lab",
+    "fullDescription": "Studies energy- and resource-efficient electrochemical flow reactors and materials for decarbonization and environmental sustainability. Specific research includes aqueous organic redox-flow batteries (understanding and mitigating decomposition of water-soluble organic charge carriers), electrochemical carbon dioxide capture and resource recovery via redox-mediated ion transport and reversible pH swings, and nanomaterials/ceramic ion conductors (metal chalcogenide nanoparticle suspensions, single-entity electron-transfer, rheology, conformal coatings, and NaSICONs) for energy storage, desalination, and pollutant/resource recovery.",
+    "snippets": [
+      {
+        "text": "A second area is the use of sodium superionic conductors (NaSICONs) in flow cells for energy storage, carbon capture and desalination.",
+        "sourceName": "research-page-text"
+      }
+    ]
+  },
+  {
+    "label": "ancient dna lab",
+    "fullDescription": "Studies retrieval and sequencing of ancient DNA from archaeological bones and sediments to generate genome‑wide and time‑series data that trace human population history, migration routes, genealogical relationships and genetic admixture (with focus on under‑sampled regions such as East Eurasia and Africa). Develops genetic and genomic methods to understand DNA preservation in archaeological materials—especially sediments—and uses ancient DNA to investigate origins and frequency changes of alleles linked to human health, adaptations, and introgression from archaic groups (Neanderthals, Denisovans).",
+    "snippets": [
+      {
+        "text": "We are combining DNA data from archaeological bones and sediments to generate high resolution time series ancient genetic data from different point through time in space with a particular focus on under-sampled regions of the world such as East Eurasia or Africa.",
+        "sourceName": "research-page-text"
+      },
+      {
+        "text": "This success relied on new mutations, standing genetic variations, or introgressed variations through admixture between different human groups including archaic Neanderthals and Denisovans.",
+        "sourceName": "research-page-text"
+      },
+      {
+        "text": "Our goal is to develop state of the art genetic and genomic approaches to better understand the factors that impact DNA preservation in different type of archaeological material (with a particular emphasis on sediment) and expand the use of sediment DNA for palaeogenetic research.",
+        "sourceName": "research-page-text"
+      }
+    ]
+  },
+  {
+    "label": "biostatistics consultation core",
+    "fullDescription": "Provides biostatistics and bioinformatics consultation and data-analysis services for biological and biomedical research, including analysis of gene expression (microarray, RNA-Seq), next‑generation sequencing, ChIP‑Seq, GWAS and genetic-variation data (SNP chips, copy-number), miRNA arrays, clustering, gene‑ontology and pathway analysis, label‑free mass spectrometry, and sample‑size/power and clinical statistical analyses; contributes to study design, grant and manuscript preparation.",
+    "snippets": [
+      {
+        "text": "Gene expression data analysis (microarray, RNA-Seq, etc.)",
+        "sourceName": "research-page-text"
+      },
+      {
+        "text": "Genetic variation analysis (SNP chip, genotyping sequencing, copy number variation, etc.)",
+        "sourceName": "research-page-text"
+      },
+      {
+        "text": "Genome-wide association studies",
+        "sourceName": "research-page-text"
+      },
+      {
+        "text": "miRNA array data analysis",
+        "sourceName": "research-page-text"
+      },
+      {
+        "text": "Label-free mass spectrometry data analysis",
+        "sourceName": "research-page-text"
+      }
+    ]
+  },
+  {
+    "label": "cryo-em resource",
+    "fullDescription": "Provides cryo-electron microscopy services and training and supports experiments using cryoEM techniques including single particle analysis (SPA), cryo electron tomography (cryoET), microcrystal electron diffraction (MicroED), and negative stain EM, and offers cryo sample preparation, sample screening, and cryoEM data collection on multiple microscopes and preparation devices.",
+    "snippets": [
+      {
+        "text": "The YCR provides training, support, and services on cryoEM techniques such as single particle analysis (SPA), cryo electron tomography (cryoET), and microcrystal electron diffraction (MicroED), as well as negative stain EM.",
+        "sourceName": "research-page-text"
+      },
+      {
+        "text": "The Yale CryoEM Resource (YCR) is a university-wide cryo electron microscopy (cryoEM) core facility with three sites at West Campus, Yale School of Medicine, and Science Hill.",
+        "sourceName": "research-page-text"
+      }
+    ]
+  },
+  {
+    "label": "british literature scholar",
+    "fullDescription": "Studies non-fiction prose, cultural history, etymology, creative writing, modern British literature, theories of class and identity, and the novel.",
+    "snippets": [
+      {
+        "text": "Non-fiction prose; cultural history; etymology; creative writing; modern British literature; theories of class and identity; the novel",
+        "sourceName": "research-page-text"
+      }
+    ]
+  },
+  {
+    "label": "early american literature scholar",
+    "fullDescription": "Studies early American literature and print culture, theoretical questions about publics and social movements, sexuality and politics as they relate to the public sphere, the early history of evangelicalism in eighteenth‑century America, and cultural dimensions of climate change and environmental infrastructure. Also works on secularism, new media, and intellectual property in relation to reading and circulating media.",
+    "snippets": [
+      {
+        "text": "Undergraduate: Colonial Literatures of America; Introduction to the Study of American Literature; Colonial Literatures of America",
+        "sourceName": "research-page-text"
+      }
+    ]
+  }
+]

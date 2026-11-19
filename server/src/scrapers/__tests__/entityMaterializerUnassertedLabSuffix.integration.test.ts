@@ -21,6 +21,7 @@ import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { resetKnownPersonSurnameRosterCache } from '../../utils/researchHomeNameIdentityRoster';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import { materializeEntity } from '../entityMaterializer';
 
 const ENTITY_KEY = 'faculty-research-area-rafferty-duchamp';
@@ -193,6 +194,65 @@ describe('materializeEntity derives the faculty research name when nothing asser
     expect((entity.fieldProvenance || {}).name).toBeUndefined();
   });
 
+  it('reclassifies a LAB row whose only website is a profile page the pass will not keep', async () => {
+    const entity = await seedEntity({ name: 'Duchamp Lab', kind: 'lab', entityType: 'LAB' });
+    await seedLead(entity._id);
+    await seedObservation({
+      sourceName: 'dept-faculty-roster',
+      field: 'websiteUrl',
+      value: 'https://medicine.yale.edu/profile/rafferty-duchamp/',
+      sourceUrl: 'https://medicine.yale.edu/profile/rafferty-duchamp/',
+      confidence: 0.7,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const stored = await persisted();
+    expect(stored.name).toBe(FACULTY_RESEARCH_NAME);
+    expect(stored.entityType).toBe('FACULTY_RESEARCH_AREA');
+  });
+
+  it('keeps a LAB row whose stored legacy website is a profile page the pass keeps', async () => {
+    const entity = await seedEntity({
+      name: 'Duchamp Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      website: 'https://medicine.yale.edu/profile/rafferty-duchamp/',
+    });
+    await seedLead(entity._id);
+    await seedObservation({ field: 'departments', value: ['Mathematics'] });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const stored = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<
+      PersistedEntity & { website?: string }
+    >();
+    expect(stored?.website).toBe('https://medicine.yale.edu/profile/rafferty-duchamp/');
+    expect(stored?.name).toBe('Duchamp Lab');
+    expect(stored?.entityType).toBe('LAB');
+  });
+
+  it('keeps a LAB row whose locked websiteUrl is a profile page no arm clears', async () => {
+    const entity = await seedEntity({
+      name: 'Duchamp Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      websiteUrl: 'https://medicine.yale.edu/profile/rafferty-duchamp/',
+      manuallyLockedFields: ['websiteUrl'],
+    });
+    await seedLead(entity._id);
+    await seedObservation({ field: 'departments', value: ['Mathematics'] });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const stored = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<
+      PersistedEntity & { websiteUrl?: string }
+    >();
+    expect(stored?.websiteUrl).toBe('https://medicine.yale.edu/profile/rafferty-duchamp/');
+    expect(stored?.name).toBe('Duchamp Lab');
+    expect(stored?.entityType).toBe('LAB');
+  });
+
   it('re-derives the same reclassification on a second pass', async () => {
     await seedLead((await seedEntity({ kind: 'lab', entityType: 'LAB' }))._id);
     await seedObservation({ field: 'departments', value: ['Mathematics'] });
@@ -277,6 +337,41 @@ describe('materializeEntity derives the faculty research name when nothing asser
     expect(stored.name).toBe('Computational Vision Lab');
     expect(stored.entityType).toBe('LAB');
   });
+
+  const refusing = (field: 'entityType' | 'kind', value: string) => ({
+    fieldValueRefusals: {
+      [field]: [
+        {
+          valueKey: fieldValueRefusalKey(field, value),
+          rule: 'superseded_by_better_source',
+          refusedBy: 'test',
+          refusedAt: new Date('2026-01-02T00:00:00Z'),
+          note: 'synthetic refusal',
+        },
+      ],
+    },
+  });
+
+  it.each([
+    ['entityType', 'FACULTY_RESEARCH_AREA'],
+    ['kind', 'individual'],
+  ] as const)(
+    'never reclassifies a LAB row into faculty research when the row refuses %s %s',
+    async (field, value) => {
+      await seedLead(
+        (await seedEntity({ kind: 'lab', entityType: 'LAB', ...refusing(field, value) }))._id,
+      );
+      await seedObservation({ field: 'departments', value: ['Mathematics'] });
+
+      await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+      await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+      const entity = await persisted();
+      expect(entity.entityType).toBe('LAB');
+      expect(entity.kind).toBe('lab');
+      expect(entity.name).toBe(LAB_NAME);
+    },
+  );
 
   it('leaves a LAB row with a locked type alone', async () => {
     await seedLead(

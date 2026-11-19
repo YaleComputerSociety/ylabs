@@ -1,3 +1,4 @@
+import { awardEndDayHasPassed, storedAwardCalendarDay } from '../utils/awardCalendarDay';
 import { servedCurrentFunding } from './servedCurrentFunding';
 
 export const EMERITUS_WITHHELD_WAY_IN_SIGNAL_TYPES: ReadonlySet<string> = new Set([
@@ -55,27 +56,39 @@ const isActiveFacultyAppointment = (appointment: string): boolean =>
 // Scientist") states current research employment in the person's own words, and an emeritus
 // office beside an active chair ("President Emeritus and Sterling Professor") is not an
 // emeritus appointment at all, so neither counts.
-export function titleHoldsOnlyEmeritusAppointments(title: unknown): boolean {
+function titleAppointments(title: unknown): string[] {
   const text = normalizeTitle(title);
-  if (!text || !EMERITUS_WORD.test(text)) return false;
-  const appointments = text
+  if (!text) return [];
+  return text
     .split(/\s*;\s*/)
     .flatMap(appointmentsInClause)
     .map((appointment) => appointment.trim())
     .filter(Boolean);
+}
+
+export function titleHoldsOnlyEmeritusAppointments(title: unknown): boolean {
+  if (!EMERITUS_WORD.test(normalizeTitle(title))) return false;
+  const appointments = titleAppointments(title);
   return (
     appointments.some(isFacultyEmeritusAppointment) &&
     !appointments.some(isActiveFacultyAppointment)
   );
 }
 
-// Every lead, not any: a co-led row with an active lead, or with a lead whose title is
-// unknown, has someone who may be running the work now.
-export function leadTitlesAreAllEmeritus(leadTitles: readonly unknown[]): boolean {
-  return leadTitles.length > 0 && leadTitles.every(titleHoldsOnlyEmeritusAppointments);
+export function titleHoldsActiveFacultyAppointment(title: unknown): boolean {
+  return titleAppointments(title).some(isActiveFacultyAppointment);
 }
 
-const MS_PER_DAY = 86_400_000;
+// Every lead, not any: a co-led row with an active lead, or with a lead whose title is
+// unknown, has someone who may be running the work now.
+export const DEPARTMENT_LISTS_LEAD_AS_EMERITUS = Object.freeze({ departmentEmeritusListing: true });
+
+const leadIsEmeritus = (leadTitle: unknown): boolean =>
+  leadTitle === DEPARTMENT_LISTS_LEAD_AS_EMERITUS || titleHoldsOnlyEmeritusAppointments(leadTitle);
+
+export function leadTitlesAreAllEmeritus(leadTitles: readonly unknown[]): boolean {
+  return leadTitles.length > 0 && leadTitles.every(leadIsEmeritus);
+}
 
 export type EmeritusCurrentActivityEvidence = 'running_funding' | 'current_team';
 
@@ -93,9 +106,9 @@ const nihActivityCode = (awardId: unknown): string | undefined =>
 const isRunningResearchAward = (award: unknown, now: number): boolean => {
   if (!award || typeof award !== 'object') return false;
   const { endDate, id } = award as { endDate?: unknown; id?: unknown };
-  if (endDate === undefined || endDate === null || endDate === '') return false;
-  const endTime = new Date(endDate as string | number | Date).getTime();
-  if (!Number.isFinite(endTime) || endTime + MS_PER_DAY <= now) return false;
+  if (storedAwardCalendarDay(endDate) === undefined || awardEndDayHasPassed(endDate, now)) {
+    return false;
+  }
   const activityCode = nihActivityCode(id);
   return !activityCode || !NIH_CONFERENCE_ACTIVITY_CODES.has(activityCode);
 };

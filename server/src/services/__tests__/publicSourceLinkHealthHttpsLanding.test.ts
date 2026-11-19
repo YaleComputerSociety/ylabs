@@ -34,3 +34,35 @@ describe('publicSourceLinkHealthArray https landing (#4649)', () => {
     expect(entry).not.toHaveProperty('httpsLandingUrl');
   });
 });
+
+describe('publicSourceLinkHealthArray https spelling (#5639)', () => {
+  const HTTP = 'http://both.fixture.example.org/Lab/?tab=people';
+  const served = (url: string, httpsSpellingUrl: unknown) =>
+    publicSourceLinkHealthArray([{ url, healthStatus: 'HEALTHY', httpsSpellingUrl }])[0];
+
+  it('serves the https spelling of the entry url', () => {
+    expect(served(HTTP, 'https://www.both.fixture.example.org/Lab?tab=people')).toEqual({
+      url: HTTP,
+      healthStatus: 'HEALTHY',
+      httpsSpellingUrl: 'https://www.both.fixture.example.org/Lab?tab=people',
+    });
+  });
+
+  it('drops a spelling that is not https, not public, or names another page', () => {
+    for (const spelling of [
+      'http://both.fixture.example.org/Lab/?tab=people',
+      'javascript:alert(1)',
+      'https://other.fixture.example.org/Lab/?tab=people',
+      'https://both.fixture.example.org/other/?tab=people',
+      'https://both.fixture.example.org/Lab/?tab=news',
+      42,
+    ]) {
+      expect(served(HTTP, spelling)).not.toHaveProperty('httpsSpellingUrl');
+    }
+  });
+
+  it('drops a spelling recorded on an https entry', () => {
+    const https = 'https://both.fixture.example.org/Lab/?tab=people';
+    expect(served(https, https)).not.toHaveProperty('httpsSpellingUrl');
+  });
+});

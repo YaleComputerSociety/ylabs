@@ -2,6 +2,7 @@
  * Durable release queue for records held out of public student surfaces.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const visibilityReleaseQueueCollections = ['research', 'programs'] as const;
 export const visibilityReleaseQueueStatuses = [

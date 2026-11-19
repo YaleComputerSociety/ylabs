@@ -9,18 +9,26 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
-import { listYalies, type YaliesPerson } from '../services/yaliesService';
+import { FIRST_YALIES_PAGE, listYalies, type YaliesPerson } from '../services/yaliesService';
 import { isFacultyPerson } from '../scrapers/sources/yaleDirectoryScraper';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
+  applyLeadNetidPlans,
   indexNetidByEmail,
   planLeadNetidResolution,
   summarizePlannedTiers,
   summarizeRefusals,
   type LeadEmailEvidence,
+  type LeadNetidPlan,
   type NetidlessLead,
 } from './resolveLeadNetidsFromDirectoryCore';
+import { resyncResearchRowsLinkedToResearchers } from '../services/researcherLinkedSearchResync';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -103,7 +111,7 @@ async function loadFacultyDirectory(cachePath?: string): Promise<YaliesPerson[]>
   }
 
   const people: YaliesPerson[] = [];
-  for (let page = 1; page <= DIRECTORY_MAX_PAGES; page += 1) {
+  for (let page = FIRST_YALIES_PAGE; page < FIRST_YALIES_PAGE + DIRECTORY_MAX_PAGES; page += 1) {
     const records = await fetchDirectoryPageWithRetry(page);
     people.push(...records);
     if (records.length < DIRECTORY_PAGE_SIZE) break;
@@ -112,7 +120,7 @@ async function loadFacultyDirectory(cachePath?: string): Promise<YaliesPerson[]>
 
   if (cachePath) {
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.writeFileSync(cachePath, JSON.stringify(people));
+    writeReportFileSync(cachePath, JSON.stringify(people), { flag: '--directory-cache' });
     console.log(`directory cached: ${people.length} rows`);
   }
   return people.filter((person) => isFacultyPerson(person));
@@ -177,6 +185,20 @@ async function loadEmailEvidenceByUrl(
   return byUrl;
 }
 
+async function storeNetidOnNetidlessResearcher(plan: LeadNetidPlan): Promise<boolean> {
+  const result = await Researcher.updateOne(
+    {
+      _id: new mongoose.Types.ObjectId(plan.researcherId),
+      $or: [
+        { 'identifiers.netid': { $exists: false } },
+        { 'identifiers.netid': { $in: ['', null] } },
+      ],
+    },
+    { $set: { 'identifiers.netid': plan.netid } },
+  );
+  return (result.modifiedCount ?? 0) > 0;
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   assertScriptApplyAllowed({
@@ -192,7 +214,7 @@ async function main(): Promise<void> {
 
   const directory = await loadFacultyDirectory(
     args.directoryCache
-      ? resolveSafeJsonReportOutputPath(args.directoryCache, '--directory-cache')
+      ? resolveSafeJsonReportPath(args.directoryCache, '--directory-cache')
       : undefined,
   );
   const netidByEmail = indexNetidByEmail(directory);
@@ -243,22 +265,12 @@ async function main(): Promise<void> {
   const { planned, refused } = planLeadNetidResolution(leads, netidByEmail, netidsAlreadyHeld);
 
   const toApply = planned.slice(0, args.maxApply);
-  let written = 0;
-  if (args.apply) {
-    for (const plan of toApply) {
-      const result = await Researcher.updateOne(
-        {
-          _id: new mongoose.Types.ObjectId(plan.researcherId),
-          $or: [
-            { 'identifiers.netid': { $exists: false } },
-            { 'identifiers.netid': { $in: ['', null] } },
-          ],
-        },
-        { $set: { 'identifiers.netid': plan.netid } },
-      );
-      written += result.modifiedCount ?? 0;
-    }
-  }
+  const { written, searchResyncFailedEntityIds } = args.apply
+    ? await applyLeadNetidPlans(toApply, {
+        storeNetid: storeNetidOnNetidlessResearcher,
+        resyncLinkedRows: resyncResearchRowsLinkedToResearchers,
+      })
+    : { written: 0, searchResyncFailedEntityIds: [] };
 
   const report = {
     script: SCRIPT_NAME,
@@ -271,14 +283,16 @@ async function main(): Promise<void> {
     refusedByReason: summarizeRefusals(refused),
     appliedLimit: args.maxApply,
     written,
+    searchResyncFailedEntityIds,
   };
 
   console.log(JSON.stringify(report, null, 2));
+  if (searchResyncFailedEntityIds.length > 0) process.exitCode = 1;
 
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
+    writeReportFileSync(outputPath, JSON.stringify(report, null, 2));
     console.log(`Saved report to ${outputPath}`);
   }
 

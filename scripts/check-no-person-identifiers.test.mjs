@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import {
+  decodeEscapedBody,
   DIRECTORY_DUMP_THRESHOLD,
   findDirectoryDumpFindings,
   findFixtureAddressFindings,
@@ -638,4 +639,57 @@ test('the fixture arm reads fixture and test paths only, which the dump arm skip
 test('an explicit exemption with a stated reason suppresses the fixture arm', () => {
   const content = 'identifier-exempt: captured public page under review\nquilla.tobias@yale.edu';
   assert.deepEqual(findFixtureAddressFindings([{ path: FIXTURE_PAGE, content }]), []);
+});
+
+const ESCAPE_REPRO_MARKDOWN = [
+  '## What Changed',
+  '- `redactWithheldNamesDeep` now drops every prose sentence that names a withheld person. It splits text with `Intl.Segmenter` and does not treat an honorific or initial before a name as a sentence break. Title fields in `TITLE_KEYS` (`name`, `displayName`, `title` and the like) still swap the name for `WITHHELD_PERSON_PHRASE`, because a title has no sentence to drop. The namesake-own-row exemption still applies.',
+  '',
+].join('\n');
+const escapedForms = (markdown) => ({
+  markdown,
+  backslashN: markdown.replaceAll('\n', '\\n'),
+  json: JSON.stringify({ body: markdown }),
+});
+
+test('a JSON-escaped body gets the same verdict as its markdown (#5622)', () => {
+  for (const [form, content] of Object.entries(escapedForms(ESCAPE_REPRO_MARKDOWN))) {
+    assert.equal(
+      hasBlockingFindings(scanBody(body(decodeEscapedBody(content)))),
+      false,
+      `${form} form was refused`,
+    );
+  }
+  assert.ok(
+    hasBlockingFindings(scanBody(body(escapedForms(ESCAPE_REPRO_MARKDOWN).json))),
+    'the undecoded JSON form is the false positive this decode removes',
+  );
+});
+
+test('a real claim still fails in every escaped form, including after a leading heading', () => {
+  const markdown = '## Status\nQuilla Marrowbane has departed and the row is wrong.\n';
+  for (const [form, content] of Object.entries(escapedForms(markdown))) {
+    assert.deepEqual(
+      rulesOf(scanStrict(body(decodeEscapedBody(content)))),
+      ['person-claim-pairing'],
+      `${form} form`,
+    );
+  }
+  assert.deepEqual(
+    rulesOf(scanStrict(body(escapedForms(markdown).backslashN))),
+    [],
+    'undecoded, a leading heading blanks the one-line body, which is the hole the decode closes',
+  );
+});
+
+test('decoding keeps JSON keys and leaves a body that only looks like JSON alone', () => {
+  assert.equal(
+    decodeEscapedBody('{"title":"t","body":"line one\\nline two"}'),
+    'title\n\nt\n\nbody\n\nline one\nline two',
+  );
+  assert.equal(
+    decodeEscapedBody('[a link](https://example.invalid) and more'),
+    '[a link](https://example.invalid) and more',
+  );
+  assert.equal(decodeEscapedBody('plain\\tcell\\r\\nnext'), 'plain\tcell\nnext');
 });

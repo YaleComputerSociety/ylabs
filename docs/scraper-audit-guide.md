@@ -77,15 +77,17 @@ Small development write with materialization:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source <source-name> --limit 10 --use-cache --auto-materialize
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source <source-name> --apply --limit 10 --use-cache --auto-materialize
 ```
 
 Scale up in development:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source <source-name> --limit 100 --use-cache --auto-materialize
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source <source-name> --apply --limit 100 --use-cache --auto-materialize
 ```
+
+A write needs both `--apply` on the command line and `ALLOW_NON_PROD_SCRAPER_WRITES` in the environment (#5842): without `--apply` the run is a dry run, and the environment permission without `--apply` is refused before the CLI connects.
 
 There is no Beta or Production write command.
 The CLI refuses a `run` or `materialize` write against either, because both receive data only through promotion; [`docs/data-refresh-runbook.md`](./data-refresh-runbook.md) owns that sequence.
@@ -114,6 +116,7 @@ npx -y corepack@0.34.7 yarn --cwd server scrape report --run <scrapeRunId>
 To save a durable QA artifact outside the repo, add `--output`:
 
 ```bash
+mkdir -p /tmp/ylabs-scraper-reports
 npx -y corepack@0.34.7 yarn --cwd server scrape report --run <scrapeRunId> --output /tmp/ylabs-scraper-reports/<scrapeRunId>.json
 ```
 
@@ -170,7 +173,7 @@ What was deliberately not scraped, and why, is recorded in [`docs/scraper-covera
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dept-faculty-roster`              | Discover faculty, official profile URLs, ORCID, lab/personal sites, Scholar review candidates, inferred PI ownership                  | `researchEntity`, `user`                                               | `researchers`, `research_entities`                                                                   | Should not create access `signals`. Contact is a derived official-profile link-out, not a materialized artifact.                                                                                    | Audit by department when possible. The authoritative list of covered configs is `DEFAULT_DEPT_CONFIGS` in `server/src/scrapers/sources/departmentRosterScraper.ts`, which now includes school-wide index rows (e.g. the `ysph` "Faculty Directory by Name" A-Z page) alongside per-department rosters (all SEAS engineering departments are covered as of #640). Taxonomy/topic links must be parsed as separate labels, not flattened container text; generic index URLs such as the Yale Medicine A-to-Z lab website directory must not be promoted as a specific lab website. Large runs can be slow because profile pages are enriched sequentially. |
 | `official-profile-pi-backfill`     | Repair queued PI identity rows from already-known official Yale profile URLs                                                          | `user`                                                                 | `researchers`                                                                                        | Identity/profile evidence only. Existing repair queue may later attach PI by exact profile URL; the scraper itself must not create membership, department/org, or action evidence.                  | Run with `--only medicine-pi-backfill` and a small `--limit`. Reject mismatched canonical URLs, name-only matches, missing Yale email/NetID, center membership pages, listing pages, non-profile pages, and ambiguous identities.                                                                                                                                                                                                                                                                           |
-| `official-research-home-roster`    | Acquire reviewed current non-lead team membership from explicit official roster sections                                              | `researchEntity`, `researchGroupMember`                                | `research_entities`, `role_assignments`                                                 | Team context only. Must not create access or availability claims; the only contact invitation is the owner-approved line beside current undergraduates (#5039).                                                                                                                         | In the research sweep (`relationships` phase) since the owner's sampled precision review was recorded on 2026-10-17 (#4025, #5039). A new allowlist entry needs a per-lab owner review of its listed names; keep the structural audit clean.                                                                                                                                                                                                                                                                                                                           |
+| `official-research-home-roster`    | Acquire reviewed current non-lead team membership from explicit official roster sections                                              | `researchEntity`, `researchGroupMember`                                | `research_entities`, `role_assignments`                                                 | Team context only. Must not create access or availability claims; the only contact invitation is the owner-approved line beside current undergraduates (#5039).                                                                                                                         | In the research sweep (`relationships` phase) since the owner's sampled precision review was recorded on 2026-10-17 (#4025, #5039). Rows outside the allowlist with a website get a derived roster that is served once it passes the publish checks, with no per-lab review (#5278, #5413); `DERIVED_UNDERGRAD_ROSTERS_SERVE=false` is the kill switch; keep the structural audit clean.                                                                                                                                                                                                                                                                                                                           |
 | `lab-microsite-undergrad-llm`      | Extract evidence from lab/faculty websites: join pages, role language, constraints, and contact instructions | `researchEntity`                                                       | `research_entities` and access records when exact evidence supports them | Can create access `signals` through validated materializers. Bare join-page URLs without undergrad access evidence should not create access signals. | Start with small `--limit`. Requires `OPENAI_API_KEY`. Review every quote against its exact `quoteSourceUrl` and inspect freshness.                                                                                                                                                                                                                                                                                                   |
 | `lab-microsite-description-llm`    | Extract source-backed description, topics, and methods from official lab/profile/center pages                                         | `researchEntity`                                                       | `research_entities` through normal materialization                                             | Description only. Must not emit undergrad access, contact, opening, or application claims.                                                                                                          | A capped run defaults to open `source_description` visibility-queue rows; an `--exhaustive` run with no `--only` (the sweep's mode) reads every non-archived row with an http URL, queued rows first, and leaves unchanged or fresh rows to the content-hash gate and WorkPlanner (#3931). It considers `websiteUrl`, `website`, and `sourceUrls`, and supports targeted `--only <id-or-slug>` plus `--offset`/`--limit`. Requires `OPENAI_API_KEY`; dry-run and inspect conflict report first.                                                                                                                                                                                                                                              |
 | `undergrad-fellowships-recipients` | Capture evidence of past undergrad advisees and fellowship-compatible research                                                        | `researchEntity`                                                       | `research_entities`, `signals`                                                                 | Can create exploratory outreach access signals plus `PAST_UNDERGRADS` and `FELLOWSHIP_COMPATIBLE` signals. Fellowship funding remains formalization evidence, not a standalone access signal.       | Many programs require manual upload or CSV/PDF handling. Audit skipped/manual-upload programs separately.                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -201,7 +204,7 @@ Commands:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source dept-faculty-roster --limit 100 --use-cache --auto-materialize
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source dept-faculty-roster --apply --limit 100 --use-cache --auto-materialize
 ```
 
 Expected collections:
@@ -214,7 +217,7 @@ Expected report shape:
 
 - `accessSignals` should be `0`.
 - `researchEntity` and `user` observation counts should be nonzero.
-- Any configured source that fetched but yielded zero faculty is flagged: it carries an `empty` or `extractor-error` status in the `Departments:` notes summary and is named in a `WARNING: ... yielded no faculty` log line, signalling a likely site migration or renamed layout whose URL and extractor need re-verification.
+- Any configured source that fetched but yielded zero faculty is flagged: it carries an `empty` or `extractor-error` status in the `Departments:` notes summary, is named in a `WARNING: ... yielded no faculty` log line, and reported as a zero in `metrics.unitYields`, so three consecutive empty runs of the same department fail the run (#3876); it signals a likely site migration or renamed layout whose URL and extractor need re-verification.
 - A source whose page could not be fetched carries `fetch-failed` or `rendered-unavailable` and is named in a separate `could not be read` warning, and one that read only part of its roster carries `partial-read`; neither is a migration signal. A run where every attempted source failed to read is stored as a `failure`. `docs/research-data-pipeline.md` owns the full lane status table.
 
 Project impact:
@@ -229,7 +232,7 @@ Commands:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-undergrad-llm --only <reviewed-slug> --limit 1 --use-cache --auto-materialize
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-undergrad-llm --apply --only <reviewed-slug> --limit 1 --use-cache --auto-materialize
 ```
 
 Expected collections:
@@ -264,7 +267,7 @@ SCRAPER_ENV=development \
   npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-description-llm --dry-run --only <entity-id-or-slug> --limit 1 --output /tmp/ylabs-description-llm-dry-run.json
 
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-description-llm --only <entity-id-or-slug> --limit 1 --auto-materialize --output /tmp/ylabs-description-llm-apply.json
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-description-llm --apply --only <entity-id-or-slug> --limit 1 --auto-materialize --output /tmp/ylabs-description-llm-apply.json
 ```
 
 Expected collections:
@@ -322,7 +325,7 @@ Commands:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source undergrad-fellowships-recipients --limit 50 --use-cache --auto-materialize
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source undergrad-fellowships-recipients --apply --limit 50 --use-cache --auto-materialize
 ```
 
 Expected collections:
@@ -383,7 +386,7 @@ Expected collections:
 Audit focus:
 
 - Run the source in dry-run mode against the narrow reviewed allowlist before any write.
-- Use `yarn --cwd server scrape run --source official-research-home-roster --only <research-entity-key> --limit 1` for a bounded source review; add the normal environment write confirmation and `--auto-materialize` only after the dry-run evidence is accepted.
+- Use `yarn --cwd server scrape run --source official-research-home-roster --only <research-entity-key> --limit 1` for a bounded source review; add `--apply`, the normal environment write permission, and `--auto-materialize` only after the dry-run evidence is accepted.
 - Confirm every accepted section is explicitly configured as current and that former or alumni sections remain excluded.
 - Confirm each materialized member has a unique official profile identity, an honest mapped role, an observation date, and an unexpired freshness window.
 - Confirm duplicate profile identities, same-profile different-name collisions, ambiguous roles, unsafe links, and direct contact text are withheld.

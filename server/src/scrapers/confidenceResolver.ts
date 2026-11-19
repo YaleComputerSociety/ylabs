@@ -29,7 +29,9 @@ import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResea
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 import { isSourcePageNarrationDescription } from '../utils/researchEntityDescriptionText';
+import { WRITTEN_DESCRIPTION_SOURCE_NAME } from '../utils/writtenDescriptionSource';
 import { YALE_FELLOWSHIP_DATABASE_SOURCE } from './fellowshipSourcePrecedence';
+import { PAGE_QUOTED_RESEARCH_TOPICS_SOURCE } from './utils/pageQuotedResearchTopics';
 
 export interface ResolverObservation {
   field: string;
@@ -94,7 +96,7 @@ const ADMIN_EDIT_SOURCE = 'manual-admin-edit';
 // to when the writer refused, has not run, or its body fails a content gate. A PI's own
 // edit is not copied page text, so it is the one source the written body does not
 // outrank.
-export const WRITTEN_DESCRIPTION_SOURCE_NAME = 'coverage-synthesis-llm';
+export { WRITTEN_DESCRIPTION_SOURCE_NAME };
 const WRITTEN_DESCRIPTION_SOURCES = new Set([WRITTEN_DESCRIPTION_SOURCE_NAME]);
 const WRITTEN_DESCRIPTION_FIELDS = new Set(['fullDescription']);
 const WRITTEN_DESCRIPTION_PEER_SOURCES = new Set(['manual-pi-edit']);
@@ -113,6 +115,29 @@ const FALLBACK_ONLY_SOURCES_BY_FIELD: Readonly<Record<string, ReadonlySet<string
   researchAreas: new Set(['bbs-research-track']),
   pastUndergradAdvisees: new Set(['lab-microsite-undergrad-llm']),
   sourceUrl: new Set([YALE_FELLOWSHIP_DATABASE_SOURCE]),
+};
+// A list a source outranks whenever the named source states the field, whatever the
+// weights say. MeSH and medical-school directory lists copy index headings that name no
+// row's subject, so a list quoted from the row's own pages wins `researchAreas` over them
+// while they stay stored as evidence and still win when no quoted list exists (#5396). The
+// code lane's approved-taxonomy list also gives way to a derived list (owner decision on
+// #5419); that lane (#5418) is held, so the name is inert until it re-lands.
+const OUTRANKED_SOURCES_BY_FIELD: Readonly<
+  Record<string, { by: ReadonlySet<string>; outranked: ReadonlySet<string> }>
+> = {
+  researchAreas: {
+    by: new Set([PAGE_QUOTED_RESEARCH_TOPICS_SOURCE]),
+    outranked: new Set(['lab-site-research-read', 'ysm-mesh-keyword', 'ysm-faculty-directory']),
+  },
+  // The profile lane types a home it reached through a person's profile link from the words
+  // in that link's name and URL, so "Research Center" made a fee-for-service core a CENTER.
+  // The university's research directory states the type of the records it lists, a cores
+  // directory record being a core facility, so its typing wins whatever the weights say
+  // (#5749).
+  entityType: {
+    by: new Set(['yale-research-official']),
+    outranked: new Set(['official-profile-pi-backfill']),
+  },
 };
 const PROSE_EXTENSION_BONUS = 1.25;
 
@@ -327,13 +352,34 @@ export function sourceRanksOnlyAsFieldFallback(field: string, sourceName: unknow
 
 function demoteFallbackOnlyGroups(
   field: string,
-  groups: Array<{ sources: Set<string>; demoted?: boolean }>,
+  groups: Array<{ sources: Set<string>; demoted?: boolean; fallbackOnly?: boolean }>,
 ): void {
   if (!FALLBACK_ONLY_SOURCES_BY_FIELD[field]) return;
   if (groups.every((group) => isFallbackOnlyGroup(field, group))) return;
   for (const group of groups) {
-    if (isFallbackOnlyGroup(field, group)) group.demoted = true;
+    if (!isFallbackOnlyGroup(field, group)) continue;
+    group.demoted = true;
+    group.fallbackOnly = true;
   }
+}
+
+function demoteOutrankedSourceGroups(
+  field: string,
+  groups: Array<{ sources: Set<string>; demoted?: boolean }>,
+): void {
+  const rule = OUTRANKED_SOURCES_BY_FIELD[field];
+  if (!rule) return;
+  if (!groups.some((group) => hasSourceIn(group, rule.by))) return;
+  for (const group of groups) {
+    if (group.sources.size === 0) continue;
+    if ([...group.sources].every((source) => rule.outranked.has(source))) group.demoted = true;
+  }
+}
+
+// A fallback-only list ranks below every other list, demoted ones included (#4028).
+function demotionRank(group: { demoted?: boolean; fallbackOnly?: boolean }): number {
+  if (!group.demoted) return 0;
+  return group.fallbackOnly ? 2 : 1;
 }
 
 function preferExtractedProseGroups<T extends { sources: Set<string> }>(
@@ -712,6 +758,7 @@ interface RankedGroup {
   weight: number;
   sources: Set<string>;
   demoted?: boolean;
+  fallbackOnly?: boolean;
 }
 
 function rankFieldGroups(
@@ -766,10 +813,9 @@ function rankFieldGroups(
   demoteUndergradSignalProseGroups(field, rankable, descriptionKind);
   demoteUnusableProseGroups(field, rankable, descriptionKind);
   demoteFallbackOnlyGroups(field, rankable);
+  demoteOutrankedSourceGroups(field, rankable);
   preferWrittenDescriptionGroups(field, rankable);
-  return rankable.sort(
-    (a, b) => Number(a.demoted ?? false) - Number(b.demoted ?? false) || b.weight - a.weight,
-  );
+  return rankable.sort((a, b) => demotionRank(a) - demotionRank(b) || b.weight - a.weight);
 }
 
 /**

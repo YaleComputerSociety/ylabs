@@ -804,10 +804,64 @@ function extractEmail(text: string): string | undefined {
   return text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
 }
 
+const ACTIVE_APPLICATION_LANGUAGE =
+  /\bapplications?\s+(?:are\s+)?(?:now\s+)?open\b|(?<!\b(?:not|no\s+longer)\s+)\bcurrently accepting applications\b|\brolling\b|\breview(?:ed|ing)?\s+applications?\s+as\s+(?:we|they)\s+(?:are\s+)?receiv|\bapplications?\s+(?:are\s+)?accepted\s+(?:on\s+a\s+)?(?:rolling|continuous|year[-\s]?round)\b|\bno\s+(?:fixed|set)\s+deadline\b/i;
+
+const APPLICATIONS_FOR_A_CYCLE = String.raw`(?:\s+for\s+[^;]{1,60}?)?`;
+
+const STATED_OPEN_WINDOW = new RegExp(
+  String.raw`\bapplications?(?:\s+(?:are\s+)?|\s+for\s+[^;]{1,60}?\s+(?:are|is)\s+)(?:now\s+)?open\b|(?<!\b(?:not|no\s+longer)\s+)\bcurrently accepting applications\b`,
+  'i',
+);
+
+const OPENING_STATEMENT = /\bapplications?\b[^;]*?\bopen\b/i;
+
+const MONTH = String.raw`(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*`;
+
+const FUTURE_OPENING = new RegExp(
+  String.raw`\b(?:re)?open(?:s|ing)?\s+(?:again\s+)?(?:for\s+(?:[\w'’-]+\s+){1,4}?)?(?:next|later|soon|(?:in|on|from|starting|beginning)\s+(?:early\s+|mid-?\s*|late\s+)?(?:${MONTH}|spring|summer|fall|autumn|winter|\d)|${MONTH}\s+\d)|\bwill\s+(?:re)?open\b|\bopens\s+on\b`,
+  'i',
+);
+
+const CYCLE_PREFIX = String.raw`(?:(?:spring|summer|fall|autumn|winter)\s+)?(?:\d{4}(?:[-–]\d{2,4})?\s+)?`;
+
+const DISQUALIFYING_ADJECTIVE = String.raw`(?:incomplete|late|partial|unsolicited|duplicate|paper|emailed|ineligible)`;
+
+const CLOSURE_STATEMENT = new RegExp(
+  String.raw`(?<!\b${DISQUALIFYING_ADJECTIVE}\s+)\b(?:(?:all|the|our)\s+)?${CYCLE_PREFIX}applications?${APPLICATIONS_FOR_A_CYCLE}\s+(?:are|is)\s+(?:now\s+)?closed\b`,
+  'i',
+);
+
+const CLOSED_STATUS_LINE = /\bapplication status:?\s*closed\b/i;
+
+const NAMES_ANOTHER_ROUND = /\bopen\b|\bround\b/i;
+
+const PAST_ROLLING_REVIEW = /\b(?:were|was)\s+(?:accepted|reviewed)\s+on\s+a\s+rolling\s+basis\b/gi;
+
+const SENTENCE_BREAK =
+  /(?<!\b[A-Za-z]\.)(?<!\b(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|Dr|Mr|Mrs|Ms|St|No|Prof)\.)(?<=[.!?])\s+(?=[A-Z0-9])|[;\n]+/;
+
+const withoutFutureOpening = (sentence: string): string => {
+  const opening = OPENING_STATEMENT.exec(sentence);
+  if (!opening) return sentence;
+  const futureOpening = FUTURE_OPENING.exec(sentence.slice(opening.index));
+  return futureOpening ? sentence.slice(0, opening.index + futureOpening.index) : sentence;
+};
+
+const statesClosure = (sentence: string): boolean =>
+  CLOSURE_STATEMENT.test(sentence) ||
+  (CLOSED_STATUS_LINE.test(sentence) && !NAMES_ANOTHER_ROUND.test(sentence));
+
 function hasExplicitActiveApplicationLanguage(text: string): boolean {
-  return /\bapplications?\s+(are\s+)?(now\s+)?open\b|\bcurrently accepting applications\b|\brolling\b|\breview(?:ed|ing)?\s+applications?\s+as\s+(?:we|they)\s+(?:are\s+)?receiv|\bapplications?\s+(?:are\s+)?accepted\s+(?:on\s+a\s+)?(?:rolling|continuous|year[-\s]?round)\b|\bno\s+(?:fixed|set)\s+deadline\b/i.test(
-    text,
-  );
+  const sentences = text
+    .replace(PAST_ROLLING_REVIEW, '')
+    .split(SENTENCE_BREAK)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const openSentences = sentences.map(withoutFutureOpening);
+  if (openSentences.some((sentence) => STATED_OPEN_WINDOW.test(sentence))) return true;
+  if (sentences.some(statesClosure)) return false;
+  return openSentences.some((sentence) => ACTIVE_APPLICATION_LANGUAGE.test(sentence));
 }
 
 interface DateNearLabel {
@@ -2086,7 +2140,6 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
   const { html } = await fetchPageWithPolicy(safeUrlText, {
     timeoutMs: 30000,
     headers: {
-      'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
       Accept: 'text/html,application/xhtml+xml',
     },
     maxRedirects: 5,

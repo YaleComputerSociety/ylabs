@@ -19,6 +19,7 @@
  * fetched or cited as a source.
  */
 import axios from 'axios';
+import { programPageYearOfStudy } from '../utils/fundYearOfStudy';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
@@ -28,14 +29,16 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import {
   PROGRAM_PAGE_NON_PROSE_SELECTOR,
+  acceptingByStatedWindow,
   isApplyLink,
   nearestDeadlineText,
   programApplicationLinks,
   programPageDescription,
   programPageTitle,
+  statedApplicationWindow,
 } from '../utils/programPageEvidence';
 import { parseProgramDate } from '../utils/programDeadline';
-import { boundedObservedFellowshipProse } from '../fellowshipProse';
+import { boundedObservedFellowshipProse, sanitizedObservedSourceText } from '../fellowshipProse';
 
 export const YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE = 'yale-health-sciences-summer-programs';
 
@@ -111,12 +114,15 @@ export interface HealthSciencesProgramCandidate {
   title: string;
   description?: string;
   eligibility?: string;
+  fullSourceDescription?: string;
   competitionType: string;
   sourceUrl: string;
   applicationLink?: string;
   links: Array<{ label: string; url: string }>;
   deadline?: Date;
+  applicationOpenDate?: Date;
   contactOffice?: string;
+  yearOfStudy: string[];
   termOfAward: string[];
   purpose: string[];
   isAcceptingApplications: boolean;
@@ -246,12 +252,6 @@ function sectionTextForHeading($: cheerio.CheerioAPI, headingPattern: RegExp): s
   return combined ? boundedObservedFellowshipProse(combined) : undefined;
 }
 
-function hasActiveApplicationLanguage(text: string): boolean {
-  return /\bapplications?\s+(?:are\s+)?(?:now\s+)?open\b|\bcurrently accepting applications\b|\baccepting applications\b|\bapplications?\s+(?:are\s+)?accepted\b/i.test(
-    text,
-  );
-}
-
 function fingerprintCandidate(
   candidate: Omit<HealthSciencesProgramCandidate, 'sourceFingerprint'>,
 ): string {
@@ -264,6 +264,7 @@ function fingerprintCandidate(
     applicationLink: candidate.applicationLink || '',
     links: candidate.links,
     deadline: candidate.deadline?.toISOString() || '',
+    applicationOpenDate: candidate.applicationOpenDate?.toISOString() || '',
     contactOffice: candidate.contactOffice || '',
     termOfAward: candidate.termOfAward,
     purpose: candidate.purpose,
@@ -316,32 +317,44 @@ export function parseHealthSciencesProgramPage(
     0,
     DEADLINE_APPLICATION_SECTION_CHARS,
   );
-  const deadline = parseProgramDate(
-    nearestDeadlineText(`${applicationInfo || ''} ${bodyText}`),
-    'deadline',
+  const statedWindow = statedApplicationWindow(
+    `${applicationInfo || ''} ${bodyText}`,
     referenceDate,
   );
+  const deadline =
+    parseProgramDate(
+      nearestDeadlineText(`${applicationInfo || ''} ${bodyText}`),
+      'deadline',
+      referenceDate,
+    ) ?? statedWindow.closesAt;
+  const applicationOpenDate = statedWindow.opensAt;
 
   const links = programApplicationLinks($, root, pageUrl, MAX_PROGRAM_LINKS);
   const applicationLink = links.find((link) => isApplyLink(link.url, link.label))?.url;
 
   const termOfAward = inferTerm(identityText);
-  const isAcceptingApplications =
-    (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
-    hasActiveApplicationLanguage(bodyText);
+  const isAcceptingApplications = acceptingByStatedWindow(
+    statedWindow,
+    deadline,
+    referenceDate,
+    bodyText,
+  );
 
   const candidate: Omit<HealthSciencesProgramCandidate, 'sourceFingerprint'> = {
     sourceKey: sourceKeyForTitle(title),
     title,
     description,
     eligibility,
+    fullSourceDescription: sanitizedObservedSourceText(bodyText),
     competitionType: 'Summer Undergraduate Research Program (Health Sciences)',
     sourceUrl: pageUrl,
     applicationLink,
     links,
     deadline,
+    applicationOpenDate,
     contactOffice: hostingOffice || undefined,
     termOfAward,
+    yearOfStudy: programPageYearOfStudy({ eligibility, description }),
     purpose: ['Research'],
     isAcceptingApplications,
     reviewRequired: !deadline,
@@ -417,13 +430,16 @@ export function candidateToObservations(
     observation('competitionType', candidate.competitionType, candidate),
     observation('description', candidate.description, candidate),
     observation('eligibility', candidate.eligibility, candidate),
+    observation('fullSourceDescription', candidate.fullSourceDescription, candidate),
     currentSourceObservation('researchFocused', true, candidate),
     currentSourceObservation('archived', false, candidate),
     observation('applicationLink', candidate.applicationLink, candidate),
     observation('links', candidate.links, candidate),
     observation('deadline', candidate.deadline, candidate),
+    observation('applicationOpenDate', candidate.applicationOpenDate, candidate),
     observation('contactOffice', candidate.contactOffice, candidate),
     observation('termOfAward', candidate.termOfAward, candidate),
+    observation('yearOfStudy', candidate.yearOfStudy, candidate),
     observation('purpose', candidate.purpose, candidate),
     observation('isAcceptingApplications', candidate.isAcceptingApplications, candidate),
     observation('reviewRequired', candidate.reviewRequired, candidate),
@@ -443,7 +459,6 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
     axios.get(safeUrlText, {
       timeout: 30000,
       headers: {
-        'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
         Accept: 'text/html,application/xhtml+xml',
       },
       maxRedirects: 5,

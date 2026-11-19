@@ -34,6 +34,7 @@ import {
   type ResearchModelInventoryArgs,
   type SchemaVersionBucket,
 } from './researchModelInventoryCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -422,11 +423,7 @@ export function writeResearchModelInventoryOutput(
 ): void {
   if (!target) return;
   const safeOutput = resolveSafeJsonReportOutputPath(target);
-  fs.writeFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`, {
-    encoding: 'utf8',
-    flag: 'wx',
-    mode: 0o600,
-  });
+  writeReportFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`, { exclusive: true });
 }
 
 export function assertResearchModelInventoryOutputAvailable(target: string): string {

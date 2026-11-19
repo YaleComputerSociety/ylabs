@@ -582,6 +582,35 @@ describe('labResearchFacultyToObservations', () => {
     slug: 'ysm-garg',
   };
 
+  it('emits the member page identity evidence on the listing when the lane read it (#5927)', () => {
+    const evidence = {
+      pageUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
+      linkedProfileUrls: [],
+      emails: ['skylar.lab@yale.edu'],
+      netids: [],
+    };
+    const profile = {
+      name: 'Skylar Lab',
+      profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
+      title: '',
+    };
+
+    const withEvidence = labResearchFacultyToObservations(lab, profile, lab.url, evidence);
+    const withoutEvidence = labResearchFacultyToObservations(lab, profile, lab.url);
+
+    expect(withEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'researchGroupMember',
+          entityKey: 'ysm-garg:research-faculty:skylar-lab',
+          field: 'profileIdentityEvidence',
+          value: evidence,
+        }),
+      ]),
+    );
+    expect(withoutEvidence.some((obs) => obs.field === 'profileIdentityEvidence')).toBe(false);
+  });
+
   it('emits official profile user identity and PI key observations for a person-specific widget email', () => {
     const observations = labResearchFacultyToObservations(
       lab,
@@ -636,6 +665,28 @@ describe('labResearchFacultyToObservations', () => {
           value: 'skylar.lab@yale.edu',
         }),
       ]),
+    );
+    expect(observations.some((o) => o.entityType === 'user' && o.field === 'netid')).toBe(false);
+  });
+
+  it("cites the widget's title at the lab page it was read from (#5578)", () => {
+    const userObservations = labResearchFacultyToObservations(
+      lab,
+      {
+        name: 'Skylar Lab',
+        profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
+        title: 'Professor of Fixture Medicine',
+        email: 'skylar.lab@yale.edu',
+      },
+      lab.url,
+    ).filter((observation) => observation.entityType === 'user');
+
+    expect(userObservations.find((observation) => observation.field === 'title')).toMatchObject({
+      value: 'Professor of Fixture Medicine',
+      sourceUrl: lab.url,
+    });
+    expect(userObservations.find((observation) => observation.field === 'email')?.sourceUrl).toBe(
+      'https://medicine.yale.edu/profile/skylar-lab/',
     );
   });
 

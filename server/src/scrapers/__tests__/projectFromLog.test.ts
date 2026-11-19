@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY,
   projectFromLog,
@@ -7,6 +7,7 @@ import {
 import type { ResolvedField } from '../confidenceResolver';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import {
+  applyResearchEntityOrgUnitCanonicalization,
   buildOrgUnitResolverIndex,
   createOrgUnitCanonicalizer,
   resetOrgUnitCanonicalizerCache,
@@ -60,6 +61,108 @@ describe('projectFromLog', () => {
   afterEach(() => {
     setOrgUnitCanonicalizerForTesting(null);
     resetOrgUnitCanonicalizerCache();
+  });
+
+  describe("the lead's first-hand section (#6381)", () => {
+    const rowId = '6a0000000000000000006381';
+    const cardiology = async () => ({
+      section: 'Cardiovascular Medicine',
+      parent: 'Internal Medicine',
+    });
+
+    beforeEach(() => {
+      setOrgUnitCanonicalizerForTesting(
+        createOrgUnitCanonicalizer(
+          buildOrgUnitResolverIndex([
+            { slug: 'school-of-medicine', name: 'School of Medicine', kind: 'SCHOOL' },
+            { slug: 'internal-medicine', name: 'Internal Medicine', kind: 'DEPARTMENT' },
+            { slug: 'surgery', name: 'Surgery', kind: 'DEPARTMENT' },
+            {
+              slug: 'cardiovascular-medicine',
+              name: 'Cardiovascular Medicine',
+              kind: 'SECTION',
+            },
+          ]),
+          new Map(),
+          new Map([['Cardiovascular Medicine', ['Internal Medicine']]]),
+        ),
+      );
+    });
+
+    it('projects the section beside the parent, and projects it again over its own output', async () => {
+      const first = await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Internal Medicine']) },
+          entityDoc: { _id: rowId, departments: ['Internal Medicine'] },
+          leadFirstHandSectionForResearchEntity: cardiology,
+        }),
+      );
+      expect(first.set.departments).toEqual(['Internal Medicine', 'Cardiovascular Medicine']);
+
+      const second = await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Internal Medicine']) },
+          entityDoc: { _id: rowId, departments: first.set.departments },
+          leadFirstHandSectionForResearchEntity: cardiology,
+        }),
+      );
+      expect(second.set.departments).toEqual(first.set.departments);
+    });
+
+    it('projects no section when the projected departments lack its parent', async () => {
+      const result = await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Surgery']) },
+          entityDoc: { _id: rowId, departments: ['Surgery'] },
+          leadFirstHandSectionForResearchEntity: cardiology,
+        }),
+      );
+      expect(result.set.departments).toEqual(['Surgery']);
+    });
+
+    it("projects no section on a center, whose departments are not one lead's", async () => {
+      const result = await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Internal Medicine']) },
+          entityDoc: { _id: rowId, kind: 'center', departments: ['Internal Medicine'] },
+          leadFirstHandSectionForResearchEntity: cardiology,
+        }),
+      );
+      expect(result.set.departments).toEqual(['Internal Medicine']);
+    });
+
+    it('projects no section on a row whose school is locked', async () => {
+      const result = await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Internal Medicine']) },
+          entityDoc: { _id: rowId, departments: ['Internal Medicine'] },
+          manuallyLockedFields: ['school'],
+          leadFirstHandSectionForResearchEntity: cardiology,
+        }),
+      );
+      expect(result.set.departments).toEqual(['Internal Medicine']);
+    });
+
+    it('looks up no lead when no projected department has a section under it', async () => {
+      let lookups = 0;
+      await projectFromLog(
+        'researchEntity',
+        researchEntityInput({
+          resolved: { departments: resolvedField(['Surgery']) },
+          entityDoc: { _id: rowId, departments: ['Surgery'] },
+          leadFirstHandSectionForResearchEntity: async () => {
+            lookups++;
+            return undefined;
+          },
+        }),
+      );
+      expect(lookups).toBe(0);
+    });
   });
 
   it('is byte-identical across runs with a fixed clock (idempotency contract)', async () => {
@@ -197,6 +300,43 @@ describe('projectFromLog', () => {
     expect(result.set.school).toBe('School of Medicine');
     expect(result.set.schools).toEqual(['School of Medicine']);
     expect(result.set.orgAffiliationLabels).toEqual(['Department of Genetics']);
+    expect('name' in result.set).toBe(false);
+  });
+
+  it("adds a lead's stated non-Primary school to schools without touching school or departments (#6529)", async () => {
+    setOrgUnitCanonicalizerForTesting(
+      createOrgUnitCanonicalizer(
+        buildOrgUnitResolverIndex([
+          { slug: 'school-of-public-health', name: 'School of Public Health', kind: 'SCHOOL' },
+          { slug: 'school-of-medicine', name: 'School of Medicine', kind: 'SCHOOL' },
+          { slug: 'biostatistics', name: 'Biostatistics', kind: 'DEPARTMENT' },
+        ]),
+        new Map([['Biostatistics', 'School of Public Health']]),
+      ),
+    );
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        writeOnlyFields: ['statedAppointmentSchools'],
+        resolved: {
+          name: resolvedField('Synthetic Biostatistics Group'),
+          statedAppointmentSchools: resolvedField(['School of Medicine']),
+        },
+        entityDoc: {
+          _id: 'e'.repeat(24),
+          school: 'School of Public Health',
+          schools: ['School of Public Health'],
+          departments: ['Biostatistics'],
+          confidenceByField: {},
+        },
+        applyResearchEntityOrgUnitCanonicalization:
+          applyResearchEntityOrgUnitCanonicalization as ProjectFromLogInput['applyResearchEntityOrgUnitCanonicalization'],
+      }),
+    );
+    expect(result.set.statedAppointmentSchools).toEqual(['School of Medicine']);
+    expect(result.set.schools).toEqual(['School of Public Health', 'School of Medicine']);
+    expect(result.set.school ?? 'School of Public Health').toBe('School of Public Health');
+    expect(result.set.departments ?? ['Biostatistics']).toEqual(['Biostatistics']);
     expect('name' in result.set).toBe(false);
   });
 

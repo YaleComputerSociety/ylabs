@@ -18,6 +18,34 @@ export const RENDER_SERVICE_ID_VARIABLES: Record<PromotionTarget, string> = {
 
 export const RENDER_API_KEY_VARIABLE = 'RENDER_API_KEY';
 
+export const NO_BACKUP_ACKNOWLEDGEMENT = 'none-acknowledged';
+
+export const BACKUP_REF_REQUIRED_MESSAGE = `--backup-ref is required: pass the reference of a Beta backup you took before this mirror, or pass --backup-ref ${NO_BACKUP_ACKNOWLEDGEMENT} to acknowledge that no off-cluster Beta backup exists (#4148). promote:beta records the value as your acknowledgement and does not check it.`;
+
+export const PROMOTE_BETA_USAGE = [
+  'Usage: yarn promote:beta --backup-ref <reference | none-acknowledged> [options]',
+  '',
+  "  --backup-ref <value>        Required to apply. Records the operator's acknowledgement of the",
+  '                              Beta backup position before the mirror replaces Beta. Pass the',
+  '                              reference of a backup you took, or none-acknowledged when no',
+  '                              off-cluster Beta backup exists (#4148). The value is logged as',
+  '                              stated by the operator; promote:beta does not check it.',
+  '  --weekly-run <id>           A weekly_sweep_runs id that covers a sweep mode (repeatable).',
+  '  --allow-without-weekly-run  Skip the weekly run coverage check.',
+  '  --skip-remote-phase         Mirror only; run the Beta gate and reindex by hand.',
+  '  --full-search-rebuild       Rebuild the Beta search index instead of reconciling it.',
+  '  --dry-run                   Plan only; write nothing and start no Render job.',
+  '  --yes                       Skip the typed confirmation for a scripted run.',
+  '  --help                      Print this text.',
+].join('\n');
+
+export function backupRefAcknowledgementLine(backupRef: string): string {
+  if (backupRef === NO_BACKUP_ACKNOWLEDGEMENT) {
+    return `Backup acknowledgement (--backup-ref ${NO_BACKUP_ACKNOWLEDGEMENT}): the operator acknowledged that no off-cluster Beta backup exists (#4148), so this mirror has no restore point. Recorded as stated; nothing was checked.`;
+  }
+  return `Backup acknowledgement (--backup-ref): the operator named "${backupRef}" as the Beta backup taken before this mirror. Recorded as stated; promote:beta did not check it.`;
+}
+
 const DATASET_VERSION_PATTERN = /^prod-promote-\d{4}-\d{2}-\d{2}-lane-a-beta-copy$/;
 
 export interface PromoteBetaArgs {
@@ -28,6 +56,7 @@ export interface PromoteBetaArgs {
   backupRef?: string;
   skipRemotePhase: boolean;
   fullSearchRebuild: boolean;
+  help: boolean;
 }
 
 export interface PromoteProductionArgs {
@@ -35,6 +64,7 @@ export interface PromoteProductionArgs {
   datasetVersion: string;
   skipRemotePhase: boolean;
   fullSearchRebuild: boolean;
+  meiliRestorePoint?: string;
 }
 
 function readValue(argv: string[], index: number, flag: string): string {
@@ -51,11 +81,13 @@ export function parsePromoteBetaArgs(argv: string[]): PromoteBetaArgs {
     allowWithoutWeeklyRun: false,
     skipRemotePhase: false,
     fullSearchRebuild: false,
+    help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') args.dryRun = true;
+    else if (arg === '--help') args.help = true;
     else if (arg === '--yes') args.yes = true;
     else if (arg === '--allow-without-weekly-run') args.allowWithoutWeeklyRun = true;
     else if (arg === '--skip-remote-phase') args.skipRemotePhase = true;
@@ -88,7 +120,14 @@ export function parsePromoteProductionArgs(
     else if (arg === '--skip-remote-phase') args.skipRemotePhase = true;
     else if (arg === '--full-search-rebuild') args.fullSearchRebuild = true;
     else if (arg === '--dataset-version') args.datasetVersion = readValue(argv, index++, arg);
-    else if (arg === '--yes') {
+    else if (arg === '--meili-restore-point') {
+      args.meiliRestorePoint = readValue(argv, index++, arg);
+      if (!MEILI_RESTORE_POINT_PATTERN.test(args.meiliRestorePoint)) {
+        throw new Error(
+          '--meili-restore-point must be letters, digits, dot, dash or underscore, such as meili-dump-20261018-184026162',
+        );
+      }
+    } else if (arg === '--yes') {
       throw new Error(
         `promote:production never accepts --yes; type "${PRODUCTION_CONFIRMATION_WORD}" at the prompt`,
       );
@@ -230,6 +269,9 @@ export interface ProductionPromotionReport {
   accountReferenceBlockersClear?: boolean;
   applyBlockers?: string[];
   collections?: CollectionCounts[];
+  previousGenerations?: Array<{ operationId: string }>;
+  storageHeadroom?: { ok: boolean; message: string };
+  applied?: { operationId?: string; rollbackCommand?: string };
 }
 
 export function productionPlanProblems(report: ProductionPromotionReport): string[] {
@@ -246,6 +288,11 @@ export function productionPlanProblems(report: ProductionPromotionReport): strin
   if (report.includesObservations) problems.push('plan would promote observations');
   if (report.includesScrapeRuns) problems.push('plan would promote scrape_runs');
   if (!report.collections?.length) problems.push('promotion plan lists no collections');
+  if (!report.storageHeadroom) {
+    problems.push('promotion plan reports no cluster storage headroom');
+  } else if (!report.storageHeadroom.ok) {
+    problems.push(report.storageHeadroom.message);
+  }
   return problems;
 }
 
@@ -253,8 +300,23 @@ export function formatProductionPlan(report: ProductionPromotionReport): string 
   return [
     `Beta -> Production promotion plan ${report.datasetVersion ?? ''} (${report.sourceDatabase ?? '?'} -> ${report.targetDatabase ?? '?'})`,
     '  Accounts are environment-local and not promoted; Production keeps its own sign-ins.',
+    `  Retained previous generation: ${formatPreviousGenerations(report.previousGenerations)}; the apply keeps what it replaces as the only rollback point (#4149).`,
+    ...(report.storageHeadroom ? [`  Storage: ${report.storageHeadroom.message}`] : []),
     formatCollectionTable(report.collections ?? []),
   ].join('\n');
+}
+
+function formatPreviousGenerations(generations: ProductionPromotionReport['previousGenerations']) {
+  if (!generations?.length) return 'none';
+  return generations.map((generation) => generation.operationId).join(', ');
+}
+
+export function formatProductionApplied(report: ProductionPromotionReport | undefined): string {
+  const rollbackCommand = report?.applied?.rollbackCommand;
+  if (!rollbackCommand) {
+    return 'Production MongoDB promoted; the apply report names no retained generation.';
+  }
+  return `Production MongoDB promoted. To restore what it replaced: ${rollbackCommand} (dry-run first, then --apply with CONFIRM_PROD_SCRAPE=true).`;
 }
 
 export interface PullRequestHoldState {
@@ -279,9 +341,11 @@ export interface RemotePhaseStep {
 }
 
 export interface RemotePhaseOptions {
-  confirmBetaBackup: boolean;
   fullSearchRebuild?: boolean;
+  meiliRestorePoint?: string;
 }
+
+const MEILI_RESTORE_POINT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 export const searchReindexResultFile = (target: PromotionTarget): string =>
   `/tmp/ylabs-${target}-search-reindex.json`;
@@ -290,6 +354,12 @@ const searchReindexModeArgs = (target: PromotionTarget, options: RemotePhaseOpti
   ...(options.fullSearchRebuild ? ['--full'] : []),
   '--output',
   searchReindexResultFile(target),
+];
+
+const RETARGET_SAVED_PLANS_ARGS = [
+  'research-plans:retarget-merged',
+  '--apply',
+  '--confirm-research-plan-retarget',
 ];
 
 const VISIBILITY_GATE_ARGS = [
@@ -302,7 +372,7 @@ const VISIBILITY_GATE_ARGS = [
 
 export function remotePhaseSteps(
   target: PromotionTarget,
-  options: RemotePhaseOptions = { confirmBetaBackup: false },
+  options: RemotePhaseOptions = {},
 ): RemotePhaseStep[] {
   if (target === 'beta') {
     return [
@@ -311,6 +381,12 @@ export function remotePhaseSteps(
         cwd: 'server',
         command: 'yarn',
         args: ['database:verify-names', '--serving', 'beta'],
+      },
+      {
+        label: 'retarget saved plans',
+        cwd: 'server',
+        command: 'yarn',
+        args: RETARGET_SAVED_PLANS_ARGS,
       },
       { label: 'visibility gate', cwd: 'server', command: 'yarn', args: VISIBILITY_GATE_ARGS },
       {
@@ -358,12 +434,7 @@ export function remotePhaseSteps(
         label: 'beta readiness',
         cwd: 'server',
         command: 'yarn',
-        args: [
-          'beta:readiness',
-          ...(options.confirmBetaBackup ? ['--confirm-beta-backup'] : []),
-          '--output',
-          '/tmp/ylabs-beta-readiness-final.json',
-        ],
+        args: ['beta:readiness', '--output', '/tmp/ylabs-beta-readiness-final.json'],
       },
     ];
   }
@@ -373,6 +444,13 @@ export function remotePhaseSteps(
       cwd: 'server',
       command: 'yarn',
       args: ['database:verify-names', '--serving', 'production'],
+    },
+    {
+      label: 'retarget saved plans',
+      cwd: 'server',
+      command: 'yarn',
+      args: RETARGET_SAVED_PLANS_ARGS,
+      env: { CONFIRM_PROD_SCRAPE: 'true' },
     },
     { label: 'visibility gate', cwd: 'server', command: 'yarn', args: VISIBILITY_GATE_ARGS },
     {
@@ -428,31 +506,30 @@ export function remotePhaseEnvironmentProblems(
 
 export function remotePhaseStartCommand(
   target: PromotionTarget,
-  options: RemotePhaseOptions = { confirmBetaBackup: false },
+  options: RemotePhaseOptions = {},
 ): string {
   return [
+    ...(target === 'production' && options.meiliRestorePoint
+      ? [`PFR3_MEILI_RESTORE_POINT=${options.meiliRestorePoint}`]
+      : []),
     'yarn --cwd server promote:remote-phase',
     `--environment ${target}`,
-    ...(target === 'beta' && options.confirmBetaBackup ? ['--confirm-beta-backup'] : []),
     ...(options.fullSearchRebuild ? ['--full-search-rebuild'] : []),
   ].join(' ');
 }
 
 export interface RemotePhaseArgs {
   environment: PromotionTarget;
-  confirmBetaBackup: boolean;
   fullSearchRebuild: boolean;
 }
 
 export function parseRemotePhaseArgs(argv: string[]): RemotePhaseArgs {
   let environment: PromotionTarget | undefined;
-  let confirmBetaBackup = false;
   let fullSearchRebuild = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue;
-    if (arg === '--confirm-beta-backup') confirmBetaBackup = true;
-    else if (arg === '--full-search-rebuild') fullSearchRebuild = true;
+    if (arg === '--full-search-rebuild') fullSearchRebuild = true;
     else if (arg === '--environment') {
       const value = readValue(argv, index++, arg);
       if (value !== 'beta' && value !== 'production') {
@@ -462,10 +539,7 @@ export function parseRemotePhaseArgs(argv: string[]): RemotePhaseArgs {
     } else throw new Error(`Unknown promote:remote-phase argument: ${arg}`);
   }
   if (!environment) throw new Error('--environment beta|production is required');
-  if (confirmBetaBackup && environment !== 'beta') {
-    throw new Error('--confirm-beta-backup applies only to --environment beta');
-  }
-  return { environment, confirmBetaBackup, fullSearchRebuild };
+  return { environment, fullSearchRebuild };
 }
 
 export function formatRemotePhasePlan(
@@ -516,6 +590,46 @@ export function renderServiceProblems(
     problems.push(`the ${target} operator service deploys ${service.branch}, expected ${branch}`);
   }
   return problems;
+}
+
+export interface OperatorBuildDecision {
+  needsDeploy: boolean;
+  headCommit: string;
+  liveCommit?: string;
+  message: string;
+}
+
+const shortSha = (sha: string | undefined): string => (sha ? sha.slice(0, 9) : 'none');
+
+export function operatorBuildDecision(
+  target: PromotionTarget,
+  headCommit: string,
+  liveCommit: string | undefined,
+): OperatorBuildDecision {
+  const branch = OPERATOR_SERVICE_BRANCHES[target];
+  if (liveCommit === headCommit) {
+    return {
+      needsDeploy: false,
+      headCommit,
+      liveCommit,
+      message: `the ${target} operator service is live at ${branch} head ${shortSha(headCommit)}`,
+    };
+  }
+  return {
+    needsDeploy: true,
+    headCommit,
+    liveCommit,
+    message: `the ${target} operator service is live at ${shortSha(liveCommit)} but ${branch} is at ${shortSha(headCommit)}; an apply deploys it at the head before writing anything`,
+  };
+}
+
+export function operatorDeployFailureMessage(
+  target: PromotionTarget,
+  deployId: string,
+  headCommit: string,
+  status: string | undefined,
+): string {
+  return `Render deploy ${deployId} of the ${target} operator service at ${shortSha(headCommit)} ended ${status ?? 'unknown'}, so the Render job was not started. Read the deploy log on Render; when it says the workspace ran out of build pipeline minutes, raise the build spend limit in the Render workspace settings and run the promotion again.`;
 }
 
 const SEARCH_REINDEX_SUMMARY_FIELDS = [

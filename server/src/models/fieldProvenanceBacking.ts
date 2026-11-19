@@ -2,11 +2,14 @@ import type mongoose from 'mongoose';
 
 // Declared here, not in the materializer, because the models layer imports nothing above it.
 export const DERIVED_RESEARCH_AREA_SOURCE_NAME = 'description-derived-research-area';
+export const RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME = 'research-page-topics-derived';
 
 // Only a derivation recomputed on every resolve belongs here; a one-shot repair never does.
 export const NON_OBSERVATION_PROVENANCE_AUTHORITIES: Readonly<Record<string, string>> = {
   [DERIVED_RESEARCH_AREA_SOURCE_NAME]:
     "topics derived from the row's own description on every resolve; no page named the facet, so there is no observation to cite",
+  [RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME]:
+    "topics a model quoted from the row's stored research page text, re-read from the derivation cache on every resolve; the derivation is never written back as an observation (#5296)",
 };
 
 type ProvenanceRecord = {

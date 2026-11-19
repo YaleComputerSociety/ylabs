@@ -9,7 +9,7 @@ import {
   EntityCorrectionReportStatus,
 } from '../models/entityCorrectionReport';
 import { ResearchEntity } from '../models/researchEntity';
-import { publicStudentVisibilityTiers } from '../models/studentVisibility';
+import { servedStudentVisibilityTierFilter } from '../models/studentVisibility';
 import { normalizeResearchDetailSlug } from './researchGroupService';
 import { BadRequestError, NotFoundError, ObjectIdError } from '../utils/errors';
 import { replaceAsciiControls } from '../utils/asciiControl';
@@ -107,7 +107,7 @@ export const createEntityCorrectionReport = async (
   const entity = (await ResearchEntity.findOne({
     slug: normalizedSlug,
     archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+    ...servedStudentVisibilityTierFilter(),
   })
     .select('_id slug name displayName kind entityType')
     .lean()) as ResearchEntitySnapshot | null;

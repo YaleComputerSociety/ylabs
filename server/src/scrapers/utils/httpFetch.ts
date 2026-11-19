@@ -9,12 +9,18 @@
  * throw after retries are exhausted, or catch and map to null.
  */
 import axios from 'axios';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { isSweepPageReuseHit } from './sweepPageReuseHit';
+import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import {
   HostConcurrencyLimiter,
+  HostSlotWaitTimeoutError,
   hostnameForLimiter,
   resolveHostRetryBudget,
+  type HostSlotLimiter,
 } from './hostConcurrencyLimiter';
+import { RobotsDisallowedError } from './robotsDisallowedError';
+import { HostBudgetUnavailableError } from './machineHostBudget';
+import { machineHostSlotsForDirectRequest } from './scraperHostSlotLimiter';
 import {
   benchmarkCacheRead,
   benchmarkCacheWrite,
@@ -23,15 +29,28 @@ import {
 } from '../snapshotBenchmarkMode';
 import { isTlsVerificationError } from '../../utils/tlsVerificationErrors';
 import { recordThrottleRetryOutcome } from './throttleRetryStats';
+import { withScraperUserAgent } from './scraperUserAgent';
+import {
+  HOST_PAUSE_POLICY_FETCH,
+  HostPausedError,
+  activeHostPause,
+  hostPauseInErrorChain,
+  recordHostRefusal,
+  recordTierOneExhausted,
+  refuseRedirectIntoPausedHost,
+} from './hostPause';
+import { recordHostSuccess } from './hostPauseState';
 import { withScrapeRunProgress } from '../scrapeRunProgress';
+import { recordKnownDeadUrlSkip, rememberGoneUrl } from './knownDeadUrls';
 
-export const SCRAPER_USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
+export { SCRAPER_USER_AGENT } from './scraperUserAgent';
 
 export interface FetchedHttpPage {
   url: string;
   html: string;
   status: number;
   setCookies?: string[];
+  reused?: true;
 }
 
 export interface HttpRequestResult {
@@ -40,7 +59,17 @@ export interface HttpRequestResult {
   finalUrl: string;
   retryAfterMs?: number;
   setCookies?: string[];
+  location?: string;
+  reused?: true;
 }
+
+/**
+ * Whether a fetch result was replayed from a local cache rather than answered by its host: the
+ * one test every host-accounting path asks (#6195), so a replay never counts as the host
+ * answering, clears a backoff, or spends a request.
+ */
+export const isReusedResponse = (result: { reused?: unknown } | null | undefined): boolean =>
+  result?.reused === true;
 
 export interface HttpRequestConfig {
   timeoutMs: number;
@@ -58,6 +87,7 @@ export interface HostRateLimiterOptions {
   applyHostOverrides?: boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  machineWide?: () => HostSlotLimiter | undefined;
 }
 
 const realSleep = (ms: number): Promise<void> =>
@@ -65,6 +95,7 @@ const realSleep = (ms: number): Promise<void> =>
 
 export class HostRateLimiter {
   private readonly slots: HostConcurrencyLimiter;
+  private readonly machineWide: () => HostSlotLimiter | undefined;
 
   constructor(options: HostRateLimiterOptions = {}) {
     this.slots = new HostConcurrencyLimiter(options.maxConcurrency ?? 2, {
@@ -73,12 +104,23 @@ export class HostRateLimiter {
       now: options.now,
       sleep: options.sleep,
     });
+    this.machineWide = options.machineWide ?? machineHostSlotsForDirectRequest;
   }
 
-  async run<T>(host: string, fn: () => Promise<T>): Promise<T> {
+  async run<T>(host: string, fn: () => Promise<T>, reused?: (value: T) => boolean): Promise<T> {
     const release = await this.slots.acquire(host);
     try {
-      return await fn();
+      const machine = this.machineWide();
+      if (!machine) return await fn();
+      const releaseMachine = await machine.acquire(host);
+      let replayed = false;
+      try {
+        const value = await fn();
+        replayed = reused?.(value) ?? false;
+        return value;
+      } finally {
+        releaseMachine({ reused: replayed });
+      }
     } finally {
       release();
     }
@@ -117,6 +159,7 @@ export interface ResolvedRetryPolicy {
   maxRetries: number;
   maxTransportRetries: number;
   maxTotalBackoffMs: number;
+  maxBackoffMs: number;
   retryable: ReadonlySet<number>;
   sleep: (ms: number) => Promise<void>;
   backoffMs: (attempt: number) => number;
@@ -138,6 +181,7 @@ export function resolveRetryPolicy(
     maxTransportRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES,
     maxTotalBackoffMs:
       options.maxTotalBackoffMs ?? hostBudget?.maxTotalBackoffMs ?? Number.POSITIVE_INFINITY,
+    maxBackoffMs: maxBackoff,
     retryable: options.retryableStatuses ?? DEFAULT_RETRYABLE_STATUSES,
     sleep: options.sleep ?? realSleep,
     backoffMs,
@@ -194,6 +238,8 @@ function setCookieHeaders(header: unknown): string[] | undefined {
   return typeof header === 'string' && header ? [header] : undefined;
 }
 
+const POLICY_FETCH_MARK: object = { [HOST_PAUSE_POLICY_FETCH]: true };
+
 export const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
   const agents = ssrfSafeAgents();
   const res =
@@ -205,6 +251,8 @@ export const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
           timeout: config.timeoutMs,
           headers: config.headers,
           maxRedirects: config.maxRedirects,
+          beforeRedirect: refuseRedirectIntoPausedHost(),
+          ...POLICY_FETCH_MARK,
           httpAgent: agents.httpAgent,
           httpsAgent: agents.httpsAgent,
           responseType: 'text',
@@ -215,6 +263,8 @@ export const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
           timeout: config.timeoutMs,
           headers: config.headers,
           maxRedirects: config.maxRedirects,
+          beforeRedirect: refuseRedirectIntoPausedHost(),
+          ...POLICY_FETCH_MARK,
           httpAgent: agents.httpAgent,
           httpsAgent: agents.httpsAgent,
           responseType: 'text',
@@ -223,12 +273,15 @@ export const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
         });
   const finalUrl =
     typeof res.request?.res?.responseUrl === 'string' ? res.request.res.responseUrl : url;
+  const location = res.headers?.location;
   return {
     status: res.status,
     data: typeof res.data === 'string' ? res.data : String(res.data ?? ''),
     finalUrl,
     retryAfterMs: parseRetryAfterMs(res.headers?.['retry-after']),
     setCookies: setCookieHeaders(res.headers?.['set-cookie']),
+    ...(typeof location === 'string' && location ? { location } : {}),
+    ...(isSweepPageReuseHit(res.config) ? { reused: true as const } : {}),
   };
 };
 
@@ -239,9 +292,24 @@ function hostOf(url: string): string {
 export const POLICY_FETCH_BENCHMARK_NAMESPACE = 'policy-fetch';
 
 export class HttpStatusError extends Error {
-  constructor(readonly status: number) {
+  constructor(
+    readonly status: number,
+    readonly finalUrl?: string,
+  ) {
     super(`Request failed with status code ${status}`);
     this.name = 'HttpStatusError';
+  }
+}
+
+/**
+ * A request `fetchPageWithPolicy` never sent, because a recent link-health probe found the URL
+ * gone. It is the 404 or 410 the request would have answered, so every lane handles it exactly
+ * as it handles that status, with no request spent (#6210).
+ */
+export class KnownDeadUrlError extends HttpStatusError {
+  constructor(status: number, finalUrl: string) {
+    super(status, finalUrl);
+    this.name = 'KnownDeadUrlError';
   }
 }
 
@@ -282,11 +350,14 @@ export async function fetchPageWithPolicy(
     return frozen.payload as FetchedHttpPage;
   }
   if (isBenchmarkReplayActive()) refuseBenchmarkReplayNetwork();
+  const knownDeadStatus = recordKnownDeadUrlSkip(url);
+  if (knownDeadStatus !== undefined) throw new KnownDeadUrlError(knownDeadStatus, url);
   let page: FetchedHttpPage;
   try {
     page = await fetchPageLive(url, options);
   } catch (error) {
     if (error instanceof HttpStatusError) {
+      rememberGoneUrl(url, error.status);
       benchmarkCacheWrite(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey, {
         failedStatus: error.status,
       } satisfies FrozenFailedPage);
@@ -327,11 +398,14 @@ async function fetchPageLive(
   const host = hostOf(safeUrl);
   const limiter = options.limiter ?? sharedHostLimiter;
   const send = options.request ?? defaultAxiosRequest;
-  const request: HttpRequestFn = (target, requestConfig) =>
-    withScrapeRunProgress(() => send(target, requestConfig));
+  const request: HttpRequestFn = (target, requestConfig) => {
+    const pausedWhileWaiting = activeHostPause(hostOf(target));
+    if (pausedWhileWaiting) return Promise.reject(new HostPausedError(pausedWhileWaiting));
+    return withScrapeRunProgress(() => send(target, requestConfig));
+  };
   const policy = resolveRetryPolicy(options, host);
 
-  const headers = options.headers ?? { 'User-Agent': SCRAPER_USER_AGENT };
+  const headers = withScraperUserAgent(options.headers);
   const config: HttpRequestConfig = {
     timeoutMs: options.timeoutMs ?? 10_000,
     headers: submission
@@ -341,26 +415,54 @@ async function fetchPageLive(
     ...submission,
   };
 
+  const followHops = (): Promise<HttpRequestResult> =>
+    followRedirectsWithinBudget(safeUrl, config, { limiter, request, assertUrl });
+
+  const knownPause = activeHostPause(host);
+  if (knownPause) throw new HostPausedError(knownPause);
   const backoff = new RetryBackoffBudget(policy);
   for (let attempt = 0; ; attempt += 1) {
     let result: HttpRequestResult;
     try {
-      result = await limiter.run(host, () => request(safeUrl, config));
+      result = await followHops();
     } catch (error) {
+      const pausedHop = hostPauseInErrorChain(error);
+      if (pausedHop) {
+        backoff.settle('exhausted');
+        throw pausedHop;
+      }
+      if (isRefusedBeforeSending(error)) {
+        backoff.settle('exhausted');
+        throw error;
+      }
       if (!(await backoff.waitAfterTransportFailure(attempt))) {
         backoff.settle('exhausted');
         throw error;
       }
       continue;
     }
+    const answeringHost = hostOf(result.finalUrl || safeUrl);
     if (result.status >= 200 && result.status < 300) {
       backoff.settle('recovered');
+      if (!isReusedResponse(result)) await recordHostSuccess(answeringHost);
       return {
         url: result.finalUrl || safeUrl,
         html: result.data ?? '',
         status: result.status,
         ...(result.setCookies?.length ? { setCookies: result.setCookies } : {}),
+        ...(isReusedResponse(result) ? { reused: true as const } : {}),
       };
+    }
+    const pause = await recordHostRefusal({
+      host: answeringHost,
+      status: result.status,
+      body: result.data,
+      retryAfterMs: result.retryAfterMs,
+      quickRetryWaitMs: policy.maxBackoffMs,
+    });
+    if (pause) {
+      backoff.settle('exhausted');
+      throw new HostPausedError(pause, true);
     }
     if (
       policy.retryable.has(result.status) &&
@@ -369,7 +471,121 @@ async function fetchPageLive(
       continue;
     }
     backoff.settle('exhausted');
-    throw new HttpStatusError(result.status);
+    if (policy.retryable.has(result.status)) {
+      await recordTierOneExhausted(answeringHost, result.status, result.retryAfterMs);
+    }
+    throw new HttpStatusError(result.status, result.finalUrl || safeUrl);
+  }
+}
+
+const isRedirectStatus = (status: number): boolean => status >= 300 && status < 400;
+
+/**
+ * Whether no verdict about the page may be read from this error: a guard refused it, its host is
+ * paused, the shared budget could not be read, or no slot came free (#6258). It does not mean no
+ * request reached the host, because a pause recorded from a refusal the host just sent is one of
+ * these too; read `HostPausedError.requestSent` for that. Walks the `cause` chain, because
+ * axios wraps an error thrown from a redirect hook. Adding an error class here also makes it
+ * not-observed for every lane (`notObserved.ts`).
+ */
+export function isRefusedBeforeSending(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 6 && current && typeof current === 'object'; depth += 1) {
+    if (
+      current instanceof SsrfBlockedError ||
+      current instanceof HostPausedError ||
+      current instanceof HostBudgetUnavailableError ||
+      current instanceof HostSlotWaitTimeoutError ||
+      current instanceof RobotsDisallowedError
+    ) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+function tooManyRedirectsError(maxRedirects: number): Error & { code: string } {
+  return Object.assign(new Error(`Maximum number of redirects exceeded (${maxRedirects})`), {
+    code: 'ERR_FR_TOO_MANY_REDIRECTS',
+  });
+}
+
+const CROSS_ORIGIN_STRIPPED_HEADERS: ReadonlySet<string> = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+]);
+
+function withoutHeaders(
+  headers: Record<string, string>,
+  stripped: (name: string) => boolean,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).filter(([name]) => !stripped(name.toLowerCase())),
+  );
+}
+
+function leavesCredentialScope(from: URL, to: URL): boolean {
+  const downgradesProtocol = to.protocol !== from.protocol && to.protocol !== 'https:';
+  const leavesHost = to.host !== from.host && !to.host.endsWith(`.${from.host}`);
+  return downgradesProtocol || leavesHost;
+}
+
+// The same method rewrite and credential stripping follow-redirects applies, so a manual hop
+// sends what axios would have.
+function configAfterRedirect(
+  config: HttpRequestConfig,
+  status: number,
+  from: string,
+  to: string,
+): HttpRequestConfig {
+  let next = config;
+  if (next.method === 'POST' && [301, 302, 303].includes(status)) {
+    const { body: _body, method: _method, ...rest } = next;
+    next = { ...rest, headers: withoutHeaders(next.headers, (name) => name === 'content-type') };
+  }
+  if (leavesCredentialScope(new URL(from), new URL(to))) {
+    next = {
+      ...next,
+      headers: withoutHeaders(next.headers, (name) => CROSS_ORIGIN_STRIPPED_HEADERS.has(name)),
+    };
+  }
+  return next;
+}
+
+/**
+ * Follows redirects one hop at a time, so every hop is charged to the host that receives it,
+ * where axios's own follow would send the hop on the first host's budget from a synchronous hook
+ * that cannot wait for a slot.
+ */
+async function followRedirectsWithinBudget(
+  startUrl: string,
+  config: HttpRequestConfig,
+  deps: {
+    limiter: HostRateLimiter;
+    request: HttpRequestFn;
+    assertUrl: (url: string) => Promise<{ toString(): string }>;
+  },
+): Promise<HttpRequestResult> {
+  let current = startUrl;
+  let hopConfig: HttpRequestConfig = { ...config, maxRedirects: 0 };
+  for (let redirects = 0; ; redirects += 1) {
+    const target = current;
+    const sent = hopConfig;
+    const pausedHop = activeHostPause(hostOf(target));
+    if (pausedHop) throw new HostPausedError(pausedHop);
+    const result = await deps.limiter.run(
+      hostOf(target),
+      () => deps.request(target, sent),
+      isReusedResponse,
+    );
+    if (config.maxRedirects === 0 || !isRedirectStatus(result.status) || !result.location) {
+      return { ...result, finalUrl: result.finalUrl || current };
+    }
+    if (redirects >= config.maxRedirects) throw tooManyRedirectsError(config.maxRedirects);
+    current = (await deps.assertUrl(new URL(result.location, target).toString())).toString();
+    hopConfig = configAfterRedirect(hopConfig, result.status, target, current);
   }
 }
 
@@ -463,8 +679,6 @@ export interface FetchPublicHttpUrlOptions {
   request?: PublicHttpHopRequest;
 }
 
-const isRedirectStatus = (status: number): boolean => status >= 300 && status < 400;
-
 const defaultPublicHttpHopRequest: PublicHttpHopRequest = async (url, config) => {
   const agents = ssrfSafeAgents();
   const res = await axios.get(url, {
@@ -495,7 +709,7 @@ export async function fetchPublicHttpUrl(
   const maxRedirects = options.maxRedirects ?? 5;
   const config = {
     timeoutMs: options.timeoutMs ?? 25_000,
-    headers: options.headers ?? { 'User-Agent': SCRAPER_USER_AGENT },
+    headers: withScraperUserAgent(options.headers),
   };
 
   let current = url;

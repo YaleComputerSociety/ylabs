@@ -1,10 +1,12 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ACTIVELY_HIRING_LABEL, WELCOMES_UNDERGRADS_LABEL } from '../../utils/undergradInvitation';
 import { memo, type MouseEvent } from 'react';
 import { CheckIcon } from '../shared/icons';
 
 import {
   buildWayInBadgesFromEntity,
   buildResearchHomeContextLine,
+  schoolFilterCardContext,
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
 import ArrowRightIcon from '../shared/ArrowRightIcon';
@@ -14,6 +16,8 @@ import { cardSummary } from '../../utils/cardSummary';
 import {
   CREATIVE_PRACTICE_KIND_LABEL,
   entityKindLabel,
+  HOSTED_UNDERGRADUATES_LABEL,
+  MENTORS_UNDERGRADUATES_LABEL,
   isCreativePracticeEntity,
   leadRoleLabelForEntity,
   sanitizeResearchEntityCopy,
@@ -24,6 +28,11 @@ import {
   researchProfileOpenState,
   type ResearchProfileOpenSource,
 } from '../../utils/researchAnalytics';
+import {
+  rememberOpenedResearchResult,
+  researchResultsReturnState,
+} from '../../utils/researchResultsReturn';
+import type { MatchedLabMemberRole } from '../../types/researchEntity';
 
 interface ResearchHomeCardProps {
   home: ResearchCluster;
@@ -33,6 +42,7 @@ interface ResearchHomeCardProps {
   variant?: 'default' | 'compact';
   showAdminQuality?: boolean;
   openSource?: ResearchProfileOpenSource;
+  filteredSchool?: string;
 }
 
 const countLabel = (count: number, singular: string, plural: string): string =>
@@ -43,25 +53,43 @@ const isInteractiveElement = (target: EventTarget | null): boolean =>
 
 const DEFAULT_CONTACT_ROLE = 'Principal investigator';
 
+const MATCHED_MEMBER_ROLE_LABELS: Record<MatchedLabMemberRole, string> = {
+  'core-faculty': 'Faculty',
+  affiliated: 'Affiliated faculty',
+  postdoc: 'Postdoc',
+  'grad-student': 'Graduate student',
+  undergrad: 'Undergraduate',
+  'past-undergrad': 'Past undergraduate',
+};
+
 const servedContactRole = (role?: string): string => (role || '').trim() || DEFAULT_CONTACT_ROLE;
 
+const opensFromResearchResults = (source?: ResearchProfileOpenSource): boolean =>
+  source === 'browse' || source === 'search';
+
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
-  'Undergrad evidence': 'Has hosted undergraduate researchers',
+  'Undergrad evidence': HOSTED_UNDERGRADUATES_LABEL,
   'Student project evidence': 'Supervises student projects',
   'Contact route': 'Open to inquiries',
 };
 
-const ACCESS_SIGNAL_PRIORITY = ['Undergrad evidence', 'Student project evidence', 'Contact route'];
+const ACCESS_SIGNAL_PRIORITY = [
+  ACTIVELY_HIRING_LABEL,
+  WELCOMES_UNDERGRADS_LABEL,
+  'Undergrad evidence',
+  MENTORS_UNDERGRADUATES_LABEL,
+  'Student project evidence',
+  'Contact route',
+];
 
-const ELEVATED_ACCESS_SIGNALS = new Set(['Undergrad evidence', 'Student project evidence']);
+const UNDERGRAD_ACCESS_SIGNALS = new Set([
+  ACTIVELY_HIRING_LABEL,
+  WELCOMES_UNDERGRADS_LABEL,
+  'Undergrad evidence',
+  MENTORS_UNDERGRADUATES_LABEL,
+]);
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
-
-const sentenceCaseLabel = (label: string): string =>
-  label
-    .split(' ')
-    .map((word, index) => (index === 0 ? word : word.toLowerCase()))
-    .join(' ');
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -101,9 +129,20 @@ const ResearchHomeCard = ({
   variant = 'default',
   showAdminQuality = false,
   openSource,
+  filteredSchool,
 }: ResearchHomeCardProps) => {
   const navigate = useNavigate();
-  const profileOpenState = openSource ? researchProfileOpenState(openSource) : undefined;
+  const location = useLocation();
+  const returnsToResults = opensFromResearchResults(openSource);
+  const profileOpenState = openSource
+    ? {
+        ...researchProfileOpenState(openSource),
+        ...(returnsToResults ? researchResultsReturnState(location.search) : {}),
+      }
+    : undefined;
+  const rememberOpenedProfile = (slug: string) => {
+    if (returnsToResults) rememberOpenedResearchResult(location.key, slug);
+  };
   const isCompact = variant === 'compact';
   const homeEntities = home.entities.slice(0, 3).map((entity) => ({
     id: entity._id || entity.slug,
@@ -115,17 +154,27 @@ const ResearchHomeCard = ({
     home.entities.length === 1 && primaryLinkedEntity && homeEntities.length === 1
       ? primaryLinkedEntity
       : null;
+  const matchedMember =
+    singleLinkedEntity && home.entities.length === 1 ? home.entities[0] : undefined;
+  const matchedMemberName = matchedMember?.matchedMemberName;
+  const matchedMemberRoleLabel = matchedMember?.matchedMemberRole
+    ? MATCHED_MEMBER_ROLE_LABELS[matchedMember.matchedMemberRole]
+    : undefined;
   const wayInBadges = home.wayInBadges?.length
     ? home.wayInBadges
     : buildWayInBadgesFromEntity(home.entities[0]);
   const orderedAccessSignals = orderAccessSignals(wayInBadges);
-  const leadAccessSignal = orderedAccessSignals.find((signal) =>
-    ELEVATED_ACCESS_SIGNALS.has(signal),
+  const undergradAccessSignals = orderedAccessSignals.filter((signal) =>
+    UNDERGRAD_ACCESS_SIGNALS.has(signal),
   );
   const secondaryAccessSignals = orderedAccessSignals.filter(
-    (signal) => signal !== leadAccessSignal,
+    (signal) => !UNDERGRAD_ACCESS_SIGNALS.has(signal),
   );
-  const contextLine = home.contextLine || buildResearchHomeContextLine(home.entities[0]);
+  const { contextLine, alsoInSchool } = schoolFilterCardContext(
+    home.entities[0],
+    filteredSchool,
+    home.contextLine || buildResearchHomeContextLine(home.entities[0]),
+  );
   const contextLineKeys = new Set(
     contextLine
       .split('·')
@@ -160,15 +209,17 @@ const ResearchHomeCard = ({
   const isCardClickable = Boolean(primaryProfileUrl || onSelect);
   const primaryEvidenceUrl = safeHttpUrl(home.evidence[0]?.url);
   const showEvidenceFooter = !isCompact && Boolean(primaryEvidenceUrl);
-  const leadEntity = home.entities.find((entity) => (entity.contactName || '').trim());
-  const leadName = leadEntity?.contactName?.trim();
+  const leadEntity =
+    home.entities.find((entity) => (entity.contactName || '').trim()) ??
+    home.entities.find((entity) => (entity.leadName || '').trim());
+  const leadName = (leadEntity?.contactName || leadEntity?.leadName)?.trim();
   const leadProfileLink = principalInvestigatorLinkFromResearchEntity(leadEntity);
   const contactRole = servedContactRole(leadEntity?.contactRole);
   const leadRole =
     leadRoleLabelForEntity(home.entities[0], contactRole) ?? formatTitleCaseLabel(contactRole);
   const isEmeritusLed = home.entities[0]?.emeritusLed === true;
   const isCreativePractice = isCreativePracticeEntity(home.entities[0]);
-  const kindLabel = sentenceCaseLabel(entityKindLabel(home.entities[0]));
+  const kindLabel = entityKindLabel(home.entities[0]);
   const showsKindLabel =
     isCompact &&
     home.entities.length === 1 &&
@@ -180,7 +231,8 @@ const ResearchHomeCard = ({
   const showsProfileFooter = !(isCompact && singleLinkedEntity);
   const qualityLabels = showAdminQuality ? adminQualityLabels(home) : [];
   const activateCard = () => {
-    if (primaryProfileUrl) {
+    if (primaryProfileUrl && primaryLinkedEntity) {
+      rememberOpenedProfile(primaryLinkedEntity.slug);
       onOpen?.(home);
       void navigate(primaryProfileUrl, { state: profileOpenState });
       return;
@@ -236,7 +288,7 @@ const ResearchHomeCard = ({
     mobileMoreCount > 0 && (
       <span
         key="more-mobile"
-        className={`yr-pill yr-pill-compact px-2 py-0.5 ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
+        className={`self-center px-1 text-xs font-medium text-muted ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
       >
         +{mobileMoreCount} more
       </span>
@@ -244,7 +296,7 @@ const ResearchHomeCard = ({
     moreCountIsResponsive && desktopMoreCount > 0 && (
       <span
         key="more-desktop"
-        className="yr-pill hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
+        className="hidden self-center px-1 text-xs font-medium text-muted sm:inline"
       >
         +{desktopMoreCount} more
       </span>
@@ -269,9 +321,11 @@ const ResearchHomeCard = ({
               <Link
                 to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}`}
                 state={profileOpenState}
-                className="yr-link yr-focus-ring rounded-control"
+                data-research-result-slug={singleLinkedEntity.slug}
+                className="yr-link yr-focus-ring -my-1.5 inline-block rounded-control py-1.5"
                 onClick={(event) => {
                   event.stopPropagation();
+                  rememberOpenedProfile(singleLinkedEntity.slug);
                   onOpen?.(home);
                 }}
               >
@@ -285,6 +339,10 @@ const ResearchHomeCard = ({
 
         {cardContextLine && (
           <p className="text-xs font-medium leading-relaxed text-muted">{cardContextLine}</p>
+        )}
+
+        {alsoInSchool && (
+          <p className="text-xs font-medium leading-relaxed text-muted">{alsoInSchool}</p>
         )}
 
         {leadName && (
@@ -310,6 +368,30 @@ const ResearchHomeCard = ({
               </Link>
             ) : (
               <span>{leadName}</span>
+            )}
+          </p>
+        )}
+
+        {matchedMemberName && singleLinkedEntity && (
+          <p className="rounded-control bg-brand-soft px-2 py-1 text-xs font-medium leading-relaxed text-brand">
+            Matched a lab member:{' '}
+            <Link
+              to={{
+                pathname: `/research/${safeRouteSegment(singleLinkedEntity.slug)}`,
+                search: `?member=${encodeURIComponent(matchedMemberName)}`,
+              }}
+              state={profileOpenState}
+              className="yr-link yr-focus-ring rounded-control font-semibold"
+              onClick={(event) => {
+                event.stopPropagation();
+                rememberOpenedProfile(singleLinkedEntity.slug);
+                onOpen?.(home);
+              }}
+            >
+              {matchedMemberName}
+            </Link>
+            {matchedMemberRoleLabel && (
+              <span className="font-normal"> · {matchedMemberRoleLabel}</span>
             )}
           </p>
         )}
@@ -376,12 +458,15 @@ const ResearchHomeCard = ({
           className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5"
           aria-label="Ways to get involved"
         >
-          {leadAccessSignal && (
-            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--yr-green)]">
+          {undergradAccessSignals.map((signal) => (
+            <span
+              key={signal}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--yr-green)]"
+            >
               <CheckIcon className="h-4 w-4 shrink-0" />
-              {accessSignalLabel(leadAccessSignal)}
+              {accessSignalLabel(signal)}
             </span>
-          )}
+          ))}
           {secondaryAccessSignals.slice(0, isCompact ? 2 : undefined).map((badge) => (
             <span key={badge} className="yr-pill yr-pill-green yr-pill-compact px-2 py-0.5">
               {accessSignalLabel(badge)}
@@ -412,8 +497,12 @@ const ResearchHomeCard = ({
                   key={entity.slug}
                   to={`/research/${safeRouteSegment(entity.slug)}`}
                   state={profileOpenState}
+                  data-research-result-slug={entity.slug}
                   className="yr-focus-ring yr-link inline-flex min-h-[44px] items-center text-sm font-medium"
-                  onClick={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    rememberOpenedProfile(entity.slug);
+                  }}
                 >
                   {entity.label}
                 </Link>
@@ -448,8 +537,12 @@ const ResearchHomeCard = ({
             <Link
               to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
               state={profileOpenState}
+              data-research-result-slug={primaryLinkedEntity.slug}
               className="yr-focus-ring yr-pressable inline-flex min-h-[44px] flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
-              onClick={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                rememberOpenedProfile(primaryLinkedEntity.slug);
+              }}
             >
               View profile
               <ArrowRightIcon />

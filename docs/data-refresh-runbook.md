@@ -55,7 +55,8 @@ Before relying on this runbook, the team must have:
 - Organization-owned GitHub, Render, MongoDB Atlas, and Meilisearch administration with at least two current administrators.
 - A team-owned Beta database user restricted to the `Beta` database and stored in the approved team secret manager.
 - Production credentials kept out of local scraper profiles and available only to approved promotion operators.
-- A shared record of the source list, expected observation ranges, artifact location, Beta backup, Production restore point, and final gate results for each refresh.
+- A shared record of the source list, expected observation ranges, artifact location, Production restore point, and final gate results for each refresh.
+No Beta restore point exists yet, so the record cannot carry one until the off-cluster dump in #4148 exists.
 
 Record the administrator count for each platform, by role, in the [ownership record](./deployment-inventory.md#ownership-record).
 
@@ -142,6 +143,9 @@ The single weekly job runs both modes, so that is one point a week, taken after 
 A run is `failed` only for a failed source, a crashed stage, a counting stage whose count rose over the last run in which that stage succeeded, or any public visibility violation; standing counts are recorded on the stage rows, so they no longer fail every run by construction (#4852).
 The row is inserted with status `running`, `startedAt`, `codeSha` and `requestedModes` before step 3, and the job refuses to start if that insert fails.
 It is replaced by the full record when the job ends, so a run that Render stops at its 12-hour limit, or that crashes, stays `running` instead of leaving no row.
+While a mode runs, the job copies that mode's checkpoint onto the same row every minute, under `checkpoints.<mode>`, with each finished step's source row or stage result; when a mode ends it records that mode's summary there instead (#5209).
+The checkpoint file and every artifact live in the container's temp directory, which Render discards, so the row is what makes a stopped run resumable; the full record that replaces the row when the job ends drops `checkpoints`, so a finished row stays small.
+Copying is best-effort: a failed write is logged and never fails the sweep, and a stopped run loses at most the last minute, whose step in flight is re-run on resume rather than trusted.
 
 `--dry-run` in place of the confirmation runs steps 1 to 4 read-only, prints the two sweep commands without running them, and writes no row.
 Steps 1 and 2 also write no row, because a run refused there has not proven it holds a Development connection.
@@ -198,16 +202,20 @@ The sweep's own peak memory has not been measured, so start the service on an in
 
 Render stops a cron run after 12 hours, and the research sweep alone has measured 414 minutes (2026-09-28) and 556 minutes (2026-09-26), while the fellowship sweep has never been timed.
 The weekly runner is one cron job, `ylabs-scraper`, that runs both modes in one run, by the owner's decision (2026-10-04) that both fit inside the limit.
-Read its first confirmed run's `renderLimit` headroom with `yarn --cwd server scrape:sweep:weekly-runs --limit 1`; if a run is stopped at the limit, its row stays `running`, and the remedy is to split the job by `--mode`.
+Read its first confirmed run's `renderLimit` headroom with `yarn --cwd server scrape:sweep:weekly-runs --limit 1`; if a run is stopped at the limit, its row stays `running`.
+Continue it with `yarn ops:sweep resume` (below), which picks up where the stopped container left off; if runs keep reaching the limit, split the job by `--mode` as well.
 
 | Service | Docker Command | Schedule |
 |---|---|---|
-| `ylabs-scraper` | `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --confirm-weekly-development-sweep` | `0 7 * * 0`, Sundays at 07:00 UTC |
+| `ylabs-scraper` | `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --confirm-weekly-development-sweep` | `0 4 * * 5`, Fridays at 04:00 UTC |
 
 The Docker Command replaces the image's entrypoint and default arguments, so it must carry the confirmation flag; with no `--mode` the job runs `development-full` and then `fellowship-development-full`.
 For a first manual trigger use `--dry-run` in place of the confirmation, which runs the preflight and writes nothing, then set the confirmed command.
-The job refuses to start while any sweep source holds a live scrape job lock, so a laptop sweep still writing Development on Sunday morning makes the weekly run refuse, recorded as `refused`, rather than run both at once.
-The service builds from `beta`, but since 2026-10-17 its build filter is only `deploy/sweep-runner/**`, `server/package.json`, `server/yarn.lock`, `package.json` and `.yarnrc.yml`, because rebuilding on every `server/**` commit exhausted the workspace's build minutes while buying the weekly sweep nothing.
+The job refuses to start while any sweep source holds a live scrape job lock, so a laptop sweep still writing Development on Friday morning makes the weekly run refuse, recorded as `refused`, rather than run both at once.
+The service builds from `beta` with auto-deploy on (trigger: checks pass) and a build filter, set on 2026-10-18, of only `deploy/sweep-runner/**`, `package.json`, `.yarnrc.yml`, `server/package.json` and `server/yarn.lock`, with no ignored paths.
+The entrypoint clones `beta` at run time and runs that commit, so the image needs rebuilding only when the runner, its Python and Docker setup, or the dependency manifests change; before the filter, ordinary server pull requests triggered 5 to 7 image builds a day and exhausted the workspace's build minutes on 2026-10-18, which blocked every deploy, including Production's.
+One exception runs the image's own code: `--probe-hosts` executes from the image rather than from a fresh clone, so it uses the server code from the last image build.
+The operator services follow the same budget from the other direction: their auto-deploy is off, and `promote:beta` and `promote:production` deploy them at the branch head only when a promotion needs them (`One-Command Promotion`, "What to set up once").
 Each run clones `beta` HEAD itself, so a merged scraper change reaches the next weekly run even though the image is stale; only a new system dependency, a change to the entrypoint, or a file outside the paths `.dockerignore` admits needs a change under `deploy/sweep-runner/`.
 The image's own copy of the code under `/app` is therefore routinely older than `beta`, so a one-off job must never run `yarn --cwd /app/server ...` directly: start it with `yarn ops:sweep rerun`, below, which runs current `beta` through the entrypoint.
 Read the service with `render services --output json` and its builds with `render deploys list <service id> --output json`.
@@ -244,6 +252,7 @@ The logic is in `server/src/scripts/opsSweepCore.ts`; the command is `server/src
 yarn ops:sweep status
 yarn ops:sweep rerun <source>... [--override-hold] [--dry-run]
 yarn ops:sweep probe-permissions [--dry-run]
+yarn ops:sweep resume [<weekly run id>] [--dry-run]
 ```
 
 `status` prints the newest `weekly_sweep_runs` row: its status, start and duration (or elapsed time for a `running` row, and whether it outlived Render's 12-hour limit), its `codeSha` against the current `beta` HEAD, the search index state and remedy, any refusal or error, and each failed source and stage with its error and, for a stage, its `failureKind`.
@@ -259,7 +268,7 @@ The held list is `OWNER_HELD_SOURCES`; of the sweep sources only `lab-microsite-
 5. It records each source's last comparable successful `scrape_runs` row: exhaustive, not a dry run, not `--force-llm`, and not scoped by `--only`, `--limit` or a benchmark.
 6. It starts `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --rerun-source <source>...` and polls the job every minute.
 The entrypoint resolves `beta` HEAD, clones and installs it exactly as for the weekly sweep, and runs `yarn --cwd server scrape:sweep:rerun-source` (`server/src/scripts/sweepSourceRerun.ts`) from that checkout with `SEARCH_INDEX_WRITES=deferred`.
-That script repeats the environment, source, and activity refusals inside the job, applies the weekly sweep's code freshness refusal (`server/src/scripts/sweepCodeFreshness.ts`), and runs each source in turn with `SCRAPER_ENV=development` and `ALLOW_NON_PROD_SCRAPER_WRITES=true` and exactly the `development-full` flags, `--ignore-work-planner --exhaustive --auto-materialize`, stopping at the first source that fails.
+That script repeats the environment, source, and activity refusals inside the job, applies the weekly sweep's code freshness refusal (`server/src/scripts/sweepCodeFreshness.ts`), and runs each source in turn with `SCRAPER_ENV=development` and `ALLOW_NON_PROD_SCRAPER_WRITES=true` and exactly the `development-full` flags, `--apply --ignore-work-planner --exhaustive --auto-materialize`, stopping at the first source that fails.
 It never passes `--force-llm`.
 7. When the job ends it reads each source's new `scrape_runs` row and compares it with the recorded one.
 A source is flagged when its run is missing or failed, when it wrote no observations (`producedNothing`), or when its observation count or its entities updated fell by more than 25% and by at least 10.
@@ -270,6 +279,20 @@ When the wait itself stops, on the timeout or a Render API error, it exits nonze
 
 Render's logs are not always available, so the outcome comes from the job status and the `scrape_runs` rows, never from the log.
 `--dry-run` runs every refusal and prints the start command without starting a job.
+
+`resume` continues a weekly run that Render stopped at its 12-hour limit, or that crashed, as a one-off job on the same service (#5209):
+
+1. It takes the named run, or by default the newest row that is `running` with no `finishedAt`.
+2. It refuses unless that row is unfinished, recorded a `codeSha`, and started more than 12 hours ago, so its container is certainly gone; it also refuses while any sweep source holds a live scrape job lock or another one-off job on the service is not finished, and unless the live image's entrypoint has the `--resume-weekly-run` mode.
+3. It starts `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --resume-weekly-run <run id> <codeSha> --confirm-weekly-development-sweep`.
+The entrypoint clones `beta` and checks out the run's recorded commit rather than `beta` HEAD, because a checkpoint's finished steps describe that code and continuing them on a newer commit would mix two commits' results under one row; it then runs `scrape:sweep:weekly-development --resume-run <run id>`.
+4. The weekly entry refuses again unless the row is unfinished and the checkout is at the recorded commit, re-runs the lock and storage preflight, and skips the lane-freshness refusal, which a deliberately older commit would trip.
+Each mode the stopped run finished is reused from its recorded summary; each mode it left unfinished is restored from its recorded checkpoint and run without `--restart`, so every step already done is skipped, its row or stage result taken from the record because its artifact went with the old container; a mode that never started runs fresh.
+5. It appends the resume to the row's `resumes` and finishes the same row, keeping its original `startedAt`, so a resumed run's duration spans both containers.
+A refused resume leaves the row as it was, still resumable.
+6. After a job that succeeded it runs `yarn development:search:sync`, because the job deferred every index write.
+
+A scheduled run is never a resume: the weekly cron always starts fresh at the current `beta` head and abandons any older checkpoint, so resume a stopped run before the next Friday if its results matter.
 The rerun mode exists only once an image built with it is live; until then `rerun` refuses at step 3.
 
 `probe-permissions` reads the `ylabs-sweep-dev` custom role with `atlas customDbRoles describe ylabs-sweep-dev --projectId 685b36661a9a1101c14a007b -o json`, so it needs a current `atlas auth login`.
@@ -288,6 +311,7 @@ It refuses unless `MONGODBURL` names `Development`, `SCRAPER_ENV` resolves to de
 
 It always probes `medicine.yale.edu` and `ysph.yale.edu`, plus the four other Yale hosts that Development links to most, taking the first 40 distinct pages per host in `_id` order so two runs probe the same pages.
 Every page goes through `fetchPageWithPolicy`, with the shared per-host limiter and retry budget, two requests in flight per host, because a hand-rolled fetch measures the client rather than the host.
+The machine-wide host budget still applies, so a Yale host without an override gets 1 request in flight 1.5 s apart whatever the probe asks for; each host's row and its `HOST_PROBE_RESULT` entry record the in-flight count and spacing it actually received, and the result line names the requested count `requestedInFlight`.
 The table reports, per host, the requests made, how many were refused with 403 or 429 on the first attempt, how many refused requests the retry budget recovered, how many were still refused when it ran out, other failures such as a 404, median and p95 latency, and wall time.
 A request that succeeds after a transport error or a 5xx counts as ok, and one that is refused and then ends on a 404 or a 5xx counts as another failure.
 Latency is end-to-end per page, so it includes waiting for the shared per-host limiter and any retry backoff, which is also how the baseline below was measured.
@@ -492,6 +516,11 @@ Accounts and research plans never cross (#5088, #5092): `accounts` and `research
 Because accounts are environment-local, an account `_id` stored on a copied corpus row would name nobody in the target, so the copy refuses a source whose `researchers.accountId` or `studentVisibilityReviewedByAccountId` is set.
 The plan artifact's `accountReferences` lists any such row by collection and field, and an apply refuses until it is empty.
 Both mirror directions share this rule, as does `production:promote-beta-copy`.
+Beta holds no archived research entities and none of the rows that hang off one (see Phase 2), so this refresh carries Development's own archive back across the swap (#5208, #5148).
+After the cutover and before verification, `carryDevelopmentArchive` in `server/src/scripts/archivedTombstoneMirror.ts` restores every archived `research_entities` row from Development's backup in full, and the `signals`, `role_assignments` and `research_entity_relationships` rows on those entities that Beta does not hold.
+A row Beta holds live is Beta's accepted state and keeps Beta's version.
+Verification expects each collection to hold Beta's copy plus exactly the rows the carry inserted, and the apply report's `developmentArchiveCarry` gives the counts.
+Without the carry one refresh would erase Development's tombstones, and the engine would mint every merged duplicate again (#3029).
 An unclassified Beta collection blocks apply until its mirror or exclusion policy is reviewed.
 Apply stages and validates every mirrored collection before cutover.
 It retains the prior mirrored and non-mirror collections as temporary backups until the complete cutover passes post-sync verification, then restores the entire prior Development dataset if cutover or verification fails.
@@ -533,9 +562,10 @@ Local scraping and materialization can intentionally change Development after th
 Running the standard sync again replaces the approved Atlas Development mirror with the latest accepted Beta snapshot and clears the non-mirror Development collections that hold stale scrape residue.
 
 It never clears Development's own measurement history.
-`PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS` in `server/src/scripts/mirrorCollectionPolicy.ts` is the authoritative list of what the refresh keeps: the frozen lane benchmarks and their hand labels, the lane and gate scorecard snapshots, the corpus quality trend, the engine benchmark rows and snapshots, the weekly sweep run records, the login signal tallies, and the analytics event log.
+`PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS` in `server/src/scripts/mirrorCollectionPolicy.ts` is the authoritative list of what the refresh keeps: the frozen lane benchmarks and their hand labels, the lane and gate scorecard snapshots, the corpus quality trend, the engine benchmark rows and snapshots, the weekly sweep run records, the login signal tallies, the research-topics derivation cache, the written-description and card-synthesis derivation caches, the search rerank cache, and the analytics event log.
 Beta never mirrors any of them, so without the allowlist the clear would be the thing that destroys them, and a frozen lane benchmark carries hand labels that no code can re-derive.
-`scrape_job_locks` is the one unmirrored collection the refresh still clears, because a lease is state rather than history and expires anyway.
+The two description caches are written on Development only, so before the first writer or card pass after a refresh or a fresh database, run `yarn --cwd server db:build-indexes` and apply it, so the unique `inputHash` indexes on `written_description_derivations` and `card_synthesis_derivations` exist; neither collection reaches Beta or Production, so a promotion builds no index for them.
+`scrape_job_locks` is preserved too, because it holds the Development write lease the refresh itself takes (#5756), so clearing it mid-refresh would admit a second apply; nothing environment-local is cleared any more.
 The dry-run and apply artifacts report both sides: read `localCollectionsClearedOnApply` for what goes and `localCollectionsPreservedOnApply` for what stays.
 
 Adding a collection to `NEVER_COPY_COLLECTIONS` without classifying it as preserved or ephemeral fails `assertEnvironmentLocalCollectionsClassified`, so a new instrument's history cannot join the cleared set by omission.
@@ -557,10 +587,16 @@ It prints which run satisfied each mode.
 2. Refuses while any sweep source holds a live scrape job lock, because a mirror of a Development that is being written copies a moving corpus.
 3. Runs the Phase 2 plan, `beta:refresh-from-development`, and prints each collection's copy count against Beta's current count.
 4. Checks the Render operator service through the Render API: it must exist, be running, deploy `beta`, and use the repository root as its root directory.
-5. Prints the Phase 3 sequence the Render job will run, then requires `--backup-ref <reference>`, naming the Beta backup or restore point taken before this mirror, and a typed `yes` (or `--yes` for a scripted run).
-6. Applies the mirror and stops unless it reports `"status": "applied"`.
-7. Starts a Render one-off job on the Beta operator service running `yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup`, and polls it every 20 seconds for up to 4 hours.
-That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the trust contract, updates the Beta index (a reconcile of the changed documents when its settings and embedder match the code, otherwise a full rebuild; `--full-search-rebuild` forces the rebuild), and runs `beta:readiness`, stopping at the first step that fails.
+It then compares the operator's live deploy with the `beta` head on GitHub and reports whether the apply will deploy it first.
+5. Prints the Phase 3 sequence the Render job will run, then requires `--backup-ref <reference | none-acknowledged>` and a typed `yes` (or `--yes` for a scripted run).
+`--backup-ref` records the operator's acknowledgement of Beta's backup position, not a check of it.
+Pass the reference of a backup you took before the mirror, or pass `--backup-ref none-acknowledged` to acknowledge that no off-cluster Beta backup exists, which is the current state (#4148).
+The script writes the value into the promotion log as a `Backup acknowledgement` line stated by the operator and checks nothing about it, so a logged reference is not evidence that a restore point exists.
+Without the flag the apply is refused, and the refusal names `none-acknowledged`.
+6. Deploys the operator service at the `beta` head when its live build is older, and waits until that deploy is live, before writing anything; a deploy that fails, is canceled or times out stops the promotion with Beta untouched.
+Then it applies the mirror and stops unless it reports `"status": "applied"`.
+7. Starts a Render one-off job on the Beta operator service running `yarn --cwd server promote:remote-phase --environment beta`, and polls it every 20 seconds for up to 4 hours.
+That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the trust contract, updates the Beta index (a reconcile of the changed documents, applying any drifted settings in place, when its embedder matches the code, otherwise a full rebuild; `--full-search-rebuild` forces the rebuild), and runs `beta:readiness`, stopping at the first step that fails.
 The trust contract runs with `--fail-on-public-visibility-violation`, so it fails only when a student can see a row that should not be shown; the held rows in `operator_review` are a standing queue the strict mode would fail on every mirror (#5007).
 
 ### What `yarn promote:production` does
@@ -569,22 +605,28 @@ The trust contract runs with `--fail-on-public-visibility-violation`, so it fail
 2. Reads every open pull request to `main` and refuses while any carries the `hold` label, or when GitHub cannot be read.
 A draft does not hold the data copy, because `docs/release-process.md` copies data before the code merge.
 3. Runs the Phase 4 dry-run with the dataset version derived from today's date, `prod-promote-YYYY-MM-DD-lane-a-beta-copy`, and refuses on any apply blocker, an uncleared account-reference blocker, or a plan that would promote observations or `scrape_runs`.
-4. Checks the Production operator service, which must deploy `main`.
+4. Checks the Production operator service, which must deploy `main`, and reports whether its live build is behind the `main` head.
 5. Requires the operator to type `production`; it never accepts `--yes`.
-6. Applies with `CONFIRM_LANE_A_COPY=true` and `CONFIRM_PROD_SCRAPE=true`, whose staged swap rolls a failed copy back.
-7. Starts a one-off job on the Production operator service running `promote:remote-phase --environment production`, which verifies the names, re-gates visibility, updates the Production index with `CONFIRM_PROD_SCRAPE=true` (a reconcile when its settings and embedder match the code, otherwise a full rebuild), and runs the Production smoke.
-It refuses when `PFR3_MEILI_RESTORE_POINT` is not set on that service.
-8. Prints the remaining step from `docs/release-process.md`: mark the `main` promotion pull request ready and merge it.
+6. Deploys the operator service at the `main` head when its build is older, waiting until it is live and stopping before any write if it is not, then applies with `CONFIRM_LANE_A_COPY=true` and `CONFIRM_PROD_SCRAPE=true`, whose staged swap rolls a failed copy back.
+7. Runs `db:verify-indexes --target production`, a read-only comparison of Production's live indexes with the declared set (#6482).
+It never builds or drops an index and prints the database name, never the connection string.
+A missing or conflicting index fails the promotion after the remote phase has still run, so the corpus is never left un-gated, and the output names the exact `db:build-indexes` command; an undeclared extra index only warns.
+8. Starts a one-off job on the Production operator service running `promote:remote-phase --environment production`, which verifies the names, re-gates visibility, updates the Production index with `CONFIRM_PROD_SCRAPE=true` (a reconcile when its embedder matches the code, otherwise a full rebuild), and runs the Production smoke.
+It refuses when `PFR3_MEILI_RESTORE_POINT` is not set; pass the restore point taken before this promotion as `--meili-restore-point <dump-uid>` and the start command carries it to the job, so the operator service's environment never needs a per-promotion edit ([Taking the Production restore point](#taking-the-production-restore-point)).
+9. Prints the remaining step from `docs/release-process.md`: mark the `main` promotion pull request ready and merge it.
 
 ### Running them
 
 ```bash
 yarn promote:beta --dry-run
-yarn promote:beta --backup-ref <beta-backup-reference>
+yarn promote:beta --backup-ref none-acknowledged
 yarn promote:production --dry-run
 yarn promote:production
 ```
 
+Run both from a checkout at or after the pull request that made `--backup-ref` an acknowledgement (#5937).
+An older checkout logs the value as a "Beta backup reference" as if it named a real backup, and a checkout from before #5935 also starts the Beta remote phase with `--confirm-beta-backup`, which the current remote phase refuses as an unknown argument.
+`yarn promote:beta --help` prints the flags; replace `none-acknowledged` with a real backup reference only when you took one.
 `--dry-run` runs every read and check, prints both plans, and starts no Render job; it exits nonzero and lists what an apply would refuse on.
 `--skip-remote-phase` applies the copy and stops, for when the gate and reindex must be run from the Render shell instead.
 Every child command writes its output to a numbered log file in the run's temporary directory, which the command prints first, and a failed step prints its last 20 lines.
@@ -601,11 +643,38 @@ On the laptop, as environment variables or in `server/.env`, never committed:
 - An authenticated `gh` for the release-hold read.
 
 On Render, one operator service per environment, which is what the one-off job runs on.
-A one-off job takes the base service's latest successful build and its environment variables, and the API cannot add a variable per job, so the job cannot run on the web service: the reindex needs `MEILISEARCH_WRITE_API_KEY`, which the Production web process must never hold.
-Create each as a Cron Job in the same region as that environment's private Meilisearch, from this repository with the root directory left empty, branch `beta` for Beta and `main` for Production, a Node runtime with the build command `docs/release-process.md` gives every Render service (`npm install -g corepack@0.36.0 && corepack enable && bash scripts/install-all.sh --immutable`), and a schedule that never matters, such as `0 0 1 1 *` with start command `true`.
-Give it `SCRAPER_ENV` (`beta` or `production`), `MONGODBURL` for that environment, `MEILISEARCH_HOST`, `MEILISEARCH_INDEX_PREFIX` (`beta` or `prod`), `MEILISEARCH_WRITE_API_KEY`, and `OPENAI_API_KEY`, all as secrets, plus `PFR3_MEILI_RESTORE_POINT` on the Production one before each promotion.
-Its outbound ranges need the same Atlas access-list entry as any Render shell.
+A one-off job takes the base service's latest successful build and its environment variables, and the API cannot add a variable per job, so the job cannot run on a web service: the reindex needs the reindex key, which no web service holds.
+
+Both exist since 2026-10-18:
+
+| Service | Id | Branch | Holds |
+| ------- | -- | ------ | ----- |
+| `ylabs-beta-operator` | `crn-dbahuh2jnfac73fpipu0` | `beta` | `SCRAPER_ENV=beta`, the Beta-only `MONGODBURL`, `MEILISEARCH_HOST`, `MEILISEARCH_INDEX_PREFIX=beta`, `MEILISEARCH_WRITE_API_KEY` = `ylabs-beta-reindex`, `OPENAI_API_KEY` |
+| `ylabs-prod-operator` | `crn-dbahuhrrjlhs73ak5ac0` | `main` | the same with `production`, the Production-only `MONGODBURL`, `prod`, and `ylabs-prod-reindex` |
+
+Each is a Cron Job in Ohio, the region of the private Meilisearch, because Render's private network is per region; it is built from this repository with the root directory left empty, a Node runtime, the build command `docs/release-process.md` gives every Render service (`npm install -g corepack@0.36.0 && corepack enable && bash scripts/install-all.sh --immutable`), the schedule `0 0 1 1 *` and the start command `true`, so it never does anything on its own.
+Auto-deploy is off on both, because a build on every `beta` merge spends Render build minutes the workspace has run out of before; the promotion deploys the operator at the branch head itself when its build is behind (steps 4 and 6 above).
+Its `MONGODBURL` uses the environment-scoped Atlas user, so an operator job cannot write another environment's database.
+Its outbound ranges are the Ohio ranges already on the Atlas access list.
 The Production operator service deploys `main`, so `promote:remote-phase` reaches it only after the code promotion that carries this command.
+
+The web services hold a document-sync key, not the reindex key, as `MEILISEARCH_WRITE_API_KEY`; `docs/meilisearch-reindex-runbook.md` ("Meilisearch keys") owns the split.
+
+### Taking the Production restore point
+
+The Production remote phase refuses to write the Production index without `PFR3_MEILI_RESTORE_POINT`, and a Meilisearch dump is the restore point.
+Only the master key can create a dump, and it stays on the `meilisearch` private service, so create the dump from a one-off job on that service.
+That image keeps quote characters inside start-command arguments, so a quoted `sh -c "..."` reaches the shell as one word and fails; worse, a `$MEILI_MASTER_KEY` inside the quotes is expanded into the error line, which is how the master key reached a job log on 2026-10-18 and had to be rotated.
+Pass the script base64-encoded with no spaces in the command instead, and have it read the key from the environment at run time and print only the result:
+
+```bash
+B=$(base64 < dump.sh | tr -d '\n')
+render jobs create <meilisearch-service-id> --start-command "sh -c echo\${IFS}$B|base64\${IFS}-d|sh" --confirm
+```
+
+`dump.sh` posts to `/dumps` with `--header "Authorization: Bearer ${MEILI_MASTER_KEY}"`, polls `/tasks/<uid>` until the dump succeeds, and prints only the `dumpUid`.
+Check the database size from `/stats` first: the instance has a 1 GB disk, and a dump plus the reindex's second copy of an index must fit beside the live data.
+Pass the `dumpUid` to `promote:production --meili-restore-point meili-dump-<dumpUid>`.
 
 ## Phase 1: Development Sweep - Run Locally
 
@@ -717,11 +786,30 @@ export SOURCE_NAME='ysm-atoz-index'
 
 yarn scrape:development:write run \
   --source "$SOURCE_NAME" \
+  --apply \
   --ignore-work-planner \
   --exhaustive \
   --auto-materialize \
   --output "/tmp/ylabs-development-${SOURCE_NAME}-repair.json"
 ```
+
+`--write` grants the environment permission and `--apply` is the command line's own request to write; the scrape CLI needs both, and refuses `--write` without `--apply` before it connects (#5842).
+
+### Center Roster Sources Owe A Center Plan (#6348)
+
+Seven sources write `centerRosterHealth` reads: `centers-institutes-index`, `center-affiliation-llm`, `center-affiliation-roster`, `center-director`, `center-director-llm`, `bbs-research-track` and `official-profile-pi-backfill` (`CENTER_ROSTER_HEALTH_SOURCE_NAMES` in `server/src/scrapers/centerPlanGuard.ts`).
+A Development apply of such a run must be held to the plan its dry run approved, so `materialize --apply` without `--expect-center-plan` is refused, and so is `run --apply --auto-materialize` of one of these sources, so drop `--auto-materialize` from the repair command above and run it observations-only for them.
+The sweep runs these sources observations-only and lists each as `centerPlanOwed`, with its source and run id, in `summary.json` and the printed summary, so the sweep stays green while the apply waits.
+For each owed run, apply it in four steps:
+
+1. Dry run: `yarn scrape:development:write materialize --run <runId> --dry-run --output /tmp/plan-1.json`, and review its `centerPlan` section.
+2. Project-only apply: `yarn scrape:development:write materialize --run <runId> --apply --confirm-materialize --skip-center-roster-retirement --expect-center-plan /tmp/plan-1.json`.
+3. Fresh dry run against the edges that apply wrote: `yarn scrape:development:write materialize --run <runId> --dry-run --output /tmp/plan-2.json`, and review it.
+4. Apply: `yarn scrape:development:write materialize --run <runId> --apply --confirm-materialize --expect-center-plan /tmp/plan-2.json`.
+
+An enforced apply exits 4 when it held anything back, a plan-diverged center or a projection ending the plan did not list; the approved writes landed, and the rest needs a fresh dry run and a new plan.
+A plan-diverged center skips only retirement; its individually approved projection endings still apply, because the projection runs first, and the four-step procedure relies on that.
+A plan has no age bound, and its safety rests on the run id, the edge ids and the digests, so always take the final apply from a fresh dry run.
 
 Every post-run stage that ran writes one JSON artifact into the printed sweep directory, and `summary.json` records each stage's `artifactPath`, so read `summary.json` rather than a hand-kept filename list.
 [research-data-pipeline.md](research-data-pipeline.md) owns which stages run and which of them are flag-gated; the artifact name each one writes is declared beside its command in `DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `server/src/scripts/runScraperSweep.ts`.
@@ -753,16 +841,23 @@ It is the only way data enters Beta.
 The command replaces only the approved research-discovery, identity-spine, source-audit, and base-support collections, with account state sanitized.
 It preserves Beta operational collections such as sessions, analytics, admin grants, student workflows, locks, caches, and release queues.
 It leaves `observations` in Development unless `--include-observations` is passed, so review the plan's `observationPolicy` line before applying.
+Archived research entities do not cross (#5148): `withLiveResearchRowsOnly` copies only `research_entities` rows where `archived` is not true, and sets each copied survivor's `mergedFrom` from Development's tombstones as they stand at copy time, which is all a serving environment needs from a merge, for the old-slug redirect and a saved plan's survivor.
+The `signals`, `role_assignments` and `research_entity_relationships` rows on archived entities stay in Development too, so the plan's `excludedCount` for those collections, and for `research_entities`, is expected to be non-zero.
+Development keeps every full row, because its engine routes re-scraped evidence and refuses re-mints through it.
+Beta-to-Production copies Beta as is, so Production carries no archived rows either.
 It never writes to Meilisearch.
 The mirror replaces whole documents rather than merging fields, so a mirrored row can serve a worse individual field than the row it replaced even when the mirror is newer; [research-data-pipeline.md](research-data-pipeline.md) owns the known `websiteUrl` case and the repair command for it.
 
-Before changing Beta, record its backup or manual recovery artifact and run the Beta diagnostic from the Beta Render shell:
+No Beta restore point exists before a mirror: the Development-to-Beta mirror keeps no copy of what it replaces, and the off-cluster dump that would provide one is #4148.
+A bad mirror is recovered by mirroring an accepted Development dataset again.
+Run the Beta diagnostic from the Beta Render shell before changing Beta:
 
 ```bash
 SCRAPER_ENV=beta yarn --cwd server beta:readiness
 ```
 
-The diagnostic exits non-zero while any gate is blocked, and `betaBackup` stays blocked until `--confirm-beta-backup` is passed, so a non-zero exit without that flag is expected; read the other gates in the report.
+The diagnostic exits non-zero while any gate is blocked.
+It reports no backup gate: the `--confirm-beta-backup` flag and the `betaBackup` row it marked `ready` were removed because they verified nothing (#5556), and passing the flag now fails as an unknown argument.
 
 Generate and review the plan locally:
 
@@ -813,7 +908,7 @@ SCRAPER_ENV=beta   yarn --cwd server launch:trust-contract   --collection=all   
 
 Create and verify the required Beta Meilisearch restore point or export.
 Then update the Beta search index after the gate, never before it, because the gate writes the tiers the index carries.
-The command reconciles only the changed documents when the live index's settings and embedder match the code and rebuilds otherwise; add `--full` to force the rebuild.
+The command reconciles only the changed documents, applying any drifted settings in place, when the live index's embedder matches the code and rebuilds otherwise; add `--full` to force the rebuild.
 Follow [the reindex runbook](meilisearch-reindex-runbook.md), which owns the command, the required variables, and how to confirm the rebuilt count:
 
 ```bash
@@ -824,7 +919,7 @@ node scripts/reindex-search-index.mjs beta --apply
 Then run the Beta readiness gate, which exits non-zero when any gate is blocked:
 
 ```bash
-SCRAPER_ENV=beta   yarn --cwd server beta:readiness   --confirm-beta-backup   --output /tmp/ylabs-beta-readiness-final.json
+SCRAPER_ENV=beta   yarn --cwd server beta:readiness   --output /tmp/ylabs-beta-readiness-final.json
 ```
 
 Audit the Beta website after the gates pass.
@@ -919,8 +1014,35 @@ The promotion no longer requires an operator-supplied restore point, and no long
 `ATLAS_RESTORE_POINT` was the script's only rollback story and it was unverifiable: any non-empty string satisfied the check, so it recorded an operator's intention rather than a recoverable state (#2347).
 
 The rollback is now in the script.
-`promoteAcceptedBetaCopy` stages every collection under `__prod_promote_staging_*`, renames the live collections to `__prod_promote_backup_*`, swaps staging into place, verifies that each promoted collection holds the row count Beta offered, and only then drops the backups.
+`promoteAcceptedBetaCopy` stages every collection under `__prod_promote_staging_*`, renames the live collections to `__prod_promote_backup_*`, swaps staging into place, and verifies that each promoted collection holds the row count Beta offered.
 Any failure before that verification passes rolls every collection back to its pre-run state, which is asserted against a real mongod rather than a mocked driver.
+
+A count proves a promotion is complete, not that it is correct, so a verified promotion no longer drops what it replaced (#4149).
+It renames the backups to `__prod_promote_prev_<operationId>_<collection>` and keeps them as the one previous generation; a collection the promotion created rather than replaced is retained as an empty one, so a rollback restores no rows for it.
+Only once that generation is complete does it drop any older `__prod_promote_prev_*` generation, so exactly one exists at rest and a failed promotion never loses the last rollback point.
+The apply report names the `operationId`, the retained collections and their counts, and the rollback command; the dry-run lists the generation currently retained as `previousGenerations`.
+
+To restore the retained generation, dry-run first and read the plan's retained and live counts:
+
+```bash
+yarn --cwd server production:promote-beta-copy --rollback <operationId>
+CONFIRM_PROD_SCRAPE=true yarn --cwd server production:promote-beta-copy --rollback <operationId> --apply
+```
+
+The rollback needs only `PRODUCTION_MONGODBURL`, refuses any database but a remote `Prod`, and runs through the same staged swap: it copies the retained generation into staging inside Production, cuts over, and verifies that every collection holds the retained count.
+It refuses a generation that lacks any always-promoted collection, everything but `observations` and `scrape_runs`, and names the missing ones, because a partially retained generation would restore a mix of two promotions.
+It is itself a retaining swap, so the generation it replaced becomes the new previous generation and a rollback can be undone the same way.
+Accounts and `research_plans` are environment-local and are never in a generation, so a rollback leaves every Production login and plan as it is, including ones created after the promotion (#5088).
+A rollback moves documents only: follow it with the visibility gate and the reindex from Phase 5, exactly as after a promotion.
+
+Every staged swap, the promotion, its rollback, and both mirror directions, first measures the cluster and refuses before writing when the quota minus current usage minus the staging footprint would fall below the headroom.
+It reuses the sweep's `SCRAPER_SWEEP_CLUSTER_QUOTA_MB` (5120) and `SCRAPER_SWEEP_MIN_HEADROOM_MB` (1024), and the staging footprint is each source collection's data plus index size from `$collStats`.
+It also refuses when the credential cannot list `Development`, `Beta` and `Prod`, because a database-scoped user lists only its own database and would undercount the shared quota, so run these with the cluster-wide maintenance credential.
+The dry-run reports the same measurement as `storageHeadroom`, and `yarn promote:production` refuses a plan whose `storageHeadroom` is not `ok`.
+
+Retaining a generation costs storage at rest: measured on 2026-11-10, the promoted collections without observations are about 115 MB, against about 3,034 MB used of the 5,120 MB quota across the cluster.
+A promotion briefly holds three copies of that footprint, live, staging and the older generation, until its cutover verifies.
+A promotion with `--include-observations` carries roughly 1.9 GB per copy and is refused by the headroom check rather than allowed to fill the cluster.
 
 An Atlas restore point is still worth having as defence against something outside this script, and Atlas Free provides no managed backups, so record one if your tier supports it.
 It is no longer a gate the command enforces.
@@ -947,7 +1069,7 @@ Stop if the command does not print `"status": "applied"` or if any post-copy cou
 ## Phase 5: Production Search and Smoke Gate - Run in the Production Render Shell
 
 The current accepted-Beta copy replaces complete allowlisted MongoDB collections.
-The search step reads every promoted row and every indexed document, so a reconcile is complete after a whole-collection copy, and it falls back to a full rebuild when the live index's settings or embedder differ from the code (#5107).
+The search step reads every promoted row and every indexed document, so a reconcile is complete after a whole-collection copy, and it falls back to a full rebuild when the live index's embedder differs from the code (#5107), while drifted settings are applied in place (#5442).
 
 Run all commands in this phase from the Production Render shell.
 First verify the Production environment without printing credentials:
@@ -958,8 +1080,8 @@ test "$MEILISEARCH_INDEX_PREFIX" = 'prod'
 yarn --cwd server database:verify-names --serving production
 ```
 
-Create and verify the Production Meilisearch restore point or export.
-Store its reference in the Production Render environment as `PFR3_MEILI_RESTORE_POINT`.
+Create and verify the Production Meilisearch restore point ([Taking the Production restore point](#taking-the-production-restore-point)).
+Export its reference in the shell, or pass it on the one-off job's start command, as `PFR3_MEILI_RESTORE_POINT`.
 Stop if the reference is missing:
 
 ```bash
@@ -1011,6 +1133,7 @@ The refresh is incomplete if any required artifact, restore point, or independen
 ## Recovery
 
 Local Development is disposable and can be reset from the accepted Beta snapshot or a new scrape.
-Beta recovery uses the recorded Beta backup or a fresh mirror from an accepted Development dataset.
-No Production restore point exists today, because the free Atlas cluster provides no backups and a successful promotion drops its own (#4148), so Production recovery is forward; [the incident runbook](./incident-runbook.md) owns it.
+Beta recovery is a fresh mirror from an accepted Development dataset, because no Beta restore point exists yet (#4148).
+The only in-cluster Production restore point is the generation the last promotion replaced, restored with `production:promote-beta-copy --rollback <operationId>` (#4149); it lives on the same cluster, so it is no defence against losing the cluster, and no off-cluster restore point exists (#4148).
+Production-owned rows outside the promoted collections have no second copy, so beyond that rollback Production recovery is forward; [the incident runbook](./incident-runbook.md) owns it.
 Never use a Development database copy as a Production rollback.

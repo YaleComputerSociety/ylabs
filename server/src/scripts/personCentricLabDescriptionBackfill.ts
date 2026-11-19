@@ -34,6 +34,7 @@ import {
   filterPersonCentricLabDescriptionPlanByManualLocks,
   type PersonCentricLabDescriptionAction,
 } from './personCentricLabDescriptionBackfillCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,7 +69,6 @@ async function defaultFetchPage(url: string): Promise<FetchedPage | null> {
   const agents = ssrfSafeAgents();
   const res = await axios.get(safeUrlText, {
     timeout: 10_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     maxRedirects: 5,
     httpAgent: agents.httpAgent,
     httpsAgent: agents.httpsAgent,
@@ -308,7 +308,7 @@ function writeReport(options: PersonCentricLabDescriptionOptions, payload: unkno
   if (!options.output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(options.output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+  writeReportFileSync(safeOutput, JSON.stringify(payload, null, 2));
   console.log(`Saved person-centric lab description backfill report to ${safeOutput}`);
 }
 

@@ -47,10 +47,25 @@ describe('selectDuplicateProgramCopies', () => {
     ]);
   });
 
-  it('keeps the database record even when the other copy is more fit to serve (#4289)', () => {
+  it('keeps a servable database record over a servable copy that is otherwise older (#4289)', () => {
+    expect(redundant(copy('a'), copy('b', { sourceName: 'student-grants-database' }))).toEqual([
+      ['a', 'b'],
+    ]);
+  });
+
+  it('keeps a servable copy over a database record that cannot be served (#6501)', () => {
     expect(
       redundant(
         copy('a'),
+        copy('b', { sourceName: 'student-grants-database', tier: 'limited_but_safe' }),
+      ),
+    ).toEqual([['b', 'a']]);
+  });
+
+  it('still keeps the database record when no copy can be served (#4289, #6501)', () => {
+    expect(
+      redundant(
+        copy('a', { tier: 'limited_but_safe' }),
         copy('b', { sourceName: 'student-grants-database', tier: 'suppressed' }),
       ),
     ).toEqual([['a', 'b']]);

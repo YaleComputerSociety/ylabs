@@ -52,6 +52,7 @@ import {
   type CenterRosterLane,
 } from './centerRosterRetirement';
 import { officialProfileIdentityKey } from './utils/rosterMembershipKey';
+import { liveResearchEntityNamedByKeyObservations } from './renamedResearchEntityAdoption';
 
 export const OFFICIAL_PROFILE_DIRECTOR_SOURCE_NAME = 'official-profile-pi-backfill';
 export const OFFICIAL_PROFILE_DIRECTOR_RETIREMENT_REASON =
@@ -299,12 +300,14 @@ export async function reconcileOfficialProfileDirectorRetirementsFromRun(
     edges: OfficialProfileDirectorGovernedEdge[];
   }> = [];
   for (const organizationKey of organizationKeys) {
-    const organization = (await ResearchEntity.findOne({
+    const organization = ((await ResearchEntity.findOne({
       slug: organizationKey,
       archived: { $ne: true },
     })
       .select('_id')
-      .lean()) as { _id?: mongoose.Types.ObjectId } | null;
+      .lean()) ?? (await liveResearchEntityNamedByKeyObservations(organizationKey))) as {
+      _id?: mongoose.Types.ObjectId;
+    } | null;
     if (!organization?._id) continue;
     const edges = await loadGovernedEdges(organization._id);
     if (edges.length === 0) continue;

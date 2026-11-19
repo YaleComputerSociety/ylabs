@@ -22,6 +22,7 @@ import { getSourceCoverage } from './sourceCoverageRegistry';
 import { RETIRED_SOURCE_NAMES, isRetiredSourceName } from './sourceDispatch';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 import { connectScriptMongo } from '../db/connections';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ path: path.join(resolveServerPackageRoot(import.meta.url), '.env'), quiet: true });
 
@@ -142,7 +143,7 @@ export function writeSeedSourcesOutput(report: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 const SOURCES: SourceSeed[] = [
@@ -161,6 +162,17 @@ const SOURCES: SourceSeed[] = [
       "Research-area chips inferred from a research entity's own stored name and description via the canonical research-area vocabulary, rather than read from a page that named the area.",
     baseUrl: '',
     defaultWeight: 0.4,
+    cadence: 'event',
+  },
+  {
+    // Not a scraper either: the materializer applies a cached model reading of a row's
+    // stored research page text (#5296), and seeds the name so that provenance resolves.
+    name: 'research-page-topics-derived',
+    displayName: 'Research page topics (derived)',
+    description:
+      "Research topics a model quoted from a research entity's stored research page text: the raw reading is cached by input hash by research-topics:derive, and the quote check and filters run at materialization. A topic survives only when its quote is on the stored page text it names and its words are on the row's stored pages. Never an observation; outranks MeSH and medical-school directory lists for researchAreas.",
+    baseUrl: '',
+    defaultWeight: 0.85,
     cadence: 'event',
   },
   {
@@ -208,6 +220,24 @@ const SOURCES: SourceSeed[] = [
     cadence: 'nightly',
   },
   {
+    name: 'department-emeritus-listings',
+    displayName: 'Department emeritus listings',
+    description:
+      'Deterministic read of the emeritus faculty pages Yale departments publish, recording on each row a listed person already leads that their department lists them as emeritus (#5835). Evidence about a lead only: it never mints a row, an edge or a roster member, and it defers to a stored title a live lane still asserts.',
+    baseUrl: '',
+    defaultWeight: 0.8,
+    cadence: 'monthly',
+  },
+  {
+    name: 'official-undergrad-lists',
+    displayName: 'Official undergraduate lists',
+    description:
+      "Deterministic read of official Yale lists that name a faculty member beside a specific undergraduate or as taking undergraduates now, each list feeding exactly one undergraduate signal (mentors, hosted or welcomes) into `undergradListEvidence` (#5551, #5362). Only the adviser is read, an entry attaches only to a row the person already leads, and no student data is stored. Manual-only until the owner reviews a sample of each list's matches.",
+    baseUrl: '',
+    defaultWeight: 0.8,
+    cadence: 'monthly',
+  },
+  {
     name: 'roster-bio-research-evidence',
     displayName: 'Roster biography research evidence',
     description:
@@ -215,6 +245,33 @@ const SOURCES: SourceSeed[] = [
     baseUrl: '',
     defaultWeight: 0.7,
     cadence: 'monthly',
+  },
+  {
+    name: 'center-profile-research-rows',
+    displayName: 'Center profile research rows',
+    description:
+      "Mints a faculty-research row, citing the member's own center profile page, for an identity-proven center member who leads no personal row and whose profile states research they do now. Manual-only and out of the sweep until the owner reviews the rows a run plans.",
+    baseUrl: '',
+    defaultWeight: 0.7,
+    cadence: 'monthly',
+  },
+  {
+    name: 'research-page-text',
+    displayName: 'Research page text',
+    description:
+      "Reads a research entity's own cited research pages with code and stores each page's research statement as researchPageText: site chrome, navigation, contact blocks, publicity regions, other units' teaser cards and sections headed as publications, a bibliography, a CV or contact details are left out, publication, CV and contact lines are dropped wherever they sit, contact details are redacted, and the text is capped near 16 KB per row. No model reads the pages in this lane; research-topics:derive reads the stored text at materialization. Never served and never indexed. Manual-only and out of the sweep.",
+    baseUrl: '',
+    defaultWeight: 0.85,
+    cadence: 'weekly',
+  },
+  {
+    name: 'center-member-profile-research',
+    displayName: 'Center member profile research',
+    description:
+      "Reads the biography and research statement on a center member's own profile page (Yale FDS, the Cowles Foundation, the MacMillan Center councils) and attaches them, as writer evidence only, to the one personal research row that member leads. A page joins to a person only through a centers-roster membership edge whose identity was proven, never by name, and the lane mints no row.",
+    baseUrl: 'https://fds.yale.edu',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
   },
   {
     name: 'directory-alias-resolution',
@@ -332,12 +389,30 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'center-affiliation-roster',
+    displayName: 'Center affiliation roster (deterministic)',
+    description:
+      "Reads an organizational research home's own page with code and emits the same umbrella relationship observations as center-affiliation-llm for the people and labs the page lists in people cards, profile directories, contact listings and lists under a membership heading. A name the page states only in prose is counted, not asserted, and an ambiguous listing is refused. It replaced center-affiliation-llm in the sweep on 2026-10-19 and hands off the relationships that lane wrote when its read does not list them (#5296).",
+    baseUrl: '',
+    defaultWeight: 0.7,
+    cadence: 'weekly',
+  },
+  {
     name: 'center-director-llm',
     displayName: 'Center director LLM extractor',
     description:
       "Reads an organizational research home's official site + leadership pages and emits an entity-level inferred-director observation; the materializer resolves the name to a unique Yale User before promoting them to a director member.",
     baseUrl: '',
     defaultWeight: 0.6,
+    cadence: 'weekly',
+  },
+  {
+    name: 'center-director',
+    displayName: 'Center director (deterministic)',
+    description:
+      "Reads an organizational research home's own page and the leadership pages inside its own subtree with code, and emits the same entity-level inferred-director observations as center-director-llm when one director is stated by a title label or a strict sentence. Two directors at the same rank refuse the read, except that a Faculty Director outranks a Director. It replaced center-director-llm in the sweep on 2026-10-19 and ends the lead edges that lane wrote when its read does not support them (#5296).",
+    baseUrl: '',
+    defaultWeight: 0.7,
     cadence: 'weekly',
   },
   {
@@ -495,7 +570,7 @@ const SOURCES: SourceSeed[] = [
     name: 'undergrad-fellowships-recipients',
     displayName: 'Yale undergrad fellowship recipient lists',
     description:
-      "Past STARS / Bass / Dean's Research / Tetelman / Mellon Mays / etc. recipient lists; reverse-lookup faculty advisors.",
+      'STARS II symposium booklets and the CogSci and EPS adviser pages; reverse-lookup faculty advisors.',
     baseUrl: '',
     defaultWeight: 0.85,
     cadence: 'monthly',
@@ -507,6 +582,15 @@ const SOURCES: SourceSeed[] = [
       "LLM extraction over each lab's site to determine current undergrad count, openness, and evidence quote.",
     baseUrl: '',
     defaultWeight: 0.5,
+    cadence: 'weekly',
+  },
+  {
+    name: 'lab-site-undergrad-invitation',
+    displayName: 'Lab site undergraduate invitations',
+    description:
+      "Deterministic read of each lab site's home and join pages for a sentence that invites undergraduates: an active opening (actively hiring) or a standing invitation to get in touch (welcomes undergrads). No model call; a quote repeated across three or more rows is a shared program page and is refused.",
+    baseUrl: '',
+    defaultWeight: 0.8,
     cadence: 'weekly',
   },
   {

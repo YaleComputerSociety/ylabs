@@ -5,6 +5,8 @@ import {
   entityOfficialPersonProfileDestinations,
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
+  officialProfileDestinationIndexedPatterns,
+  officialProfileDestinationStoredPattern,
   officialProfileUrlFromRosterEntry,
 } from '../leadProfileIdentity';
 
@@ -31,6 +33,69 @@ describe('normalizeOfficialProfileDestination', () => {
     expect(
       normalizeOfficialProfileDestination('https://medicine.yale.edu/cancer/research/profile/a/b'),
     ).toBe('medicine.yale.edu/cancer/research/profile/a/b');
+  });
+});
+
+describe('normalizeOfficialProfileDestination on the divinity legacy faculty path (#5592)', () => {
+  it('reads the legacy faculty path and the profile path as one destination', () => {
+    for (const url of [
+      'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+      'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic/',
+      'https://www.divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+      'https://divinity.yale.edu/profile/avery-synthetic',
+    ]) {
+      expect(normalizeOfficialProfileDestination(url)).toBe(
+        'divinity.yale.edu/profile/avery-synthetic',
+      );
+    }
+  });
+
+  it('collapses only that path pair, only on the divinity host', () => {
+    expect(
+      normalizeOfficialProfileDestination(
+        'https://law.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+      ),
+    ).toBe('law.yale.edu/faculty-and-research/yds-faculty/avery-synthetic');
+    expect(
+      normalizeOfficialProfileDestination(
+        'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic/publications',
+      ),
+    ).toBe('divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic/publications');
+    expect(
+      normalizeOfficialProfileDestination(
+        'https://divinity.yale.edu/faculty-and-research/avery-synthetic',
+      ),
+    ).toBe('divinity.yale.edu/faculty-and-research/avery-synthetic');
+  });
+});
+
+describe('officialProfileDestinationStoredPattern on the divinity legacy faculty path (#5592)', () => {
+  const fromProfile = officialProfileDestinationStoredPattern(
+    'https://divinity.yale.edu/profile/avery-synthetic',
+  );
+  const fromLegacy = officialProfileDestinationStoredPattern(
+    'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+  );
+
+  it('matches a stored link in either form, from either form', () => {
+    for (const pattern of [fromProfile, fromLegacy]) {
+      expect(pattern?.test('https://divinity.yale.edu/profile/avery-synthetic')).toBe(true);
+      expect(
+        pattern?.test(
+          'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic/',
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('does not match another person or another host', () => {
+    for (const pattern of [fromProfile, fromLegacy]) {
+      expect(pattern?.test('https://divinity.yale.edu/profile/avery-synthetic-jr')).toBe(false);
+      expect(pattern?.test('https://divinity.yale.edu/profile/blake-synthetic')).toBe(false);
+      expect(
+        pattern?.test('https://law.yale.edu/faculty-and-research/yds-faculty/avery-synthetic'),
+      ).toBe(false);
+    }
   });
 });
 
@@ -591,5 +656,238 @@ describe('detectProfileIdentityRisk on accented and compound surnames', () => {
         leadMembers: [{ user: { fname: 'José', lname: 'Núñez' } }],
       }),
     ).toBe(false);
+  });
+});
+
+describe('detectProfileIdentityRisk on nickname given names', () => {
+  const profileOf = (slug: string) => ({
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    sourceUrls: [`https://som.yale.edu/faculty-research/faculty-directory/${slug}`],
+  });
+
+  it.each([
+    ['judith-fixture', 'Judy', 'Fixture'],
+    ['william-fixture', 'Bill', 'Fixture'],
+    ['bob-fixture', 'Robert', 'Fixture'],
+  ])('corroborates a %s profile under a lead stored as %s %s', (slug, fname, lname) => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: profileOf(slug),
+        leadMembers: [{ user: { displayName: `${fname} ${lname}` } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('still flags a nickname-shaped given name the tables do not pair with the lead', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: profileOf('judith-fixture'),
+        leadMembers: [{ user: { displayName: 'Bill Fixture' } }],
+      }),
+    ).toBe(true);
+  });
+
+  it('still flags a paired given name on a different surname', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: profileOf('william-otherfixture'),
+        leadMembers: [{ user: { displayName: 'Bill Fixture' } }],
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores a faculty-directory category listing beside the nickname profile', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          ...profileOf('judith-fixture'),
+          sourceUrls: [
+            'https://som.yale.edu/faculty-research/faculty-directory/judith-fixture',
+            'https://som.yale.edu/faculty-research/faculty-directory/economics',
+          ],
+        },
+        leadMembers: [
+          {
+            user: {
+              displayName: 'Judy Fixture',
+              profileUrls: { official: 'https://economics.yale.edu/people/judy-fixture' },
+            },
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('detectProfileIdentityRisk on apostrophe surnames', () => {
+  const entity = {
+    entityType: 'LAB',
+    sourceUrls: ['https://medicine.yale.edu/profile/jane-dfixture/'],
+  };
+
+  it('corroborates a lead whose apostrophe surname the slug spells as one token', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity,
+        leadMembers: [{ user: { displayName: "Jane Q. D'Fixture" } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('still flags a different given name that shares the apostrophe surname', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity,
+        leadMembers: [{ user: { displayName: "Mary Q. D'Fixture" } }],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('detectProfileIdentityRisk on a category segment after a person slug', () => {
+  it('reads the person slug rather than a trailing category listing segment', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://dept.yale.edu/people/jane-fixture/faculty-directory/economics'],
+        },
+        leadMembers: [{ user: { displayName: 'Jane Fixture' } }],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('officialProfileDestinationStoredPattern on a host whose query names the person (#4500)', () => {
+  const pattern = officialProfileDestinationStoredPattern(
+    'https://scholar.google.com/citations?user=AbC123_x',
+  );
+
+  it('matches the same Scholar user however the stored query is ordered', () => {
+    expect(pattern?.test('https://scholar.google.com/citations?user=AbC123_x')).toBe(true);
+    expect(pattern?.test('https://scholar.google.com/citations?hl=en&user=AbC123_x')).toBe(true);
+    expect(pattern?.test('https://scholar.google.com/citations?user=AbC123_x&hl=en')).toBe(true);
+  });
+
+  it('does not match a different Scholar user or a different-case id', () => {
+    expect(pattern?.test('https://scholar.google.com/citations?user=Zz999_y')).toBe(false);
+    expect(pattern?.test('https://scholar.google.com/citations?user=abc123_x')).toBe(false);
+    expect(pattern?.test('https://scholar.google.com/citations?user=AbC123_xy')).toBe(false);
+  });
+
+  it('identifies nobody when the Scholar URL carries no user', () => {
+    expect(
+      officialProfileDestinationStoredPattern('https://scholar.google.com/citations'),
+    ).toBeNull();
+  });
+
+  it('still ignores the query on a Yale profile', () => {
+    const yale = officialProfileDestinationStoredPattern(
+      'https://fixture.yale.edu/people/avery-synthetic',
+    );
+    expect(yale?.test('https://fixture.yale.edu/people/avery-synthetic?utm_source=x')).toBe(true);
+  });
+});
+
+describe('officialProfileDestinationIndexedPatterns', () => {
+  const matchesAny = (patterns: RegExp[], url: string) =>
+    patterns.some((pattern) => pattern.test(url));
+
+  it('finds every stored spelling that reads as the same destination, whatever case the discarded segment has', () => {
+    const cases: Array<[string, string]> = [
+      [
+        'https://medicine.yale.edu/profile/synthetic-person',
+        'https://medicine.yale.edu/Psychiatry/profile/synthetic-person/',
+      ],
+      [
+        'https://medicine.yale.edu/profile/synthetic-person',
+        'http://www.medicine.yale.edu/bbs/profile/synthetic-person',
+      ],
+      [
+        'https://medicine.yale.edu/profile/synthetic-person',
+        'https://medicine.yale.edu/bbs/Profile/synthetic-person',
+      ],
+      [
+        'https://divinity.yale.edu/profile/synthetic-person',
+        'https://divinity.yale.edu/Faculty-and-Research/YDS-Faculty/synthetic-person',
+      ],
+    ];
+    for (const [link, stored] of cases) {
+      expect(normalizeOfficialProfileDestination(stored)).toBe(
+        normalizeOfficialProfileDestination(link),
+      );
+      expect(matchesAny(officialProfileDestinationIndexedPatterns(link), stored)).toBe(true);
+    }
+  });
+
+  it('does not find a different person on the same host', () => {
+    const patterns = officialProfileDestinationIndexedPatterns(
+      'https://medicine.yale.edu/profile/synthetic-person',
+    );
+    expect(matchesAny(patterns, 'https://medicine.yale.edu/profile/synthetic-person-two')).toBe(
+      false,
+    );
+    expect(matchesAny(patterns, 'https://publichealth.yale.edu/profile/synthetic-person')).toBe(
+      false,
+    );
+  });
+});
+
+describe('normalizeOfficialProfileDestination on a macmillan program-section person path (#5757)', () => {
+  it('reads a program-section person path and the root person path as one destination', () => {
+    for (const url of [
+      'https://macmillan.yale.edu/africa/person/avery-synthetic',
+      'https://macmillan.yale.edu/leitner/person/avery-synthetic/',
+      'https://www.macmillan.yale.edu/person/avery-synthetic',
+    ]) {
+      expect(normalizeOfficialProfileDestination(url)).toBe(
+        'macmillan.yale.edu/person/avery-synthetic',
+      );
+    }
+  });
+
+  it('reads a subprogram person path as the same destination (#5892)', () => {
+    expect(
+      normalizeOfficialProfileDestination(
+        'https://macmillan.yale.edu/middleeast/subprogram/person/avery-synthetic',
+      ),
+    ).toBe('macmillan.yale.edu/person/avery-synthetic');
+    const pattern = officialProfileDestinationStoredPattern(
+      'https://macmillan.yale.edu/person/avery-synthetic',
+    );
+    expect(
+      pattern?.test('https://macmillan.yale.edu/europe/subprogram/person/avery-synthetic'),
+    ).toBe(true);
+    expect(
+      officialProfileDestinationIndexedPatterns(
+        'https://macmillan.yale.edu/person/avery-synthetic',
+      )[0].test('https://macmillan.yale.edu/europe/subprogram/person/avery-synthetic/'),
+    ).toBe(true);
+  });
+
+  it('keeps a different slug and other hosts distinct', () => {
+    expect(
+      normalizeOfficialProfileDestination(
+        'https://macmillan.yale.edu/africa/person/avery-synthetic-0',
+      ),
+    ).toBe('macmillan.yale.edu/person/avery-synthetic-0');
+    expect(
+      normalizeOfficialProfileDestination('https://history.yale.edu/africa/person/avery-synthetic'),
+    ).toBe('history.yale.edu/africa/person/avery-synthetic');
+  });
+
+  it('matches a stored program-section link from the root person path', () => {
+    const pattern = officialProfileDestinationStoredPattern(
+      'https://macmillan.yale.edu/person/avery-synthetic',
+    );
+    expect(pattern?.test('https://macmillan.yale.edu/africa/person/avery-synthetic')).toBe(true);
+    expect(pattern?.test('https://macmillan.yale.edu/person/avery-synthetic')).toBe(true);
+    expect(pattern?.test('https://macmillan.yale.edu/africa/person/avery-synthetic-0')).toBe(false);
+    for (const indexed of officialProfileDestinationIndexedPatterns(
+      'https://macmillan.yale.edu/person/avery-synthetic',
+    ).slice(0, 1)) {
+      expect(indexed.test('https://macmillan.yale.edu/leitner/person/avery-synthetic/')).toBe(true);
+    }
   });
 });

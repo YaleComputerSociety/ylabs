@@ -3,8 +3,12 @@ import { useState, type ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ResearchFilterDisclosure from '../ResearchFilterDisclosure';
+import { candidatesIn, compileStylesheet } from '../../../testUtils/tailwind';
 
 const originalMatchMedia = window.matchMedia;
+
+const parsePercentOrNumber = (value: string): number =>
+  value.endsWith('%') ? Number(value.slice(0, -1)) / 100 : Number(value);
 
 const renderFilters = (
   overrides: Partial<ComponentProps<typeof ResearchFilterDisclosure>> = {},
@@ -18,12 +22,16 @@ const renderFilters = (
     selectedEntityType: '',
     selectedSchool: '',
     selectedDepartment: '',
+    selectedHostsUndergrads: false,
     isApplying: false,
     hasFacetError: false,
     departmentLabel: (value) => value,
     onEntityTypeChange: vi.fn(),
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
+    onHostsUndergradsChange: vi.fn(),
+    onWelcomesUndergradsChange: vi.fn(),
+    onMentorsUndergradsChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
   };
@@ -36,6 +44,343 @@ afterEach(() => {
 });
 
 describe('ResearchFilterDisclosure', () => {
+  it('says the filter options are loading, not that nothing can narrow the results, before the first counts arrive (#5146)', () => {
+    renderFilters({ variant: 'sidebar', facetDistribution: {}, isLoadingOptions: true });
+
+    expect(screen.getByText('Filter options will appear when this search finishes.')).toBeTruthy();
+    expect(screen.queryByText('No additional filters can narrow these results.')).toBeNull();
+  });
+
+  const undergradCounts = {
+    welcomesUndergrads: { true: 4 },
+    hostsUndergrads: { true: 7 },
+    mentorsUndergrads: { true: 9 },
+  };
+
+  it('groups the three Undergrads options under one legend, in order, with no umbrella (#5963)', () => {
+    renderFilters({ variant: 'sidebar', facetDistribution: undergradCounts });
+
+    const group = screen.getByRole('group', { name: 'Undergrads' });
+    expect(group).toHaveAccessibleDescription('Shows research matching every ticked option');
+    expect(
+      within(group)
+        .getAllByRole('checkbox')
+        .map((box) => box.closest('label')?.textContent),
+    ).toEqual([
+      'Taking undergrads now (4)',
+      'Has had undergrads before (7)',
+      'Advises undergrad research (9)',
+    ]);
+    expect(screen.queryByRole('checkbox', { name: /Works with undergrads/ })).toBeNull();
+  });
+
+  it('compacts the wide sidebar: helper line and hint become tips, rows lose the 44px floor (#5963)', () => {
+    renderFilters({ variant: 'sidebar', facetDistribution: undergradCounts });
+
+    const group = screen.getByRole('group', { name: 'Undergrads' });
+    expect(group).toHaveAccessibleDescription('Shows research matching every ticked option');
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(screen.getByRole('button', { name: 'About Undergrads' })).toHaveAccessibleDescription(
+      'Shows research matching every ticked option',
+    );
+    const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (9)' });
+    expect(advises).toHaveAccessibleDescription('e.g. supervised senior theses');
+    expect(advises.closest('label')?.className).toContain('min-h-7');
+
+    fireEvent.focus(screen.getByRole('button', { name: 'About Advises undergrad research' }));
+    expect(screen.getByRole('tooltip').textContent).toBe('e.g. supervised senior theses');
+  });
+
+  it('keeps 44px rows and visible lines in the filter sheet (#5963)', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as typeof window.matchMedia;
+    renderFilters({ facetDistribution: undergradCounts });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+    expect(within(dialog).getByText('Shows research matching every ticked option')).toBeVisible();
+    expect(within(dialog).getByText('e.g. supervised senior theses')).toBeVisible();
+    expect(within(dialog).queryByRole('button', { name: /^About / })).toBeNull();
+    const advises = within(dialog).getByRole('checkbox', {
+      name: 'Advises undergrad research (9)',
+    });
+    expect(advises.closest('label')?.className).toContain('min-h-11');
+  });
+
+  it('describes the advises option with its hint (#5963)', () => {
+    renderFilters({ variant: 'sidebar', facetDistribution: undergradCounts });
+
+    expect(
+      screen.getByRole('checkbox', { name: 'Advises undergrad research (9)' }),
+    ).toHaveAccessibleDescription('e.g. supervised senior theses');
+    expect(
+      screen.getByRole('checkbox', { name: 'Taking undergrads now (4)' }),
+    ).not.toHaveAccessibleDescription();
+  });
+
+  it.each([
+    ['Taking undergrads now (4)', 'onWelcomesUndergradsChange', 'selectedWelcomesUndergrads'],
+    ['Has had undergrads before (7)', 'onHostsUndergradsChange', 'selectedHostsUndergrads'],
+    ['Advises undergrad research (9)', 'onMentorsUndergradsChange', 'selectedMentorsUndergrads'],
+  ] as const)('ticks and unticks %s through its own handler', (name, handler, selected) => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props, rerender } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: undergradCounts,
+    });
+
+    const toggle = screen.getByRole('checkbox', { name });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    expect(props[handler]).toHaveBeenCalledWith(true);
+
+    rerender(<ResearchFilterDisclosure {...props} {...{ [selected]: true }} />);
+    const checked = screen.getByRole('checkbox', { name });
+    expect(checked).toBeChecked();
+    expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(1);
+    fireEvent.click(checked);
+    expect(props[handler]).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps an option that adding would empty in place, unavailable, with the remove-a-filter tip (#5963, #6203)', () => {
+    renderFilters({
+      variant: 'sidebar',
+      selectedWelcomesUndergrads: true,
+      facetDistribution: {
+        welcomesUndergrads: { true: 4 },
+        hostsUndergrads: { true: 0 },
+        mentorsUndergrads: { true: 0 },
+      },
+    });
+
+    expect(screen.getByRole('checkbox', { name: 'Taking undergrads now (4)' })).toBeChecked();
+    const hosted = screen.getByRole('checkbox', { name: 'Has had undergrads before (0)' });
+    expect(hosted).toHaveAttribute('aria-disabled', 'true');
+    expect(hosted).toHaveAccessibleDescription(
+      'None match your other filters. Remove a filter to see more.',
+    );
+    const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (0)' });
+    expect(advises).toHaveAttribute('aria-disabled', 'true');
+    expect(advises).toHaveAccessibleDescription(
+      'e.g. supervised senior theses None match your other filters. Remove a filter to see more.',
+    );
+  });
+
+  it.each([
+    [
+      'another filter is active',
+      { selectedDepartment: 'Computer Science' },
+      'None match your other filters. Remove a filter to see more.',
+    ],
+    [
+      'an Undergrads sibling is ticked',
+      { selectedHostsUndergrads: true },
+      'None match your other filters. Remove a filter to see more.',
+    ],
+    ['only a query is active', { hasActiveQuery: true }, 'None match this search.'],
+  ])('tells a zero option apart by what narrowed it when %s (#6203)', (_case, overrides, tip) => {
+    renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+      ...overrides,
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    expect(taking).toHaveAttribute('aria-disabled', 'true');
+    expect(taking).toHaveAccessibleDescription(tip);
+  });
+
+  // The served total being zero is neither a filter nor a search the student can widen,
+  // and its wording is still with the owner (#6203), so the option says only its count.
+  it('offers no reason for a zero option when neither a query nor a filter is active (#6203)', () => {
+    renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    expect(taking).toHaveAttribute('aria-disabled', 'true');
+    expect(taking).not.toHaveAccessibleDescription();
+    expect(
+      screen.queryByText('None match your other filters. Remove a filter to see more.'),
+    ).toBeNull();
+    expect(screen.queryByText('None match this search.')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Why Taking undergrads now is unavailable' }),
+    ).toBeNull();
+  });
+
+  it('keeps a ticked option checkable at zero, so it can always be removed', () => {
+    renderFilters({
+      variant: 'sidebar',
+      selectedMentorsUndergrads: true,
+      facetDistribution: { mentorsUndergrads: { true: 0 }, hostsUndergrads: { true: 3 } },
+    });
+
+    const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (0)' });
+    expect(advises).toBeChecked();
+    expect(advises).toBeEnabled();
+    expect(advises).not.toHaveAttribute('aria-disabled');
+    expect(
+      screen.queryByText('None match your other filters. Remove a filter to see more.'),
+    ).toBeNull();
+  });
+
+  it('shows the option without a count when the counts could not load', () => {
+    renderFilters({
+      variant: 'sidebar',
+      hasFacetError: true,
+      facetDistribution: undergradCounts,
+    });
+
+    expect(screen.getByRole('checkbox', { name: 'Taking undergrads now' })).toBeEnabled();
+  });
+
+  it('moves desktop focus past a disabled Undergrads option to the first usable field', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({
+      facetDistribution: {
+        hostsUndergrads: { true: 0 },
+        mentorsUndergrads: { true: 3 },
+        entityType: { LAB: 12, CORE_FACILITY: 4 },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+    expect(
+      within(dialog).getByRole('checkbox', { name: 'Has had undergrads before (0)' }),
+    ).toHaveAttribute('aria-disabled', 'true');
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('checkbox', { name: 'Advises undergrad research (3)' }),
+      ).toHaveFocus(),
+    );
+  });
+
+  it('always shows all three Undergrads options, an option at zero unavailable but focusable with its tip (#6203)', () => {
+    renderFilters({
+      selectedDepartment: 'Computer Science',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 0 },
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Filters, 1 active' }));
+
+    const group = screen.getByRole('group', { name: 'Undergrads' });
+    expect(
+      within(group)
+        .getAllByRole('checkbox')
+        .map((box) => box.closest('label')?.textContent),
+    ).toEqual([
+      'Taking undergrads now (0)',
+      'Has had undergrads before (3)',
+      'Advises undergrad research (0)',
+    ]);
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    expect(taking).toHaveAttribute('aria-disabled', 'true');
+    expect(taking).not.toBeDisabled();
+    expect(taking).toHaveAccessibleDescription(
+      'None match your other filters. Remove a filter to see more.',
+    );
+    taking.focus();
+    expect(taking).toHaveFocus();
+    const hosted = screen.getByRole('checkbox', { name: 'Has had undergrads before (3)' });
+    expect(hosted).toBeEnabled();
+    expect(hosted).not.toHaveAttribute('aria-disabled');
+    expect(hosted).not.toHaveAccessibleDescription();
+  });
+
+  // A dim that only a class name proves is a dim nobody measured, so the control's own
+  // classes are compiled through the real Tailwind pipeline and the resolved opacity read.
+  it("dims an unavailable option's own control while its label keeps the muted token (#6203)", async () => {
+    renderFilters({
+      variant: 'sidebar',
+      selectedDepartment: 'Computer Science',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    const label = taking.closest('label');
+    const labelStylesheet = await compileStylesheet(
+      candidatesIn(`<span class="${label?.className}"></span>`),
+    );
+    const labelClassNames = (label?.className ?? '').split(' ').filter(Boolean);
+    const labelOpacity: string[] = [];
+    labelStylesheet.walkDecls('opacity', (declaration) => {
+      const selector = (declaration.parent as { selector?: string })?.selector || '';
+      if (labelClassNames.some((name) => selector.includes(`.${name}`))) {
+        labelOpacity.push(declaration.value);
+      }
+    });
+    expect(labelOpacity).toEqual([]);
+    const mutedColors: string[] = [];
+    labelStylesheet.walkRules((rule) => {
+      if (rule.selector !== '.text-muted') return;
+      rule.walkDecls('color', (declaration) => {
+        mutedColors.push(declaration.value);
+      });
+    });
+    expect(mutedColors).toEqual(['var(--yr-muted)']);
+
+    const stylesheet = await compileStylesheet(candidatesIn(taking.outerHTML));
+    const dimmed: number[] = [];
+    stylesheet.walkDecls('opacity', (declaration) => {
+      const selector = (declaration.parent as { selector?: string })?.selector || '';
+      if (selector.includes('aria-disabled')) dimmed.push(parsePercentOrNumber(declaration.value));
+    });
+    expect(dimmed).toEqual([0.6]);
+  });
+
+  it('ignores a press on an unavailable option and reports nothing', () => {
+    const { props } = renderFilters({
+      variant: 'sidebar',
+      selectedDepartment: 'Computer Science',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    fireEvent.click(taking);
+    expect(taking).not.toBeChecked();
+    expect(props.onWelcomesUndergradsChange).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: 'Why Taking undergrads now is unavailable' }),
+    ).toBeTruthy();
+  });
+
+  it('moves desktop focus to the first select when every Undergrads option is disabled', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 0 },
+        mentorsUndergrads: { true: 0 },
+        entityType: { LAB: 12, CORE_FACILITY: 4 },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+    await waitFor(() => expect(within(dialog).getByLabelText('Filter by type')).toHaveFocus());
+  });
+
   it('moves and contains mobile focus, then restores the trigger on Escape and backdrop close', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as typeof window.matchMedia;
     renderFilters({ selectedSchool: 'Yale College' });
@@ -47,7 +392,7 @@ describe('ResearchFilterDisclosure', () => {
     const close = within(dialog).getByRole('button', { name: 'Close filters' });
     await waitFor(() => expect(close).toHaveFocus());
 
-    const last = within(dialog).getByRole('button', { name: 'Clear all filters' });
+    const last = within(dialog).getByRole('button', { name: 'Show results' });
     last.focus();
     fireEvent.keyDown(dialog, { key: 'Tab' });
     expect(close).toHaveFocus();
@@ -112,6 +457,33 @@ describe('ResearchFilterDisclosure', () => {
     },
   );
 
+  it('closes the sheet from a button that names how many results the filters leave', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as typeof window.matchMedia;
+    const { rerender, props } = renderFilters({ resultCount: 1234 });
+
+    const trigger = screen.getByRole('button', { name: 'Filters' });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+    expect(within(dialog).getByRole('button', { name: 'Show 1,234 results' })).toBeTruthy();
+
+    rerender(<ResearchFilterDisclosure {...props} resultCount={1234} resultCountPending />);
+    expect(within(dialog).getByRole('button', { name: 'Updating results…' })).toBeTruthy();
+
+    const onShowResults = vi.fn();
+    rerender(<ResearchFilterDisclosure {...props} resultCount={1} onShowResults={onShowResults} />);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Show 1 result' }));
+    expect(screen.queryByRole('dialog', { name: 'Research filters' })).toBeNull();
+    expect(onShowResults).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it('offers one clear-all control in the sidebar, not one beside the fields and another beside the chips', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({ variant: 'sidebar', selectedSchool: 'Yale College' });
+
+    expect(screen.getAllByRole('button', { name: /^Clear all/ })).toHaveLength(1);
+  });
+
   it('renders the sidebar variant as an always-open static panel without a trigger', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     renderFilters({ variant: 'sidebar', selectedSchool: 'Yale College' });
@@ -120,7 +492,69 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.getByRole('heading', { name: 'Research filters', level: 2 })).toBeTruthy();
     expect(screen.getByLabelText('Filter by school')).toBeTruthy();
     expect(screen.getByLabelText('Filter by department')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Remove School: Yale College' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Remove School: Yale College' })).toBeNull();
+    expect(screen.getByLabelText('Filter by school')).toHaveValue('Yale College');
+  });
+
+  it('clears every filter from the sidebar header instead of a row of its own', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({ variant: 'sidebar', selectedSchool: 'Yale College' });
+
+    const header = screen.getByRole('heading', {
+      name: 'Research filters',
+      level: 2,
+    }).parentElement;
+    const clearAll = screen.getByRole('button', { name: 'Clear all filters' });
+    expect(header).toContainElement(clearAll);
+    fireEvent.click(clearAll);
+    expect(props.onClearAll).toHaveBeenCalled();
+  });
+
+  it('keeps focus on the sidebar heading after clearing every filter from its header', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props, rerender } = renderFilters({
+      variant: 'sidebar',
+      selectedSchool: 'Yale College',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
+    rerender(<ResearchFilterDisclosure {...props} selectedSchool="" />);
+
+    expect(screen.queryByRole('button', { name: 'Clear all filters' })).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Research filters', level: 2 })).toHaveFocus(),
+    );
+  });
+
+  it('moves focus to the Filters trigger after clearing every filter beside the chips', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props, rerender } = renderFilters({ selectedSchool: 'Yale College' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
+    rerender(<ResearchFilterDisclosure {...props} selectedSchool="" />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Filters' })).toHaveFocus());
+  });
+
+  it('keeps focus inside the open filter panel after clearing every filter there', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props, rerender } = renderFilters({ selectedSchool: 'Yale College', isOpen: true });
+    const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear all filters' }));
+    rerender(<ResearchFilterDisclosure {...props} selectedSchool="" isOpen />);
+
+    await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
+  });
+
+  it('keeps the active-filter chips beside the collapsed popover trigger', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({ selectedWelcomesUndergrads: true });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Remove Undergrads: Taking undergrads now' }),
+    );
+    expect(props.onWelcomesUndergradsChange).toHaveBeenCalledWith(false);
   });
 
   // The current-availability, compensation and eligible-student-levels filter
@@ -204,8 +638,8 @@ describe('ResearchFilterDisclosure', () => {
     const typeSelect = screen.getByLabelText('Filter by type') as HTMLSelectElement;
     expect(Array.from(typeSelect.options).map((option) => option.textContent)).toEqual([
       'All types',
-      'Core Facility (50)',
-      'Faculty Research (2149)',
+      'Core facility (50)',
+      'Faculty research (2149)',
       'Lab (1322)',
     ]);
 
@@ -234,14 +668,55 @@ describe('ResearchFilterDisclosure', () => {
     const typeSelect = screen.getByLabelText('Filter by type') as HTMLSelectElement;
     expect(Array.from(typeSelect.options).map((option) => option.textContent)).toEqual([
       'All types',
-      'Faculty Project (2)',
-      'Faculty Research (2149)',
+      'Faculty project (2)',
+      'Faculty research (2149)',
     ]);
     expect(Array.from(typeSelect.options).map((option) => option.value)).toEqual([
       '',
       'FACULTY_PROJECT',
       'FACULTY_RESEARCH_AREA',
     ]);
+  });
+
+  it('offers Creative practice beside Faculty research with the count it returns (#5141)', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({
+      facetDistribution: {
+        entityType: { FACULTY_RESEARCH_AREA: 2133, CREATIVE_PRACTICE: 16, LAB: 1322 },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const typeSelect = screen.getByLabelText('Filter by type') as HTMLSelectElement;
+    expect(Array.from(typeSelect.options).map((option) => option.textContent)).toEqual([
+      'All types',
+      'Creative practice (16)',
+      'Faculty research (2133)',
+      'Lab (1322)',
+    ]);
+
+    fireEvent.change(typeSelect, { target: { value: 'CREATIVE_PRACTICE' } });
+    expect(props.onEntityTypeChange).toHaveBeenCalledWith('CREATIVE_PRACTICE');
+  });
+
+  it('hides Creative practice when no result would match it, as it hides every empty type', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({
+      facetDistribution: { entityType: { FACULTY_RESEARCH_AREA: 40, CREATIVE_PRACTICE: 0 } },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const typeSelect = screen.getByLabelText('Filter by type') as HTMLSelectElement;
+    expect(Array.from(typeSelect.options).map((option) => option.value)).toEqual([
+      '',
+      'FACULTY_RESEARCH_AREA',
+    ]);
+  });
+
+  it('names a selected Creative practice filter on its chip', () => {
+    renderFilters({ facetDistribution: {}, selectedEntityType: 'CREATIVE_PRACTICE' });
+
+    expect(screen.getByRole('button', { name: 'Remove Type: Creative practice' })).toBeTruthy();
   });
 
   it('keeps a selected entityType clearable through a labelled chip when its facet is gone', () => {
@@ -251,16 +726,143 @@ describe('ResearchFilterDisclosure', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
-    const chip = screen.getByRole('button', { name: 'Remove Type: Core Facility' });
-    expect(chip.textContent).toContain('Type: Core Facility');
+    const chip = screen.getByRole('button', { name: 'Remove Type: Core facility' });
+    expect(chip.textContent).toBe('Core facility');
     fireEvent.click(chip);
     expect(props.onEntityTypeChange).toHaveBeenCalledWith('');
   });
 
-  it('hides single and non-positive facets unless selected', () => {
+  it('shows only the value on a chip beside the trigger so it fits a phone strip', () => {
+    renderFilters({ selectedHostsUndergrads: true });
+
+    const chip = screen.getByRole('button', {
+      name: 'Remove Undergrads: Has had undergrads before',
+    });
+    expect(chip.textContent).toBe('Has had undergrads before');
+  });
+
+  it('applies a department picked from the open list at once', () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+
+    fireEvent.change(screen.getByLabelText('Filter by department'), {
+      target: { value: 'Neuroscience' },
+    });
+
+    expect(props.onDepartmentChange).toHaveBeenCalledWith('Neuroscience');
+  });
+
+  it('waits for Enter before applying a department reached by typing, and keeps focus', async () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const department = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+    department.focus();
+
+    fireEvent.keyDown(department, { key: 'n' });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.keyDown(department, { key: 'ArrowUp' });
+    fireEvent.change(department, { target: { value: 'Computer Science' } });
+
+    expect(props.onDepartmentChange).not.toHaveBeenCalled();
+    expect(department.value).toBe('Computer Science');
+
+    fireEvent.keyDown(department, { key: 'Enter' });
+
+    expect(props.onDepartmentChange).toHaveBeenCalledTimes(1);
+    expect(props.onDepartmentChange).toHaveBeenCalledWith('Computer Science');
+    expect(document.activeElement).toBe(department);
+  });
+
+  it('holds a typed letter whose keypress arrives after the keydown task has finished', async () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const department = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+
+    fireEvent.keyDown(department, { key: 'n' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.keyPress(department, { key: 'n', code: 'KeyN', charCode: 110 });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+
+    expect(props.onDepartmentChange).not.toHaveBeenCalled();
+    expect(department.value).toBe('Neuroscience');
+  });
+
+  it('puts focus back on the department select when applying it swaps in a new filter bar', async () => {
+    const SwappingFilters = () => {
+      const [department, setDepartment] = useState('');
+      return (
+        <ResearchFilterDisclosure
+          key={department ? 'search-view' : 'browse-view'}
+          variant="sidebar"
+          facetDistribution={{ departments: { 'Computer Science': 5, Neuroscience: 3 } }}
+          selectedEntityType=""
+          selectedSchool=""
+          selectedDepartment={department}
+          isApplying={false}
+          hasFacetError={false}
+          departmentLabel={(value) => value}
+          onEntityTypeChange={vi.fn()}
+          onSchoolChange={vi.fn()}
+          onDepartmentChange={setDepartment}
+          onClearAll={vi.fn()}
+        />
+      );
+    };
+    render(<SwappingFilters />);
+    const browseSelect = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+    browseSelect.focus();
+
+    fireEvent.keyDown(browseSelect, { key: 'n' });
+    fireEvent.change(browseSelect, { target: { value: 'Neuroscience' } });
+    fireEvent.keyDown(browseSelect, { key: 'Enter' });
+
+    const searchSelect = screen.getByLabelText('Filter by department');
+    expect(searchSelect).not.toBe(browseSelect);
+    expect(searchSelect).toHaveValue('Neuroscience');
+    await waitFor(() => expect(searchSelect).toHaveFocus());
+  });
+
+  it('shows the applied value when the list opens over a typed choice, so picking that choice applies it', async () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const department = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+
+    fireEvent.keyDown(department, { key: 'n' });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    fireEvent.mouseDown(department);
+    expect(department.value).toBe('');
+
+    fireEvent.keyDown(department, { key: 'n' });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    fireEvent.keyDown(department, { key: 'ArrowDown', altKey: true });
+    expect(department.value).toBe('');
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    expect(props.onDepartmentChange).toHaveBeenCalledTimes(1);
+    expect(props.onDepartmentChange).toHaveBeenCalledWith('Neuroscience');
+  });
+
+  it('keeps the applied value when the student tabs away from a typed choice or presses Escape', () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const school = screen.getByLabelText('Filter by school') as HTMLSelectElement;
+
+    fireEvent.keyDown(school, { key: 'y' });
+    fireEvent.change(school, { target: { value: 'Yale College' } });
+    fireEvent.blur(school);
+    expect(school.value).toBe('');
+    expect(props.onSchoolChange).not.toHaveBeenCalled();
+
+    const type = screen.getByLabelText('Filter by type') as HTMLSelectElement;
+    fireEvent.keyDown(type, { key: 'l' });
+    fireEvent.change(type, { target: { value: 'LAB' } });
+    fireEvent.keyDown(type, { key: 'Escape' });
+    fireEvent.blur(type);
+    expect(type.value).toBe('');
+    expect(props.onEntityTypeChange).not.toHaveBeenCalled();
+  });
+
+  it('hides non-positive facets unless selected', () => {
     renderFilters({
       facetDistribution: {
-        school: { 'Yale College': 1, Unknown: 0 },
+        school: { Unknown: 0 },
         departments: { Neuroscience: -1 },
       },
     });
@@ -269,5 +871,27 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.queryByLabelText('Filter by school')).toBeNull();
     expect(screen.queryByLabelText('Filter by department')).toBeNull();
     expect(screen.getByText('No additional filters can narrow these results.')).toBeTruthy();
+  });
+
+  it('shows a facet with one value, so a filtered list still says which type and department it holds', () => {
+    renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        entityType: { FACULTY_RESEARCH_AREA: 24 },
+        departments: { Music: 23 },
+      },
+      selectedSchool: 'School of Music',
+    });
+
+    expect(
+      within(screen.getByLabelText('Filter by type'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['All types', 'Faculty research (24)']);
+    expect(
+      within(screen.getByLabelText('Filter by department'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['All departments', 'Music (23)']);
   });
 });

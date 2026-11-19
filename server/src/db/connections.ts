@@ -2,6 +2,19 @@
  * MongoDB connection management and model initialization.
  */
 import mongoose from 'mongoose';
+import {
+  acquireIntendedDevApplyLease,
+  devWriteLeaseSwitchedOff,
+  recordDevApplyIntent,
+  labelSweepRunnerOwner,
+  releaseHeldDevWriteLeases,
+  markDevWriteLeaseHeldForChildProcesses,
+} from './devWriteLease';
+import { assertDevelopmentWritesGuarded, releaseDevWriteLeasesWhenClosed } from './devWriteGuard';
+import { watchMongoClientProgress } from './devWriteProgress';
+import { enableScriptDiagnosticReportOnSignal } from './scriptDiagnosticReport';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertProcessOutputFlagResolvable } from '../utils/reportOutputPath';
 
 // `bufferTimeoutMS` is a Mongoose connection option the driver's own type does not
 // declare, so the shape is spelled out here rather than inferred.
@@ -55,6 +68,17 @@ export const mongoOptions: MongoConnectOptions = {
   minPoolSize: 1,
 };
 
+export const SCRIPT_SOCKET_TIMEOUT_MS = 10 * 60_000;
+// A mitigation, not a measured cause (#5945): an in-memory reproduction never needed more than
+// 3 connections and recovered from every flap at a pool of 10. The head-room and the bounded
+// checkout make a checkout that cannot be served fail loudly instead of waiting forever.
+export const SCRIPT_MAX_POOL_SIZE = 40;
+export const SCRIPT_POOL_WAIT_TIMEOUT_MS = 2 * 60_000;
+// The documented override for the few scripts whose single operation is a whole-
+// collection index build, rename or $merge: those can legitimately outlast the
+// ceiling, so they opt back into no socket timeout by passing these options.
+export const WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS = { socketTimeoutMS: 0 } as const;
+
 export type ScriptMongoConnectOptions = Omit<
   Partial<MongoConnectOptions>,
   'autoIndex' | 'autoCreate'
@@ -66,31 +90,103 @@ export function scriptMongoConnectOptions(
   return {
     ...mongoOptions,
     // A request-sized socket timeout suits the API, but an operator scan or a
-    // materialize can wait longer than a minute for one batch, so entry points
-    // keep the driver's no-timeout default. The serving process's fail-fast
-    // selection and buffer bounds are wrong here for the same reason: a sweep that
-    // starts while a replica set is electing should wait for it, not abort.
-    socketTimeoutMS: 0,
+    // materialize can wait longer than a minute for one batch, so scripts get a
+    // long ceiling rather than none: with no ceiling, an operation on a socket the
+    // cluster dropped waited forever while the write lease kept renewing (#5880).
+    // The serving process's fail-fast selection and buffer bounds are wrong here
+    // for the same reason: a sweep that starts while a replica set is electing
+    // should wait for it, not abort.
+    socketTimeoutMS: SCRIPT_SOCKET_TIMEOUT_MS,
+    // Development, Beta and Production share one free-tier cluster with a
+    // connection cap, and many script processes run at once (#5880).
+    maxPoolSize: SCRIPT_MAX_POOL_SIZE,
+    waitQueueTimeoutMS: SCRIPT_POOL_WAIT_TIMEOUT_MS,
     serverSelectionTimeoutMS: 30000,
     bufferTimeoutMS: 30000,
+    // A Development write-lease holder counts its completed commands as progress (#5880), which
+    // the driver reports only to a client created with command monitoring on.
+    monitorCommands: true,
     ...extra,
     autoIndex: false,
     autoCreate: false,
   };
 }
 
-export function connectScriptMongo(
+export async function connectScriptMongo(
   url: string,
   extra?: ScriptMongoConnectOptions,
 ): Promise<typeof mongoose> {
-  return mongoose.connect(url, scriptMongoConnectOptions(extra));
+  assertProcessOutputFlagResolvable();
+  enableScriptDiagnosticReportOnSignal();
+  const connected = await mongoose.connect(url, scriptMongoConnectOptions(extra));
+  watchMongoClientProgress(connected.connection.getClient());
+  await installDevelopmentWriteGuardsOrClose(connected.connection);
+  return connected;
 }
 
-export function createScriptMongoConnection(
+export async function createScriptMongoConnection(
   url: string,
   extra?: ScriptMongoConnectOptions,
 ): Promise<mongoose.Connection> {
-  return mongoose.createConnection(url, scriptMongoConnectOptions(extra)).asPromise();
+  assertProcessOutputFlagResolvable();
+  enableScriptDiagnosticReportOnSignal();
+  const connection = await mongoose
+    .createConnection(url, scriptMongoConnectOptions(extra))
+    .asPromise();
+  watchMongoClientProgress(connection.getClient());
+  await installDevelopmentWriteGuardsOrClose(connection);
+  return connection;
+}
+
+export const devWriteLeaseDescriptor = (connection: mongoose.Connection) =>
+  connection.db
+    ? { db: connection.db, databaseName: connection.db.databaseName, host: connection.host }
+    : undefined;
+
+/**
+ * For an orchestrator that writes through child processes and connects only briefly itself: holds
+ * the Development write lease on a dedicated connection for the whole run, so its children join it
+ * rather than racing another session's apply (#5756). Returns the release to call when the run ends.
+ */
+export async function holdDevApplyLeaseForRun(
+  scriptName: string,
+  url: string | undefined = process.env.MONGODBURL,
+): Promise<() => Promise<void>> {
+  if (!url || devWriteLeaseSwitchedOff()) return async () => undefined;
+  labelSweepRunnerOwner(scriptName);
+  recordDevApplyIntent(scriptName);
+  markDevWriteLeaseHeldForChildProcesses();
+  const connection = await createScriptMongoConnection(url);
+  return async () => {
+    await connection.close();
+  };
+}
+
+/**
+ * Refuses a script's Development connection whose models lack the model write guard (#5871), then
+ * takes the Development write lease for a script whose apply guard recorded an apply intent (#5756)
+ * and releases it before the connection closes. Without a recorded intent it takes nothing, which is
+ * every request-path connection.
+ */
+async function installDevelopmentWriteGuards(connection: mongoose.Connection): Promise<void> {
+  assertDevelopmentWritesGuarded(connection);
+  const descriptor = devWriteLeaseDescriptor(connection);
+  if (!descriptor) return;
+  const lease = await acquireIntendedDevApplyLease(descriptor);
+  if (lease) releaseDevWriteLeasesWhenClosed(connection);
+}
+
+// A refused guard must not leave its connection open: a script whose entry point sets
+// process.exitCode instead of calling process.exit would otherwise never exit (#6286).
+async function installDevelopmentWriteGuardsOrClose(
+  connection: mongoose.Connection,
+): Promise<void> {
+  try {
+    await installDevelopmentWriteGuards(connection);
+  } catch (error) {
+    await connection.close().catch(() => undefined);
+    throw error;
+  }
 }
 
 // Serialise reconnect attempts: if one is already in flight, later callers
@@ -159,6 +255,7 @@ export function triggerReconnect(): Promise<void> {
 
       await mongoose.disconnect();
       await mongoose.connect(primaryUrl, activeConnectOptions);
+      watchMongoClientProgress(mongoose.connection.getClient());
       console.log('MongoDB: reconnected');
     } catch (err) {
       console.error('MongoDB: reconnect failed:', (err as Error)?.message ?? err);
@@ -243,6 +340,81 @@ export function startMongoKeepAlive(intervalMs = 120000): void {
 export function stopMongoKeepAlive(): void {
   if (keepAliveTimer) clearInterval(keepAliveTimer);
   keepAliveTimer = null;
+}
+
+export const SCRIPT_EXIT_FAILED = 1;
+// Distinct from SCRIPT_EXIT_FAILED so cron and sessions can tell a script whose work completed but
+// whose process would not exit from one that failed (#5945).
+export const SCRIPT_EXIT_HELD_OPEN = 3;
+export const SCRIPT_EXIT_WATCHDOG_MS = 30_000;
+export const SCRIPT_HELD_OPEN_MESSAGE = 'work completed; process held the event loop open';
+
+export interface RunScriptMainOptions {
+  exitWatchdogMs?: number;
+  logFailure?: (error: unknown) => void;
+}
+
+const logScriptFailure = (error: unknown) => console.error(sanitizeLogValue(error));
+
+export function describeActiveResources(
+  resources: readonly string[] = process.getActiveResourcesInfo(),
+): string {
+  const counts = new Map<string, number>();
+  for (const resource of resources) counts.set(resource, (counts.get(resource) ?? 0) + 1);
+  if (counts.size === 0) return 'none reported';
+  return [...counts]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([resource, count]) => `${resource} x${count}`)
+    .join(', ');
+}
+
+// Leases are released before any connection closes, because the release is a write on one of them.
+export async function closeScriptConnections(): Promise<void> {
+  stopMongoKeepAlive();
+  await releaseHeldDevWriteLeases().catch(() => undefined);
+  await Promise.allSettled(mongoose.connections.map((connection) => connection.close()));
+}
+
+function exitCodeAlreadySet(): number {
+  const code = Number(process.exitCode ?? 0);
+  return Number.isInteger(code) ? code : SCRIPT_EXIT_FAILED;
+}
+
+function armExitWatchdog(timeoutMs: number): void {
+  const watchdog = setTimeout(() => {
+    console.error(`${SCRIPT_HELD_OPEN_MESSAGE}: ${describeActiveResources()}`);
+    process.exit(exitCodeAlreadySet() || SCRIPT_EXIT_HELD_OPEN);
+  }, timeoutMs);
+  watchdog.unref();
+}
+
+async function settleWithin(work: Promise<unknown>, timeoutMs: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+    timer.unref();
+  });
+  try {
+    await Promise.race([work, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function runScriptMain(
+  main: () => Promise<unknown>,
+  options: RunScriptMainOptions = {},
+): Promise<void> {
+  const watchdogMs = options.exitWatchdogMs ?? SCRIPT_EXIT_WATCHDOG_MS;
+  try {
+    await main();
+  } catch (error) {
+    (options.logFailure ?? logScriptFailure)(error);
+    await settleWithin(closeScriptConnections(), watchdogMs);
+    process.exit(SCRIPT_EXIT_FAILED);
+  }
+  armExitWatchdog(watchdogMs);
+  await closeScriptConnections();
 }
 
 export interface MongoIndexDrift {
@@ -440,6 +612,13 @@ export async function logMissingMongoIndexes(
 
 let activeConnectOptions: MongoConnectOptions = mongoOptions;
 
+// Scripts only, because the serving process's outbound calls are not page fetches. Loaded lazily
+// because the hooks pull in models, which this layer must not import.
+async function installScriptFetchHooks(): Promise<void> {
+  const { installScraperFetchHooks } = await import('../scrapers/utils/scraperFetchHooks');
+  installScraperFetchHooks();
+}
+
 // Defaults to the script budget because nearly every caller is an operator entry
 // point; the serving process opts into mongoOptions explicitly. triggerReconnect
 // reuses whatever budget connected, so a reconnect never swaps one for the other.
@@ -458,8 +637,15 @@ export async function initializeConnections(
   if (!url) {
     throw new Error('MONGODBURL is required');
   }
+  if (connectOptions !== mongoOptions) assertProcessOutputFlagResolvable();
   activeConnectOptions = connectOptions;
+  if (connectOptions !== mongoOptions) {
+    enableScriptDiagnosticReportOnSignal();
+    await installScriptFetchHooks();
+  }
   await mongoose.connect(url, connectOptions);
+  watchMongoClientProgress(mongoose.connection.getClient());
+  await installDevelopmentWriteGuardsOrClose(mongoose.connection);
   console.log(`Connected to database 🚀`);
   // Deliberately non-fatal. An unbuilt index is a performance problem, and
   // refusing to boot on one would turn a slow query into an outage on the very

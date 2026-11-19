@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   hasAdminAuthorityForUser: vi.fn(),
   searchResearchGroupsViaMeili: vi.fn(),
   resolveArchivedResearchEntityCanonicalSlug: vi.fn(),
+  resolveRenamedResearchEntitySlug: vi.fn(),
 }));
 
 vi.mock('../../services/researchGroupService', () => ({
@@ -16,6 +17,7 @@ vi.mock('../../services/researchGroupService', () => ({
   },
   searchResearchGroupsViaMeili: mocks.searchResearchGroupsViaMeili,
   resolveArchivedResearchEntityCanonicalSlug: mocks.resolveArchivedResearchEntityCanonicalSlug,
+  resolveRenamedResearchEntitySlug: mocks.resolveRenamedResearchEntitySlug,
 }));
 
 vi.mock('../../services/adminGrantService', () => ({
@@ -30,6 +32,7 @@ describe('researchGroupController', () => {
     vi.clearAllMocks();
     mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
     mocks.resolveArchivedResearchEntityCanonicalSlug.mockResolvedValue(null);
+    mocks.resolveRenamedResearchEntitySlug.mockResolvedValue(null);
   });
 
   it('rethrows public research detail failures for the global error handler', async () => {
@@ -74,13 +77,27 @@ describe('researchGroupController', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
+  it('serves the same capped detail whatever `?member=` names', async () => {
+    mocks.getResearchGroupDetail.mockResolvedValue(null);
+    const req = { params: { slug: 'example-lab' }, query: { member: 'Example Member' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchGroupBySlug(req, res);
+
+    expect(mocks.getResearchGroupDetail.mock.calls[0]).toStrictEqual([
+      'example-lab',
+      { includeWithheldForOperator: false },
+    ]);
+  });
+
   it('lets an admin preview a research detail withheld from students', async () => {
     mocks.hasAdminAuthorityForUser.mockResolvedValue(true);
     const detail = {
       researchEntity: { slug: 'example-lab' },
       operatorPreview: {
         studentVisibilityTier: 'operator_review',
-        studentVisibilityReasons: [],
+        studentVisibilityBlockingReasons: [],
+        studentVisibilitySignalReasons: [],
         withheldBy: ['visibility_tier'],
       },
     };
@@ -99,6 +116,16 @@ describe('researchGroupController', () => {
     });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(detail);
+  });
+
+  it('redirects a mixed-case slug to its lower-case canonical form before service work', async () => {
+    const req = { params: { slug: 'Example-LAB' }, baseUrl: '/api/research' } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), redirect: vi.fn() } as any;
+
+    await getResearchGroupBySlug(req, res);
+
+    expect(mocks.getResearchGroupDetail).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(302, '/api/research/example-lab');
   });
 
   it('rejects malformed public research detail slugs before service work', async () => {
@@ -218,6 +245,25 @@ describe('researchGroupController', () => {
       await searchResearchGroups({ body: { q: '', page, pageSize: 24, filters: {} } } as any, res);
       const payload = res.json.mock.calls[0][0];
       expect('facetDistribution' in payload).toBe(shouldInclude);
+    }
+  });
+
+  it('sends the few close matches notice on every page of a search', async () => {
+    for (const page of [1, 2]) {
+      mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+        researchEntities: [],
+        estimatedTotalHits: 40,
+        page,
+        pageSize: 10,
+        facetDistribution: {},
+        fewCloseMatches: { closeMatchCount: 2 },
+      });
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+      await searchResearchGroups(
+        { body: { q: 'synthetic topic', page, pageSize: 10, filters: {} } } as any,
+        res,
+      );
+      expect(res.json.mock.calls[0][0].fewCloseMatches).toEqual({ closeMatchCount: 2 });
     }
   });
 
@@ -449,6 +495,10 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        rewriteAcronym: true,
+        extractSentenceTopic: true,
+        resolveFilterValues: true,
+        rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
     );
   });
@@ -490,6 +540,10 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        rewriteAcronym: true,
+        extractSentenceTopic: true,
+        resolveFilterValues: true,
+        rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
     );
   });
@@ -513,6 +567,28 @@ describe('researchGroupController', () => {
       24,
       {},
       expect.objectContaining({ correctSpelling: false }),
+    );
+  });
+
+  it('keeps a typed acronym literal when the student asks to search the acronym itself', async () => {
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 1,
+      pageSize: 24,
+    });
+    const req = { body: { q: 'NLP', rewriteAcronym: false } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await searchResearchGroups(req, res);
+
+    expect(mocks.searchResearchGroupsViaMeili).toHaveBeenCalledWith(
+      'NLP',
+      expect.any(Object),
+      1,
+      24,
+      {},
+      expect.objectContaining({ rewriteAcronym: false, correctSpelling: true }),
     );
   });
 
@@ -553,6 +629,10 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        rewriteAcronym: true,
+        extractSentenceTopic: true,
+        resolveFilterValues: true,
+        rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
     );
   });

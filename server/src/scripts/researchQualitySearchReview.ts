@@ -21,6 +21,7 @@ import {
   type ResearchQualitySearchFacts,
 } from './researchQualitySearchReviewCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -126,7 +127,7 @@ export function writeResearchQualitySearchReviewOutput(result: unknown, output?:
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
 }
 
 export function buildResearchQualitySearchReviewOutput<T extends object>(

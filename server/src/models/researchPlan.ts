@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import {
   canonicalSchemaVersionField,
   defineCanonicalSchemaVersion,
@@ -15,6 +16,8 @@ export const researchPlanStages = [
   'PREPARING',
   'CONTACTED',
   'APPLIED',
+  'AWARDED',
+  'NOT_SELECTED',
   'CLOSED',
 ] as const;
 

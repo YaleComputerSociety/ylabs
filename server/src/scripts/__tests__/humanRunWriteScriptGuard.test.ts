@@ -19,12 +19,32 @@ const SWEEP_RUNNER = 'runScraperSweep.ts';
  * operator. Anything else that writes belongs in a lane or a sweep stage (#3524).
  */
 const OPERATOR_TOOLS: Record<string, string> = {
+  'host-pause:seed-from-notice':
+    "seeds one host's shared pause from a refusal notice an operator read, once, with the stated date parsed by the live path and no typed-in date (#6168)",
   'research-entity:refuse-field-value': 'records a per-row refusal, the layer-3 writer',
+  'researcher:refuse-field-value':
+    'records an operator refusal of one value on one person record, the person-record counterpart of the layer-3 writer (#5641)',
+  'role-assignments:detach-edge':
+    'detaches one role edge an operator judged wrong after reading the pages, as a DISPUTED verdict no lane re-attaches (#5614)',
+  'researchers:unfold-shell':
+    'reverses one researcher fold an operator judged to have joined two different people, with the pre-image in an audit record (#6018)',
+  'observations:supersede':
+    'supersedes at most 25 named observations an operator read and judged wrong for one row, refusing owner-decided values, with an audit record per observation (#6018)',
+  'role-assignments:restore-detached-edge':
+    'restores one role edge a repair stage or an agent detached as DISPUTED, the audited inverse of detach-edge; clearing a DISPUTED verdict is a review judgement on one edge that no lane may make (#5968)',
+  'observations:retire-ids':
+    'retires a named set of observations from one scrape run an operator judged wrong, refusing owner-decided values and restoring predecessors only above a commit floor, with an audit record per batch (#6029)',
+  'observations:rollback-scrape-run':
+    'reverses one unmaterialized scrape run an operator judged harmful, restoring only the observations it superseded (#5735)',
+  'researchers:record-distinct-people':
+    'records an operator judgement that two researcher records are different people (#5592)',
   'research-entity:apply-page-read-verdict':
     'applies a verdict an operator reached by reading a page',
   'research-entity:adopt-led-group-site':
     "records an operator's verdict that one row's lead runs a named group site, as observations without a lock (#5040)",
   'research-entity:record-departure': 'records a departure an operator was told about',
+  'student-visibility:override':
+    "records an operator's visibility verdict on one row, an audited per-row judgement rather than a lock or an archive (#5618)",
   'research-entity:withdraw-non-research-home-row':
     'withdraws one row an operator judged not research',
   'research-entity:release-field-locks': 'releases locks one reviewed row at a time',
@@ -42,29 +62,69 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'attaches hand judgements read off a frozen benchmark page, an operator judgement per row',
   'observations:purge-unread-directory-contact':
     'deletes stored personal contact data, which AGENTS.md reserves for an operator rather than a lane or a sweep stage (#4161)',
+  'accounts:delete-account-data':
+    "deletes one person's account data on their own request, an operator act for someone who cannot sign in to do it themselves (#4156)",
   'accounts:purge-retired-login-profile-fields':
     'clears stored personal data from login accounts, an operator decision rather than a lane or a promotion side effect (#4162)',
   'research-plans:expire-legacy-archived':
     'expires archived research plans that still hold a student’s private text, an operator decision about stored personal data per environment (#4163)',
+  'observations:retire-glued-profile-text':
+    'retires the observations the profile lane read from glued block text before #5729, after re-reading each cited page; user email and title are value-keyed, so a fixed re-read adds the right value beside the glued one instead of superseding it, and nothing ever re-emits the glued key (#5720)',
+  'observations:retire-orphaned-lane-configs':
+    'retires the live observations of an operator-reviewed list of lane configs that exist on no git ref; the producing config is gone, so no lane run can supersede them, and the run-time scan of every ref is a check the sweep has no repository to make (#5807)',
+  'observations:retire-rekeyed-person-keys':
+    'a one-time backfill of the person keys a lane re-keyed before it retired them at write time; the lanes now retire a re-keyed key in the run that re-keys it, so no later run re-derives the stored backlog (#5817)',
+  'observations:retire-directory-export-departments':
+    'a one-time backfill for the frozen 2026-05-15 directory CSV export, which never runs again; the resolver now decodes its department codes on every resolve, so the sweep has nothing to re-derive (#5796)',
+  'research-entity:clear-stale-refusal-provenance':
+    'a one-time backfill of the provenance unset research-entity:refuse-field-value now makes in the same write as each refusal, for stamps refusals left before it; it derives every target from the stored refusal records, so no lane or sweep stage re-derives it (#6318)',
   'observations:nonfetching-lane-gone-pages':
     'a one-time backfill for lanes that never run again or read no page, so no lane or sweep stage can re-derive it (#4862)',
+  'directory-removal:record':
+    "records or withdraws one person's directory removal request, an operator judgement about one person that no lane can derive (#4160)",
+  'directory-removal:purge-observations':
+    'deletes the stored observations of people on the removal list, an operator decision about personal data run per environment with owner approval for Beta and Production (#4160)',
+  'directory-removal:reslug':
+    'renames a co-led row whose slug names a removed lead, a one-time operator act on each removal request; a later pass keeps the slug because the materializer refuses renames and the old key reaches the row by id (#4160)',
+  'research-entity:reslug-alt-text-slugs':
+    'renames the roster rows whose slug was minted from photo alt text and keeps the old slug as a redirect, a one-time correction: the lane no longer mints such a key and the materializer refuses renames, so no lane or sweep stage can re-derive it (#5808)',
+  'research-topics:rekey-stripped':
+    'a one-time, owner-decided migration of cached topic readings to the chrome-stripped text key, run once before the materialize that follows the #5577 lane change; a second run is a no-op',
+  'research-topics:rekey-topic-text':
+    'a one-time, owner-decided migration of cached topic readings to the topics-only text key, run before the materialize that follows the #5882 lane change; it holds any copy that would empty or change a row topic list for review, and a rerun plans only the remainder',
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
   'meili:rebuild-research-entities':
     're-embeds the whole index after a settings, embedder, or document-shape change, an infrastructure operation; the sweep stage is the incremental sync (#5023)',
   'research-entity:rematerialize': 're-derives rows on demand through the engine itself',
   'observations:catch-up-materialize': 'drains the materialize backlog through the engine itself',
+  'observations:rematerialize-user-keys':
+    're-resolves an operator-named list of person keys through the engine itself, for a scoped data step (#5706, #5740)',
+  'observations:supersede-replaced-run-emails':
+    'a one-time backfill of the run-scoped email rule appendObservations enforces on every write, for rows stored before it, which only a fresh fetch of every page would otherwise reach (#5705)',
+  'observations:rederive-over-shared-person-websites':
+    're-resolves through the engine itself the people whose evidence asserts an over-shared website, which no lane re-asserts (#5645)',
   'beta:readiness': 'promotion tooling, run as part of the release process',
   'beta:repair-queue': 'promotion tooling, run as part of the release process',
   'beta:clear-student-analytics': 'promotion tooling, run as part of the release process',
   'beta:refresh-from-development': 'promotion tooling, run as part of the release process',
   'development:refresh-from-beta': 'promotion tooling, run as part of the release process',
   'production:promote-beta-copy': 'promotion tooling, run as part of the release process',
+  'research-plans:retarget-merged':
+    'promotion tooling, run by the remote phase in each serving environment after a copy (#5208)',
+  'research-topics:derive':
+    'buys a cached model reading of stored page text, a paid step an operator scopes and confirms (#5296); the engine applies the reading at materialization',
+  'research-topics:import-derivations':
+    'imports topic readings local agents made from the exported lane input, an owner-ordered substitute for the paid derive step that an operator scopes, grades and confirms; it never overwrites a reading, and the engine applies it at materialization through the same quote check',
+  'research-search:seed-rerank-cache':
+    'writes relevance scores an operator produced offline for real past queries, environment-local data seeded per environment and never derivable by a lane (#5448)',
   'model-refactor:validators':
     'applies declared collection validators, a reviewed schema operation',
 };
 
 const INSTRUMENTS_THAT_REFUSE_APPLY: Record<string, string> = {
   'research-entity:audit-departure-lane': 'throws on --apply and points at the materialize lane',
+  'research-entity:measure-retired-remint':
+    'throws on --apply; a materializer dry run that measures whether deleting a retired row would let it be minted again',
   'scripts:audit-plans-the-projection-declines': 'throws on --apply, it has no apply path',
   'role-assignments:lead-edge-retirement-review-queue':
     'throws on --apply, read-only by construction',
@@ -75,7 +135,7 @@ const INSTRUMENTS_THAT_REFUSE_APPLY: Record<string, string> = {
  * stages. Lower it when one is converted or deleted. Raising it is the thing this guard exists
  * to make a visible, reviewed decision.
  */
-const PENDING_CONVERSION_CEILING = 108;
+const PENDING_CONVERSION_CEILING = 107;
 
 function commandsByScriptFile(): Map<string, string[]> {
   const scripts =

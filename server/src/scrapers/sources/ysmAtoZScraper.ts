@@ -28,6 +28,15 @@ import {
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import {
+  memberIdentityEvidenceFor,
+  readRosterMemberIdentityEvidence,
+  type MemberPageFetcher,
+} from '../utils/rosterMemberProfileRead';
+import {
+  ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
+  type RosterMemberIdentityEvidence,
+} from '../utils/rosterMemberIdentityEvidence';
+import {
   labSlugFromMicrositeUrl,
   YSM_LAB_INDEX_HEALTH_ENTITY_KEY,
   YSM_LAB_INDEX_HEALTH_FIELD,
@@ -46,6 +55,7 @@ import {
   netidFromEmail,
   normalizeInitialSpacing,
 } from '../utils/scraperHelpers';
+import { asYaleNetid } from '../../utils/yaleNetid';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 const PAGE_URL = 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/';
@@ -141,7 +151,6 @@ async function fetchPage(useCache: boolean, pageReads: LanePageReads): Promise<s
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrl.toString(), {
       timeout: 30000,
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -172,7 +181,6 @@ async function fetchLabHomepage(
     const res = await retryOnRetryableStatus(() =>
       axios.get(safeUrlText, {
         timeout: 30000,
-        headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
         maxRedirects: 5,
         httpAgent: agents.httpAgent,
         httpsAgent: agents.httpsAgent,
@@ -571,6 +579,7 @@ export function labResearchFacultyToObservations(
   lab: RawLab,
   profile: ResearchFacultyProfile | null,
   sourceUrl: string,
+  identityEvidence?: RosterMemberIdentityEvidence,
 ): ObservationInput[] {
   if (!profile) return [];
   const nameHint = nameHintFromProfileName(profile.name);
@@ -594,7 +603,14 @@ export function labResearchFacultyToObservations(
     { ...base, field: 'profileUrl', value: profile.profileUrl },
   ];
   if (profile.title) observations.push({ ...base, field: 'title', value: profile.title });
-  const userObservations = profileContactWidgetUserObservations(profile, nameHint);
+  if (identityEvidence) {
+    observations.push({
+      ...base,
+      field: ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
+      value: identityEvidence,
+    });
+  }
+  const userObservations = profileContactWidgetUserObservations(profile, nameHint, sourceUrl);
   observations.push(...userObservations.observations);
   if (userObservations.entityKey) {
     const contactBase = {
@@ -623,6 +639,7 @@ export function labResearchFacultyToObservations(
 function profileContactWidgetUserObservations(
   profile: ResearchFacultyProfile,
   nameHint: PiNameHint,
+  readPageUrl: string,
 ): { entityKey?: string; observations: ObservationInput[] } {
   if (!profile.email || !isLikelyPersonSpecificYaleEmail(profile.email, profile.name)) {
     return { observations: [] };
@@ -639,8 +656,9 @@ function profileContactWidgetUserObservations(
     sourceUrl: profile.profileUrl,
     confidenceOverride: 0.9,
   };
+  const statedNetid = asYaleNetid(netid);
   const observations: ObservationInput[] = [
-    { ...base, field: 'netid', value: netid },
+    ...(statedNetid ? [{ ...base, field: 'netid', value: statedNetid }] : []),
     { ...base, field: 'fname', value: nameHint.firstName },
     { ...base, field: 'lname', value: nameHint.lastName },
     { ...base, field: 'email', value: profile.email },
@@ -655,7 +673,11 @@ function profileContactWidgetUserObservations(
     },
     { ...base, field: 'dataSources', value: ['ysm-atoz-index'] },
   ];
-  if (profile.title) observations.push({ ...base, field: 'title', value: profile.title });
+  // The title is read off the lab page's widget, not the profile page, so it cites the lab
+  // page; the identity fields keep the profile page the official-page join reads (#5578).
+  if (profile.title) {
+    observations.push({ ...base, sourceUrl: readPageUrl, field: 'title', value: profile.title });
+  }
   return { entityKey, observations };
 }
 
@@ -691,7 +713,23 @@ export class YsmAtoZScraper implements IScraper {
   readonly name = 'ysm-atoz-index';
   readonly displayName = 'YSM A-to-Z Lab Websites';
 
-  constructor(private readonly probePage?: LanePageProbe) {}
+  constructor(
+    private readonly probePage?: LanePageProbe,
+    private readonly memberPageFetcher: MemberPageFetcher | null = null,
+  ) {}
+
+  private async memberIdentityEvidence(
+    profile: ResearchFacultyProfile | null,
+    ctx: ScraperContext,
+  ): Promise<RosterMemberIdentityEvidence | undefined> {
+    if (!profile || !this.memberPageFetcher) return undefined;
+    const evidence = await readRosterMemberIdentityEvidence([profile], {
+      sourceName: this.name,
+      useCache: ctx.options.useCache,
+      fetchPage: this.memberPageFetcher,
+    });
+    return memberIdentityEvidenceFor(evidence, profile);
+  }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const offsetOption = ctx.options.offset;
@@ -769,7 +807,12 @@ export class YsmAtoZScraper implements IScraper {
           ? extractSoleResearchFacultyProfile(researchFacultyHtml, researchFacultyUrl)
           : null;
         observations.push(
-          ...labResearchFacultyToObservations(lab, researchFacultyProfile, researchFacultyUrl),
+          ...labResearchFacultyToObservations(
+            lab,
+            researchFacultyProfile,
+            researchFacultyUrl,
+            await this.memberIdentityEvidence(researchFacultyProfile, ctx),
+          ),
         );
         piUserId = await findPiUserId(nameHintFromProfileName(researchFacultyProfile?.name || ''), {
           allowUnknownExactName: true,
@@ -779,7 +822,14 @@ export class YsmAtoZScraper implements IScraper {
       }
       if (!piUserId && homepageHtml) {
         const contactWidgetProfile = extractProfileContactWidgetProfile(homepageHtml, lab.url);
-        observations.push(...labResearchFacultyToObservations(lab, contactWidgetProfile, lab.url));
+        observations.push(
+          ...labResearchFacultyToObservations(
+            lab,
+            contactWidgetProfile,
+            lab.url,
+            await this.memberIdentityEvidence(contactWidgetProfile, ctx),
+          ),
+        );
         piUserId = await findPiUserId(nameHintFromProfileName(contactWidgetProfile?.name || ''), {
           allowUnknownExactName: true,
         });

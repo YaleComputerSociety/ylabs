@@ -46,6 +46,7 @@ import {
   type FrozenDescriptionFinding,
   type FrozenDescriptionSummary,
 } from './auditFrozenDescriptionsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -190,7 +191,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         safeOutput,
         JSON.stringify({ generatedAt: new Date().toISOString(), ...result }, null, 2),
       );
@@ -202,7 +203,9 @@ async function main(): Promise<void> {
         '',
       );
       fs.mkdirSync(path.dirname(safeSlugs), { recursive: true });
-      fs.writeFileSync(safeSlugs, result.deliverable.join(','));
+      writeReportFileSync(`${safeSlugs}.json`, result.deliverable.join(','), {
+        stripJsonExtension: true,
+      });
       console.log(`Saved deliverable slugs to ${safeSlugs}`);
     }
   } finally {

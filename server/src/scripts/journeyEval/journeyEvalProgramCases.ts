@@ -21,6 +21,8 @@ import {
   checkServedRowsAreInServedTier,
   checkServedRowsPassTheGate,
   checkWalkCoversReportedTotal,
+  checkStatedFieldQueriesServeTheirRows,
+  checkYearQueriesServeTheStatedYear,
   tallyProgramFieldAttribution,
   tallyServedRowGate,
   withSurfaceId,
@@ -29,6 +31,11 @@ import {
   type ServedRowGateObservation,
 } from './journeyEvalProgramMetrics';
 import { attributeProgramServedFields } from './programServedFieldAttribution';
+import { programSatisfiesCitizenshipOption } from '../../utils/programCitizenshipOptions';
+import {
+  PROGRAM_STATED_ONLY_FACET_FIELDS,
+  programFacetValueNotStated,
+} from '../../utils/programFacetFilters';
 
 export type ProgramFilters = Record<string, string[]>;
 
@@ -79,10 +86,28 @@ export interface ProgramJourneyCase {
   }>;
 }
 
-export const CLIENT_PROGRAM_PAGE_SIZE = 100;
+export const CLIENT_PROGRAM_PAGE_SIZE = 250;
 export const MAX_PROGRAM_SEARCH_PAGE = 1000;
-export const MAX_PROGRAM_SEARCH_PAGE_SIZE = 100;
+export const MAX_PROGRAM_SEARCH_PAGE_SIZE = 250;
 const TEXT_QUERY_TOTAL_PROBE = 'research';
+
+// The facet filters that keep a program stating no value (#5235); region is stated-only by
+// the owner's 2026-11-10 decision (#5533), so its not-stated rows fail the invariant.
+export const NOT_STATED_KEEPING_FILTER_FIELDS = [
+  'yearOfStudy',
+  'termOfAward',
+  'purpose',
+  'globalRegions',
+  'citizenshipStatus',
+].filter((field) => !PROGRAM_STATED_ONLY_FACET_FIELDS.has(field));
+
+export const NOT_STATED_SHARE_FIELDS = [
+  'yearOfStudy',
+  'termOfAward',
+  'purpose',
+  'globalRegions',
+  'citizenshipStatus',
+] as const;
 
 export const CORPUS_DERIVED_FILTER_FIELDS = [
   'programCategory',
@@ -119,6 +144,9 @@ export const rowCarriesFilterValue = (
   value: string,
 ): boolean => {
   const served = row[field];
+  if (field === 'citizenshipStatus') {
+    return Array.isArray(served) && programSatisfiesCitizenshipOption(served, value);
+  }
   return Array.isArray(served) ? served.includes(value) : served === value;
 };
 
@@ -378,6 +406,19 @@ const textQueryTotalIsStable = (surface: ProgramSurface): ProgramJourneyCase => 
   },
 });
 
+export const notStatedShareRates = (
+  surface: ProgramSurface,
+  rows: ReadonlyArray<Record<string, unknown>>,
+): RateResult[] =>
+  NOT_STATED_SHARE_FIELDS.map((field) =>
+    buildRate(
+      `${surface.id}-served-rows-not-stating-${field}`,
+      `Served ${surface.label} rows that state no ${field}`,
+      rows.filter((row) => programFacetValueNotStated(row[field])).length,
+      rows.length,
+    ),
+  );
+
 const filterOptionsAgreeWithFilteredBrowse = (surface: ProgramSurface): ProgramJourneyCase => ({
   id: `${surface.id}-filter-options-agree-with-filtered-browse`,
   title: `Each filter option the ${surface.label} browse offers returns rows that carry it`,
@@ -403,6 +444,9 @@ const filterOptionsAgreeWithFilteredBrowse = (surface: ProgramSurface): ProgramJ
           servedOnFirstPage: rows.length,
           servedCarryingValue: rows.filter((row) => rowCarriesFilterValue(row, field, value))
             .length,
+          servedNotStatingField: rows.filter((row) => programFacetValueNotStated(row[field]))
+            .length,
+          notStatedKeptByFilter: NOT_STATED_KEEPING_FILTER_FIELDS.includes(field),
         });
       }
     }
@@ -413,6 +457,7 @@ const filterOptionsAgreeWithFilteredBrowse = (surface: ProgramSurface): ProgramJ
       );
       subjectTotals.push(typeof result.total === 'number' ? result.total : 0);
     }
+    const coldBrowse = await walkProgramBrowseLikeTheClient(context, surfaceRequest(surface, {}));
     const corpusAfter = await context.readCorpusFingerprint();
 
     const topByField = fields.flatMap((field) =>
@@ -445,6 +490,7 @@ const filterOptionsAgreeWithFilteredBrowse = (surface: ProgramSurface): ProgramJ
           subjectTotals.filter((total) => total > 0).length,
           subjectTotals.length,
         ),
+        ...notStatedShareRates(surface, coldBrowse.rows),
       ],
       notes: {
         optionsChecked: observations.length,
@@ -651,6 +697,167 @@ const STUDENT_YEAR_QUERY_PAIRS = [
   { baselineQuery: 'first-year', variantQuery: 'freshman' },
 ];
 
+const YEAR_WORD_QUERIES = [
+  { query: 'first-year', year: 'First-Year Student' },
+  { query: 'freshman', year: 'First-Year Student' },
+  { query: 'sophomores', year: 'Sophomore' },
+  { query: 'juniors', year: 'Junior' },
+  { query: 'seniors', year: 'Senior' },
+] as const;
+
+const statedYearsOfRow = (row: Record<string, unknown>): string[] =>
+  Array.isArray(row.yearOfStudy)
+    ? row.yearOfStudy.filter((year): year is string => typeof year === 'string')
+    : [];
+
+const yearWordsServeTheStatedYear: ProgramJourneyCase = {
+  id: 'programs-year-words-serve-the-stated-year',
+  title: 'A year-of-study query serves the programs that state that year and none that exclude it',
+  surface: PROGRAMS_SURFACE.id,
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const catalog = (await walkProgramBrowseLikeTheClient(context, {})).rows
+      .map((row) => ({ key: rowKey(row), years: statedYearsOfRow(row) }))
+      .filter((row) => row.key);
+    const walks = [];
+    const filterPairs = [];
+    for (const { query, year } of YEAR_WORD_QUERIES) {
+      const { rows } = await walkProgramBrowseLikeTheClient(context, { query });
+      const servedKeys = rows.map(rowKey).filter(Boolean);
+      walks.push({ query, year, servedKeys });
+      const filtered = await walkProgramBrowseLikeTheClient(context, {
+        filters: { yearOfStudy: [year] },
+      });
+      filterPairs.push({
+        baselineQuery: `yearOfStudy filter ${year}`,
+        variantQuery: query,
+        baselineKeys: filtered.rows.map(rowKey).filter(Boolean),
+        variantKeys: servedKeys,
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkYearQueriesServeTheStatedYear(
+          'programs-year-query-serves-stated-year-only',
+          'Each year query serves every row stating that year and no row whose stated years exclude it',
+          walks,
+          catalog,
+          corpusBefore,
+          corpusAfter,
+        ),
+        checkQueryVariantServesTheBaseline(
+          'programs-typed-year-matches-the-year-filter',
+          'A typed year query serves the same programs as picking that year in the filter',
+          filterPairs,
+          corpusBefore,
+          corpusAfter,
+          'sameRowSet',
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
+const PAY_WORD_QUERIES = [
+  { query: 'paid', intentWord: 'paid' },
+  { query: 'stipend', intentWord: 'stipend' },
+  { query: 'paid research', intentWord: 'paid' },
+] as const;
+
+const FUNDING_WORD_QUERIES = [
+  { query: 'funded', intentWord: 'funded' },
+  { query: 'grant', intentWord: 'grant' },
+] as const;
+
+const THESIS_WORD_QUERIES = ['senior thesis', 'senior essay'] as const;
+
+const STATED_DOLLAR_AMOUNT = /\$\s?\d/;
+
+const COMPENSATION_NAMING_PAY = /\d|\b(?:paid|pays?|stipends?|wages?|salary|salaried|hourly)\b/i;
+
+const titleCarriesWord = (row: Record<string, unknown>, word: string): boolean =>
+  typeof row.title === 'string' &&
+  row.title
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .some((titleWord) => titleWord === word || titleWord === `${word}s`);
+
+const payAndThesisWordsServeTheStatedField: ProgramJourneyCase = {
+  id: 'programs-pay-and-thesis-words-serve-the-stated-field',
+  title:
+    'A pay or thesis query serves every program that states an amount or is senior-thesis funding',
+  surface: PROGRAMS_SURFACE.id,
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const catalog = (await walkProgramBrowseLikeTheClient(context, {})).rows.filter((row) =>
+      rowKey(row),
+    );
+    const keysWhere = (predicate: (row: Record<string, unknown>) => boolean) =>
+      catalog.filter(predicate).map(rowKey);
+    const statesAmount = (row: Record<string, unknown>) =>
+      hasText(row.awardAmount) ||
+      (typeof row.compensationSummary === 'string' &&
+        STATED_DOLLAR_AMOUNT.test(row.compensationSummary));
+    const namesPay = (row: Record<string, unknown>) =>
+      hasText(row.awardAmount) ||
+      (typeof row.compensationSummary === 'string' &&
+        COMPENSATION_NAMING_PAY.test(row.compensationSummary));
+    const thesisFunding = keysWhere((row) => row.programKind === 'SENIOR_THESIS_FUNDING');
+    const fundingKinds = new Set([
+      'FELLOWSHIP_FUNDING',
+      'TRAVEL_RESEARCH_GRANT',
+      'SENIOR_THESIS_FUNDING',
+    ]);
+    const isFundingProgram = (row: Record<string, unknown>) =>
+      (typeof row.programKind === 'string' && fundingKinds.has(row.programKind)) ||
+      row.programRole === 'FUNDS_RESEARCH';
+    const walks = [];
+    for (const { query, intentWord } of PAY_WORD_QUERIES) {
+      const { rows } = await walkProgramBrowseLikeTheClient(context, { query });
+      walks.push({
+        query,
+        servedKeys: rows.map(rowKey).filter(Boolean),
+        requiredKeys: keysWhere(statesAmount),
+        allowedKeys: keysWhere((row) => namesPay(row) || titleCarriesWord(row, intentWord)),
+      });
+    }
+    for (const { query, intentWord } of FUNDING_WORD_QUERIES) {
+      const { rows } = await walkProgramBrowseLikeTheClient(context, { query });
+      walks.push({
+        query,
+        servedKeys: rows.map(rowKey).filter(Boolean),
+        requiredKeys: keysWhere(isFundingProgram),
+        allowedKeys: keysWhere(
+          (row) => isFundingProgram(row) || namesPay(row) || titleCarriesWord(row, intentWord),
+        ),
+      });
+    }
+    for (const query of THESIS_WORD_QUERIES) {
+      const { rows } = await walkProgramBrowseLikeTheClient(context, { query });
+      walks.push({
+        query,
+        servedKeys: rows.map(rowKey).filter(Boolean),
+        requiredKeys: thesisFunding,
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkStatedFieldQueriesServeTheirRows(
+          'programs-pay-and-thesis-queries-serve-stated-rows',
+          'Pay queries serve every program stating an amount and none whose compensation names no pay; thesis and essay queries serve every senior-thesis funding program',
+          walks,
+          corpusBefore,
+          corpusAfter,
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
 const studentYearWordsReachSourcedYear: ProgramJourneyCase = {
   id: 'programs-student-year-words-reach-sourced-year',
   title: "A student's word for their year reaches the programs the source files under it",
@@ -684,7 +891,50 @@ const studentYearWordsReachSourcedYear: ProgramJourneyCase = {
   },
 };
 
+const ADDED_WORD_QUERY_PAIRS = [
+  { shorterQuery: 'economics', longerQuery: 'economics summer' },
+  { shorterQuery: 'research', longerQuery: 'research travel' },
+  { shorterQuery: 'science', longerQuery: 'computer science' },
+];
+
+const anAddedWordNarrowsTheResults: ProgramJourneyCase = {
+  id: 'programs-an-added-word-narrows-the-results',
+  title: 'Adding a word to a program search never serves a program the shorter search did not',
+  surface: PROGRAMS_SURFACE.id,
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const servedKeys = async (query: string) =>
+      (await walkProgramBrowseLikeTheClient(context, { query })).rows.map(rowKey).filter(Boolean);
+    const pairs = [];
+    for (const { shorterQuery, longerQuery } of ADDED_WORD_QUERY_PAIRS) {
+      pairs.push({
+        baselineQuery: longerQuery,
+        baselineKeys: await servedKeys(longerQuery),
+        variantQuery: shorterQuery,
+        variantKeys: await servedKeys(shorterQuery),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkQueryVariantServesTheBaseline(
+          'programs-added-word-serves-a-subset',
+          'Every program a two-word search serves is also served by its first word alone',
+          pairs,
+          corpusBefore,
+          corpusAfter,
+          'coversBaselineRows',
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
 export const programJourneyCases: readonly ProgramJourneyCase[] = [
   ...programSurfaceCases(PROGRAMS_SURFACE),
   studentYearWordsReachSourcedYear,
+  yearWordsServeTheStatedYear,
+  payAndThesisWordsServeTheStatedField,
+  anAddedWordNarrowsTheResults,
 ];

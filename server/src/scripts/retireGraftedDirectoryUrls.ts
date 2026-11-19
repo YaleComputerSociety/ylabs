@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   applyStudentVisibilityGatePlans,
@@ -18,6 +19,7 @@ import {
   planGraftedUrlRepair,
   type GraftedUrlRepairPlan,
 } from './retireGraftedDirectoryUrlsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -62,7 +64,7 @@ function parsePositiveInteger(value: string | undefined): number {
   return parsed;
 }
 
-interface PlannedEntity {
+export interface PlannedEntity {
   entityId: string;
   slug?: string;
   name?: string;
@@ -118,11 +120,17 @@ export async function loadPlannedObservationIds(
     .filter((id): id is string => Boolean(id));
 }
 
-async function applyRepair(
+export async function applyRepair(
   planned: PlannedEntity[],
   observationIds: string[],
-): Promise<{ entitiesRepaired: number; observationsSuperseded: number; regatedEntities: number }> {
+): Promise<{
+  entitiesRepaired: number;
+  observationsSuperseded: number;
+  regatedEntities: number;
+  lastCitationStampsKept: number;
+}> {
   let entitiesRepaired = 0;
+  let lastCitationStampsKept = 0;
   for (const entry of planned) {
     const unset: Record<string, ''> = {};
     const set: Record<string, unknown> = { sourceUrls: entry.plan.nextSourceUrls };
@@ -130,11 +138,13 @@ async function applyRepair(
       unset.websiteUrl = '';
       unset['fieldProvenance.websiteUrl'] = '';
     }
-    const result = await ResearchEntity.updateOne(
+    const result = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { _id: new mongoose.Types.ObjectId(entry.entityId) },
       { $set: set, ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}) },
     );
     if (result.modifiedCount > 0) entitiesRepaired += 1;
+    if (result.withheld.length > 0) lastCitationStampsKept += 1;
   }
 
   let observationsSuperseded = 0;
@@ -169,7 +179,7 @@ async function applyRepair(
     regatedEntities = regateIds.length;
   }
 
-  return { entitiesRepaired, observationsSuperseded, regatedEntities };
+  return { entitiesRepaired, observationsSuperseded, regatedEntities, lastCitationStampsKept };
 }
 
 async function main() {
@@ -204,7 +214,12 @@ async function main() {
 
   const applied = args.apply
     ? await applyRepair(planned, observationIds)
-    : { entitiesRepaired: 0, observationsSuperseded: 0, regatedEntities: 0 };
+    : {
+        entitiesRepaired: 0,
+        observationsSuperseded: 0,
+        regatedEntities: 0,
+        lastCitationStampsKept: 0,
+      };
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -220,6 +235,7 @@ async function main() {
     entitiesLeftWithNoCitation: planned.filter((entry) => entry.leavesNoCitation).length,
     plannedObservations: observationIds.length,
     entitiesRepaired: applied.entitiesRepaired,
+    lastCitationStampsKept: applied.lastCitationStampsKept,
     observationsSuperseded: applied.observationsSuperseded,
     regatedEntities: applied.regatedEntities,
     byEntityType: planned.reduce<Record<string, number>>((acc, entry) => {
@@ -238,7 +254,7 @@ async function main() {
   if (args.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
 
   console.log(JSON.stringify({ ...report, entities: planned.slice(0, 25) }, null, 2));

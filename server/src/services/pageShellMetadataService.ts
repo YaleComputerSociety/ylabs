@@ -2,9 +2,11 @@ import {
   getResearchGroupDetail,
   normalizeResearchDetailSlug,
   resolveArchivedResearchEntityCanonicalSlug,
+  resolveRenamedResearchEntitySlug,
 } from './researchGroupService';
 import { servedResearchEntityTitle } from '../utils/servedResearchEntityTitle';
 import type { PageShellHead } from '../utils/pageShellHead';
+import { redactWithheldNamesDeep } from './directoryRemovalServing';
 
 export const PAGE_SHELL_LOOKUP_TIMEOUT_MS = 1500;
 export const PAGE_SHELL_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -15,7 +17,7 @@ export const PAGE_SHELL_LIMITER_MAX_CLIENTS = 10000;
 
 export type PageShellResolution =
   | { kind: 'page'; status: 200 | 404; head: PageShellHead }
-  | { kind: 'redirect'; status: 301; location: string };
+  | { kind: 'redirect'; status: 301 | 302; location: string };
 
 export interface ServedResearchShellFields {
   name?: unknown;
@@ -37,6 +39,7 @@ export interface PageShellLookupLimiter {
 export interface PageShellMetadataDependencies {
   readServedResearchEntity: (slug: string) => Promise<ServedResearchShellFields | null>;
   readArchivedCanonicalSlug: (slug: string) => Promise<string | null>;
+  readRenamedSlug: (slug: string) => Promise<string | null>;
   lookupTimeoutMs: number;
   cache: PageShellResolutionCache;
   lookupLimiter: PageShellLookupLimiter;
@@ -117,6 +120,11 @@ const STATIC_PAGE_HEADS: Record<string, PageShellHead> = {
   '/research': { title: 'Research', canonicalPath: '/research' },
   '/programs': { title: 'Programs & Fellowships', canonicalPath: '/programs' },
   '/about': { title: 'About', canonicalPath: '/about' },
+  '/getting-started': {
+    title: 'How to get started in research',
+    canonicalPath: '/getting-started',
+  },
+  '/privacy': { title: 'Privacy', canonicalPath: '/privacy' },
 };
 
 const UNMODIFIED_SHELL: PageShellResolution = { kind: 'page', status: 200, head: {} };
@@ -192,6 +200,14 @@ const resolveResearchDetailShell = async (
         location: `/research/${encodeURIComponent(canonicalSlug)}`,
       };
     }
+    const renamedSlug = await dependencies.readRenamedSlug(slug);
+    if (renamedSlug) {
+      return {
+        kind: 'redirect',
+        status: 302,
+        location: `/research/${encodeURIComponent(renamedSlug)}`,
+      };
+    }
     return NOT_FOUND_SHELL;
   };
 
@@ -213,12 +229,13 @@ const readServedResearchEntity = async (
   slug: string,
 ): Promise<ServedResearchShellFields | null> => {
   const detail = await getResearchGroupDetail(slug);
-  return detail ? detail.researchEntity : null;
+  return detail ? redactWithheldNamesDeep(detail).researchEntity : null;
 };
 
 export const defaultPageShellMetadataDependencies: PageShellMetadataDependencies = {
   readServedResearchEntity,
   readArchivedCanonicalSlug: resolveArchivedResearchEntityCanonicalSlug,
+  readRenamedSlug: resolveRenamedResearchEntitySlug,
   lookupTimeoutMs: PAGE_SHELL_LOOKUP_TIMEOUT_MS,
   cache: createPageShellResolutionCache(),
   lookupLimiter: createPageShellLookupLimiter(),

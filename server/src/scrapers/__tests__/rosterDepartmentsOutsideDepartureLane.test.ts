@@ -32,8 +32,8 @@ describe('roster departments outside the departure lane', () => {
     }
   });
 
-  it('declares the 17 roster keys measured as unresolved, and nothing outside the roster', () => {
-    expect(Object.keys(ROSTER_DEPARTMENTS_OUTSIDE_DEPARTURE_LANE)).toHaveLength(17);
+  it('declares the 18 roster keys measured as unresolved, and nothing outside the roster', () => {
+    expect(Object.keys(ROSTER_DEPARTMENTS_OUTSIDE_DEPARTURE_LANE)).toHaveLength(18);
     expect(rosterDepartmentOutsideDepartureLaneReason('physics')).toBeNull();
     expect(rosterDepartmentOutsideDepartureLaneReason(undefined)).toBeNull();
     expect(rosterDepartmentOutsideDepartureLaneReason('toString')).toBeNull();

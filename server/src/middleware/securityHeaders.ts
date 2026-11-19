@@ -3,6 +3,7 @@ import {
   allowsNonProductionSecurityBypass,
   requiresDeployedRuntimeSecurity,
 } from '../utils/environment';
+import { posthogConnectOrigins } from '../utils/posthogConfig';
 
 const CONNECT_SRC_ORIGINS = [
   "'self'",
@@ -43,6 +44,7 @@ const connectSrcDirective = (allowLocalDevelopmentConnect: boolean) => {
   const origins = [
     ...CONNECT_SRC_ORIGINS,
     ...(sentryOrigin ? [sentryOrigin] : []),
+    ...posthogConnectOrigins(),
     ...(allowLocalDevelopmentConnect ? ['http://localhost:4000'] : []),
   ];
   return `connect-src ${origins.join(' ')}`;

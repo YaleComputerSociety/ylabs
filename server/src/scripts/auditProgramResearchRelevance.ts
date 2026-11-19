@@ -30,6 +30,7 @@ import {
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -42,7 +43,8 @@ interface CliOptions {
   output?: string;
 }
 
-const NON_RESEARCH_SUPPRESSION_REASON = 'non_research_program';
+const NON_RESEARCH_SUPPRESSION_REASON =
+  'non_research_program: the program research relevance audit classified it as not research related';
 
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
@@ -88,7 +90,7 @@ async function main() {
 
   const programs: any[] = await Fellowship.find({ archived: false })
     .select(
-      'title purpose studentFacingCategory programKind sourceName summary description eligibility studentVisibilityTier studentVisibilityOverrideTier',
+      'title purpose studentFacingCategory programKind sourceName summary description eligibility fullSourceDescription studentVisibilityTier studentVisibilityOverrideTier',
     )
     .lean();
 
@@ -201,7 +203,7 @@ async function main() {
   if (options.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(options.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
   }
 }
 

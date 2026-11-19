@@ -5,6 +5,11 @@ import {
   type ScraperCommandGuardResult,
 } from './scraperEnvironment';
 import type { ScraperOptions } from './types';
+import { parseUserOnlyFieldsList } from './userMaterializerFieldScope';
+import { parseProgramOnlyFieldsList } from './programMaterializerFieldScope';
+import { resolveSafeJsonReportOutputPath } from '../utils/reportOutputPath';
+import { observedEntityTypes, type ObservedEntityType } from '../models/observation';
+import type { StudentVisibilityGateCollection } from '../services/studentVisibilityGateService';
 
 export interface ScraperCliOutputMetadata {
   command: string;
@@ -23,6 +28,11 @@ export type ScraperCliPreflight =
       command: 'materialize';
       runId: string;
       confirmMaterialize: boolean;
+      onlyFields: string[];
+      onlyProgramFields: string[];
+      skipEntityTypes: ObservedEntityType[];
+      skipCenterRosterRetirement: boolean;
+      expectCenterPlanPath?: string;
       guard: ScraperCommandGuardResult;
     }
   | {
@@ -38,6 +48,7 @@ export type ScraperCliPreflight =
     };
 
 const VALUE_FLAGS = new Set([
+  'expect-center-plan',
   'explain-limit',
   'keep-runs',
   'limit',
@@ -45,6 +56,7 @@ const VALUE_FLAGS = new Set([
   'offset',
   'older-than-days',
   'only',
+  'only-fields',
   'output',
   'run',
   'since',
@@ -213,7 +225,7 @@ export function unmaterializedWriteRunWarning(input: {
   return [
     `Run ${input.runId} wrote ${input.observationCount} observation(s) and materialized none,`,
     'so any key it observed for the first time still has no record.',
-    `Finish with "yarn --cwd server scrape materialize --run ${input.runId} --confirm-materialize",`,
+    `Finish with "yarn --cwd server scrape materialize --run ${input.runId} --apply --confirm-materialize",`,
     'or sweep the backlog with "yarn --cwd server observations:catch-up-materialize".',
   ].join(' ');
 }
@@ -253,7 +265,7 @@ export function scrapeCliCompletionOutcome(input: {
         ...(input.visibilityGateSkipped
           ? ['The student visibility gate was skipped, so no row this run touched was re-gated.']
           : []),
-        `Fix the cause and re-run "yarn --cwd server scrape materialize --run ${input.runId} --confirm-materialize".`,
+        `Fix the cause and re-run "yarn --cwd server scrape materialize --run ${input.runId} --apply --confirm-materialize".`,
       ].join(' '),
     );
   }
@@ -265,21 +277,25 @@ export function buildMaterializeOutputPayload({
   materialization,
   report,
   visibilityGate,
+  centerPlan,
 }: {
   runId: string;
   materialization: unknown;
   report: unknown;
   visibilityGate?: unknown;
+  centerPlan?: unknown;
 }): {
   runId: string;
   materialization: unknown;
   visibilityGate?: unknown;
+  centerPlan?: unknown;
   report: unknown;
 } {
   return {
     runId,
     materialization,
     ...(visibilityGate !== undefined ? { visibilityGate } : {}),
+    ...(centerPlan !== undefined ? { centerPlan } : {}),
     report,
   };
 }
@@ -303,6 +319,12 @@ export function buildScraperCliPreflight(
   mongoUrl?: string,
   env: NodeJS.ProcessEnv = process.env,
 ): ScraperCliPreflight {
+  if (flags.output !== undefined) {
+    resolveSafeJsonReportOutputPath(typeof flags.output === 'string' ? flags.output : undefined);
+  }
+  if (command !== 'materialize' && flags['only-fields'] !== undefined) {
+    throw new Error('--only-fields applies only to scrape materialize --run <runId>.');
+  }
   if (command === 'run') {
     const sourceName = flags.source as string;
     if (!sourceName) {
@@ -316,6 +338,7 @@ export function buildScraperCliPreflight(
         command,
         options,
         autoMaterialize: !!flags['auto-materialize'],
+        apply: !!flags.apply,
         mongoUrl,
         env,
       }),
@@ -328,6 +351,51 @@ export function buildScraperCliPreflight(
       throw new Error('ERROR: --run <runId> is required');
     }
     const confirmMaterialize = !!flags['confirm-materialize'];
+    const onlyFields =
+      flags['only-fields'] === undefined
+        ? []
+        : parseUserOnlyFieldsList(
+            typeof flags['only-fields'] === 'string' ? flags['only-fields'] : undefined,
+          );
+    const onlyProgramFields =
+      flags['only-program-fields'] === undefined
+        ? []
+        : parseProgramOnlyFieldsList(
+            typeof flags['only-program-fields'] === 'string'
+              ? flags['only-program-fields']
+              : undefined,
+          );
+    if (onlyProgramFields.length > 0 && onlyFields.length > 0) {
+      throw new Error(
+        '--only-fields and --only-program-fields cannot be combined: each scopes one row type, so run them separately.',
+      );
+    }
+    const skipEntityTypes =
+      flags['skip-entity-types'] === undefined
+        ? []
+        : parseSkipEntityTypesList(
+            typeof flags['skip-entity-types'] === 'string' ? flags['skip-entity-types'] : undefined,
+          );
+    if (skipEntityTypes.length > 0 && onlyFields.length > 0) {
+      throw new Error(
+        '--skip-entity-types and --only-fields cannot be combined: --only-fields already materializes user rows only.',
+      );
+    }
+    if (skipEntityTypes.length > 0 && onlyProgramFields.length > 0) {
+      throw new Error(
+        '--skip-entity-types and --only-program-fields cannot be combined: --only-program-fields already materializes program rows only.',
+      );
+    }
+    if (onlyProgramFields.length > 0 && typeof flags.output !== 'string') {
+      throw new Error(
+        '--only-program-fields requires --output <path>: the scoped plan is written there.',
+      );
+    }
+    if (onlyFields.length > 0 && typeof flags.output !== 'string') {
+      throw new Error(
+        '--only-fields requires --output <path>: the per-key planned and out-of-scope paths are written there.',
+      );
+    }
     const guard = applyScraperEnvironmentGuards({
       command,
       options: {
@@ -336,16 +404,26 @@ export function buildScraperCliPreflight(
         release: !!flags.release,
       },
       autoMaterialize: false,
+      apply: !!flags.apply,
       mongoUrl,
       env,
     });
-    if (!guard.options.dryRun && !confirmMaterialize) {
-      throw new Error('--confirm-materialize is required for scrape materialize write mode.');
+    if (guard.writes && !confirmMaterialize) {
+      throw new Error(
+        '--confirm-materialize is required with --apply for scrape materialize write mode.',
+      );
     }
     return {
       command,
       runId,
       confirmMaterialize,
+      onlyFields,
+      onlyProgramFields,
+      skipEntityTypes,
+      skipCenterRosterRetirement: !!flags['skip-center-roster-retirement'],
+      ...(typeof flags['expect-center-plan'] === 'string'
+        ? { expectCenterPlanPath: flags['expect-center-plan'] }
+        : {}),
       guard,
     };
   }
@@ -375,4 +453,37 @@ export function buildScraperCliPreflight(
   }
 
   return { command };
+}
+
+/**
+ * The entity types a run materialize leaves untouched, so a roster fix can be projected without
+ * also writing the pending drift on the rows it observes (#5890).
+ */
+export function parseSkipEntityTypesList(value: string | undefined): ObservedEntityType[] {
+  const types = String(value ?? '')
+    .split(',')
+    .map((type) => type.trim())
+    .filter(Boolean);
+  if (types.length === 0) {
+    throw new Error('--skip-entity-types requires a comma-separated list of entity types');
+  }
+  for (const type of types) {
+    if (!(observedEntityTypes as readonly string[]).includes(type)) {
+      throw new Error(
+        `Unknown --skip-entity-types entity type: ${type}. Known: ${observedEntityTypes.join(', ')}`,
+      );
+    }
+  }
+  return Array.from(new Set(types)) as ObservedEntityType[];
+}
+
+export function visibilityGateCollectionAfterSkipping(
+  skipEntityTypes: readonly ObservedEntityType[],
+): StudentVisibilityGateCollection | undefined {
+  const gateResearch = !skipEntityTypes.includes('researchEntity');
+  const gatePrograms = !skipEntityTypes.includes('fellowship');
+  if (gateResearch && gatePrograms) return 'all';
+  if (gateResearch) return 'research';
+  if (gatePrograms) return 'programs';
+  return undefined;
 }

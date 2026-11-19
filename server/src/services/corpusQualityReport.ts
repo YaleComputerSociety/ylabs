@@ -1,4 +1,17 @@
+import { Observation } from '../models/observation';
+import { Researcher } from '../models/researcher';
 import { ResearchEntity } from '../models/researchEntity';
+import {
+  effectiveStudentVisibilityTierExpression,
+  servedResearchEntityRowFilter,
+} from '../models/studentVisibility';
+import {
+  normalizedTitleReading,
+  SITE_CHROME_TITLE_LANE,
+  siteChromeTitleReadings,
+  type SiteChromeTitleReading,
+} from '../utils/siteChromeTitleReading';
+import { servablePersonTitle } from '../utils/titleHygiene';
 import {
   buildResearchAreasCardSummary,
   describesResearchFocus,
@@ -22,11 +35,11 @@ import { PUBLIC_LEAD_ROLES } from './researchGroupService';
 import {
   buildCorpusQualityReport,
   type CorpusQualityCorpusCounts,
+  type CorpusQualityPersonTitleCounts,
   type CorpusQualityReport,
   type CorpusQualityServedRowFacts,
 } from './corpusQualityReportCore';
 
-const SERVED_TIER = 'student_ready';
 const ROSTER_BATCH_SIZE = 400;
 const GENERIC_FACULTY_RESEARCH_TITLE = /\sFaculty Research$/;
 
@@ -105,10 +118,10 @@ export const readCorpusCoverageCounts = async (): Promise<CorpusQualityCorpusCou
   const [entities, archived, studentReady, byTier] = await Promise.all([
     ResearchEntity.countDocuments({}),
     ResearchEntity.countDocuments({ archived: true }),
-    ResearchEntity.countDocuments({ studentVisibilityTier: SERVED_TIER, archived: { $ne: true } }),
+    ResearchEntity.countDocuments(servedResearchEntityRowFilter()),
     ResearchEntity.aggregate<{ tier: string; count: number }>([
       { $match: { archived: { $ne: true } } },
-      { $group: { _id: '$studentVisibilityTier', count: { $sum: 1 } } },
+      { $group: { _id: effectiveStudentVisibilityTierExpression(), count: { $sum: 1 } } },
       { $project: { _id: 0, tier: { $ifNull: ['$_id', 'unset'] }, count: 1 } },
       { $sort: { count: -1 } },
     ]),
@@ -116,14 +129,83 @@ export const readCorpusCoverageCounts = async (): Promise<CorpusQualityCorpusCou
   return { entities, archived, studentReady, byTier };
 };
 
+export interface SiteChromePersonTitleHit extends SiteChromeTitleReading {
+  researchersServingIt: number;
+}
+
+export interface SiteChromePersonTitles {
+  counts: CorpusQualityPersonTitleCounts;
+  hits: SiteChromePersonTitleHit[];
+}
+
+const servedTitleKey = (value: unknown): string =>
+  normalizedTitleReading(servablePersonTitle(normalizedTitleReading(value)) ?? '');
+
+const NETID_SUBJECT_PREFIX = 'netid:';
+
+const researcherIdForSubject = (
+  subject: string,
+  researcherIdByNetid: ReadonlyMap<string, string>,
+  researcherIds: ReadonlySet<string>,
+): string => {
+  if (subject.startsWith(NETID_SUBJECT_PREFIX)) {
+    return researcherIdByNetid.get(subject.slice(NETID_SUBJECT_PREFIX.length).toLowerCase()) ?? '';
+  }
+  return researcherIds.has(subject) ? subject : '';
+};
+
+export async function readSiteChromePersonTitles(): Promise<SiteChromePersonTitles> {
+  const [observations, researchers] = await Promise.all([
+    Observation.find(
+      { sourceName: SITE_CHROME_TITLE_LANE, field: 'title', superseded: { $ne: true } },
+      { value: 1, sourceUrl: 1, entityKey: 1, entityId: 1 },
+    ).lean(),
+    Researcher.find(
+      { archived: { $ne: true } },
+      { 'profile.title': 1, 'identifiers.netid': 1 },
+    ).lean(),
+  ]);
+  const researcherIds = new Set<string>();
+  const researcherIdByNetid = new Map<string, string>();
+  const servedTitleCounts = new Map<string, number>();
+  for (const researcher of researchers as any[]) {
+    const id = String(researcher._id);
+    researcherIds.add(id);
+    const netid = normalizedTitleReading(researcher.identifiers?.netid).toLowerCase();
+    if (netid) researcherIdByNetid.set(netid, id);
+    const key = servedTitleKey(researcher.profile?.title);
+    if (key) servedTitleCounts.set(key, (servedTitleCounts.get(key) || 0) + 1);
+  }
+  const readings = siteChromeTitleReadings(
+    (observations as any[]).map((observation) => {
+      const subject = String(observation.entityKey ?? observation.entityId ?? '');
+      return {
+        observationId: String(observation._id),
+        subject: researcherIdForSubject(subject, researcherIdByNetid, researcherIds) || subject,
+        value: normalizedTitleReading(observation.value),
+        sourceUrl: typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '',
+      };
+    }),
+  );
+  const hits = readings.map((reading) => {
+    const key = servedTitleKey(reading.value);
+    return { ...reading, researchersServingIt: key ? servedTitleCounts.get(key) || 0 : 0 };
+  });
+  return {
+    counts: {
+      withServableTitle: [...servedTitleCounts.values()].reduce((total, n) => total + n, 0),
+      fromSiteChromeReading: hits.reduce((total, hit) => total + hit.researchersServingIt, 0),
+    },
+    hits,
+  };
+}
+
 export async function readCorpusQualityReport(
   generatedAt = new Date(),
+  siteChromePersonTitles?: SiteChromePersonTitles,
 ): Promise<CorpusQualityReport> {
   const corpus = await readCorpusCoverageCounts();
-  const servedRows = await ResearchEntity.find({
-    studentVisibilityTier: SERVED_TIER,
-    archived: { $ne: true },
-  }).lean();
+  const servedRows = await ResearchEntity.find(servedResearchEntityRowFilter()).lean();
 
   const facts: CorpusQualityServedRowFacts[] = [];
   for (let offset = 0; offset < servedRows.length; offset += ROSTER_BATCH_SIZE) {
@@ -135,5 +217,6 @@ export async function readCorpusQualityReport(
     }
   }
 
-  return buildCorpusQualityReport({ facts, corpus, generatedAt });
+  const personTitles = (siteChromePersonTitles ?? (await readSiteChromePersonTitles())).counts;
+  return buildCorpusQualityReport({ facts, corpus, personTitles, generatedAt });
 }

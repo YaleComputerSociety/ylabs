@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import AdminOperatorBoard from '../AdminOperatorBoard';
@@ -112,6 +112,8 @@ describe('AdminOperatorBoard', () => {
                 label: 'Source Backed Lab',
                 tier: 'limited_but_safe',
                 reasons: ['source_backed_description', 'missing_card_description'],
+                blockerReasons: ['missing_card_description'],
+                signalReasons: ['source_backed_description'],
               },
             ],
           },
@@ -126,21 +128,30 @@ describe('AdminOperatorBoard', () => {
                 id: 'sample-blocker',
                 label: 'Repair Candidate Lab',
                 tier: 'operator_review',
-                reasons: ['missing_card_description', 'source_backed_description'],
+                reasons: [
+                  'missing_card_description',
+                  'source_backed_description',
+                  'missing_facet_signal',
+                ],
+                blockerReasons: ['missing_card_description'],
+                signalReasons: ['source_backed_description', 'missing_facet_signal'],
               },
             ],
           },
           {
             collection: 'programs',
-            reason: 'formalization_only',
+            reason: 'application_source_only',
+            kind: 'review',
             count: 4,
             nextAction: 'Keep capped unless source evidence shows a real entry route.',
             samples: [
               {
-                id: 'sample-formalization',
-                label: 'Formalization Program',
+                id: 'sample-application-source',
+                label: 'Application Source Program',
                 tier: 'limited_but_safe',
-                reasons: ['formalization_only', 'official_source'],
+                reasons: ['application_source_only', 'official_source'],
+                blockerReasons: ['application_source_only'],
+                signalReasons: ['official_source'],
               },
             ],
           },
@@ -486,12 +497,18 @@ describe('AdminOperatorBoard', () => {
       screen.getByText('Is this ready to promote from evidence to student-facing copy?'),
     ).toBeTruthy();
     expect(screen.getAllByText('missing_card_description').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('formalization_only').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('application_source_only').length).toBeGreaterThan(0);
     expect(screen.getAllByText('source_backed_description').length).toBeGreaterThan(0);
-    expect(screen.getByText('Likely blockers')).toBeTruthy();
-    expect(screen.getAllByText('Evidence signals').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Blockers').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Signals').length).toBeGreaterThan(0);
+    const repairSample = screen
+      .getByText('Repair Candidate Lab')
+      .closest('div.mb-3') as HTMLElement;
+    const repairSignals = within(repairSample).getByText('Signals').parentElement as HTMLElement;
+    expect(within(repairSignals).getByText('missing_facet_signal')).toBeTruthy();
+    expect(within(repairSample).queryByText('Blockers')).toBeNull();
     expect(screen.getByText('Repair Candidate Lab')).toBeTruthy();
-    expect(screen.getByText('Formalization Program')).toBeTruthy();
+    expect(screen.getByText('Application Source Program')).toBeTruthy();
     expect(screen.getByText('Source Backed Lab')).toBeTruthy();
     expect(screen.getByText('Release Queue')).toBeTruthy();
     expect(screen.getByText('Automatic Repair Queue')).toBeTruthy();
@@ -739,18 +756,22 @@ describe('AdminOperatorBoard', () => {
                 slug: 'linked-research-home',
                 tier: 'operator_review',
                 reasons: ['missing_card_description'],
+                blockerReasons: ['missing_card_description'],
+                signalReasons: [],
               },
               {
                 id: 'sample-research-plain',
                 label: 'Unlinked Research Home',
                 tier: 'operator_review',
                 reasons: ['missing_card_description'],
+                blockerReasons: ['missing_card_description'],
+                signalReasons: [],
               },
             ],
           },
           {
             collection: 'programs',
-            reason: 'formalization_only',
+            reason: 'application_source_only',
             kind: 'review',
             count: 1,
             nextAction: 'Keep capped unless source evidence shows a real entry route.',
@@ -759,7 +780,9 @@ describe('AdminOperatorBoard', () => {
                 id: 'sample-program-linked',
                 label: 'Linked Program',
                 tier: 'limited_but_safe',
-                reasons: ['formalization_only'],
+                reasons: ['application_source_only'],
+                blockerReasons: ['application_source_only'],
+                signalReasons: [],
                 sourceUrl: 'https://example.edu/program',
               },
             ],
@@ -797,6 +820,123 @@ describe('AdminOperatorBoard', () => {
 
     expect(screen.queryByRole('link', { name: 'Unlinked Research Home' })).toBeNull();
     expect(screen.getByText('Unlinked Research Home')).toBeTruthy();
+  });
+
+  it('keeps every decision lane populated when one lane has many large queues', async () => {
+    const blockingQueues = Array.from({ length: 11 }, (_, index) => ({
+      collection: 'research',
+      reason: `synthetic_blocker_${index}`,
+      kind: 'blocking',
+      count: 1000 - index,
+      nextAction: 'Repair.',
+      samples: [],
+    }));
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        generatedAt: '2026-05-29T22:30:00.000Z',
+        trustTiers: { research: [], programs: [] },
+        reasonCounts: { research: [], programs: [] },
+        queues: [
+          ...blockingQueues,
+          {
+            collection: 'research',
+            reason: 'missing_facet_signal',
+            kind: 'evidence',
+            count: 3,
+            nextAction: 'Review for possible promotion.',
+            samples: [
+              {
+                id: 'sample-soft-signal',
+                label: 'Soft Signal Lab',
+                tier: 'limited_but_safe',
+                reasons: ['missing_facet_signal'],
+                blockerReasons: [],
+                signalReasons: ['missing_facet_signal'],
+              },
+            ],
+          },
+        ],
+        gates: {
+          dataQuality: {
+            status: 'manual',
+            command: 'yarn --cwd server beta:data-quality --include-samples',
+            note: 'Saved data-quality artifact is stale; rerun the gate before promotion.',
+          },
+          scraperIntegrity: {
+            status: 'unknown',
+            command: 'yarn --cwd server scraper:integrity-gate --include-samples',
+            latestRuns: [],
+          },
+        },
+        sourceFreshness: { windowDays: 30, riskCounts: { ok: 0, warn: 0, error: 0 }, rows: [] },
+      },
+    });
+
+    render(<AdminOperatorBoard />);
+
+    expect(await screen.findByText('Soft Signal Lab')).toBeTruthy();
+    expect(screen.getAllByText(/^synthetic_blocker_/)).toHaveLength(4);
+  });
+
+  it('groups correctly withheld programs apart from must-fix work (#6204)', async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        generatedAt: '2026-05-29T22:30:00.000Z',
+        trustTiers: { research: [], programs: [] },
+        reasonCounts: { research: [], programs: [] },
+        queues: [
+          {
+            collection: 'programs',
+            reason: 'missing_official_source',
+            kind: 'blocking',
+            count: 7,
+            nextAction: 'Find and attach the official source URL.',
+            samples: [],
+          },
+          {
+            collection: 'programs',
+            reason: 'non_research_program',
+            kind: 'withheld',
+            count: 238,
+            nextAction: 'Not a research opportunity; stays withheld.',
+            samples: [],
+          },
+          {
+            collection: 'programs',
+            reason: 'external_award_cycle_stale',
+            kind: 'withheld',
+            count: 113,
+            nextAction: 'Returns when the record states a current cycle.',
+            samples: [],
+          },
+        ],
+        gates: {
+          dataQuality: {
+            status: 'manual',
+            command: 'yarn --cwd server beta:data-quality --include-samples',
+            note: 'Saved data-quality artifact is stale; rerun the gate before promotion.',
+          },
+          scraperIntegrity: {
+            status: 'unknown',
+            command: 'yarn --cwd server scraper:integrity-gate --include-samples',
+            latestRuns: [],
+          },
+        },
+        sourceFreshness: { windowDays: 30, riskCounts: { ok: 0, warn: 0, error: 0 }, rows: [] },
+      },
+    });
+
+    render(<AdminOperatorBoard />);
+
+    const withheld = await screen.findByRole('group', { name: 'Correctly Withheld' });
+    expect(within(withheld).getByText('non_research_program')).toBeTruthy();
+    expect(within(withheld).getByText('external_award_cycle_stale')).toBeTruthy();
+    expect(within(withheld).getByText('351')).toBeTruthy();
+
+    const mustFix = screen.getByText('Must Fix Before Promotion').closest('div.rounded-md');
+    expect(mustFix).toBeTruthy();
+    expect(within(mustFix as HTMLElement).queryByText('non_research_program')).toBeNull();
+    expect(within(mustFix as HTMLElement).getAllByText('7').length).toBeGreaterThan(0);
   });
 
   it('shows stale saved data-quality gates as manual work', async () => {

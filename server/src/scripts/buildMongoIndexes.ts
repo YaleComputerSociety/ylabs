@@ -22,6 +22,7 @@ import {
   reportUndeclaredMongoIndexes,
   reportUnbuildableDeclaredIndexSpecs,
   connectScriptMongo,
+  WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS,
 } from '../db/connections';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
@@ -69,8 +70,8 @@ export function planDeclaredIndexes(connection: mongoose.Connection): ModelIndex
     .sort((left, right) => left.collection.localeCompare(right.collection));
 }
 
-async function main(): Promise<void> {
-  const args = parseBuildMongoIndexesArgs(process.argv.slice(2));
+export async function runBuildMongoIndexes(argv: string[]): Promise<void> {
+  const args = parseBuildMongoIndexesArgs(argv);
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required');
   const guard = assertScriptApplyAllowed({
@@ -79,7 +80,7 @@ async function main(): Promise<void> {
     mongoUrl,
   });
 
-  await connectScriptMongo(mongoUrl);
+  await connectScriptMongo(mongoUrl, WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS);
   try {
     const plans = planDeclaredIndexes(mongoose.connection);
     const declaredTotal = plans.reduce((sum, plan) => sum + plan.declaredIndexNames.length, 0);
@@ -179,7 +180,7 @@ async function main(): Promise<void> {
 
 const invokedDirectly = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (invokedDirectly) {
-  main().catch((error) => {
+  runBuildMongoIndexes(process.argv.slice(2)).catch((error) => {
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);
   });

@@ -1,0 +1,65 @@
+const FIRST_HAND_PROFILE_WEBSITE_SOURCES: ReadonlySet<string> = new Set([
+  'official-profile-pi-backfill',
+  'ysm-faculty-directory',
+  'yse-faculty-directory',
+]);
+
+const MIN_SURNAME_LENGTH = 3;
+
+const compact = (value: string): string =>
+  value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+const nameParts = (name: unknown): { given: string; surname: string } => {
+  if (typeof name !== 'string') return { given: '', surname: '' };
+  const tokens = name.trim().split(/\s+/).filter(Boolean);
+  return tokens.length > 1
+    ? { given: compact(tokens[0]), surname: compact(tokens[tokens.length - 1]) }
+    : { given: '', surname: '' };
+};
+
+const SURNAME_SITE_SUFFIXES = ['', 'lab', 'labs', 'group', 'research'];
+
+function urlCarriesSurname(url: string, given: string, surname: string): boolean {
+  if (surname.length < MIN_SURNAME_LENGTH) return false;
+  const nameForms = [surname, `${given}${surname}`, `${given.charAt(0)}${surname}`];
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const tokens = `${parsed.hostname} ${parsed.pathname}`
+    .split(/[./_\s-]+/)
+    .map(compact)
+    .filter(Boolean);
+  return tokens.some((token) =>
+    nameForms.some((form) => SURNAME_SITE_SUFFIXES.some((suffix) => token === `${form}${suffix}`)),
+  );
+}
+
+/**
+ * Whether a key joined on the person's name alone may fill an empty website (#6432). The name
+ * is that key's only identity witness, and a blind sample found roster websites of a lab not
+ * named for the person and not linked from their own profile filling such rows, so the fill
+ * needs the website itself to witness the person: it carries their surname, or a first-hand
+ * profile lane, which reads a website only from the person's own profile page, states it.
+ */
+export function nameJoinedWebsiteFillIsWitnessed(input: {
+  url: string;
+  personName: unknown;
+  contributingSources: readonly string[] | undefined;
+}): boolean {
+  if (
+    (input.contributingSources ?? []).some((source) =>
+      FIRST_HAND_PROFILE_WEBSITE_SOURCES.has(source),
+    )
+  ) {
+    return true;
+  }
+  const { given, surname } = nameParts(input.personName);
+  return urlCarriesSurname(input.url, given, surname);
+}

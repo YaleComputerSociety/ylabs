@@ -24,6 +24,11 @@ const SOURCE = fs.readFileSync(SOURCE_PATH, 'utf8');
  */
 const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
   {
+    fn: 'researcherEmailSupport',
+    reason:
+      'Called from `materializeUserIdentityToResearcher`, the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It finds every `user` key stating a researcher address, which are keys other than the one being resolved, so an entity-keyed source cannot answer it (#5627).',
+  },
+  {
     fn: 'resolveNetidForRosterEmailAlias',
     reason:
       'On the inferred-PI mint path, reached from `resolveInferredPiKeyIdentity`, so THE BENCHMARK NEVER MAKES THIS READ: it replays `researchEntity` rows only. Measured by instrumenting it and replaying 147 rows, which hit it zero times (#3863). It is also a corpus-wide search by value and so unroutable through an entity-keyed source, but that is the weaker reason; routing or freezing it changes no outcome until the benchmark replays `user` rows.',
@@ -34,9 +39,39 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
       'Called from `materializeUserIdentityToResearcher`, the `user` materializer, so the benchmark never makes this read either: zero hits over the same 147 rows. Value-keyed as well, but the reachability is what decides it.',
   },
   {
-    fn: 'researcherReachedByUserIdentity',
+    fn: 'mergedSurvivorTakesLoserLeadAttribution',
+    reason:
+      "Called only from `liveResearchEntityNamesUserKeyAsLead`, the person-mint gate on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It loads the survivor a merged-in loser resolves to and that survivor's own observations, a different row from any being projected.",
+  },
+  {
+    fn: 'userIdentityJoinForKey',
     reason:
       'On the inferred-PI lead path, reached only from `planInferredPiMembership`, which the projection calls inside `if (!options.dryRun)` and the reclaim stage calls directly, so THE BENCHMARK NEVER MAKES THIS READ: it replays rows with `dryRun: true`. It reads `user` observations under the key a PI attribution names, a different entity from the row being projected, so an entity-keyed source for that row cannot answer it (#4697).',
+  },
+  {
+    fn: 'userKeysNamingResearcherIdentity',
+    reason:
+      "Called from `researcherTitleOverEveryJoiningKey` and `storedDepartmentReadingsOverEveryKey` on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It searches by the researcher's netid, address and official pages for every person key that names them, whose purpose is to find keys other than the one being materialized, so an entity-keyed source cannot answer it; the chunk caches its answer per researcher instead (#5578).",
+  },
+  {
+    fn: 'storedDepartmentReadingsOverEveryKey',
+    reason:
+      'Called only from the `user` materializer, for the #6049 backing read and the #6065 screened-backing clear, so the benchmark never makes this read: it replays `researchEntity` rows only. It reads superseded `primaryDepartment` readings on every key that names the researcher, keys other than the one being resolved and readings a live-only read source does not hold, so an entity-keyed source cannot answer it.',
+  },
+  {
+    fn: 'storedDepartmentReadingsOfEngineJoinedKeys',
+    reason:
+      'Called only from the `user` materializer, when the identity keys did not settle a stored department, so the benchmark never makes this read: it replays `researchEntity` rows only. It finds keys outside the researcher identity keys by the department value they state, so an entity-keyed source cannot answer it (#5741).',
+  },
+  {
+    fn: 'engineJoinCandidateStatesStoredDepartmentThroughScreenedReading',
+    reason:
+      'Called only from the `user` materializer, for the #6065 screened-backing clear when no identity key backs the stored department, so the benchmark never makes this read: it replays `researchEntity` rows only. It reads the `primaryDepartment` readings of keys outside the researcher identity keys found by the department value they state, so an entity-keyed source cannot answer it.',
+  },
+  {
+    fn: 'otherPersonPrintsAddress',
+    reason:
+      'Called only from `rosterAliasEmailMintIdentity`, the address-keyed mint gate on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is a search by value for other `user` keys printing one address, whose purpose is to find people other than the one being minted, so an entity-keyed source cannot answer it.',
   },
   {
     fn: 'listingsSharingProfileUrl',
@@ -44,16 +79,31 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
       'Called from `materializeRosterMember`, the `researchGroupMember` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is also a search by value across every listing that carries one profile URL, whose purpose is to find listings other than the one being projected, so an entity-keyed source cannot answer it.',
   },
   {
+    fn: 'retiredEvidenceLeadEdgesToEnd',
+    reason:
+      "Reached only from `resolveLeadEdges`, which the projection calls inside `if (!options.dryRun)`, the reclaim stage calls directly, and the `leadEdges` rematerialize scope calls in a dry run too; the benchmark replays a full projection with `dryRun: true` and no such scope, so it never makes this read. It reads every `inferredPiUserId` observation naming the people the row's current PI edges cite, retired reads included, to tell an edge whose citation is all retired from one whose citation was never read on the row (#5979).",
+  },
+  {
     fn: 'leadPiInheritanceEvidence',
     reason:
       'A read-after-write check: it reads back the observations `assertLeadPiInheritanceObservations` just wrote in this same pass, to tell an accepted assertion from a refused one. Frozen input would answer about the state BEFORE the write, so routing it would make the check lie.',
+  },
+  {
+    fn: 'personValueOnlyFromContradictedPages',
+    reason:
+      "Called only from the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is a search by ORCID or photo URL value for every `user` observation asserting the holder's stored value, whose purpose is to find the pages that asserted it under other keys, so an entity-keyed source cannot answer it (#5693, #5737).",
+  },
+  {
+    fn: 'authoritativeDepartmentRosterRereads',
+    reason:
+      "Reads every `departmentRosterHealth` snapshot, a different entity type from the row being projected and keyed by department rather than by the row, so an entity-keyed source cannot answer it. It is made only when one of the row's roster appointments falls outside the currency window, to ask whether a later complete read of that department still lists the row (#5825). Before #5836 it passed this guard only because the preceding function's routed read sat within the proximity window, not because it was routed.",
   },
   {
     fn: 'reconcileOfficialRosterSnapshotsFromRun',
     reason: 'Run-level reconciliation over a whole scrape run, not a per-row projection read.',
   },
   {
-    fn: 'materializeFromRun',
+    fn: 'materializeFromRunUnderRemovalGuard',
     reason: 'The run driver enumerating which entities a run touched, before any row is projected.',
   },
 ];
@@ -83,14 +133,34 @@ const ENTITY_READ_CALL =
 
 const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string }> = [
   {
+    fn: 'sourcelessLeadEdgesToEnd',
+    reason:
+      "Reads the row's own name, key, cited pages and stored site verdicts, after the projection write, to decide whether a lead edge with no recorded source is contradicted. Reached only from `resolveLeadEdges`, which the projection calls inside `if (!options.dryRun)` and the `leadEdges` rematerialize scope calls in a dry run too; the benchmark replays a full projection with `dryRun: true` and no such scope, so it never makes this read (#5979).",
+  },
+  {
     fn: 'planInferredPiMembership',
     reason:
       "Reads the row's own name for the eponym check on the two PI-key routes #4697 adds, only after the original walk resolves nobody. Reached from the projection inside `if (!options.dryRun)` and from the reclaim stage, so the benchmark, which replays with `dryRun: true`, never makes this read.",
   },
   {
+    fn: 'retiredEvidenceLeadEdgesToEnd',
+    reason:
+      "Reads the row's own slug to widen the citation lookup to observations keyed by it. Reached only from `resolveLeadEdges`, which the projection calls inside `if (!options.dryRun)`, the reclaim stage calls directly, and the `leadEdges` rematerialize scope calls in a dry run too; the benchmark replays a full projection with `dryRun: true` and no such scope, so it never makes this read (#5979).",
+  },
+  {
+    fn: 'entityTypeOf',
+    reason:
+      "Reads the row's own type so a director lane's lead counts only on a row type that lane reads (#6327). Reached from `resolveLeadEdges`, `resolveDirectorLeadEdge` and `materializeInferredDirectorMembership`, which the projection calls inside `if (!options.dryRun)` or in the `leadEdges` rematerialize scope, and from the center-director backfill script; the benchmark replays a full projection with `dryRun: true` and no such scope, so it never makes this read.",
+  },
+  {
     fn: 'inheritSchoolFromLeadPi',
     reason:
       'Its live-row read is routed through `entityDocForId`. The read still listed here is a read-after-write: it re-reads the row to verify what this pass wrote and whether the index is in step, so frozen input would answer about the state before the write.',
+  },
+  {
+    fn: 'addLeadSectionBesideParent',
+    reason:
+      "The inheritance pass's section addition, split out of `inheritSchoolFromLeadPi` (#6381). Its only entity read is the same read-after-write: it re-reads the row it just wrote to sync the index, so frozen input would answer about the state before the write.",
   },
   {
     fn: 'assertLeadPiInheritanceObservations',
@@ -106,6 +176,16 @@ const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string
     fn: 'liveResearchEntityNamesUserKeyAsLead',
     reason:
       'Called from `materializeUserIdentityToResearcher`, the `user` materializer, so THE BENCHMARK NEVER MAKES THIS READ: it replays `researchEntity` rows only, measured at zero hits over 147 rows (#3863). A capture-time index was considered and dropped for that reason, not because it was hard.',
+  },
+  {
+    fn: 'mergedSurvivorTakesLoserLeadAttribution',
+    reason:
+      "Called only from `liveResearchEntityNamesUserKeyAsLead`, the person-mint gate on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It loads the survivor a merged-in loser resolves to and that survivor's own observations, a different row from any being projected.",
+  },
+  {
+    fn: 'mergedRedirectRefusedListings',
+    reason:
+      "Reads the name and type of the merged-in rows, which are DIFFERENT rows from the subject, to judge whether each one lists the person the survivor is named after (#5771). Same blocker as the fold: the capture does not freeze shells, so routing it would report a miss on every person survivor that has a merge and make those rows unattributable. An archived row's name and type no longer change, so the live answer is the frozen one.",
   },
   {
     fn: 'findEntityCandidatesByKey',

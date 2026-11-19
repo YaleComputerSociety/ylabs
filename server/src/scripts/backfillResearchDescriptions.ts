@@ -78,6 +78,17 @@ import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityD
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { redactContactsAbsentFrom } from '../utils/contactRedaction';
+
+function withContactsFromSourceOnly<
+  T extends { fullDescription: string; shortDescription: string },
+>(output: T, sourceText: string): T {
+  return {
+    ...output,
+    fullDescription: redactContactsAbsentFrom(String(output.fullDescription ?? ''), [sourceText]),
+    shortDescription: redactContactsAbsentFrom(String(output.shortDescription ?? ''), [sourceText]),
+  };
+}
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { rankPersonProfileUrls } from '../utils/personProfileRanking';
 import type { ObservationInput } from '../scrapers/types';
@@ -116,6 +127,8 @@ import {
   type CardSynthesisLLMFn,
 } from '../utils/groundedCardSynthesis';
 import { planStudentVisibilityGate } from '../services/studentVisibilityGateService';
+import { postChatCompletion } from '../utils/modelClient';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -288,9 +301,11 @@ const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
     0,
     MAX_REWRITE_PROMPT_SOURCE_CHARS,
   );
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'description-rewrite-backfill',
+    apiKey: apiKey,
+    timeoutMs: 40000,
+    body: {
       model: SYNTHESIS_MODEL,
       response_format: { type: 'json_object' },
       ...openAiChatSampling(SYNTHESIS_MODEL),
@@ -312,11 +327,7 @@ const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
         },
       ],
     },
-    {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 40000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   const parsed = content ? JSON.parse(content) : {};
   return {
@@ -489,13 +500,13 @@ export async function runResearchDescriptionBackfill(options: {
     if (sourceText.length < MIN_SOURCE_CHARS) continue;
     result.scanned += 1;
     try {
-      const out = await rewrite({ name: entity.displayName || entity.name, sourceText });
-      if (!out.fullDescription) {
+      const drafted = await rewrite({ name: entity.displayName || entity.name, sourceText });
+      if (!drafted.fullDescription) {
         result.skippedNoResearch += 1;
         continue;
       }
       const grounding = groundingScore(
-        `${out.fullDescription} ${out.shortDescription}`,
+        `${drafted.fullDescription} ${drafted.shortDescription}`,
         sourceText,
       );
       if (grounding < MIN_GROUNDING) {
@@ -503,13 +514,14 @@ export async function runResearchDescriptionBackfill(options: {
         continue;
       }
       const quality = assessResearchEntityDescriptionQuality({
-        fullDescription: out.fullDescription,
-        shortDescription: out.shortDescription,
+        fullDescription: drafted.fullDescription,
+        shortDescription: drafted.shortDescription,
       });
       if (!quality.full.isUseful || !quality.short.isUseful) {
         result.skippedQuality += 1;
         continue;
       }
+      const out = withContactsFromSourceOnly(drafted, sourceText);
       if (source) {
         const sourceUrl = officialSourceUrl(entity);
         const entityId = serializedDocumentId(entity._id);
@@ -689,7 +701,7 @@ function writeBackfillReport(
   if (!options.output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(options.output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+  writeReportFileSync(safeOutput, JSON.stringify(payload, null, 2));
   console.log(`Saved ${label} report to ${safeOutput}`);
 }
 
@@ -1005,8 +1017,9 @@ export async function runLabDescriptionSynthesis(options: {
         skipped[verdict.reason ?? 'low-quality'] += 1;
         continue;
       }
-      const appliedFull = sanitizeResearchEntityDescription(output.fullDescription);
-      const appliedShort = sanitizeResearchEntityShortDescription(output.shortDescription);
+      const fromSource = withContactsFromSourceOnly(output, sourceText);
+      const appliedFull = sanitizeResearchEntityDescription(fromSource.fullDescription);
+      const appliedShort = sanitizeResearchEntityShortDescription(fromSource.shortDescription);
       if (!appliedFull || !appliedShort) {
         skipped['sanitized-empty'] += 1;
         continue;

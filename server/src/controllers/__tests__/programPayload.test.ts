@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { publicProgramForReader } from '../programPayload';
+import { publicProgramForReader, withProgramAudience } from '../programPayload';
 import { publicFellowshipForStudent } from '../../services/fellowshipService';
 
 const specificPage =
@@ -259,19 +259,20 @@ describe('a contact direction served as eligibility (#4177)', () => {
   });
 });
 
-describe('publicProgramForReader read-time redaction ordering (#774)', () => {
-  it('does not leave a token when a raw email is redacted at read time in the summary', () => {
+describe('publicProgramForReader contact details (#774, #5046)', () => {
+  it('serves the contact address a program summary publishes', () => {
     const payload = publicProgramForReader({
       _id: '6982c1cf781efc3253d58510',
       title: 'Example Richter Summer Fellowship',
       summary: 'Questions about the fellowship can be directed to grants@example.edu.',
     }) as { summary: string };
 
-    expect(payload.summary).not.toMatch(/redacted/i);
-    expect(payload.summary).not.toContain('grants@example.edu');
+    expect(payload.summary).toBe(
+      'Questions about the fellowship can be directed to grants@example.edu.',
+    );
   });
 
-  it('does not leave a token when a raw email is redacted at read time in the eligibility', () => {
+  it('keeps a contact direction out of eligibility without leaving a token', () => {
     const payload = publicProgramForReader({
       _id: '6982c1cf781efc3253d58511',
       title: 'Example Mellon Senior Research Grant',
@@ -282,7 +283,7 @@ describe('publicProgramForReader read-time redaction ordering (#774)', () => {
     expect(payload.eligibility).not.toContain('taxoffice@example.edu');
   });
 
-  it('does not leave a token when a raw email is redacted at read time in applicationInformation', () => {
+  it('serves the contact address application information publishes', () => {
     const payload = publicProgramForReader({
       _id: '6982c1cf781efc3253d58512',
       title: 'Example Travel Prize',
@@ -290,8 +291,9 @@ describe('publicProgramForReader read-time redaction ordering (#774)', () => {
         'Submit your materials and contact office@example.edu with questions.',
     }) as { applicationInformation: string };
 
-    expect(payload.applicationInformation).not.toMatch(/redacted/i);
-    expect(payload.applicationInformation).not.toContain('office@example.edu');
+    expect(payload.applicationInformation).toBe(
+      'Submit your materials and contact office@example.edu with questions.',
+    );
   });
 });
 
@@ -587,6 +589,73 @@ describe('publicProgramForReader department research guidance (#4285)', () => {
   });
 });
 
+describe('department guidance kind on the served payloads (#5298)', () => {
+  const studentPayload = (program: Record<string, unknown>) =>
+    publicProgramForReader(publicFellowshipForStudent(program));
+  const seniorEssayGuide = {
+    _id: '6a6f84d074dd496b1d43b191',
+    title: 'Fixture Studies Senior Essay',
+    programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+    sourcePageTitle: 'The Senior Essay',
+    sourceUrl: specificPage,
+    applicationLink: 'https://fixture.yale.edu/undergraduate/senior-essay-form',
+    links: [],
+  };
+
+  it('serves senior essay guidance as guidance with its kind and no application link', () => {
+    const payload = studentPayload(seniorEssayGuide);
+
+    expect(payload.departmentResearchGuidance).toBe(true);
+    expect(payload.departmentGuidanceKind).toBe('senior_essay');
+    expect(payload.applicationLink).toBeUndefined();
+    expect(payload.sourceUrl).toBe(specificPage);
+  });
+
+  it('serves research guidance with the research kind', () => {
+    const payload = studentPayload({
+      ...seniorEssayGuide,
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+      sourcePageTitle: 'Undergraduate Research',
+    });
+
+    expect(payload.departmentResearchGuidance).toBe(true);
+    expect(payload.departmentGuidanceKind).toBe('research');
+  });
+
+  it('serves a senior essay kind that states an application cycle as an application, with no kind', () => {
+    const payload = studentPayload({
+      ...seniorEssayGuide,
+      deadline: new Date('2099-02-01T00:00:00Z'),
+    });
+
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload).not.toHaveProperty('departmentGuidanceKind');
+    expect(payload.applicationLink).toBe(
+      'https://fixture.yale.edu/undergraduate/senior-essay-form',
+    );
+  });
+
+  it('never serves a kind the guidance flag does not back', () => {
+    const payload = publicProgramForReader({
+      ...seniorEssayGuide,
+      departmentResearchGuidance: false,
+      departmentGuidanceKind: 'senior_essay',
+    });
+
+    expect(payload).not.toHaveProperty('departmentGuidanceKind');
+  });
+
+  it('carries the kind through the search payload', () => {
+    expect(withProgramAudience(seniorEssayGuide)).toMatchObject({
+      departmentResearchGuidance: true,
+      departmentGuidanceKind: 'senior_essay',
+    });
+    expect(
+      withProgramAudience({ ...seniorEssayGuide, programKind: 'FELLOWSHIP_FUNDING' }),
+    ).not.toHaveProperty('departmentGuidanceKind');
+  });
+});
+
 describe('publicProgramForReader card line (#3904)', () => {
   const firstSentence =
     'The fixture program provides summer term support for undergraduate students who do laboratory research with Yale faculty.';
@@ -660,5 +729,44 @@ describe('the fund Description kept for the classifier (#4232)', () => {
     }) as Record<string, unknown>;
 
     expect(payload).not.toHaveProperty('fullSourceDescription');
+  });
+});
+
+describe('publicProgramForReader past-cycle prose (#6412)', () => {
+  const nextCycle = new Date(Date.now() + 120 * 86_400_000);
+  const served = (applicationInformation: string, deadline: Date = nextCycle) =>
+    publicProgramForReader({
+      _id: 'p-past-cycle',
+      title: 'Synthetic Past Cycle Program',
+      deadline,
+      isAcceptingApplications: true,
+      applicationInformation,
+    });
+
+  it('flags last cycle dates and drops the conflict the past-cycle note already explains', () => {
+    const payload = served('Applications are due Wednesday, March 4, 2020 by 11pm.');
+    expect(payload.proseStatesPastCycleDates).toBe(true);
+    expect(payload.deadlineTextConflict).toBeNull();
+  });
+
+  it('keeps a conflict whose date is still ahead', () => {
+    const ahead = new Date(nextCycle.getTime() + 30 * 86_400_000);
+    const stated = ahead.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'America/New_York',
+    });
+    const payload = served(`The deadline is ${stated}.`);
+    expect(payload.proseStatesPastCycleDates).toBe(false);
+    expect(payload.deadlineTextConflict).not.toBeNull();
+  });
+
+  it('raises no flag once the served deadline itself has passed', () => {
+    const payload = served(
+      'Applications are due March 4, 2020.',
+      new Date(Date.now() - 86_400_000),
+    );
+    expect(payload.proseStatesPastCycleDates).toBe(false);
   });
 });

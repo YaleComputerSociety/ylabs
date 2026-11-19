@@ -98,9 +98,9 @@ describe('PlanningOverview watched-deadline urgency signal', () => {
     });
 
     const cta = screen.getByRole('button', {
-      name: '3 watched programs close within 2 weeks, 1 not started',
+      name: '3 watched programs close within 2 weeks, 1 still marked Saved',
     });
-    expect(cta.textContent).toContain('1 not started');
+    expect(cta.textContent).toContain('1 still marked Saved');
   });
 
   it('uses singular phrasing for a single approaching program', () => {

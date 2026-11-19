@@ -7,6 +7,8 @@ import {
   checkServedRowsAreInServedTier,
   checkServedRowsPassTheGate,
   checkWalkCoversReportedTotal,
+  checkStatedFieldQueriesServeTheirRows,
+  checkYearQueriesServeTheStatedYear,
   tallyProgramFieldAttribution,
   tallyServedRowGate,
   withSurfaceId,
@@ -72,6 +74,8 @@ describe('checkOfferedOptionsServeARow', () => {
           filteredTotal: 0,
           servedOnFirstPage: 0,
           servedCarryingValue: 0,
+          servedNotStatingField: 0,
+          notStatedKeptByFilter: false,
         },
         {
           field: 'yearOfStudy',
@@ -79,6 +83,8 @@ describe('checkOfferedOptionsServeARow', () => {
           filteredTotal: 4,
           servedOnFirstPage: 4,
           servedCarryingValue: 4,
+          servedNotStatingField: 0,
+          notStatedKeptByFilter: false,
         },
       ],
       steadyCorpus,
@@ -105,11 +111,64 @@ describe('checkFilteredRowsCarryValue', () => {
         filteredTotal: 3,
         servedOnFirstPage: 3,
         servedCarryingValue: 2,
+        servedNotStatingField: 0,
+        notStatedKeptByFilter: false,
       },
     ]);
 
     expect(result.status).toBe('fail');
     expect(result.detail.mismatchesByField).toEqual({ programKind: 1 });
+  });
+
+  it('passes a not-stated row under a filter that keeps not-stated programs (#5235)', () => {
+    const result = checkFilteredRowsCarryValue('programs', [
+      {
+        field: 'yearOfStudy',
+        value: 'Junior',
+        filteredTotal: 3,
+        servedOnFirstPage: 3,
+        servedCarryingValue: 2,
+        servedNotStatingField: 1,
+        notStatedKeptByFilter: true,
+      },
+    ]);
+
+    expect(result.status).toBe('pass');
+    expect(result.detail.notStatedKeptByField).toEqual({ yearOfStudy: 1 });
+  });
+
+  it('still fails a row stating a different value under a filter that keeps not-stated programs', () => {
+    const result = checkFilteredRowsCarryValue('programs', [
+      {
+        field: 'yearOfStudy',
+        value: 'Junior',
+        filteredTotal: 4,
+        servedOnFirstPage: 4,
+        servedCarryingValue: 2,
+        servedNotStatingField: 1,
+        notStatedKeptByFilter: true,
+      },
+    ]);
+
+    expect(result.status).toBe('fail');
+    expect(result.detail.mismatchesByField).toEqual({ yearOfStudy: 1 });
+  });
+
+  it('fails a not-stated row under a stated-only filter such as region (#5533)', () => {
+    const result = checkFilteredRowsCarryValue('programs', [
+      {
+        field: 'globalRegions',
+        value: 'Asia',
+        filteredTotal: 2,
+        servedOnFirstPage: 2,
+        servedCarryingValue: 1,
+        servedNotStatingField: 1,
+        notStatedKeptByFilter: false,
+      },
+    ]);
+
+    expect(result.status).toBe('fail');
+    expect(result.detail.mismatchesByField).toEqual({ globalRegions: 1 });
   });
 
   it('is inconclusive when no filtered browse served a row', () => {
@@ -120,6 +179,8 @@ describe('checkFilteredRowsCarryValue', () => {
         filteredTotal: 0,
         servedOnFirstPage: 0,
         servedCarryingValue: 0,
+        servedNotStatingField: 0,
+        notStatedKeptByFilter: false,
       },
     ]);
 
@@ -274,5 +335,71 @@ describe('program field attribution', () => {
     expect(checkProgramFieldAttribution('programs', tally, steadyCorpus, steadyCorpus).status).toBe(
       'inconclusive',
     );
+  });
+});
+
+describe('checkYearQueriesServeTheStatedYear (#6397)', () => {
+  const catalog = [
+    { key: 'a', years: ['First-Year Student', 'Sophomore'] },
+    { key: 'b', years: ['Junior', 'Senior'] },
+    { key: 'c', years: [] },
+  ];
+  const check = (servedKeys: string[], corpusAfter = steadyCorpus) =>
+    checkYearQueriesServeTheStatedYear(
+      'year',
+      'year',
+      [{ query: 'first-year', year: 'First-Year Student', servedKeys }],
+      catalog,
+      steadyCorpus,
+      corpusAfter,
+    );
+
+  it('holds when every stating row is served and an unstated row may be', () => {
+    expect(check(['a']).status).toBe('pass');
+    expect(check(['a', 'c']).status).toBe('pass');
+  });
+
+  it('fails on a missed stating row or a served excluding row', () => {
+    expect(check([]).status).toBe('fail');
+    expect(check(['a', 'b']).status).toBe('fail');
+  });
+
+  it('is inconclusive when the corpus moved or no row states the year', () => {
+    expect(check(['a', 'b'], movedCorpus).status).toBe('inconclusive');
+    expect(
+      checkYearQueriesServeTheStatedYear(
+        'year',
+        'year',
+        [{ query: 'seniors', year: 'Senior', servedKeys: [] }],
+        [{ key: 'a', years: ['Junior'] }],
+        steadyCorpus,
+        steadyCorpus,
+      ).status,
+    ).toBe('inconclusive');
+  });
+});
+
+describe('checkStatedFieldQueriesServeTheirRows (#6398)', () => {
+  const check = (servedKeys: string[], allowedKeys?: string[], requiredKeys = ['a', 'b']) =>
+    checkStatedFieldQueriesServeTheirRows(
+      'pay',
+      'pay',
+      [{ query: 'paid', servedKeys, requiredKeys, allowedKeys }],
+      steadyCorpus,
+      steadyCorpus,
+    ).status;
+
+  it('holds when every required row is served and nothing falls outside the allowed set', () => {
+    expect(check(['a', 'b'])).toBe('pass');
+    expect(check(['a', 'b', 'c'], ['a', 'b', 'c'])).toBe('pass');
+  });
+
+  it('fails on a missed required row or a row outside the allowed set', () => {
+    expect(check(['a'])).toBe('fail');
+    expect(check(['a', 'b', 'd'], ['a', 'b', 'c'])).toBe('fail');
+  });
+
+  it('is inconclusive when no row states the field', () => {
+    expect(check([], undefined, [])).toBe('inconclusive');
   });
 });

@@ -16,6 +16,7 @@
  * per key and reviewed before any write.
  */
 
+import { resolveSafeJsonReportOutputPath } from '../utils/reportOutputPath';
 import {
   isSynthesizedResearchHomeName,
   personNamesDenoteSamePerson,
@@ -325,11 +326,9 @@ export function parseStrandedKeyApplyArgs(argv: string[]): StrandedKeyApplyArgs 
         .map((key) => key.trim())
         .filter(Boolean);
     } else if (arg.startsWith('--output=')) {
-      args.output = arg.slice('--output='.length);
+      args.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else if (arg === '--output') {
-      const raw = argv[(index += 1)];
-      if (!raw) throw new Error('--output requires a path');
-      args.output = raw;
+      args.output = resolveSafeJsonReportOutputPath(argv[(index += 1)]);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }

@@ -34,3 +34,18 @@ export function quoteWithPageContactsRestored(redactedQuote: string, rawPageText
   let index = 0;
   return quote.replace(PLACEHOLDER_PATTERN, (placeholder) => values[index++] ?? placeholder);
 }
+
+const SENTENCE_BREAK = /(?<=[.!?])\s+/;
+
+/**
+ * Verbatim prose copied from several places on one page, each sentence restored on
+ * its own, because the sentences need not sit together on the page.
+ */
+export function proseWithPageContactsRestored(redactedProse: string, rawPageText: string): string {
+  if (!PLACEHOLDER_PATTERN.test(redactedProse)) return redactedProse;
+  PLACEHOLDER_PATTERN.lastIndex = 0;
+  return collapseWhitespace(redactedProse)
+    .split(SENTENCE_BREAK)
+    .map((sentence) => quoteWithPageContactsRestored(sentence, rawPageText))
+    .join(' ');
+}

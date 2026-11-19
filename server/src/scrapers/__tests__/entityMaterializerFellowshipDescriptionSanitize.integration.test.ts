@@ -26,7 +26,7 @@ const CHROME_AND_EMAIL_DIRTY =
   'Skip to main content Show all breadcrumbs The travel research grant supports undergraduate summer fieldwork abroad. Direct questions to grants@example.edu before applying.';
 
 const CHROME_AND_EMAIL_CLEAN =
-  'The travel research grant supports undergraduate summer fieldwork abroad.';
+  'The travel research grant supports undergraduate summer fieldwork abroad. Direct questions to grants@example.edu before applying.';
 
 type PersistedFellowship = { description?: string; summary?: string };
 
@@ -95,7 +95,7 @@ describe('materializeEntity sanitizes fellowship/program descriptions at the wri
     expect(persisted?.description).not.toContain('Frequently Asked Questions');
   });
 
-  it('re-materialize strips chrome and the leaked contact token instead of re-clobbering', async () => {
+  it('re-materialize strips chrome and keeps the published contact instead of re-clobbering', async () => {
     await seedStaleRecord(CHROME_AND_EMAIL_CLEAN);
     await seedObservation('title', 'Fixture Summer Research Grant');
     await seedObservation('sourceName', SOURCE_NAME);
@@ -109,7 +109,6 @@ describe('materializeEntity sanitizes fellowship/program descriptions at the wri
     expect(persisted?.description).toBe(CHROME_AND_EMAIL_CLEAN);
     expect(persisted?.description).not.toMatch(/breadcrumbs|Skip to main content/i);
     expect(persisted?.description).not.toMatch(/redacted/i);
-    expect(persisted?.description).not.toMatch(/@example\.edu/);
   });
 
   it('writes genuine clean prose verbatim so a valid description is never mangled', async () => {

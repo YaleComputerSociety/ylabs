@@ -1,8 +1,78 @@
+import {
+  officialRosterUndergraduateStatuses,
+  type OfficialRosterUndergraduateStatus,
+} from '../models/storedVocabularies';
 import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
+import { entityHasUndergradListSignal } from './undergradListEvidenceServing';
+
+const MAX_ROSTER_UNDERGRADUATE_NAME_LENGTH = 80;
+
+const boundedRosterText = (value: unknown, maxLength: number): string => {
+  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  return text.length <= maxLength ? text : '';
+};
+
+export const DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV = 'DERIVED_UNDERGRAD_ROSTERS_SERVE';
+
+/**
+ * A roster the lane derived for a row with a website, rather than one from the reviewed allowlist, is
+ * served once it passes the publish checks (owner, 2026-10-20, #5413); `false` is the kill switch.
+ */
+export const derivedUndergradRostersServe = (): boolean =>
+  process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV] !== 'false';
+
+export function servableRosterSnapshot(
+  enrichment: any,
+  derivedRostersServe = derivedUndergradRostersServe(),
+): Record<string, any> | null {
+  const snapshot = enrichment?.state === 'failed' ? enrichment?.lastSuccessfulSnapshot : enrichment;
+  if (!['current', 'partial'].includes(snapshot?.state)) return null;
+  if (snapshot?.configOrigin === 'derived' && !derivedRostersServe) return null;
+  return Array.isArray(snapshot?.undergraduates) ? snapshot : null;
+}
+
+export function listedRosterUndergraduate(
+  value: any,
+): { name: string; status: OfficialRosterUndergraduateStatus } | null {
+  const name = boundedRosterText(value?.name, MAX_ROSTER_UNDERGRADUATE_NAME_LENGTH);
+  const status = value?.status;
+  if (!name || !(officialRosterUndergraduateStatuses as readonly string[]).includes(status)) {
+    return null;
+  }
+  return { name, status };
+}
+
+export function rosterListsUndergraduates(
+  enrichment: unknown,
+  derivedRostersServe = derivedUndergradRostersServe(),
+): boolean {
+  const snapshot = servableRosterSnapshot(enrichment, derivedRostersServe);
+  return Boolean(snapshot?.undergraduates.some(listedRosterUndergraduate));
+}
+
+// These pages moved from hosted to mentors (#5362, #5591); the fellowship lane's stored
+// observations still carry them, so every reader drops them rather than trusting the store.
+export const ADVISEE_PROGRAMS_MOVED_TO_MENTORS: ReadonlySet<string> = new Set([
+  'Cognitive Science senior essay',
+  'Earth and Planetary Sciences senior thesis',
+]);
+
+export function withoutAdviseeProgramsMovedToMentors(value: unknown): unknown[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (row) =>
+      !(
+        row &&
+        typeof row === 'object' &&
+        ADVISEE_PROGRAMS_MOVED_TO_MENTORS.has(
+          String((row as { programName?: unknown }).programName),
+        )
+      ),
+  );
+}
 
 export function hasPastUndergradAdvisees(value: unknown): boolean {
-  if (!Array.isArray(value)) return false;
-  return value.some((row) => {
+  return withoutAdviseeProgramsMovedToMentors(value).some((row) => {
     if (!row || typeof row !== 'object') return false;
     const count = Number((row as { count?: unknown }).count ?? 1);
     return count > 0;
@@ -20,13 +90,31 @@ export function hasPastUndergradAdvisees(value: unknown): boolean {
  * lines (#3789): after that re-run, 28 of 30 stored positive counts sampled on Development
  * (2026-09-28) were backed by the cited page, against 13 of 20 before it. A count held only by
  * the retired cache backfill carried no roster to check, so it still does not count.
+ *
+ * An owner-reviewed official roster that lists an undergraduate by name, current or past,
+ * counts too (#5232), read from the same snapshot the detail page lists them from. Unlike
+ * that list it ignores the freshness window: "has hosted" is historical, and the stored
+ * copy of this flag must not change with the clock.
+ *
+ * A served derived roster counts as well (#5413). The lane attempts every live row with a
+ * website, not only rows that already carry this flag (#5375), and withdraws a derived roster
+ * whose pages load but no longer yield it, so a roster cannot keep the flag alive after its page
+ * stops naming anyone; a read that fails on every page keeps the last successful roster.
  */
-export function entityHasHostedUndergraduates(entity: {
-  pastUndergradAdvisees?: unknown;
-  currentUndergradCount?: unknown;
-  fieldProvenance?: { currentUndergradCount?: { sourceName?: unknown } };
-}): boolean {
+export function entityHasHostedUndergraduates(
+  entity: {
+    pastUndergradAdvisees?: unknown;
+    currentUndergradCount?: unknown;
+    fieldProvenance?: { currentUndergradCount?: { sourceName?: unknown } };
+    rosterEnrichment?: unknown;
+    undergradListEvidence?: unknown;
+    wayInWithheld?: unknown;
+  },
+  reviewedSources?: ReadonlySet<string>,
+): boolean {
   if (hasPastUndergradAdvisees(entity.pastUndergradAdvisees)) return true;
+  if (entityHasUndergradListSignal(entity, 'hosted', reviewedSources)) return true;
+  if (rosterListsUndergraduates(entity.rosterEnrichment)) return true;
   const count = Number(entity.currentUndergradCount);
   return (
     Number.isFinite(count) &&

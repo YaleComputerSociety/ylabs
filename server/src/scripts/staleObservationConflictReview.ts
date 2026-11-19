@@ -11,8 +11,13 @@ import {
   isResearchEntityContactField,
 } from '../scrapers/rowKeyedContactEvidence';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -436,7 +441,7 @@ export function parseStaleObservationConflictReviewArgs(
       continue;
     }
     if (arg.startsWith('--accepted-decisions=')) {
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
+      args.acceptedDecisions = resolveSafeJsonReportPath(
         arg.slice('--accepted-decisions='.length),
         '--accepted-decisions',
       );
@@ -444,7 +449,7 @@ export function parseStaleObservationConflictReviewArgs(
     }
     if (arg === '--accepted-decisions') {
       const next = consumeValue(argv, index, '--accepted-decisions', 'a path');
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(next, '--accepted-decisions');
+      args.acceptedDecisions = resolveSafeJsonReportPath(next, '--accepted-decisions');
       index += 1;
       continue;
     }
@@ -543,7 +548,7 @@ export function writeStaleObservationConflictReviewOutput(summary: object, outpu
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(summary, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(summary, null, 2)}\n`);
 }
 
 export function buildStaleObservationConflictReviewOutput<T extends object>(
@@ -634,14 +639,16 @@ export function writeStaleObservationDecisionTemplate(
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output, '--decision-template-output');
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`, {
+    flag: '--decision-template-output',
+  });
 }
 
 export function readStaleObservationReviewDecisions(
   inputPath: string,
   options: { allowEmpty?: boolean } = {},
 ): StaleObservationReviewDecision[] {
-  const safeInputPath = resolveSafeJsonReportOutputPath(inputPath, '--accepted-decisions');
+  const safeInputPath = resolveSafeJsonReportPath(inputPath, '--accepted-decisions');
   if (options.allowEmpty && !fs.existsSync(safeInputPath)) {
     return [];
   }

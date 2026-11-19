@@ -26,10 +26,14 @@
  * only the single top director; co-directors and multi-leader rosters are out
  * of scope for this source.
  */
-import axios from 'axios';
+import {
+  CENTER_DIRECTOR_LLM_SOURCE_NAME,
+  LEAD_LANE_ENTITY_TYPE_SCOPES,
+} from '../leadLaneEntityScopes';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
@@ -55,13 +59,13 @@ import {
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
+import { postChatCompletion } from '../../utils/modelClient';
 
-export const CENTER_DIRECTOR_LLM_SOURCE_NAME = 'center-director-llm';
+export { CENTER_DIRECTOR_LLM_SOURCE_NAME };
 const SOURCE_KEY = CENTER_DIRECTOR_LLM_SOURCE_NAME;
 const DEFAULT_MODEL = 'gpt-5-mini';
 const MAX_PROMPT_CHARS = 30_000;
 const MAX_LEADERSHIP_PAGES = 3;
-const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
 const CENTER_DIRECTOR_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeCenterDirectorObjectId(value: unknown): string | undefined {
@@ -136,7 +140,10 @@ function htmlToText(html: string): string {
   if (!html) return '';
   const $ = cheerio.load(html);
   $('script, style, noscript, svg, iframe, nav, footer').remove();
-  return textValue($('body').text() || $.root().text()).slice(0, MAX_PROMPT_CHARS);
+  return textValue(
+    extractElementTextWithBlockSeparators($('body')[0]) ||
+      extractElementTextWithBlockSeparators($.root()[0]),
+  ).slice(0, MAX_PROMPT_CHARS);
 }
 
 function sameHost(a: string, b: string): boolean {
@@ -325,7 +332,6 @@ async function defaultPriorReadFinder(
 async function defaultFetchPage(url: string): Promise<{ url: string; html: string } | null> {
   const page = await fetchPageWithPolicy(url, {
     timeoutMs: 15_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     maxRedirects: 5,
   });
   return { url: page.url, html: page.html };
@@ -341,9 +347,11 @@ async function defaultCallLLM(input: {
   const safeCenterName = redactDirectContactInfo(input.centerName).slice(0, 240);
   const safeSourceUrl = redactDirectContactInfo(input.sourceUrl).slice(0, 2048);
   const safePageText = redactDirectContactInfo(input.pageText).slice(0, MAX_PROMPT_CHARS);
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'center-director-llm',
+    apiKey: input.apiKey,
+    timeoutMs: 40_000,
+    body: {
       model: input.model,
       response_format: { type: 'json_object' },
       messages: [
@@ -368,14 +376,7 @@ async function defaultCallLLM(input: {
       ],
       ...openAiChatSampling(input.model),
     },
-    {
-      headers: {
-        Authorization: `Bearer ${input.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 40_000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== 'string') throw new Error('LLM returned empty content');
   const parsed = JSON.parse(content) as Partial<CenterDirectorExtraction>;
@@ -388,7 +389,7 @@ async function defaultCallLLM(input: {
   };
 }
 
-async function defaultCenterFinder(
+export async function defaultCenterFinder(
   options: { only?: string[]; skipCentersLedByOtherSources?: boolean } = {},
 ): Promise<CandidateCenter[]> {
   const only = Array.from(
@@ -410,7 +411,7 @@ async function defaultCenterFinder(
   const docs = await ResearchEntity.find(
     {
       $and: [
-        { entityType: { $in: ORG_ENTITY_TYPES } },
+        { entityType: { $in: [...LEAD_LANE_ENTITY_TYPE_SCOPES[CENTER_DIRECTOR_LLM_SOURCE_NAME]] } },
         { archived: { $ne: true } },
         { websiteUrl: /^https?:\/\//i },
         identityFilter,

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   getEmbedders: vi.fn(),
+  getFilterableAttributes: vi.fn(),
   getResearchSearchQueryVector: vi.fn(),
 }));
 
@@ -12,6 +13,7 @@ vi.mock('../../utils/meiliClient', () => {
   const searchIndex = vi.fn(async () => ({
     search: mocks.search,
     getEmbedders: mocks.getEmbedders,
+    getFilterableAttributes: mocks.getFilterableAttributes,
   }));
   return { getMeiliIndex: searchIndex, getMeiliSearchIndex: searchIndex };
 });
@@ -21,8 +23,14 @@ vi.mock('../researchSearchQueryEmbedding', () => ({
 }));
 
 import { searchResearchGroupsViaMeili } from '../researchGroupService';
-import { invalidateResearchEntitySearchEmbedderCache } from '../researchEntitySearchIndexService';
+import {
+  buildResearchEntitySearchIndexDocument,
+  getResearchEntitySearchIndexSettings,
+  invalidateResearchEntitySearchEmbedderCache,
+  invalidateResearchEntitySearchIndexAttributesCache,
+} from '../researchEntitySearchIndexService';
 import type { ResearchGroupFilterInput } from '../researchGroupFilters';
+import { clearResearchFilterVocabularyCache } from '../researchFilterVocabulary';
 
 type IndexDocument = {
   id: string;
@@ -30,10 +38,14 @@ type IndexDocument = {
   studentVisibilityTier: string;
   kind: string;
   entityType: string;
+  researchType?: string;
   schools: string[];
   departments: string[];
   researchAreas: string[];
   hasUndergradHostingEvidence: boolean;
+  welcomesUndergrads: boolean;
+  mentorsUndergrads?: true;
+  undergradInvitationRank: number;
   searchText: string;
   similarity: number;
 };
@@ -72,7 +84,9 @@ const buildDocument = (index: number, id: string): IndexDocument => {
     schools,
     departments,
     researchAreas: [],
-    hasUndergradHostingEvidence: index % 3 === 0,
+    hasUndergradHostingEvidence: false,
+    welcomesUndergrads: false,
+    undergradInvitationRank: 0,
     searchText: keywordMatch
       ? `synthetic coastal sediment transport study ${index}`
       : `synthetic tidal chemistry study ${index}`,
@@ -155,10 +169,14 @@ const toHit = (document: IndexDocument, rankingScoreDetails: Record<string, unkn
   id: document.id,
   kind: document.kind,
   entityType: document.entityType,
+  researchType: document.researchType,
   schools: document.schools,
   departments: document.departments,
   researchAreas: document.researchAreas,
   hasUndergradHostingEvidence: document.hasUndergradHostingEvidence,
+  welcomesUndergrads: document.welcomesUndergrads,
+  mentorsUndergrads: document.mentorsUndergrads,
+  undergradInvitationRank: document.undergradInvitationRank,
   _rankingScoreDetails: rankingScoreDetails,
 });
 
@@ -171,7 +189,19 @@ const pageOf = <T>(rows: T[], params: Record<string, any>): T[] => {
   return rows.slice(offset, offset + (params.limit ?? 20));
 };
 
+let liveFilterableAttributes: string[] = [];
+
+const assertDeclaredFilterable = (params: Record<string, any>) => {
+  const named = [
+    ...(params.facets ?? []),
+    ...[...String(params.filter ?? '').matchAll(/(\w+) =/g)].map((match) => match[1]),
+  ];
+  const undeclared = named.find((field) => !liveFilterableAttributes.includes(field));
+  if (undeclared) throw new Error(`Attribute \`${undeclared}\` is not filterable.`);
+};
+
 const fakeSearch = async (query: string, params: Record<string, any>) => {
+  assertDeclaredFilterable(params);
   const filtered = indexDocuments.filter((document) =>
     documentPassesFilter(document, params.filter ?? ''),
   );
@@ -230,6 +260,24 @@ const FILTER_KEY_BY_FACET: Record<string, 'school' | 'departments' | 'entityType
   entityType: 'entityType',
 };
 
+const withOption = (
+  baseFilters: ResearchGroupFilterInput,
+  facet: string,
+  value: string,
+): ResearchGroupFilterInput | null => {
+  if (facet === 'hostsUndergrads') {
+    return value === 'true' ? { ...baseFilters, hostsUndergrads: true } : null;
+  }
+  if (facet === 'welcomesUndergrads') {
+    return value === 'true' ? { ...baseFilters, welcomesUndergrads: true } : null;
+  }
+  if (facet === 'mentorsUndergrads') {
+    return value === 'true' ? { ...baseFilters, mentorsUndergrads: true } : null;
+  }
+  const filterKey = FILTER_KEY_BY_FACET[facet];
+  return filterKey ? { ...baseFilters, [filterKey]: [value] } : null;
+};
+
 const search = (query: string, filters: ResearchGroupFilterInput, pageSize = 24) =>
   searchResearchGroupsViaMeili(query, filters, 1, pageSize, {}, { correctSpelling: false });
 
@@ -247,10 +295,10 @@ const expectEveryOptionCountToEqualItsResults = async (
   const mismatches: string[] = [];
   let optionsChecked = 0;
   for (const [facet, options] of Object.entries(facetDistribution)) {
-    const filterKey = FILTER_KEY_BY_FACET[facet];
-    if (!filterKey) continue;
     for (const [value, count] of Object.entries(options)) {
-      const applied = await search(query, { ...baseFilters, [filterKey]: [value] }, 100);
+      const filters = withOption(baseFilters, facet, value);
+      if (!filters) continue;
+      const applied = await search(query, filters, 100);
       optionsChecked += 1;
       if (applied.estimatedTotalHits !== count || applied.researchEntities.length !== count) {
         mismatches.push(
@@ -274,8 +322,7 @@ describe('a research filter option count is the number of results applying it re
     const rows = Array.from({ length: ROW_COUNT }, (_, index) => {
       const _id = new mongoose.Types.ObjectId();
       const document = buildDocument(index, _id.toString());
-      indexDocuments.push(document);
-      return {
+      const row = {
         _id,
         slug: `synthetic-sediment-row-${index}`,
         name: `Synthetic Sediment Group ${index}`,
@@ -292,7 +339,38 @@ describe('a research filter option count is the number of results applying it re
         fullDescription: `A synthetic group studying how coastal sediment moves through estuary channel ${index}, using field cores and flume experiments.`,
         websiteUrl: `https://example.yale.edu/synthetic-sediment-${index}/`,
         sourceUrls: [`https://example.yale.edu/synthetic-sediment-${index}/`],
+        pastUndergradAdvisees: index % 3 === 0 ? [{ count: 2 }] : [],
+        hasUndergradHostingEvidence: false,
+        ...(index % 4 === 1
+          ? {
+              undergradInvitation: {
+                level: index % 8 === 1 ? 'actively_hiring' : 'welcomes_undergrads',
+                quote: 'Interested undergraduates are welcome to get in touch.',
+                sourceUrl: `https://example.yale.edu/synthetic-sediment-${index}/join`,
+              },
+            }
+          : {}),
+        ...(index % 5 === 2 || index % 4 === 1
+          ? {
+              undergradListEvidence: [
+                {
+                  source: 'cs-senior-projects',
+                  kind: 'advised',
+                  count: 2,
+                  sourceUrl: `https://example.yale.edu/synthetic-senior-projects-${index}/`,
+                },
+              ],
+            }
+          : {}),
       };
+      const built = buildResearchEntitySearchIndexDocument(row);
+      document.hasUndergradHostingEvidence = built?.hasUndergradHostingEvidence === true;
+      document.welcomesUndergrads = built?.welcomesUndergrads === true;
+      if (built?.mentorsUndergrads === true) document.mentorsUndergrads = true;
+      document.undergradInvitationRank = built?.undergradInvitationRank ?? 0;
+      document.researchType = built?.researchType;
+      indexDocuments.push(document);
+      return row;
     });
     await db.collection('research_entities').insertMany(rows);
   });
@@ -304,6 +382,11 @@ describe('a research filter option count is the number of results applying it re
 
   beforeEach(() => {
     invalidateResearchEntitySearchEmbedderCache();
+    invalidateResearchEntitySearchIndexAttributesCache();
+    clearResearchFilterVocabularyCache();
+    liveFilterableAttributes = [...getResearchEntitySearchIndexSettings().filterableAttributes];
+    mocks.getFilterableAttributes.mockReset();
+    mocks.getFilterableAttributes.mockImplementation(async () => liveFilterableAttributes);
     mocks.search.mockReset();
     mocks.search.mockImplementation(fakeSearch);
     mocks.getEmbedders.mockReset();
@@ -325,6 +408,62 @@ describe('a research filter option count is the number of results applying it re
       entityType: ['LAB'],
       school: ['School of Medicine'],
     });
+    await expectEveryOptionCountToEqualItsResults(QUERY, { hostsUndergrads: true });
+    await expectEveryOptionCountToEqualItsResults(QUERY, { welcomesUndergrads: true });
+    await expectEveryOptionCountToEqualItsResults(QUERY, { mentorsUndergrads: true });
+  });
+
+  it('counts each Undergrads option as the result of adding it to the ticked ones, which AND (#5963)', async () => {
+    await expectEveryOptionCountToEqualItsResults('', {});
+    await expectEveryOptionCountToEqualItsResults('', { welcomesUndergrads: true });
+    await expectEveryOptionCountToEqualItsResults('', {
+      hostsUndergrads: true,
+      mentorsUndergrads: true,
+    });
+    await expectEveryOptionCountToEqualItsResults(QUERY, {
+      welcomesUndergrads: true,
+      mentorsUndergrads: true,
+    });
+
+    const both = await search('', { welcomesUndergrads: true, mentorsUndergrads: true }, 100);
+    const welcomesAndMentors = indexDocuments.filter(
+      (document) => document.welcomesUndergrads && document.mentorsUndergrads === true,
+    ).length;
+    const welcomesOrMentors = indexDocuments.filter(
+      (document) => document.welcomesUndergrads || document.mentorsUndergrads === true,
+    ).length;
+    expect(welcomesAndMentors).toBeGreaterThan(0);
+    expect(welcomesAndMentors).toBeLessThan(welcomesOrMentors);
+    expect(both.estimatedTotalHits).toBe(welcomesAndMentors);
+  });
+
+  it('filters to the rows whose served card carries a mentors entry, and counts them (#5963)', async () => {
+    const browse = await search('', {}, 100);
+    const applied = await search('', { mentorsUndergrads: true }, 100);
+    const mentoring = indexDocuments.filter((document) => document.mentorsUndergrads).length;
+
+    expect(mentoring).toBeGreaterThan(0);
+    expect(browse.facetDistribution?.mentorsUndergrads).toEqual({ true: mentoring });
+    expect(applied.estimatedTotalHits).toBe(mentoring);
+    expect(
+      applied.researchEntities.every((entity: any) =>
+        entity.undergradListEvidence?.some((entry: any) => entry.signal === 'mentors'),
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps answering, and reports the dropped mentors toggle, on an index rebuilt before the field existed (#5963)', async () => {
+    liveFilterableAttributes = liveFilterableAttributes.filter(
+      (field) => field !== 'mentorsUndergrads',
+    );
+
+    const browse = await search('', {}, 100);
+    const requested = await search('', { mentorsUndergrads: true }, 100);
+    const unfiltered = await search('', {}, 100);
+
+    expect(browse.facetDistribution).not.toHaveProperty('mentorsUndergrads');
+    expect(requested.appliedFilters).toEqual({ mentorsUndergrads: false });
+    expect(requested.estimatedTotalHits).toBe(unfiltered.estimatedTotalHits);
   });
 
   it('keeps the query in force under a type filter instead of admitting every row of that type', async () => {
@@ -338,6 +477,99 @@ describe('a research filter option count is the number of results applying it re
 
     expect(coreFacilityCount).toBeLessThan(allCoreFacilities);
     expect(applied.estimatedTotalHits).toBe(coreFacilityCount);
+  });
+
+  it('filters on the evidence the served badge reads, even when the stored flag is stale', async () => {
+    const browse = await search('', {}, 100);
+    const badged = browse.researchEntities.filter(
+      (entity: any) => entity.hasUndergradHostingEvidence === true,
+    ).length;
+
+    const applied = await search('', { hostsUndergrads: true }, 100);
+
+    expect(badged).toBeGreaterThan(0);
+    expect(browse.facetDistribution?.hostsUndergrads).toEqual({
+      true: indexDocuments.filter((document) => document.hasUndergradHostingEvidence).length,
+    });
+    expect(applied.estimatedTotalHits).toBe(browse.facetDistribution?.hostsUndergrads?.true);
+    expect(
+      applied.researchEntities.every((entity: any) => entity.hasUndergradHostingEvidence === true),
+    ).toBe(true);
+  });
+
+  it('filters to the rows whose served card carries an invitation badge', async () => {
+    const browse = await search('', {}, 100);
+    const applied = await search('', { welcomesUndergrads: true }, 100);
+    const invited = indexDocuments.filter((document) => document.welcomesUndergrads).length;
+
+    expect(invited).toBeGreaterThan(0);
+    expect(browse.facetDistribution?.welcomesUndergrads).toEqual({ true: invited });
+    expect(applied.estimatedTotalHits).toBe(invited);
+    expect(
+      applied.researchEntities.every((entity: any) => entity.undergradInvitation !== undefined),
+    ).toBe(true);
+  });
+
+  it('keeps answering, and reports the dropped toggle, on an index rebuilt before the field existed', async () => {
+    liveFilterableAttributes = liveFilterableAttributes.filter(
+      (field) => field !== 'welcomesUndergrads',
+    );
+
+    const browse = await search('', {}, 100);
+    const requested = await search(QUERY, { welcomesUndergrads: true });
+    const unfiltered = await search(QUERY, {});
+
+    expect(browse.facetDistribution).not.toHaveProperty('welcomesUndergrads');
+    expect(browse.facetDistribution?.hostsUndergrads).toBeDefined();
+    expect(requested.appliedFilters).toEqual({ welcomesUndergrads: false });
+    expect(requested.estimatedTotalHits).toBe(unfiltered.estimatedTotalHits);
+  });
+
+  it('lists actively hiring rows first in a text search filtered to rows that welcome undergraduates', async () => {
+    const result = await search(QUERY, { welcomesUndergrads: true }, 100);
+    const ranks = result.researchEntities.map(
+      (entity: any) => entity.undergradInvitation?.level === 'actively_hiring',
+    );
+    const firstWelcomesOnly = ranks.indexOf(false);
+
+    expect(ranks.filter(Boolean).length).toBeGreaterThan(0);
+    expect(firstWelcomesOnly).toBeGreaterThan(0);
+    expect(ranks.slice(firstWelcomesOnly).some(Boolean)).toBe(false);
+  });
+
+  it('drops a school no row holds and reports the filters it applied, instead of answering empty (#5146)', async () => {
+    const result = await search(QUERY, {
+      school: ['Synthetic Nowhere School'],
+      entityType: ['LAB'],
+    });
+    const typeOnly = await search(QUERY, { entityType: ['LAB'] });
+
+    expect(result.appliedFilters).toEqual({ school: [] });
+    expect(result.estimatedTotalHits).toBe(typeOnly.estimatedTotalHits);
+    expect(result.estimatedTotalHits).toBeGreaterThan(0);
+  });
+
+  it('searches a department under the spelling the corpus holds (#5146)', async () => {
+    const result = await search('', { departments: ['chemistry'] });
+    const canonical = await search('', { departments: ['Chemistry'] });
+
+    expect(result.appliedFilters).toEqual({ departments: ['Chemistry'] });
+    expect(canonical.appliedFilters).toBeUndefined();
+    expect(result.estimatedTotalHits).toBe(canonical.estimatedTotalHits);
+  });
+
+  it('keeps a department no row holds when the caller opts out of resolving filter values', async () => {
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { departments: ['Synthetic Nowhere Department'] },
+      1,
+      24,
+      {},
+      { correctSpelling: false, resolveFilterValues: false },
+    );
+
+    expect(result.appliedFilters).toBeUndefined();
+    expect(result.estimatedTotalHits).toBe(0);
   });
 
   it('holds for a filters-only browse', async () => {

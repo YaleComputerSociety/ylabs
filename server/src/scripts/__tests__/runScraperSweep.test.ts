@@ -2,7 +2,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { describe, expect, it, vi } from 'vitest';
-import { parseArgs, parseScraperOptions } from '../../scrapers/cliHelpers';
+import {
+  buildScraperCliPreflight,
+  parseArgs,
+  parseScraperOptions,
+} from '../../scrapers/cliHelpers';
 import { buildOrchestrator } from '../../scrapers/registry';
 import { brokerSocketPath } from '../../scrapers/utils/hostSlotBroker';
 import { ACTIVE_SOURCE_NAMES } from '../../scrapers/seedSources';
@@ -19,6 +23,7 @@ import {
   buildFellowshipPostRunStages,
   buildPruneDeadObservationsChildArgs,
   buildScraperSweepChildArgs,
+  sweepCenterPlanOwed,
   declareMaterializationReadScopeForChildren,
   fellowshipPostRunArtifactError,
   isDeadObservationPruneSweepMode,
@@ -139,6 +144,19 @@ describe('runScraperSweep', () => {
       );
     } finally {
       RESEARCH_SWEEP_SOURCES.pop();
+    }
+  });
+
+  it('keeps every model-calling lane out of the sweep (#5455)', () => {
+    const registeredNames = buildOrchestrator()
+      .list()
+      .map((source) => source.name);
+    const modelLanes = registeredNames.filter((name) => name.endsWith('-llm'));
+    expect(modelLanes).toContain('lab-microsite-description-llm');
+    for (const name of modelLanes) expect(MANUAL_ONLY_SWEEP_SOURCES).toContain(name);
+    for (const mode of ['development-full', 'fellowship-development-full'] as const) {
+      const swept = sweepSourcesForMode(mode).map((source) => source.name);
+      expect(swept.filter((name) => name.endsWith('-llm'))).toEqual([]);
     }
   });
 
@@ -521,6 +539,90 @@ describe('runScraperSweep', () => {
     expect(incrementalArgs).not.toContain('--limit');
   });
 
+  it('runs a center roster source observations-only and lists it as center plan owed (#6348)', () => {
+    for (const mode of ['development-full', 'development-incremental'] as const) {
+      const centerArgs = buildScraperSweepChildArgs(
+        mode,
+        'centers-institutes-index',
+        '/tmp/centers.json',
+      );
+      expect(centerArgs, mode).not.toContain('--auto-materialize');
+      expect(centerArgs, mode).toContain('--apply');
+      expect(centerArgs, mode).toContain('--exhaustive');
+      expect(
+        buildScraperSweepChildArgs(mode, 'dept-faculty-roster', '/tmp/dept.json'),
+        mode,
+      ).toContain('--auto-materialize');
+    }
+
+    const row = (sourceName: string, runId: string) => ({
+      sourceName,
+      phase: 'discovery' as const,
+      status: 'succeeded' as const,
+      artifactPath: `/tmp/${sourceName}.json`,
+      runId,
+    });
+    expect(
+      sweepCenterPlanOwed('development-full', [
+        row('centers-institutes-index', 'run-center'),
+        row('dept-faculty-roster', 'run-dept'),
+        row('center-director', 'run-director'),
+      ]),
+    ).toEqual([
+      { sourceName: 'centers-institutes-index', runId: 'run-center' },
+      { sourceName: 'center-director', runId: 'run-director' },
+    ]);
+    expect(
+      sweepCenterPlanOwed('development-plan', [row('centers-institutes-index', 'run-center')]),
+    ).toEqual([]);
+  });
+
+  it('passes --apply to every writing sweep child and never to a plan child (#5842)', () => {
+    const writingModes = [
+      'development-sample',
+      'development-full',
+      'development-incremental',
+      'fellowship-development-full',
+    ] as const;
+    for (const mode of writingModes) {
+      const args = buildScraperSweepChildArgs(mode, 'yale-directory', '/tmp/yale-directory.json');
+      expect(args, mode).toContain('--apply');
+      expect(args, mode).not.toContain('--dry-run');
+    }
+
+    const planArgs = buildScraperSweepChildArgs(
+      'development-plan',
+      'yale-directory',
+      '/tmp/yale-directory.json',
+    );
+    expect(planArgs).not.toContain('--apply');
+    expect(planArgs).toContain('--dry-run');
+  });
+
+  it('spawns writing children the scrape CLI accepts as writes, and plan children it treats as dry runs (#5842)', () => {
+    const permitted = {
+      SCRAPER_ENV: 'development',
+      ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+    } as NodeJS.ProcessEnv;
+    const developmentUrl = 'mongodb+srv://example.invalid/Development';
+    const childPreflight = (mode: Parameters<typeof buildScraperSweepChildArgs>[0]) => {
+      const childArgs = buildScraperSweepChildArgs(mode, 'yale-directory', '/tmp/child.json');
+      const { command, flags } = parseArgs([
+        'node',
+        'cli.ts',
+        ...childArgs.slice(childArgs.indexOf('scrape') + 1),
+      ]);
+      return buildScraperCliPreflight(command, flags, developmentUrl, permitted) as {
+        guard: { writes: boolean; autoMaterialize: boolean };
+      };
+    };
+
+    const full = childPreflight('development-full');
+    expect(full.guard.writes).toBe(true);
+    expect(full.guard.autoMaterialize).toBe(true);
+    expect(childPreflight('development-plan').guard.writes).toBe(false);
+  });
+
   it('never lets an exhaustive mode write the fetch cache, and caches only bounded modes', () => {
     const argsByMode = scraperSweepModes().map((mode) => ({
       mode,
@@ -612,6 +714,8 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'profile-honors',
       'staff-minted-retirement',
+      'lead-department-inheritance',
+      'researcher-email-support',
       'visibility-gate',
       'search-sync',
       'search-index-check',
@@ -621,6 +725,7 @@ describe('runScraperSweep', () => {
       'data-quality',
       'integrity-gate',
       'trust-contract',
+      'survivor-alias-derivation',
       'archived-cleanup',
     ]);
     // The gate reads sourceLinkHealth to decide whether a cited link still counts
@@ -785,6 +890,8 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'profile-honors',
       'staff-minted-retirement',
+      'lead-department-inheritance',
+      'researcher-email-support',
       'visibility-gate',
       'search-sync',
       'search-index-check',
@@ -794,6 +901,7 @@ describe('runScraperSweep', () => {
       'data-quality',
       'integrity-gate',
       'trust-contract',
+      'survivor-alias-derivation',
       'archived-cleanup',
     ]);
     expect(stages.find((stage) => stage.name === 'eponymous-fra-merge')?.args).toEqual(
@@ -844,6 +952,8 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'profile-honors',
       'staff-minted-retirement',
+      'lead-department-inheritance',
+      'researcher-email-support',
       'visibility-gate',
       'search-sync',
       'search-index-check',
@@ -853,6 +963,7 @@ describe('runScraperSweep', () => {
       'data-quality',
       'integrity-gate',
       'trust-contract',
+      'survivor-alias-derivation',
       'archived-cleanup',
     ]);
     expect(names.indexOf('researcher-dedupe')).toBeLessThan(names.indexOf('eponymous-fra-merge'));
@@ -864,6 +975,92 @@ describe('runScraperSweep', () => {
       ]),
     );
   });
+
+  it('runs the researcher email-support pass after every stage that can mint a researcher or change an address, directly before the gate (#5713)', () => {
+    const names: string[] = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      dedupeResearchers: true,
+    }).map((stage) => stage.name);
+    const emailSupport = names.indexOf('researcher-email-support');
+    expect(emailSupport).toBeGreaterThan(-1);
+    for (const earlier of [
+      'researcher-dedupe',
+      'url-identity-dedupe',
+      'website-url-identity-dedupe',
+      'shared-person-name-agreed-dedupe',
+      'pi-attributed-researcher-mint',
+      'inferred-pi-lead-reclaim',
+      'staff-minted-retirement',
+    ]) {
+      if (names.includes(earlier)) expect(names.indexOf(earlier)).toBeLessThan(emailSupport);
+    }
+    expect(names[emailSupport + 1]).toBe('visibility-gate');
+  });
+
+  it('runs the researcher email-support pass on every sweep, applying with its confirmation flag (#5713)', () => {
+    for (const options of [{}, { dedupeResearchers: true }, { dedupeResearchers: false }]) {
+      const stage = buildDevelopmentPostRunStages('/tmp/development-sweep', options).find(
+        (candidate) => candidate.name === 'researcher-email-support',
+      );
+      expect(stage?.args).toEqual(
+        expect.arrayContaining(['--apply', '--confirm-compute-email-support']),
+      );
+    }
+  });
+
+  it('runs the lead-department inheritance pass after person-side materialization and lead linking, before the gate (#6033)', () => {
+    const names: string[] = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      dedupeResearchers: true,
+    }).map((stage) => stage.name);
+    const inheritance = names.indexOf('lead-department-inheritance');
+    expect(inheritance).toBeGreaterThan(-1);
+    for (const earlier of [
+      'researcher-dedupe',
+      'url-identity-dedupe',
+      'website-url-identity-dedupe',
+      'shared-person-name-agreed-dedupe',
+      'pi-attributed-researcher-mint',
+      'inferred-pi-lead-reclaim',
+      'staff-minted-retirement',
+    ]) {
+      if (names.includes(earlier)) expect(names.indexOf(earlier)).toBeLessThan(inheritance);
+    }
+    expect(names.indexOf('pi-attributed-researcher-mint')).toBeGreaterThan(-1);
+    expect(names.indexOf('inferred-pi-lead-reclaim')).toBeGreaterThan(-1);
+    expect(inheritance).toBeLessThan(names.indexOf('visibility-gate'));
+    expect(inheritance).toBeLessThan(names.indexOf('search-sync'));
+  });
+
+  it.each(['development-full', 'development-incremental'] as const)(
+    'runs the lead-department inheritance pass as an applying stage of every %s sweep (#6033)',
+    (mode) => {
+      for (const env of [{}, { SCRAPER_SWEEP_DEDUPE_RESEARCHERS: '0' }]) {
+        const options = resolveDevelopmentPostRunOptions(mode, env, sinceIso);
+        expect(options).toBeDefined();
+        const stage = buildDevelopmentPostRunStages('/tmp/development-sweep', options).find(
+          (candidate) => candidate.name === 'lead-department-inheritance',
+        );
+        expect(stage?.args).toEqual([
+          '--cwd',
+          'server',
+          'research-homes:inherit-lead-department',
+          '--apply',
+          '--confirm-lead-department',
+          '--output',
+          '/tmp/development-sweep/development-lead-department-inheritance.json',
+        ]);
+      }
+    },
+  );
+
+  it.each(['development-plan', 'development-sample', 'fellowship-development-full'] as const)(
+    'never runs the lead-department inheritance pass in a %s sweep (#6033)',
+    (mode) => {
+      expect(resolveDevelopmentPostRunOptions(mode, {}, sinceIso)).toBeUndefined();
+      expect(
+        FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS.map((definition) => definition.name),
+      ).not.toContain('lead-department-inheritance');
+    },
+  );
 
   it('runs the researcher dedupe stage even when the eponymous merge is off', () => {
     const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {

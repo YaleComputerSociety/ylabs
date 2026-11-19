@@ -1,0 +1,224 @@
+# Research search: page-quoted topics and a judged relevance benchmark
+
+Status: proposed, awaiting owner approval (2026-10-18).
+Scope: student research search (`POST /api/research/search` through `searchResearchGroupsViaMeili`).
+Nothing described here has been written to any environment.
+
+## Goal
+
+Make research search return the right labs for the short topic queries students actually type.
+The goal is search quality, measured by a student-query benchmark, not description quality for its own sake.
+
+## What students do
+
+Read-only aggregate of Production `analytics_events`, data since 2026-07-06, logged-in searches only.
+
+- 736 research searches in September and October 2026, about 115 students in October.
+- 52% of searches are filter-only: departments, school, and entity type.
+- 355 text queries: 59% are one word and 35% are two words, and none is phrased as a question.
+- About 79% are topics or fields ("robotics", "machine learning", "rna", "psychology", "parkinsons"), and about 21% are a person's or lab's name.
+- 8 of 355 text queries returned zero results, so the problem is ordering, not recall.
+- A topic query matches a median of about 107 rows.
+- 81% of text searches are followed by a profile open within 30 minutes.
+
+The search box is a topic search, not a question box.
+
+## How the measurements were made
+
+A throwaway Meilisearch (the same version as Development, v1.13.3) was loaded with Development's 4,226 index documents and its exact live settings.
+The real `searchResearchGroupsViaMeili` code ran against it with the host overridden, so every number below is the full production ranking path.
+It reproduced live Development ranks on 175 of 180 queries.
+
+Three query sets were used.
+
+- Set A, 180 queries written per sampled row (three kinds plus two topic kinds); partly leaky, because its author saw the sampled rows' descriptions.
+- Set B, 144 held-out queries written only from each row's own web pages, blind to every description.
+- Set C, 63 distinct real Production topic queries, scored by graded relevance (0 to 3) of the pooled top 10 from seven rankings (1,259 judged pairs, judged blind to which ranking produced them).
+
+Set C judge agreement: an independent second judge re-graded 200 random pairs and matched exactly on 84%, within one grade on 100%, and on relevant-versus-not on 95% (quadratic weighted kappa 0.92).
+Both judges are the same model family with the same guide, so this establishes consistency, not agreement with a person.
+An owner calibration on about 30 pairs is still required before the benchmark is trusted as ground truth.
+
+## Findings
+
+### Ranking changes do not move real queries
+
+On Set C, today's search scores nDCG@10 0.819 and precision@10 0.69.
+
+| Change | nDCG@10 delta | 95% CI |
+| --- | --- | --- |
+| Description-first embedding template, 4,000-byte cap | +0.009 | -0.004 to +0.024 |
+| MeSH entry-term synonyms (19,498 keys) | +0.003 | 0.000 to +0.007 |
+| Semantic leg always on, `frequency` fallback | -0.008 | -0.023 to 0.000 |
+| Topics re-derived from the indexed description, 557 rows | 0.000 | -0.013 to +0.011 |
+| Pure keyword ranking | -0.160 | -0.217 to -0.112 |
+| Pure semantic ranking | -0.088 | -0.144 to -0.035 |
+
+The application's own fusion of a keyword leg and a semantic leg beats either leg alone by a wide margin, so it stays.
+`semanticRatio` on the primary hybrid query does not change what students see: setting it to 0, 0.5 or 1 left the top 10 identical on 62 or 63 of 63 queries, because the final order comes from the app-side fusion.
+
+### Topics from a lab's own pages are the lever
+
+On Sets A and B, the rank of one specific row is the measure, which matches the 21% of queries that look for a known lab and the case where a student types a subject only a few labs cover.
+For the 36 sampled rows, with every other row unchanged:
+
+| Topics on the 36 rows | Set B top-5 delta | Set A top-5 delta |
+| --- | --- | --- |
+| Derived blind from source pages, first run | +19 (CI +8 to +31, p = 0.0002) | +18 (p < 1e-7) |
+| Derived blind from source pages, independent replication | +19 (CI +8 to +30, p < 1e-5) | +21 (p < 1e-7) |
+| Same rules applied to the indexed description | +7 (not significant) | not run |
+
+The gain is broad: 16 rows gain, 17 are flat, and 3 lose, and the top three rows contribute 7 of the 19.
+Reformatting text the index already holds does nothing, because those words are already searchable.
+The gain comes from bringing the subject the lab's own pages state into the highest-weight field.
+
+Single-field ablations with hand-checked content (Set B) rank the fields: topics +24, card +11, description +10, methods +5; all four together equal topics alone, because each adds the same subject words.
+
+### Why topics are wrong today
+
+An audit of the 254 topics served on the 36 rows found 44% usable.
+The recurring defects:
+
+- MeSH headings copied from medical-school profiles (`Neoplasms, Prostatic`, `Frail Elderly`), on 11 of 36 rows.
+- The main subject missing from the topic list on 28 of 36 rows.
+- Phrases split by extraction into fragments (`central`, `autonomic`, `innate`).
+- Methods, populations and course names stored as topics.
+
+The resolver favours the sources producing the MeSH lists: `ysm-mesh-keyword` and `ysm-faculty-directory` carry `defaultWeight` 0.8, above `lab-microsite-description-llm` at 0.6.
+
+### Coverage is a separate gap
+
+8 of the 63 real queries have fewer than five relevant rows anywhere in the corpus (for example drones, VLSI, multi-agent systems, PCOS, food systems), and only one to five rows mention those terms at all.
+No ranking or topic change fixes a lab the corpus does not describe; it needs a coverage audit.
+
+### Retracted
+
+An earlier note called the served methods dedupe a bug.
+It is intentional (#1970): a term is served once, under topics, rather than in both lists, and the search index keeps every method.
+The real defect is method words stored as topics, which rule T3 below addresses.
+
+## Design
+
+### 1. Page text stored by code, topics derived at materialization
+
+The 2026-10-18 decision that every lane is deterministic (#5296) splits the work in three, so no lane calls a model.
+
+- Lane `research-page-text` (`sources/researchPageTextScraper.ts`, manual-only): for research entities, fetches every page the row cites with code, in a fixed order: its lab site, up to two research subpages the lab site links, its official profile(s), then the other citations and the page its description is credited to, at most six, through the description lane's fetch path, URL refusals and person-page match.
+  Reading only the first citation skipped the official profile on rows that also have a lab site, which held a median row to 4.0 KB against 12.4 KB and gold-topic word coverage to 0.80 against 0.93.
+  It keeps each page's text (`utils/researchPageText.ts`) less site chrome, navigation, headers, footers, contact blocks, publicity regions, other units' teaser cards and the sections headed as publications, a bibliography, a CV or contact details; research-headed sections go first, and publication, CV and contact lines are dropped wherever they sit.
+  A paragraph the CV test flags keeps its whole prose sentences that are neither CV records nor citation pieces, so a biography keeps its research beside an "author of" sentence, and the summary paragraphs of the page's own heading block (the main-content `header` holding the `h1`) stay, because a center often states what it does there (#6159).
+  On every line, skip and accessibility links are dropped, and a contact or link label is dropped with a short, link or email value and stripped from a longer one, while topical labels such as "Research interests:" stay; a whole line that is only a link or a caption is dropped too: a contact or link label with nothing after it, a CV or resume link (the label after a qualifier such as "Download", a possessive, or a name word the page's own address carries, with any file note or date; a capitalized phrase that names no one on the page, such as a computer-vision topic, is kept), a listing navigation link such as "More news", "Read more" or "View all upcoming events" (between "next" or "previous" and the listing word only a closed set of qualifiers such as "upcoming" or "recent", so a topic heading such as "Next Generation Sequencing Projects" is kept), and a photo or image credit ("Credit:", "Photo credit:", kept only when a sentence follows) or by-line ("Photo by" followed only by a name, such as capitalized words and connectors), while a sentence or a period-less topic line that starts with the same words stays (#6159); a multi-line heading block keeps only lines that end as sentences and pass the same prose rule; and a past appointment told as a span of years, with "worked" or "served" naming a post or an institution, counts as a CV record for page text only (#6201).
+  News, people and teaching sections stay, because a lab often states its subject there; an earlier version dropped them and kept a median 3.9 KB of a 12.4 KB page.
+  Contact details are redacted as ingest redacts prose, and the text is capped at 16,000 characters per row and cut at sentence ends.
+  The cap is spent tier by tier across every page, each tier shared fairly from what the earlier tiers left: research-section lines first, except citations and runs of listed titles; then any other statement sentence; then the rest.
+  So another page's people list cannot outlast a research sentence, and a research section's list of grant titles cannot outlast the person's own "who studies X" statement in a biography (#6109).
+  It stores one cited `researchPageText` observation (`[{ url, text }]`) plus a content hash; the same page yields the same observation, and an unchanged reading is skipped.
+  A row emits nothing when a cited page fails transiently on a host its current stored reading drew on (`isTransientFetchFailure` in `utils/transientFetchFailure.ts`: a throttle, 403 included, or a server error that outlasted its retries, or any fetch that observed nothing per `docs/decisions.md` 2026-11-13, #6258), so a passing failure never replaces fuller stored text with a reading from fewer pages; the run notes count those rows as kept, and the next run retries them (#6124).
+  The failing page's host is read both as requested and, for a failing status, after its redirects, since the stored reading records the final address.
+  A failing page on a host the stored reading never drew on cannot cost it anything, so the new reading is stored and a page that is always refused cannot freeze the row.
+  A refusal, a plain 403 or a site's stated pause date, keeps the stored reading at any age, as a timeout or a lease refusal does, because an unchanged reading is never re-emitted and so its age dates its last change, not its last confirmation, and a refusing host is only ever paused and come back to, never dropped (owner decision, #6166).
+  A row that meets a paused host is read again at the end of the run, after a wait of up to five minutes for the earliest pause, or left for a later run with its stored reading untouched; the run notes and metrics count, per host, the rows throttled (with how many the previous run also throttled) and the rows deferred with their resume time.
+  A page that answered 404 or 410, or whose host refused the connection or was unreachable, is gone, so the shorter reading is still stored, and a row with no earlier reading stores what it could read.
+  The field is observation-only and generic, so #5296 step 4 (descriptions written from stored text) can read it too; it is never projected onto the row, served or indexed.
+- Command `research-topics:derive` (`scripts/deriveResearchTopics.ts`): reads stored `researchPageText` observations only and never fetches.
+  It keys each reading by an input hash of the text, the prompt hash and the model, and on a cache miss calls the model only on an apply that passes `--confirm-research-topics-derivation`, targets Development and carries `OPENAI_API_KEY`; a dry run makes no call and reports the planned calls.
+  One model call per distinct text returns 6 to 8 short topics and one field-level topic under rules T1 to T7, each with a short verbatim quote and the URL of the page it came from.
+  The raw reading is stored in `research_topics_derivations`, an environment-local cache with no row identifier, so a re-run makes no new paid call.
+  On a person's research row it reads, and keys the reading on, only the pages that name one of the row's leads by the description lane's rule `descriptionPageNamesRowLead`, with its Yale-host own-website exception (#6110).
+  A department, center or core landing page stored with a person's text would otherwise give that person the unit's topics; the materializer reads through the same helper, `researchPageTextEntriesForRowTopics`, so both compute one key.
+  The topic filter, and not the description lane's judge, also reads a lead's name before its post-nominal credentials and a compound surname by any hyphen part of three or more letters that is not a particle, the part reading needing another of the lead's names on the page, and it keeps a Yale `/profile/<netid>` or `/people/<netid>` page whose netid is exactly one of the row's leads' (#6389).
+  A row of another kind, or a person row with no resolvable lead, reads every page, and a row the filter leaves with no page keeps its stored list, counted as `noLeadPage` in the derive report.
+  The exception is a stored page-derived list that cites one of the pages the filter excluded: it was read from a page the lane now refuses as that person's evidence, so it goes stale and retires through `storedResearchAreasEvidenceRetired`, and the row falls back to its other topic lanes (#6386).
+- Materializer: when resolving `researchAreas`, it reads the cached reading for the row's current page text (no model call) and judges it then, against that stored text.
+  A quote must appear verbatim on the page it names (boundary-anchored matching); every content word of a topic must share an inflectional stem with some word of the row's stored pages, and the field topic needs only its quote.
+  A topic that fails is dropped, not repaired, and the deterministic post-filters reject inverted index-heading forms, split fragments, acronym-only chips and bare generic words while keeping the main subject first.
+  A topic or field topic that only restates the row's own department, school or appointment label is dropped too (#5957): the labels are the live `departments` and `school` observation values on the row, because a department string with no canonical match is moved to `orgAffiliationLabels` and the stored `departments` alone would miss it.
+  A field topic whose quote is only a short heading, breadcrumb or menu label (six words or fewer, every content word capitalised) sharing no word with the field is dropped (#6385): "Faculty & Research" says nothing about "environmental studies", while a heading that names the field in another form ("Immunologic Memory" for immunology) and lower-case prose framing ("a hydrologist") still support it; filler words such as research, department and studies do not count as support.
+  The match is whole-topic equality up to case, "&" or "and", the unit's own name words ("Department of", "Section of", "Program in", "Yale School of", a trailing "Department" or "Program") and plurals, so a subfield that only contains the department's word ("Molecular Biology" under Biology) is kept, and a program-shaped topic under a real department label still drops.
+  A label that names a program ("<X> Program", "Program in <X>") is never matched as the label side, because it reaches `departments` only as a non-catalog string and a clinical program named for a disease is real topic signal.
+  Because the filters run here, a filter change re-derives every row at no model cost; the derived provenance records the full input hash, the hash of the text alone and the filter contract.
+  The list is added as a derived candidate labelled `research-page-topics-derived` in `fieldProvenance`, and never written as an observation.
+  A stored list credited to a derivation is withdrawn only when the row's current page-text reading exists and its text hashes differently from the text the list was derived from.
+  A prompt, model or filter change withdraws nothing: the stored list stands until a reading under the new inputs replaces it through normal resolution, so a routine prompt edit cannot empty the corpus before a re-derive.
+  Without a reading or a cache entry, as on Beta and Production, it is kept unchanged.
+  A derived reading reaches a row on its next resolve; `research-entity:rematerialize --only-fields=researchAreas` runs that on demand.
+
+Rules:
+
+- T1. Derive topics from the row's research statement on its own pages; MeSH and directory tags are hints only and are never copied as index headings.
+- T2. The first topic names the main subject in words a student types: disease, organ, organism, phenomenon, place or period.
+- T3. A topic is a research subject, not a method, population, cell type alone, setting, outcome, role, course, award or journal; a split phrase gets its head noun back or is dropped.
+- T4. Only current research; finished or past-tense projects and biography are excluded.
+- T5. Keep real research terms (glioma, primary cilium, pyruvate kinase, LiDAR); spell out acronyms unless students search by them (AI, COVID, DNA, MRI, OCD); no internal project or tool names; no person names.
+- T6. Plain noun phrases, one per concept, no bare generic word when a specific topic covers it, ending with exactly one field-level topic.
+- T7. A row whose pages state no research subject gets no topics.
+
+### 2. Resolver precedence
+
+A page-quoted list outranks `ysm-mesh-keyword` and `ysm-faculty-directory` lists for `researchAreas`, in the same way a graduate-track list already ranks below every other list (#4028).
+By owner decision on #5419 it also outranks `lab-site-research-read` lists; that lane (#5418) is held for the owner's final batch, so the rule names a source that is absent until it re-lands.
+Those lists stay stored as evidence and can corroborate a topic, but no longer win the field where a derived list exists.
+When #5418 re-lands, its topic hand-off must screen the observations before the derived candidate is appended to the resolver's input, so the hand-off can never drop the derived list.
+Topic canonicalization to `TaxonomyTerm` keeps working, and must not reorder the first topic.
+
+### 3. A judged relevance benchmark
+
+A read-only harness scores the real ranking path against a frozen judged set and reports nDCG@10 and precision@10 per query and overall.
+
+- Queries: real Production topic queries, names and lab names removed.
+- Judgements: graded 0 to 3 on the pooled top 10 of keyword-only, semantic-only and fused rankings, by a written guide; the owner calibrates the judge on a sample.
+- Use: advisory, never a merge gate, compared against a stored baseline, in line with how `journey:eval` treats rates.
+- Reporting: every search gate, this benchmark and the rerank sets alike, reports its result weighted to the live word-count mix beside the unweighted result, and names the weights' source and date.
+Weight by word-count band (one, two, three, four or more words) and bootstrap within each band.
+The weights come from Production `analytics_events` search counts read through the read-only credential, counts only, and are re-measured monthly (see `docs/topic-matching-and-search-engagement.md`, "Query length").
+The unweighted set over-represents long queries: on 2026-11-17 the blind 170 was 47% four-or-more-word queries against 1.6% of live searches, and 3.5% one-word queries against 66%, so an unweighted gain can sit almost entirely in a query shape students rarely type (#6421).
+A band with fewer than about 20 queries makes its weighted interval underpowered, and the report says so.
+- One-word stratum: a permanent blind stratum of 120 one-word queries (W1 to W120) is part of the gate set beside the blind 170.
+It was drawn on 2026-11-17 by class from Production search logs through the read-only credential: field names 40, topics 33, abbreviations 15, misspellings 12, methods 9, molecular terms 6, organisms 5.
+Any query matching a researcher name token was dropped, and queries about access rather than a topic (such as undergraduate, fellowship or first-year wording) are excluded.
+Its queries and grades stay local, like the blind 170's, and every gate reports it with the other strata.
+It exists because one-word queries are 66% of live traffic but 6 of the blind 170, so without it the most heavily weighted band is always underpowered.
+Its baseline, measured on 2026-11-17 on Development through the real search route with three blind graders and the median vote: P@10 0.811 (95% CI 0.756 to 0.862) and nDCG@10 0.951 (0.930 to 0.968) over all 120 queries.
+By class, field names (40) score P@10 0.938 and topics (33) 0.782; abbreviations, misspellings, methods, molecular terms and organisms each have fewer than 20 queries and are underpowered, with molecular terms weakest at P@10 0.367 on 6 queries.
+P@10 is the headline, because nDCG here is normalised over the graded top 10 and so measures ordering rather than recall.
+- Privacy: Production queries are student input, so the committed fixture holds only queries searched at least twice, after the person-identifier scan and owner review; anything else stays outside the repository.
+
+A second instrument stays separate: the lane scorecard over frozen pages (`lane_benchmark_pages`) labelled with the sampled rows' topic lists, which moves only when lane code changes.
+
+## Rollout
+
+This is a stored-data change, so merging the code changes nothing a student sees.
+
+1. Land the benchmark harness and the lane code behind the normal write guard.
+2. Run `research-page-text` on Development scoped to the 557 rows that compete for the sampled rows' top five, with `ALLOW_NON_PROD_SCRAPER_WRITES=true`, `--apply` and `--exhaustive`.
+3. Run `research-topics:derive` as a dry run, then apply it on the same rows, then rematerialize them for `researchAreas` and run `development:search:sync` (the index shape does not change, so no rebuild).
+4. Measure Sets B and C through the real route on Development against today's baseline, and grade a random sample of the new topics by hand.
+5. If the gain holds, run the lane corpus-wide, then add it to the weekly sweep.
+6. Beta and Production receive the change through normal promotion.
+
+The work is done when Development is measured and verified, not when the pull request merges.
+
+## Cost
+
+About 4,226 rows at roughly 3,000 input tokens per row (the stored text is capped at 16,000 characters, about 4,000 tokens) is about 12 to 17 million tokens per full pass, a few dollars on a small model.
+A derivation is paid for once per distinct text; a re-run, a re-materialize or a promotion makes no call, and only rows whose stored text changed are read again.
+Storage is at most about 16 KB of text per row in one live observation, about 68 MB for the whole corpus at the cap and about 45 to 50 MB at the bench's median page, plus superseded readings until `observations:prune-dead` runs and about 1 to 2 KB per cached derivation.
+The scoped first run on 557 rows costs well under a dollar.
+
+## Risks
+
+- The model run is not repeatable call to call, so one pair of runs is not an instrument; the frozen lane scorecard is, and the cache makes a stored reading stable until its text changes.
+- Page-derived topics share vocabulary with Set B, whose queries were also written from those pages; Set A, written from different material, shows the same gain.
+- A lab with thin or stale pages gets few topics; T7 then leaves it empty rather than inventing topics.
+- Judges are model graders until the owner calibration is done.
+
+## Not in scope
+
+The ranking-pipeline changes above, rerankers, fusion re-weighting and an embedding-model upgrade are deferred until topic content is fixed, because none moved real queries.
+The coverage gap for niche engineering and computer science topics needs its own audit.
+
+## Open decisions
+
+1. The lane outranks topics currently won by `lab-microsite-description-llm`, whose runs are held by another session (#5020); confirm that this is acceptable or coordinate first.
+2. Approve the scoped Development run (paid model calls, well under a dollar) after the code lands.
+3. Approve committing the filtered real-query fixture, or keep it outside the repository.

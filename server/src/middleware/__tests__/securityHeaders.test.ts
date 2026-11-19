@@ -160,6 +160,66 @@ describe('securityHeaders', () => {
     ).toBe('https://o123.ingest.us.sentry.io');
   });
 
+  const POSTHOG_ENV = {
+    MONGODBURL: 'mongodb+srv://cluster.example.test/Prod',
+    MEILISEARCH_INDEX_PREFIX: 'prod',
+    VITE_POSTHOG_KEY: 'phc_syntheticTestKey0000000000000000000000',
+    VITE_POSTHOG_HOST: 'https://us.i.posthog.com',
+  };
+
+  const productionDirectives = () =>
+    (runMiddleware({ secure: false, headers: {} }).headers.get('Content-Security-Policy') || '')
+      .split('; ')
+      .reduce<Record<string, string>>((byName, directive) => {
+        byName[directive.split(' ')[0]] = directive;
+        return byName;
+      }, {});
+
+  it('adds exactly the PostHog US ingest and assets origins to production connect-src and nothing to script-src', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.SERVER_BASE_URL = 'https://yalelabs.io';
+    delete process.env.SCRAPER_ENV;
+    delete process.env.VITE_SENTRY_DSN;
+    Object.assign(process.env, POSTHOG_ENV);
+    const directives = productionDirectives();
+
+    expect(directives['connect-src']).toBe(
+      "connect-src 'self' https://yalelabs.io https://www.yalelabs.io https://yalelabs.onrender.com https://ylabs-gr4v.onrender.com https://us.i.posthog.com https://us-assets.i.posthog.com",
+    );
+    expect(directives['script-src']).toBe("script-src 'self'");
+    expect(directives['img-src']).not.toContain('posthog');
+    expect(Object.values(directives).join('; ')).not.toMatch(
+      /googletagmanager\.com|google-analytics\.com|analytics\.google\.com|doubleclick\.net/,
+    );
+  });
+
+  it.each([
+    ['in Beta', { SCRAPER_ENV: 'beta' }],
+    ['on the Beta database', { MONGODBURL: 'mongodb+srv://cluster.example.test/Beta' }],
+    ['on the Beta search index', { MEILISEARCH_INDEX_PREFIX: 'beta' }],
+    ['without a project key', { VITE_POSTHOG_KEY: '' }],
+    ['for a non-US host', { VITE_POSTHOG_HOST: 'https://eu.i.posthog.com' }],
+    ['for a look-alike host', { VITE_POSTHOG_HOST: 'https://us.i.posthog.com.example.test' }],
+    ['for a host with a port', { VITE_POSTHOG_HOST: 'https://us.i.posthog.com:8443' }],
+    ['for a host with a path', { VITE_POSTHOG_HOST: 'https://us.i.posthog.com/e' }],
+  ])('adds no PostHog origin %s', (_label, overrides) => {
+    process.env.NODE_ENV = 'production';
+    process.env.SERVER_BASE_URL = 'https://yalelabs.io';
+    delete process.env.SCRAPER_ENV;
+    Object.assign(process.env, POSTHOG_ENV, overrides);
+
+    expect(Object.values(productionDirectives()).join('; ')).not.toContain('posthog');
+  });
+
+  it('adds no PostHog origin to the local development CSP even with a project key', () => {
+    process.env.NODE_ENV = 'development';
+    process.env.SERVER_BASE_URL = 'http://localhost:4000';
+    Object.assign(process.env, POSTHOG_ENV);
+    const { headers } = runMiddleware({ secure: false, headers: {} });
+
+    expect(headers.get('Content-Security-Policy')).not.toContain('posthog');
+  });
+
   it('limits production image sources to self, local data/blob URLs, and trusted image origins', () => {
     process.env.NODE_ENV = 'production';
     const { headers } = runMiddleware({

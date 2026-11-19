@@ -150,3 +150,36 @@ describe('an admin description edit competes as ordinary evidence (#4788)', () =
     expect(resolved?.value).toBe('Corrected Lab Name');
   });
 });
+
+describe('a body that only says how to join or narrates events falls back (#5109)', () => {
+  const JOINING =
+    'Students and researchers interested in joining the Example Lab as an undergraduate research assistant or postdoctoral researcher should contact the lab director directly. The lab will also occasionally post job openings with the Student Employment Office. Prospective doctoral students should apply to the PhD program in Example Biology.';
+  const KEYNOTES =
+    'Gives keynote presentations on representation learning and foundation models, focusing on representation learning and foundation models.';
+  const RESEARCH =
+    'The lab studies evolutionary genetics of bacteriophages and RNA viruses and tests phage therapy against antibiotic-resistant bacterial infections.';
+
+  it('serves the next admissible copied body over joining instructions', () => {
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(JOINING, 'lab-microsite-description-llm', 0.82),
+        obs(RESEARCH, 'lab-microsite-undergrad-llm', 0.55),
+      ],
+      { now: NOW },
+    );
+    expect(resolved?.value).toBe(RESEARCH);
+  });
+
+  it('does not prefer a written body that only narrates talks', () => {
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(RESEARCH, 'official-profile-pi-backfill', 0.4),
+        obs(KEYNOTES, 'coverage-synthesis-llm', 0.5),
+      ],
+      { now: NOW },
+    );
+    expect(resolved?.value).toBe(RESEARCH);
+  });
+});

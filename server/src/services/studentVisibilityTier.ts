@@ -29,6 +29,10 @@ import {
   type ResearchEntityPublicDescriptionRepresentation,
 } from './researchEntityPublicDescription';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
+import {
+  isCardPageFragment,
+  type DescriptionQualityFlag,
+} from '../utils/researchEntityDescriptionQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 import { detectProfileIdentityRisk, isLikelyOfficialPersonProfileUrl } from './leadProfileIdentity';
@@ -41,15 +45,18 @@ import {
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
   isExternalScholarlyPlatformLinkLabelName,
+  isRefusedResearchEntityName,
   personScopedResearchEntityNameNamesSomethingElse,
   entityKeyPersonTokens,
   nameNamesACitedSharedAcademicHost,
   researchHomeIdentitySource,
   leadRoleDirectsTheOrganization,
   NO_SURNAME_ROSTER,
+  organizationNameIsAmong,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+  RESEARCH_INFRASTRUCTURE_ONLY_SUPPRESSION_REASON,
   hasRecordedClosureEvidence,
 } from '../utils/researchEntityYaleStatus';
 import { hasOrganizationalAlternateAccessPath } from '../utils/organizationalAccessPath';
@@ -65,9 +72,10 @@ import {
   statesAwardSuspension,
 } from './programApplicability';
 import type { UpcomingDuplicateWindow } from './programUpcomingDuplicateWindow';
+import { RESEARCHER_REMOVED_REASON } from './directoryRemovalReason';
 import {
-  DEPARTMENT_RESEARCH_GUIDANCE_REASON,
-  isDepartmentResearchGuidance,
+  departmentGuidanceKindOf,
+  departmentGuidanceReason,
   statesApplicationCycle,
 } from './departmentResearchGuidance';
 
@@ -93,6 +101,8 @@ export interface ResearchEntityStudentVisibilityInput {
    */
   citationsSharedAcrossPersonRows?: boolean;
   relatedEntityAccessPathCount?: number;
+  everyLeadRemovedByRequest?: boolean;
+  leadIsStaffOfServedLab?: boolean;
   /**
    * The one corpus fact the name-identity authority cannot derive from one record,
    * supplied here for the same reason `ResearchEntityNameIdentityAuthority` supplies
@@ -206,16 +216,16 @@ function isYaleProfileOrDirectoryUrl(value: string): boolean {
 function isProfileBiographyShell({
   entity,
   leadState,
-  descriptionState,
+  servesOnlyThinCopy,
   hasActionEvidence,
 }: {
   entity: Record<string, any>;
   leadState: string;
-  descriptionState: string;
+  servesOnlyThinCopy: boolean;
   hasActionEvidence: boolean;
 }): boolean {
   if (!isProfileAreaShellEntity(entity)) return false;
-  if (descriptionState !== 'thin') return false;
+  if (!servesOnlyThinCopy) return false;
   if (leadState === 'lead_attached') return false;
   if (hasUsefulResearchAreas(entity)) return false;
   if (hasActionEvidence) return false;
@@ -398,7 +408,12 @@ const SCHOOL_OR_DEPARTMENT_HOST_LABELS = new Set([
 const isSchoolOrDepartmentLabel = (label: string): boolean =>
   SCHOOL_OR_DEPARTMENT_HOST_LABELS.has(label) || genericYaleWebsiteSubdomains.has(label);
 
-function isYaleOwnSite(url: URL): boolean {
+const LONGEST_ACRONYM_HOST_LABEL = 4;
+const PERSONAL_TILDE_PATH = /^\/~[a-z0-9._-]+(?:\/|$)/i;
+
+// A host label of four letters or fewer reads like a department as readily as a lab
+// (#4739), so it stands for the lab only when the site itself declares the row's name.
+function isYaleOwnSite(url: URL, siteDeclaresTheRowName: boolean): boolean {
   const host = url.hostname.toLowerCase().replace(/^www\./, '');
   if (PERSONAL_SITE_PLATFORM_HOSTS.has(host)) {
     const [siteName] = url.pathname.toLowerCase().split('/').filter(Boolean);
@@ -410,8 +425,18 @@ function isYaleOwnSite(url: URL): boolean {
     .filter(Boolean);
   if (labels.length === 0 || isSchoolOrDepartmentLabel(labels[0])) return false;
   if (labels.length >= 2 && labels[labels.length - 1] === 'research') return true;
-  return labels.length === 1 && /^[a-z]+$/.test(labels[0]) && labels[0].length > 4;
+  if (siteDeclaresTheRowName && PERSONAL_TILDE_PATH.test(url.pathname)) return true;
+  if (labels.length !== 1 || !/^[a-z]+$/.test(labels[0])) return false;
+  return labels[0].length > LONGEST_ACRONYM_HOST_LABEL || siteDeclaresTheRowName;
 }
+
+const rowNameIsSiteDeclared = (entity: Record<string, any>): boolean =>
+  [entity.name, entity.displayName].some((name) =>
+    organizationNameIsAmong(
+      name,
+      Array.isArray(entity.siteDeclaredOwnNames) ? entity.siteDeclaredOwnNames : [],
+    ),
+  );
 
 /**
  * A website specific enough to stand for this lab or this person: any non-Yale host, or a
@@ -434,7 +459,7 @@ function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>):
   }
   if (!YALE_HOST.test(url.hostname)) return true;
   if (urlNamesALaboratory(text) || isLikelyOfficialPersonProfileUrl(text)) return true;
-  if (isYaleOwnSite(url)) return true;
+  if (isYaleOwnSite(url, rowNameIsSiteDeclared(entity))) return true;
   const urlWords = new Set([
     ...url.hostname.toLowerCase().split('.'),
     ...letterTokensOf(url.pathname),
@@ -605,6 +630,7 @@ const ENTRY_PROGRAM_KINDS = new Set([
   'RA_PROGRAM',
   'MENTOR_MATCHING',
   'DEPARTMENT_RESEARCH_GUIDE',
+  'DEPARTMENT_SENIOR_ESSAY_GUIDE',
 ]);
 
 const ENTRY_PROGRAM_MODES = new Set([
@@ -721,6 +747,57 @@ const EVIDENCE_RATIONALE_PATTERN =
 const SWALLOWED_CLAUSE_PATTERN =
   /^Studies\b[^.]*?,\s+including\s+[^.,;:]{0,80}?\b(?:is|are|was|were|has\s+been|have\s+been)\s+(?:\w+ly\s+)?(?:focused|centered|centred|devoted|dedicated|organized|organised|structured)\b/i;
 
+const THIN_OR_CHIP_ECHO_FLAGS: ReadonlySet<DescriptionQualityFlag> = new Set([
+  'too-short',
+  'topic-label-list',
+  'area-echo-fallback',
+  'research-area-echo',
+]);
+
+const THIN_OR_CHIP_ECHO_CARD_FLAGS: ReadonlySet<DescriptionQualityFlag> = new Set([
+  ...THIN_OR_CHIP_ECHO_FLAGS,
+  'full-not-useful',
+]);
+
+export const THIN_CARD_DESCRIPTION_REASON = 'thin_card_description';
+
+/**
+ * A card that opens on closing punctuation is the tail of a sentence the splitter broke
+ * inside a quotation or parenthesis, such as a journal title cut out of a citation, so it
+ * is a fragment rather than a thin description (#5673).
+ */
+const CARD_OPENS_MID_SENTENCE_PATTERN = /^\s*[”’"'»)\]}]/;
+
+/**
+ * A row whose served page already passes the public-description invariant, whose stored
+ * body is not blank, and whose card fails the card bar only for thinness or for echoing
+ * its own topic chips. Such a card is thin but accurate, so it does not hold the row
+ * (owner decision, 2026-10-04, #5673). Any other card or body flag still holds the row, and
+ * so does a card that is a page fragment or whose "including" swallowed a clause.
+ */
+export function researchEntityCardIsOnlyThin(
+  entity: Record<string, any>,
+  publicDescription: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  if (!textValue(entity.fullDescription)) return false;
+  if (!publicDescription.invariant.pass) return false;
+  const { full, short } = publicDescription.strictQuality;
+  const cards = [publicDescription.servedCard, entity.shortDescription]
+    .map(textValue)
+    .filter(Boolean);
+  return (
+    short.flags.length > 0 &&
+    !cards.some(
+      (card) =>
+        isCardPageFragment(card, full.text) ||
+        SWALLOWED_CLAUSE_PATTERN.test(card) ||
+        CARD_OPENS_MID_SENTENCE_PATTERN.test(card),
+    ) &&
+    full.flags.every((flag) => THIN_OR_CHIP_ECHO_FLAGS.has(flag)) &&
+    short.flags.every((flag) => THIN_OR_CHIP_ECHO_CARD_FLAGS.has(flag))
+  );
+}
+
 /**
  * A card the source itself stored that is the same sentence as a useful body. The
  * card bar refuses a "Studies A, including B and C." card identical to its body
@@ -755,7 +832,7 @@ function storedCardRepeatsUsefulBody(
 /**
  * The description half of the `student_ready` definition, as one predicate: the
  * public-description invariant passes AND the required research-focus card is
- * present and useful. This is `ResearchEntityStudentReadyCorrectness.descriptionCoherent`,
+ * present and useful, or is only thin (`researchEntityCardIsOnlyThin`). This is `ResearchEntityStudentReadyCorrectness.descriptionCoherent`,
  * and it is the only part of that definition a description write can move, so a
  * description lane comparing it before and after its own write is asking the gate
  * whether the write costs the row its place on the served surface.
@@ -770,7 +847,8 @@ export function researchEntityDescriptionIsCoherent(
   });
   return (
     publicDescription.invariant.pass &&
-    researchEntityDescriptionServesRequiredCard(entity, publicDescription)
+    (researchEntityDescriptionServesRequiredCard(entity, publicDescription) ||
+      researchEntityCardIsOnlyThin(entity, publicDescription))
   );
 }
 
@@ -869,19 +947,54 @@ export function enforceStudentReadyDescriptionInvariant(
 // materializer - never a genuinely source-less entity.
 export const BIOGRAPHY_DESCRIPTION_FALLBACK_REASON = 'biography_description_fallback';
 
+export const TRANSPARENCY_ONLY_VISIBILITY_REASONS: ReadonlySet<string> = new Set([
+  'formalization_only',
+]);
+
 export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
   'source_backed_description',
   BIOGRAPHY_DESCRIPTION_FALLBACK_REASON,
+  THIN_CARD_DESCRIPTION_REASON,
   'missing_facet_signal',
   'missing_alternate_access_path',
   'missing_application_route',
   'missing_source_route',
   'missing_source_url',
   'missing_official_source',
+  LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON,
+  ...TRANSPARENCY_ONLY_VISIBILITY_REASONS,
 ]);
 
 export const isStudentReadySoftSignalReason = (reason: string): boolean =>
   STUDENT_READY_SOFT_SIGNAL_REASONS.has(reason);
+
+export const STUDENT_VISIBILITY_EVIDENCE_REASONS: ReadonlySet<string> = new Set([
+  'application_route',
+  'graduate_relevant',
+  'official_source',
+  'source_backed_description',
+  'undergraduate_relevant',
+]);
+
+export const isStudentVisibilitySignalReason = (reason: string): boolean =>
+  STUDENT_VISIBILITY_EVIDENCE_REASONS.has(reason) || isStudentReadySoftSignalReason(reason);
+
+export interface PartitionedStudentVisibilityReasons {
+  blocking: string[];
+  signals: string[];
+}
+
+export function partitionStudentVisibilityReasons(
+  reasons: unknown,
+): PartitionedStudentVisibilityReasons {
+  const stored = Array.isArray(reasons)
+    ? [...new Set(reasons.map((reason) => String(reason ?? '').trim()).filter(Boolean))]
+    : [];
+  return {
+    blocking: stored.filter((reason) => !isStudentVisibilitySignalReason(reason)),
+    signals: stored.filter(isStudentVisibilitySignalReason),
+  };
+}
 
 // A person-scoped page whose body is a CV or biography that states no research
 // (owner decision, 2026-10-04). Held for review rather than suppressed: the person is
@@ -893,13 +1006,21 @@ export const BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'biography_without_research';
 // #4928). Separate from `biography_without_research` so each detector's hold is counted.
 export const CAREER_BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'career_biography_without_research';
 
+// A row whose lead holds only a staff title and which links to another served row that
+// already represents the lab (#5876). Derived on every gate run by
+// `selectLeadIsStaffOfServedLabEntityIds`, because it compares rows and cannot be seen from one.
+export const LEAD_IS_STAFF_OF_SERVED_LAB_REASON = 'lead_is_staff_of_served_lab';
+
 // HARD blockers: genuine correctness/quality failures that would MISLEAD a
 // student, so any one holds a card out of `student_ready`. Grouped by the
 // correctness category each belongs to. The structural suppression shells
 // (generic directory / biography / non-owner-grant) are removed one tier earlier
 // at `suppressed`; they appear here so the repair histogram classifies them as
 // blockers wherever they surface.
+export { RESEARCHER_REMOVED_REASON };
+
 export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
+  RESEARCHER_REMOVED_REASON,
   'missing_description',
   'missing_card_description',
   'thin_description',
@@ -909,6 +1030,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'unusable_name',
   'duplicate_risk',
   'exact_url_duplicate_risk',
+  LEAD_IS_STAFF_OF_SERVED_LAB_REASON,
   'profile_identity_risk',
   'generic_directory_shell',
   'profile_biography_shell',
@@ -926,7 +1048,6 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'permanently_closed',
   'lab_name_org_type_mismatch',
   'unbacked_lab_name',
-  LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON,
   LEAD_CONTRADICTED_BY_NAMESAKE_REASON,
   'inactive_at_yale',
   'archive_review',
@@ -1014,6 +1135,8 @@ export function computeResearchEntityStudentVisibility({
   exactUrlDuplicateRisk = false,
   citationsSharedAcrossPersonRows = false,
   relatedEntityAccessPathCount = 0,
+  everyLeadRemovedByRequest = false,
+  leadIsStaffOfServedLab = false,
   knownPersonSurnames = NO_SURNAME_ROSTER,
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
@@ -1052,6 +1175,8 @@ export function computeResearchEntityStudentVisibility({
     entity,
     publicDescription,
   );
+  const cardIsOnlyThin =
+    !hasRequiredResearchFocusCard && researchEntityCardIsOnlyThin(entity, publicDescription);
   // The org/program lead exemption assumes the entity itself is an alternate
   // "way in" via its own page and programs. That premise only holds when the
   // entity actually surfaces a reachable next step: a linked related/affiliated
@@ -1063,16 +1188,20 @@ export function computeResearchEntityStudentVisibility({
     organizationalLeadExempt &&
     quality.leadState !== 'lead_attached' &&
     !hasOrganizationalAlternateAccessPath({ entity, relatedEntityAccessPathCount });
+  const servedCopyIsOnlyACard =
+    quality.descriptionState === 'missing' &&
+    Boolean(textValue(publicDescription.entity.shortDescription));
   const genericDirectoryShell =
     isGenericDirectoryOnlyProfileAreaShell(entity) &&
     quality.descriptionState === 'missing' &&
+    !servedCopyIsOnlyACard &&
     quality.leadState !== 'lead_attached' &&
     !hasUsefulResearchAreas(entity) &&
     !hasActionEvidence;
   const profileBiographyShell = isProfileBiographyShell({
     entity,
     leadState: quality.leadState,
-    descriptionState: quality.descriptionState,
+    servesOnlyThinCopy: quality.descriptionState === 'thin' || servedCopyIsOnlyACard,
     hasActionEvidence,
   });
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
@@ -1159,6 +1288,7 @@ export function computeResearchEntityStudentVisibility({
   const hasUsableName =
     !isPlaceholderEntityName(entity.name) &&
     !isExternalScholarlyPlatformLinkLabelName(entity.name) &&
+    !isRefusedResearchEntityName(entity.name, entity.fieldProvenance?.name?.sourceName) &&
     !namesASharedHostOrganization &&
     !namesAnotherPersonsResearch &&
     !(isPersonScopedResearchEntity(entity) && isUnrecoverablePersonScopedEntityName(entity.name));
@@ -1167,14 +1297,18 @@ export function computeResearchEntityStudentVisibility({
   if (!hasUsableName) reasons.push('unusable_name');
   if (outsideResearchScope) reasons.push('non_research_entity', ...researchScope.reasons);
   if (
-    textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')
+    textValue(entity.studentVisibilitySuppressionReason).includes(
+      RESEARCH_INFRASTRUCTURE_ONLY_SUPPRESSION_REASON,
+    )
   ) {
     reasons.push('research_infrastructure_only');
   }
   const permanentlyClosed = hasRecordedClosureEvidence(entity);
   if (permanentlyClosed) reasons.push('permanently_closed');
+  if (everyLeadRemovedByRequest) reasons.push(RESEARCHER_REMOVED_REASON);
   if (exactUrlDuplicateRisk) reasons.push('exact_url_duplicate_risk');
   if (duplicateRisk || exactUrlDuplicateRisk) reasons.push('duplicate_risk');
+  if (leadIsStaffOfServedLab) reasons.push(LEAD_IS_STAFF_OF_SERVED_LAB_REASON);
   // `source_backed_description` is the one signal that claims a source backs the copy,
   // and `descriptionState` derives it from copy QUALITY alone - nothing in it consults
   // the cited page. So a description whose citation had died kept asserting the claim
@@ -1193,7 +1327,8 @@ export function computeResearchEntityStudentVisibility({
   if (quality.descriptionState === 'profile_synthesis') reasons.push('profile_fallback_only');
   if (quality.descriptionState === 'thin') reasons.push('thin_description');
   if (quality.descriptionState === 'missing') reasons.push('missing_description');
-  if (!hasRequiredResearchFocusCard) reasons.push('missing_card_description');
+  if (cardIsOnlyThin) reasons.push(THIN_CARD_DESCRIPTION_REASON);
+  else if (!hasRequiredResearchFocusCard) reasons.push('missing_card_description');
   if (!publicDescription.invariant.pass) reasons.push(PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON);
   if (profileIdentityRisk) reasons.push('profile_identity_risk');
   const missingLead = requiresLead && quality.leadState !== 'lead_attached';
@@ -1212,9 +1347,9 @@ export function computeResearchEntityStudentVisibility({
     !biographyWithoutResearch && servedBodyIsCareerBiographyWithoutResearch(publicDescription);
   if (careerBiographyWithoutResearch) reasons.push(CAREER_BIOGRAPHY_WITHOUT_RESEARCH_REASON);
   const servesNoResearchStatement = biographyWithoutResearch || careerBiographyWithoutResearch;
-  const leadTitleRuledNonHostingRank =
-    !missingLead && leadTitlesAreRuledNonHostingRanks(leadMembers);
-  if (leadTitleRuledNonHostingRank) reasons.push(LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON);
+  if (!missingLead && leadTitlesAreRuledNonHostingRanks(leadMembers)) {
+    reasons.push(LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON);
+  }
   const leadContradictedByNamesake =
     !missingLead && servedLeadIsContradictedByNamesake(entity, leadMembers);
   if (leadContradictedByNamesake) reasons.push(LEAD_CONTRADICTED_BY_NAMESAKE_REASON);
@@ -1235,7 +1370,7 @@ export function computeResearchEntityStudentVisibility({
   const studentReadyCorrectness: ResearchEntityStudentReadyCorrectness = {
     descriptionCoherent:
       publicDescription.invariant.pass &&
-      hasRequiredResearchFocusCard &&
+      (hasRequiredResearchFocusCard || cardIsOnlyThin) &&
       !servesNoResearchStatement,
     // Folded in beside the org-type mismatch rather than added as a new
     // correctness field, because it is the same question asked of the other half
@@ -1245,7 +1380,6 @@ export function computeResearchEntityStudentVisibility({
     rightLeadAttached:
       (!requiresLead || quality.leadState === 'lead_attached') &&
       !profileIdentityRisk &&
-      !leadTitleRuledNonHostingRank &&
       !leadContradictedByNamesake,
     // A citation cannot identify this subject if the entity has no citation that
     // resolves. Folded in here rather than added as a new blocker because it is the
@@ -1265,6 +1399,8 @@ export function computeResearchEntityStudentVisibility({
     nonOwnerGrantShell ||
     uncorroboratedGrantOnly ||
     permanentlyClosed ||
+    everyLeadRemovedByRequest ||
+    leadIsStaffOfServedLab ||
     reasons.includes('research_infrastructure_only')
   ) {
     computedTier = 'suppressed';
@@ -1280,7 +1416,6 @@ export function computeResearchEntityStudentVisibility({
     !labNameOrgTypeMismatch &&
     !unbackedLabName &&
     !servesNoResearchStatement &&
-    !leadTitleRuledNonHostingRank &&
     !leadContradictedByNamesake &&
     !duplicateRisk &&
     hasUsableName
@@ -1305,6 +1440,13 @@ export function computeResearchEntityStudentVisibility({
   // remove the marker, not to publish over it; leaving the override able to win
   // would make the marker advisory, which is the "correct but cannot fire" shape
   // catalogued in #2258.
+  if (everyLeadRemovedByRequest && result.tier !== 'suppressed') {
+    return {
+      tier: 'suppressed',
+      computedTier: result.computedTier,
+      reasons: Array.from(new Set([...result.reasons, RESEARCHER_REMOVED_REASON])),
+    };
+  }
   if (permanentlyClosed && result.tier !== 'suppressed') {
     return {
       tier: 'suppressed',
@@ -1389,6 +1531,41 @@ export interface ProgramStudentVisibilityContext {
 
 const COMMON_APPLICATION_TITLE = /\bcommon application\b/i;
 
+export const PROGRAM_STUDENT_VISIBILITY_INPUT_FIELDS = [
+  'additionalInformation',
+  'applicationInformation',
+  'applicationLink',
+  'applicationOpenDate',
+  'deadline',
+  'description',
+  'eligibility',
+  'entryMode',
+  'fullDescription',
+  'fullSourceDescription',
+  'isAcceptingApplications',
+  'links',
+  'mentorMatching',
+  'profileResearchAreas',
+  'profileSynthesisDescription',
+  'programKind',
+  'purpose',
+  'requiresMentorBeforeApply',
+  'researchAreas',
+  'restrictionsToUseOfAward',
+  'shortDescription',
+  'sourceName',
+  'sourcePageTitle',
+  'sourceUrl',
+  'studentFacingCategory',
+  'studentVisibilityOverrideTier',
+  'summary',
+  'title',
+  'undergraduateOnly',
+  'upcomingDuplicateWindow',
+  'yaleCollegeOnly',
+  'yearOfStudy',
+] as const;
+
 export function computeProgramStudentVisibility(
   program: ProgramStudentVisibilityInput,
   context: ProgramStudentVisibilityContext = {},
@@ -1403,7 +1580,8 @@ export function computeProgramStudentVisibility(
   ];
   const sourceUrls = [sourceUrl, ...routeUrls];
   const hasOfficialSource = hasHttpUrl(sourceUrl);
-  const departmentResearchGuidance = isDepartmentResearchGuidance(program);
+  const departmentGuidanceKind = departmentGuidanceKindOf(program);
+  const departmentResearchGuidance = departmentGuidanceKind !== null;
   const applicationRouteIsInfoPage =
     !departmentResearchGuidance && isInfoPageWithoutApplicationCycle(program, routeUrls);
   const hasApplicationRoute =
@@ -1434,7 +1612,7 @@ export function computeProgramStudentVisibility(
 
   if (hasOfficialSource) reasons.push('official_source');
   else reasons.push('missing_official_source');
-  if (departmentResearchGuidance) reasons.push(DEPARTMENT_RESEARCH_GUIDANCE_REASON);
+  if (departmentGuidanceKind) reasons.push(departmentGuidanceReason(departmentGuidanceKind));
   else if (hasApplicationRoute) reasons.push('application_route');
   else reasons.push('missing_application_route');
   if (applicationRouteIsInfoPage) reasons.push('application_link_is_info_page');

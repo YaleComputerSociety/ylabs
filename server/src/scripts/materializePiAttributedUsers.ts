@@ -1,11 +1,13 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
-import { materializeEntity } from '../scrapers/entityMaterializer';
+import {
+  materializeEntity,
+  userEntityKeyForInferredPiUserKey,
+} from '../scrapers/entityMaterializer';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -13,10 +15,12 @@ import {
   classifyPiAttributedUserOutcome,
   mintOnlyOutcomeWithoutApply,
   parseMaterializePiAttributedUsersArgs,
+  piAttributedUserKeyCandidates,
   shouldApplyAfterMintOnlyProbe,
   summarizePiAttributedUserRows,
   type PiAttributedUserRow,
 } from './materializePiAttributedUsersCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,7 +58,11 @@ async function main(): Promise<void> {
       .filter(Boolean),
   );
 
-  const candidates = [...new Set(attributedKeys.filter((key) => userKeys.has(key)))].sort();
+  const candidates = piAttributedUserKeyCandidates(
+    attributedKeys,
+    userKeys,
+    userEntityKeyForInferredPiUserKey,
+  );
   const visiting = args.limit ? candidates.slice(0, args.limit) : candidates;
 
   const rows: PiAttributedUserRow[] = [];
@@ -106,7 +114,7 @@ async function main(): Promise<void> {
 
   if (args.output) {
     const outputPath = resolveSafeJsonReportOutputPath(args.output);
-    fs.writeFileSync(outputPath, JSON.stringify({ ...report, rows }, null, 2));
+    writeReportFileSync(outputPath, JSON.stringify({ ...report, rows }, null, 2));
   }
 
   console.log(JSON.stringify(report, null, 2));

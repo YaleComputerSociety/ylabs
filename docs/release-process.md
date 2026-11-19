@@ -152,7 +152,7 @@ Release feature flags live in `RELEASE_FEATURE_FLAGS` in `server/src/services/co
 To add one:
 
 1. Add the camelCase flag name to `RELEASE_FEATURE_FLAGS`.
-2. Read `features.<flagName>` from the config payload at the point of use.
+2. Read `features.<flagName>` from the config payload at the point of use; in the client that is `features` on `ConfigContext`, which holds `true` only for a flag the server served as `true`.
 3. Set the matching environment variable in the Render environment groups.
 
 The environment variable name is the flag name upper-snake-cased with a `FEATURE_` prefix, so `newBrowseRanking` reads `FEATURE_NEW_BROWSE_RANKING`.
@@ -164,6 +164,12 @@ Undeclared `FEATURE_` variables are ignored, so the served payload is always bou
 Flipping a flag needs no redeploy.
 It is an environment variable plus the five minute config cache.
 Because the flag is resolved on the server, it can gate API responses as well as UI.
+A route reads it with `isReleaseFeatureEnabled` from `configService.ts`; `accountDataControls` (#4156) gates the account data export and deletion routes that way and answers `404` while it is off.
+
+Turning `accountDataControls` on for an environment no longer depends on remembering its secrets, because the system enforces them (#5624).
+While the flag is on and that environment lacks `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, a `MONGODBURL` database name that identifies it, or, in Production, `POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID`, self-serve deletion is refused before it touches a row, the dashboard hides the delete action and names the privacy mailbox instead, and export keeps working.
+The boot log and `GET /api/ready` report `accountDeletion` as `unavailable` and name the missing settings, by name only, and `yarn security:smoke:production`, which the `Post-Promotion Verify` workflow runs on every push to `main`, fails its `api.ready.accountDeletion` check.
+So after flipping the flag or promoting, read `accountDeletion.status` from `/api/ready`: `available` is done, and `unavailable` means set the named settings on that web service, not that the release is broken.
 
 Retire a flag once it is fully on in production.
 Delete the registry entry, the branches that read it, and the Render variable.
@@ -195,14 +201,26 @@ A non-zero exit means some rows hold a `browseRankScore` the current scorer does
 
 Run the steps in this order.
 The order is not cosmetic and two of the orderings are the opposite of what seems natural.
-`yarn promote:production` runs steps 1 to 5 in this order and then prints step 6; `docs/data-refresh-runbook.md` ("One-Command Promotion") owns what it checks.
+`yarn promote:production` runs steps 1 to 5 in this order, checks the declared indexes read-only right after the step 3 copy (below), and then prints step 6; `docs/data-refresh-runbook.md` ("One-Command Promotion") owns what it checks.
 
-1. **Dry-run the copy.** `yarn --cwd server production:promote-beta-copy --dataset-version prod-promote-YYYY-MM-DD-lane-a-beta-copy`. Dry-run is the default. Read the per-collection plan before doing anything else. The script refuses unless `BETA_MONGODBURL` names the database `Beta` and `PRODUCTION_MONGODBURL` names `Prod`, both on remote hosts, and `yarn --cwd server database:verify-names --pair beta-to-production` runs the same check without connecting (#4150).
+1. **Dry-run the copy.** `yarn --cwd server production:promote-beta-copy --dataset-version prod-promote-YYYY-MM-DD-lane-a-beta-copy`. Dry-run is the default. Read the per-collection plan before doing anything else, along with `storageHeadroom`, which must read `ok`, and `previousGenerations`, the generation the apply will replace as its rollback point (#4149). The script refuses unless `BETA_MONGODBURL` names the database `Beta` and `PRODUCTION_MONGODBURL` names `Prod`, both on remote hosts, and `yarn --cwd server database:verify-names --pair beta-to-production` runs the same check without connecting (#4150).
 2. **Check for a collection that would copy nothing over existing documents.** Apply is blocked when `sourceCopyCount` is 0 and `targetCount` is above 0, because `copyCollection` deletes the whole target before inserting. Treat that blocker as a stop, not an obstacle.
 3. **Copy the data, before deploying the code.** The copy never touches Production's retired collections, so the currently deployed code keeps reading `users`, `entry_pathways`, `access_signals`, `contact_routes` and `research_entity_members` throughout. Data-first therefore has no broken window. Code-first has one: the current model reads `signals`, `accounts`, `researchers` and `role_assignments`, and a Production that has not received them yet cannot serve the visibility gate, browse ranking, login or person pages.
-4. **Re-gate visibility.** `yarn --cwd server student-visibility:gate --collection=all --apply --confirm-student-visibility-apply --max-apply=100000`. Apply mode throws without `--max-apply`, and refuses to write without `--confirm-student-visibility-apply`. Freshly copied rows do not carry a usable tier until a gate pass runs, so skipping this leaves part of the corpus stuck at `operator_review` and invisible.
-5. **Update the search index, after the gate and not before.** `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true yarn --cwd server reindex:meili --confirm`. When the live index's settings and embedder match the code it reconciles only the changed documents, and otherwise it runs the full rebuild described below; `--full` forces the rebuild (#5107). Run it inside the Production Render shell because the private Meilisearch is not reachable from a laptop. `CONFIRM_PROD_SCRAPE=true` is not optional: the write guard refuses the rebuild without it, and it fires after the preflight and the index reconcile plan have already printed, so a run without it reads as working and stops at the last moment. Prefer `node scripts/reindex-search-index.mjs production --apply`, which reports every missing variable at once before anything starts. The gate writes tiers, so an index built before the gate carries pre-gate tiers. The rebuild applies the full settings object first, including `pagination.maxTotalHits`, so it also repairs an index left at Meilisearch's 1000-hit default. It builds into a fresh `prod_researchentities_next` index and swaps it in atomically once every document is confirmed, so student search keeps serving the previous index throughout and a failed rebuild changes nothing; the swap only protects against an incomplete rebuild and deletes the previous copy, so the restore point in `docs/data-refresh-runbook.md` is still required, the instance needs disk headroom for two copies, and the shell needs `OPENAI_API_KEY`, because a rebuild that cannot recreate the stored embedder is refused (#4151).
-6. **Then reconcile and merge `main`**, which deploys the code.
+4. **Re-point saved plans, then re-gate visibility.** The remote phase first runs `yarn --cwd server research-plans:retarget-merged --apply --confirm-research-plan-retarget`, which moves each Production plan saved on a merged research entity to its live survivor; plans are environment-local, so the merge Development recorded cannot carry them (#5208). Then `yarn --cwd server student-visibility:gate --collection=all --apply --confirm-student-visibility-apply --max-apply=100000`. Apply mode throws without `--max-apply`, and refuses to write without `--confirm-student-visibility-apply`. Freshly copied rows do not carry a usable tier until a gate pass runs, so skipping this leaves part of the corpus stuck at `operator_review` and invisible.
+5. **Update the search index, after the gate and not before.** `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true yarn --cwd server reindex:meili --confirm`. When the live index's embedder matches the code it reconciles only the changed documents, applying any drifted settings in place (#5442), and otherwise it runs the full rebuild described below; `--full` forces the rebuild (#5107). Run it inside the Production Render shell because the private Meilisearch is not reachable from a laptop. `CONFIRM_PROD_SCRAPE=true` is not optional: with `--confirm` the write guard refuses the rebuild without it, before connecting (#5971). Prefer `node scripts/reindex-search-index.mjs production --apply`, which reports every missing variable at once before anything starts. The gate writes tiers, so an index built before the gate carries pre-gate tiers. The rebuild applies the full settings object first, including `pagination.maxTotalHits`, so it also repairs an index left at Meilisearch's 1000-hit default. It builds into a fresh `prod_researchentities_next` index and swaps it in atomically once every document is confirmed, so student search keeps serving the previous index throughout and a failed rebuild changes nothing; the swap only protects against an incomplete rebuild and deletes the previous copy, so the restore point in `docs/data-refresh-runbook.md` is still required, the instance needs disk headroom for two copies, and the shell needs `OPENAI_API_KEY`, because a rebuild that cannot recreate the stored embedder is refused (#4151).
+6. **Then reconcile and merge `main`**, which deploys the code. With `accountDataControls` on, the system now enforces the deletion settings rather than relying on this list: Production refuses self-serve deletion while `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, `POSTHOG_PERSONAL_API_KEY` or `POSTHOG_PROJECT_ID` is missing, and the `Post-Promotion Verify` smoke fails on `api.ready.accountDeletion` until they are set ("Holding one feature instead of the whole release", #5624).
+
+Build any declared index the target is missing, on Beta after the Development copy and on Production after this one.
+Indexes are no longer built on connect, and the copy recreates only the indexes its source collection carries, so an index declared since the source's last build stays missing on the target until someone builds it.
+An environment-local collection that is never copied, such as the `model_call_usages` TTL index on `calledAt` (`docs/model-usage.md`), is in the same position.
+Right after the copy, `yarn promote:production` runs `yarn --cwd server db:verify-indexes --target production` (#6482).
+It only reads: it lists Production's indexes, compares them with the declared set, and prints the database name but never the connection string.
+A missing index, or one whose name or keys conflict with a declaration, fails the promotion and prints the exact `db:build-indexes` command; the remote phase still runs first, so the corpus is never left un-gated, but do not merge `main` until the check passes.
+An undeclared extra index only warns.
+Run the same check by hand against Beta after a Development copy with `--target beta`.
+To build, run `yarn --cwd server db:build-indexes` against the target first; it is a dry run by default and lists `missingByCollection` and `undeclaredByCollection`.
+Apply with `--apply` only when it plans additions alone. It never drops an index, but a unique index on a large collection, or a TTL index whose window already covers stored documents, changes data and needs its own decision.
+A conflicting index is not something `db:build-indexes` can fix, because it never drops one, so it needs a reviewed migration.
 
 The gate refuses to apply when too many lead-requiring entities resolve no lead, and it throws rather than writing a partial result.
 That is the intended behaviour, and it is why the gate must follow a complete copy: a copy that stopped after `research_entities` but before `role_assignments` would make every row read as leadless.
@@ -224,9 +242,173 @@ An account `_id` copied onto a corpus row would name nobody in the target, so bo
 The dry-run report's `blockedAccountReferences` lists them by collection and field and `accountReferenceBlockersClear` must read `true`.
 A reviewer stamp records the reviewer's netid in `studentVisibilityReviewedByNetid`, which names the same person in every environment.
 
+A directory removal (#4160, `docs/directory-removal.md`) is recorded on Development and reaches Beta and Production with the promotion copy, because `directory_removals` is copied with the corpus it suppresses.
+A request that arrives on Production is a review item there; the admin who accepts it records the entry on Development with `yarn --cwd server directory-removal:record`, which is a dry run unless given `--apply` and reads the identifier from standard input only.
+An entry written only on Beta or Production would be erased by the next whole-collection copy, so every copy direction refuses to run while the target holds an active entry the source does not (`server/src/scripts/directoryRemovalCopyGuard.ts`).
+The dry run reports that refusal ahead of time: the promotion lists it in `applyBlockers`, and each sync lists it in `directoryRemovalBlockers`.
+The fix for that refusal is to record the entry on the source, never to delete it from the target.
+Each entry is an HMAC digest under `DIRECTORY_REMOVAL_KEY`, so every environment must hold the same key, and the gate in the remote promotion phase refuses to run on an environment that holds entries without it (`docs/directory-removal.md`, "Before the first entry"); an environment that holds entries but no key cannot tell a removed person from anyone else (`docs/deployment-inventory.md`).
+
 `--include-observations` flips the observation default.
 `--include-scrape-runs` flips the run-history default, which is off: a promoted `scrape_runs` is Development's history under Production's name (#2589).
 It reads like a completeness option and is not one: when the source is empty it deletes the target and copies nothing back.
+
+### Seed the search rerank cache after the copy and the reindex
+
+The rerank cache (`search_rerank_cache`, `docs/search-rerank-cache.md`) is environment-local, so a promotion never copies it and the target serves today's fused order until it is seeded.
+A promotion never clears it either, so entries seeded by an earlier promotion stay until a later seed replaces them by key.
+The owner approved serving seeded entries on Beta and Production after a promotion (#5448).
+The live-miss job is not approved there, so `SEARCH_RERANK_LIVE_MISS_ENABLED` stays unset on both web services.
+`yarn promote:beta` and `yarn promote:production` run none of these steps, and skipping them is safe: an unseeded or disabled cache changes nothing a student sees.
+
+#### Where the seed comes from
+
+Seed each target from the laptop that runs the promotion, with `--environment=beta` or `--environment=production`, from the seed file Development's cache is seeded from.
+The file pairs real student queries with row slugs, so it stays outside the repository, where the seeder insists on finding it, and it is never copied onto a Render instance.
+A Render shell cannot read a laptop file, and an operator one-off job receives only a build and its service's variables, so the laptop is the one place that holds both the file and a connection to the target.
+The laptop already reaches Atlas `Beta` and `Prod` for the two copies ("Where Each Step Runs" in `docs/data-refresh-runbook.md`), through `BETA_MONGODBURL` and `PRODUCTION_MONGODBURL`, which is what the seeder reads for those targets.
+The seeder resolves each slug against the target's own live rows, so nothing is read from Development at seed time.
+
+The cost is the stored text hashes, and it is not one a student sees.
+The private Meilisearch is unreachable from a laptop, so leave `MEILISEARCH_INDEX_PREFIX` unset: the seeder then reports `textHashes: index-of-another-environment`, stores no `textHash`, and reports `null` for every staleness count.
+Never set the prefix to `beta` or `prod` on a laptop, because the laptop's Meilisearch host is the local Development one and the seeder would hash the target's rows against the wrong index.
+A stale entry is served exactly as a fresh one, and staleness only decides whether the live-miss job may replace an entry, which is off on Beta and Production and never replaces a seeded `full-` entry anyway.
+What is lost is the target's own re-seed signal, `staleSeededEntries`.
+Read it on Development instead, in a dry run just before the copy: Beta receives Development's live rows with the same `_id` and the same content, and its index is built by the same document builder, so Development's count is what the target would report at copy time.
+Between promotions Beta and Production change only by promotion, and each promotion re-seeds.
+
+Copying Development's entries instead would also name the right rows, because both copies keep every research entity `_id`.
+The Development-to-Beta mirror inserts each live row as read and rewrites only `mergedFrom` (`withMergedFromAtCopyTime` in `server/src/scripts/archivedTombstoneMirror.ts`), and `promoteAcceptedBetaCopy.ts` inserts Beta's documents unchanged.
+It is still not the path.
+`search_rerank_cache` is in `NEVER_COPY_COLLECTIONS`, every copy refuses one, and no tool exports it.
+Development's collection also holds `shadow` entries and entries keyed before the acronym rewrite (#5643), which a re-seed from the file does not carry.
+What a re-seed loses is a score whose slug no longer resolves: on 2026-11-13 the v4 file left 16 of 10,974 scores unresolved, on 9 slugs (6 rows merged into a survivor and 3 renamed), and each of those rows takes the neutral score.
+Since #6094 a slug whose row was merged away or renamed resolves to the live row that replaced it, through the merge tombstone or a stored redirect (`docs/search-rerank-cache.md`, "Seeding"), so only a slug with neither stays unresolved: on 2026-11-13 the v4 file left none of its 10,974 scores unresolved on Development.
+
+#### Before the first run: the seed file must key cleanly under current code
+
+Since #5643 a bare acronym keys as the phrase it stands for, so a file holding a bare acronym and its phrase as two entries is refused with `Entries <i> and <j> have the same query key`, before anything is read or written.
+The seed file Development was seeded from on 2026-11-10 holds one such pair, so it cannot seed any environment until it is revised.
+That revision is done: version v3 of the file reseeded Development on 2026-11-11 under the marker `full-v3-2026-11-11`.
+Version v4, v3 plus 36 multi-word topic queries students typed on Production and scored offline (#6094), reseeded Development on 2026-11-13 under `full-v4-2026-11-13`.
+The first seeding round (#6222, `docs/search-rerank-cache.md`, "Seeding rounds") then added two files on Development on 2026-11-16: the round's 67 new queries under `full-v5-2026-11-16`, and the 53 stale v4 entries it re-scored under `full-v5b-2026-11-16`.
+The next promotion seeds Beta and Production from all three, in the order Development was seeded: v4, then v5, then v5b.
+The seeder upserts each entry by its query key and leaves every other entry alone, so a later file replaces only the keys it carries, and seeding v4 after v5b would put the 53 stale scores back.
+Both files live outside the repository, so the steps below are the procedure for the next revision rather than a pending task.
+Drop the bare acronym entry and keep the phrase entry, because the acronym is now searched as its phrase, so the phrase entry's scores are the ones scored against the pool the acronym is served.
+Revise the file outside the repository under a new version name and keep the previous version.
+While revising it, rewrite a slug only when the dry run still counts it in `unresolvedSlugs`: a merged or redirect-renamed row is already followed to its survivor, and a refused merge collision means re-scoring that entry rather than editing a slug.
+Then re-seed Development's own `search_rerank_cache` from the revised file, so its entries carry text hashes (the 2026-11-10 seed stored none), its keys match current code, and Development is a valid reference for the two reads below.
+
+#### Commands
+
+Run every command from the repository root of a laptop checkout at current `beta`, with `<seed.json>` the revised file and `<marker>` the index version.
+When Development was seeded from more than one file, run the steps below once per file, in the order Development was seeded, each with its own marker and its own step-1 counts.
+Name the marker `full-<seed version>-<YYYY-MM-DD>` with the seeding date, for example `full-v5-2026-11-20`.
+The `full-` prefix is what marks an entry as seeded: the live-miss job never replaces such an entry, and the dry run counts it in `seededEntries`.
+Write each variable as a prefix on the command line itself, as below; in zsh an unquoted variable holding two assignments does not split, so the second never reaches the command.
+Neither target takes the Development write lease, because the lease skips a database that receives data only by promotion, so `DEV_WRITE_OWNER` is not needed here.
+
+1. **Development reference, before the Development-to-Beta copy.**
+   `OPENAI_API_KEY= ALLOW_NON_PROD_SCRAPER_WRITES= yarn --cwd server research-search:seed-rerank-cache --input=<seed.json>`
+   It must read `textHashes: read-from-index` and `staleSeededEntries: 0`; a non-zero count means re-seed Development first.
+   Record `entries`, `scores`, `unresolvedSlugs` and `mergeCollisions.count`: the targets must report the same values.
+   `resolvedThroughMerge` and `resolvedThroughRedirect` may split differently on a target, because Beta and Production carry no archived rows and so reach a merged row through its survivor's `mergedFrom` rather than its tombstone; their sum must match.
+2. **Beta, after `yarn promote:beta` reports the mirror applied and its remote phase (gate, reindex, readiness) succeeded.**
+   Dry run: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json>`
+   It must name a `db` ending in `/Beta`, read `textHashes: index-of-another-environment`, `entriesWithNoResolvedScore: 0`, and `entries`, `scores`, `unresolvedSlugs` and `mergeCollisions.count` equal to step 1.
+   A higher `unresolvedSlugs` than Development's means the target lacks live rows Development has, so stop and read the mirror report rather than seeding.
+   A lower `unresolvedSlugs` than Development's has two benign causes, and neither can be told from the count alone.
+   One is Development changing after the copy, for example a survivor archived or a merge chain broken since, so the target's `mergedFrom`, rebuilt from Development's tombstones at copy time, still reaches a row Development's own tombstone walk no longer does; here the target is the stale side, and re-promoting is the fix rather than seeding.
+   The other is a stale Development `mergedFrom` naming a slug that has no row, which gives that slug a second claimant on Development so it refuses the tie, while the target, rebuilt without that entry, resolves it through the one remaining `previousSlugs` claimant.
+   Any other lower count means the target is routing a slug to a row Development does not, so in every case stop and compare the two runs' `resolvedThroughMerge` and `resolvedThroughRedirect` before seeding.
+   Apply: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json> --apply --confirm-search-rerank-cache-seed --index-version=<marker>`
+   `upserted` must equal `entries`.
+3. **Production, after `yarn promote:production` reports the copy applied and its remote phase (re-gate, reindex, smoke) succeeded.**
+   Dry run: `yarn --cwd server research-search:seed-rerank-cache --environment=production --input=<seed.json>`
+   It must name a `db` ending in `/Prod` and report the same counts as the Beta dry run, because the Beta-to-Production copy carries Beta's rows unfiltered.
+   Apply: `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true yarn --cwd server research-search:seed-rerank-cache --environment=production --input=<seed.json> --apply --confirm-search-rerank-cache-seed --index-version=<marker>`
+   Without both variables the write guard refuses the apply; `upserted` must equal `entries`.
+
+#### Order
+
+Beta: the Development reference dry run, the mirror, the remote phase, the seed dry run, the seed apply, then the flag on the Beta web service, then verification.
+Production: the Beta-to-Production copy (steps 1-3 of "Promoting data, not just code" above), the remote phase, the seed dry run, the seed apply, step 6 above (merge `main` and wait for `Post-Promotion Verify`), then the flag on the Production web service, then verification.
+A seed from the laptop stores no hashes, so it needs only the copied rows; it still follows the remote phase, because a failed gate or reindex means fixing Development and promoting again, and a seed should be resolved against the corpus that will actually be served.
+Production can serve the cache only once `main` carries the serve path: on 2026-11-11 `origin/main` did not contain `SEARCH_RERANK_CACHE_ENABLED` at all, so the Production flag waits for the code merge.
+
+#### Turning it on
+
+In the Render dashboard, open the web service (Beta is `ylabs-gr4v.onrender.com`, Production is `yalelabs.onrender.com`), add `SEARCH_RERANK_CACHE_ENABLED` with the value `true` under Environment, and save and deploy.
+No rebuild is needed, because the server reads the variable at run time and it is not a `VITE_` build variable, but it reaches the process only on the restart a deploy performs.
+Leave `SEARCH_RERANK_LIVE_MISS_ENABLED`, `SEARCH_RERANK_LIVE_MISS_MODE` and `SEARCH_RERANK_CACHE_COLLECTION` unset, so the service serves seeded entries only, from `search_rerank_cache`.
+Set nothing on the operator services, which never answer a search.
+
+#### After a description batch
+
+A laptop seed carries no text hashes, so on Beta and Production the rerank cache cannot tell that a description batch changed the text its scores were measured on, and the "few close matches" notice keeps firing from those scores (`docs/search-rerank-cache.md`, "Few close matches notice").
+After a description batch reaches a target, re-score the affected seeded queries offline or re-seed that target from a revised file before the notice is relied on there.
+Development needs no extra step for correctness, because its seed stores hashes and the notice goes quiet on stale entries, but it serves the notice again only after its own re-seed.
+
+#### Verification
+
+Pick five verification queries from the revised seed file by predicate: no filters, two or more words, a research topic rather than a person's name, and a first result the cache moves on Development.
+Each read is the search route a student's browser calls, with the public visibility scope it applies.
+The `Origin` header names the web service's own host, because a deployed API refuses a cross-site `POST` without an allowed origin and answers 403.
+For the local Development read, use `http://localhost:<worktree API port>` in both places; a local runtime skips that check.
+
+```bash
+mkdir -p /tmp/rerank-verify
+curl -s -X POST "https://<host>/api/research/search" -H 'Content-Type: application/json' \
+  -H 'Origin: https://<host>' -d '{"q":"<query>","page":1,"pageSize":10,"filters":{}}' \
+  | jq -r '.researchEntities[].slug' > "/tmp/rerank-verify/<environment>-<on|off>-<n>.txt"
+```
+
+1. Read the Development reference right after the mirror applies, from a local API started from a `beta` worktree with `SEARCH_RERANK_CACHE_ENABLED=true`, at `http://localhost:<worktree API port>`.
+2. Read the target with the flag still off, after the seed apply, then again after the flag deploy.
+3. Pass when the target's `on` list equals Development's for all five queries and differs from its own `off` list, which proves search read the seeded entries.
+   A position that differs from Development's must be attributable to a row Development changed after the copy; anything else means the seed or the copy differs.
+
+The files hold row slugs, so they stay under `/tmp` and are reported only as counts, such as "5 of 5 matched".
+Each read is logged as an ordinary search event in that environment's analytics.
+No `journey:eval` case reads the cache (`server/src/scripts/journeyEval/README.md`), and `journey:eval` searches in-process on Development, so it cannot read a deployed environment in any case.
+
+#### Rollback
+
+Remove `SEARCH_RERANK_CACHE_ENABLED` from the web service, or set it to anything but `true`, and save and deploy.
+With the flag unset search never reads the collection, so every student sees today's fused order again on the next request after the restart.
+The rows a student sees, the totals and the facet counts are the same either way, because the cache only reorders the first 30 rows of a search it already returned.
+The seeded entries are inert with the flag off and can stay for the next attempt.
+Removing them is optional, is a write against that environment that needs its own decision, and is scoped by the marker: delete only the documents whose `indexVersion` equals the marker this run applied.
+
+#### Expected counts on a fresh copy of Development
+
+Measured on Development on 2026-11-13 with the v4 seed file, after Development's own cache was re-seeded from it.
+These change whenever the seed file or the corpus changes, so read them as the shape of a correct run rather than as values to match.
+
+| Count | Development dry run | Laptop seed of Beta or Production |
+| --- | --- | --- |
+| `entries` | 382 | 382 |
+| `scores` | 10,974 | 10,974 |
+| `resolvedScores` | 10,958 | 10,958 |
+| `unresolvedSlugs` (unresolved scores, not distinct slugs) | 16 | 16 |
+| `entriesWithNoResolvedScore` | 0 | 0 |
+| `textHashes` | `read-from-index` | `index-of-another-environment` |
+| `scoresWithTextHash` | 10,958 | 0 |
+| `seededEntries`, `staleSeededEntries`, `seededEntriesWithoutTextHashes` | 382, 0, 0 | `null`, `null`, `null` |
+| `upserted` on apply | 382 | 382 |
+
+The laptop column was measured by the same dry run on Development with `MEILISEARCH_INDEX_PREFIX=beta`, which is the mode a laptop seeding Beta or Production gets.
+Despite its name, `unresolvedSlugs` counts unresolved scores, one per scored row whose slug does not resolve, so the 16 above are 16 scores on 9 distinct slugs; compare a target's value against this column as a score count.
+The unrevised 2026-11-10 file, 347 entries, is refused by the key-collision check.
+On the 36 queries v4 added, a blind grade of the union of the unseeded and the reranked top 10 measured nDCG@10 +0.164 (95% CI +0.111 to +0.221), better on 33 and worse on 0, and the served re-read returned the reranked set on all 36.
+That table predates #6094, which follows merged and renamed slugs.
+The Development dry run with the v4 file on 2026-11-13, after #6094, read `entries` 382, `scores` 10,974, `resolvedScores` 10,974, `unresolvedSlugs` 0, `resolvedThroughMerge` 13, `resolvedThroughRedirect` 3, `mergeCollisions.count` 7 with none refused, `entriesWithNoResolvedScore` 0 and `scoresWithTextHash` 10,967, which is the resolved scores less the 7 collapsed pairs.
+Its laptop column was not measured.
+Through the search route, with the flag on and the public visibility scope, 20 sampled unfiltered multi-word seeded queries served a top 5 worth 284 of the 286 grade points the best five graded rows would score, and every one of the 20 served its graded rows in non-increasing grade order.
+An earlier rehearsal into a scratch collection, with the 2026-11-10 file less its bare acronym entry, changed the top 10 of 38 of 40 such queries against the unseeded order.
+
+To rehearse again, prefix each seed command with `DEV_WRITE_OWNER="<label>" SEARCH_RERANK_CACHE_COLLECTION=search_rerank_cache_rehearsal`, which keeps Development's live cache untouched, and drop the scratch collection when done.
 
 ### The reindex step needs Render's outbound ranges on the Atlas access list
 
@@ -261,6 +443,41 @@ Static addresses of our own need a Pro workspace plan plus a monthly fee per IP 
 Removing public network access entirely needs an Atlas Private Endpoint, which needs a dedicated cluster.
 Neither is worth buying before Atlas backups, which a free cluster does not provide.
 
+## Routine Development maintenance pass
+
+While the scheduled Development sweep is suspended, its post-run stages do not run on their own, so run these by hand in each routine Development maintenance pass.
+Run them from a worktree at current `beta`, with the model key blank and never `--force-llm`, and sequence the write and the search sync with any other session writing Development.
+The Development write lease (#5756) enforces that sequencing: an apply-class write, `development:search:sync` included, is refused while another holds the lease, and `yarn --cwd server dev:locks` shows who holds it.
+The lease never touches Beta or Production, so promotion steps are unaffected.
+See the write-lease section of `skills/scrapers/SKILL.md`.
+
+### URL-identity duplicates waiting for the guarded lane (#5688)
+
+Resolve-at-mint never folds a person-led row (a lab or a faculty research profile) through a recorded redirect, because a mint has no lead edges to compare.
+Those duplicates wait for the website-url dedupe lane, which refuses rows led by different researcher ids (#5684).
+
+1. Dry-run the lane and read the planned groups:
+   `OPENAI_API_KEY= yarn --cwd server research-entity:dedupe-by-pi --website-url-only --limit=10000 --output=/tmp/website-url-dedupe-dry.json`
+2. Apply only the planned groups you have read, scoped with `--slug=<survivor slug>` per group or by matching the cap to the plan:
+   `OPENAI_API_KEY= ALLOW_NON_PROD_SCRAPER_WRITES=true yarn --cwd server research-entity:dedupe-by-pi --website-url-only --limit=10000 --apply --confirm-research-entity-pi-dedupe --max-apply=<number of planned groups>`
+3. Dry-run again with the same scope; it must plan 0.
+4. Run `yarn development:search:sync`, never a full rebuild.
+5. Served check: through the search route each merged lab or profile shows once, its detail route answers `200`, and each archived slug answers `302` to its survivor.
+
+### Researcher email support markers (#5627)
+
+The user materializer refreshes `identifiers.emailSupport` only for a researcher some `user` key reaches, so run this in the same operation as every Development materialize to mark the rest.
+
+1. Dry-run the pass and read the plan; the empty `ALLOW_NON_PROD_SCRAPER_WRITES` keeps a worktree `.env` that enables writes from turning the dry run into one:
+   `OPENAI_API_KEY= ALLOW_NON_PROD_SCRAPER_WRITES= yarn --cwd server researchers:compute-email-support --output=/tmp/researcher-email-support-dry.json`
+2. Apply it:
+   `OPENAI_API_KEY= yarn --cwd server researchers:compute-email-support --apply --confirm-compute-email-support --output=/tmp/researcher-email-support-apply.json`
+3. Dry-run again with the command from step 1; it must plan 0.
+4. Count coverage: `yarn --cwd server researchers:email-support-coverage --environment=development` must read `unmarked: 0`, the precondition for any serve-time use of the marker.
+
+The scraper sweep runs this pass itself as the `researcher-email-support` stage, directly before `visibility-gate` (#5713; order in `docs/research-data-pipeline.md`), so a sweep marks researchers that newly become unreached without a manual run.
+Run the steps above by hand only for a Development materialize outside a sweep.
+
 ## Verifying a release
 
 `Post-Promotion Verify` runs on every push to `main`.
@@ -287,7 +504,8 @@ The check records only the status, the `degraded` flag and the row count, never 
 ## Monitoring production
 
 `GET /api/ready` is the route an external monitor polls (#4142).
-It runs a MongoDB `ping` and a Meilisearch `health()` call in parallel, each bounded at two seconds, and answers `{ "mongo": <boolean>, "search": <boolean> }` with 200 when both are true and 503 otherwise.
+It runs a MongoDB `ping` and a Meilisearch `health()` call in parallel, each bounded at two seconds, and answers `{ "mongo": <boolean>, "search": <boolean>, "accountDeletion": { "status", "missingSettings" } }` with 200 when both datastores are true and 503 otherwise.
+`accountDeletion` never changes the status code: an unavailable deletion sends students to the privacy mailbox and is not a reason to take search out of rotation.
 It is never cached, and it carries no version, host, commit, error text or timing, so it is safe to leave public.
 `/health` and `/` are the wrong targets, because the SPA shell answers 200 from disk through a full API outage, and `/api/config` is cached for five minutes and never touches Meilisearch.
 A one-minute cadence from one monitor stays far inside both the per-session limiter and the per-address first-contact ceiling in `server/src/middleware/rateLimiters.ts`.
@@ -301,5 +519,6 @@ Record the monitor's provider here when it is created.
 To roll back, prefer the Render dashboard rollback to the previous deploy.
 Otherwise revert the promotion merge on `main` with `git revert -m 1 <merge-commit>` through a pull request, and Render redeploys automatically.
 A revert removes everything that promotion carried, so a hotfix on `main` is usually the better fix forward.
-Neither moves a document: a code rollback is not a data rollback, and no Production restore point exists (#4148).
+Neither moves a document: a code rollback is not a data rollback.
+The data rollback is `production:promote-beta-copy --rollback <operationId>`, which restores the collections the last promotion replaced (#4149); no off-cluster restore point exists (#4148).
 [The incident runbook](./incident-runbook.md) owns the full procedure for a site outage, bad data that reached students, and a leaked credential.

@@ -113,6 +113,86 @@ describe('resolveOrgUnitCanonical', () => {
       'Neuroscience',
     );
   });
+
+  const sharedAliasRows = [
+    {
+      slug: 'heart-rhythm',
+      name: 'Heart Rhythm',
+      kind: 'SECTION' as const,
+      aliases: ['Shared Alias', 'Rhythm'],
+    },
+    {
+      slug: 'heart-failure',
+      name: 'Heart Failure',
+      kind: 'SECTION' as const,
+      aliases: ['Shared Alias', 'Failure'],
+    },
+  ];
+
+  it('refuses an alias two different units claim instead of resolving it to the first', () => {
+    const sharedIndex = buildOrgUnitResolverIndex(sharedAliasRows);
+    expect(resolveOrgUnitCanonical(sharedIndex, 'Shared Alias')).toBeNull();
+    expect(
+      resolveOrgUnitCanonical(
+        buildOrgUnitResolverIndex([...sharedAliasRows].reverse()),
+        'Shared Alias',
+      ),
+    ).toBeNull();
+    expect(resolveOrgUnitCanonical(sharedIndex, 'Rhythm')?.name).toBe('Heart Rhythm');
+    expect(resolveOrgUnitCanonical(sharedIndex, 'Failure')?.name).toBe('Heart Failure');
+
+    const canonicalized = createOrgUnitCanonicalizer(sharedIndex).canonicalizeDepartments([
+      'Shared Alias',
+    ]);
+    expect(canonicalized.values).toEqual([]);
+    expect(canonicalized.unmatched).toEqual(['Shared Alias']);
+  });
+
+  it('keeps an alias a single unit lists twice', () => {
+    const repeatedIndex = buildOrgUnitResolverIndex([
+      {
+        slug: 'heart-rhythm',
+        name: 'Heart Rhythm',
+        kind: 'SECTION' as const,
+        aliases: ['Rhythm', 'rhythm'],
+      },
+    ]);
+    expect(resolveOrgUnitCanonical(repeatedIndex, 'Rhythm')?.name).toBe('Heart Rhythm');
+  });
+
+  it('keeps a later unit named by an alias two other units share', () => {
+    const index = buildOrgUnitResolverIndex([
+      ...sharedAliasRows,
+      { slug: 'shared-alias', name: 'Shared Alias', kind: 'SECTION' as const },
+    ]);
+    expect(resolveOrgUnitCanonical(index, 'Shared Alias')?.name).toBe('Shared Alias');
+  });
+
+  it('never lets an earlier unit alias take a later unit name', () => {
+    const index = buildOrgUnitResolverIndex([
+      {
+        slug: 'heart-rhythm',
+        name: 'Heart Rhythm',
+        kind: 'SECTION' as const,
+        aliases: ['Cardio Care'],
+      },
+      { slug: 'cardio-care', name: 'Cardio Care', kind: 'SECTION' as const },
+    ]);
+    expect(resolveOrgUnitCanonical(index, 'Cardio Care')?.name).toBe('Cardio Care');
+  });
+
+  it('still lets an earlier unit name win over a later unit alias', () => {
+    const precedenceIndex = buildOrgUnitResolverIndex([
+      { slug: 'medicine', name: 'Medicine', kind: 'SCHOOL' as const },
+      {
+        slug: 'internal-medicine',
+        name: 'Internal Medicine',
+        kind: 'DEPARTMENT' as const,
+        aliases: ['Medicine'],
+      },
+    ]);
+    expect(resolveOrgUnitCanonical(precedenceIndex, 'Medicine')?.kind).toBe('SCHOOL');
+  });
 });
 
 describe('createOrgUnitCanonicalizer', () => {

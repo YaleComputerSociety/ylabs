@@ -4,11 +4,21 @@
  * The default presentation is an anchored, non-modal dropdown for shared listing filters.
  * Set `mobileSheet` for the Programs surface to use the labelled, focus-contained mobile sheet.
  */
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 import VennDiagramToggle from '../navbar/VennDiagramToggle';
 import { CheckIcon, ChevronDownIcon, CloseIcon, TagIcon } from './icons';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import useViewportFitPlacement from '../../hooks/useViewportFitPlacement';
 
 export type FilterMode = 'intersection' | 'union';
+
+const OPTION_LIST_CLASS_NAME = 'space-y-1 pt-1';
+export const TWO_COLUMN_OPTION_LIST_MAX_OPTIONS = 12;
+
+const optionListClassName = (twoColumn: boolean) =>
+  [OPTION_LIST_CLASS_NAME, twoColumn && 'sm:grid sm:grid-cols-2 sm:gap-1 sm:space-y-0']
+    .filter(Boolean)
+    .join(' ');
 
 export interface FilterTabConfig {
   key: string;
@@ -18,6 +28,8 @@ export interface FilterTabConfig {
   setSelected: React.Dispatch<React.SetStateAction<string[]>>;
   searchable?: boolean;
   labelFn?: (item: string) => string;
+  optionDetailFn?: (item: string) => string | undefined;
+  note?: string;
   colorFn?: (item: string) => { bg: string; text: string };
   maxDisplay?: number;
   filterMode?: FilterMode;
@@ -40,10 +52,14 @@ const CombinedFilterDropdown = ({
   const [isOpen, setIsOpen] = useState(false);
   const [activeTabKey, setActiveTabKey] = useState(tabs[0]?.key || '');
   const [searchTerms, setSearchTerms] = useState<Record<string, string>>({});
+  const optionIdPrefix = useId();
 
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const isDesktop = useMediaQuery('(min-width: 640px)');
+  const placement = useViewportFitPlacement(triggerRef, isOpen, !mobileSheet || isDesktop);
+  const opensAbove = placement.side === 'above';
 
   const getFocusableElements = () => {
     const desktop = window.matchMedia?.('(min-width: 640px)').matches ?? false;
@@ -90,6 +106,8 @@ const CombinedFilterDropdown = ({
 
   const totalFilters = tabs.reduce((sum, tab) => sum + tab.selected.length, 0);
   const activeTab = tabs.find((t) => t.key === activeTabKey) || tabs[0];
+  const twoColumnOptions =
+    mobileSheet && activeTab.options.length <= TWO_COLUMN_OPTION_LIST_MAX_OPTIONS;
 
   const getSearch = (key: string) => searchTerms[key] || '';
   const setSearch = (key: string, val: string) =>
@@ -168,14 +186,22 @@ const CombinedFilterDropdown = ({
               first.focus();
             }
           }}
+          data-placement={placement.side}
+          style={placement.maxHeight === undefined ? undefined : { maxHeight: placement.maxHeight }}
           className={
             mobileSheet
-              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[340px] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay'
-              : 'absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay'
+              ? `fixed inset-x-0 bottom-0 z-50 flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:left-0 sm:w-[26rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay ${
+                  opensAbove
+                    ? 'sm:top-auto sm:bottom-full sm:mb-1'
+                    : 'sm:bottom-auto sm:top-full sm:mt-1'
+                }`
+              : `absolute left-0 z-50 flex w-[calc(100vw-2rem)] max-w-[340px] flex-col overflow-hidden rounded-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay ${
+                  opensAbove ? 'bottom-full mb-1' : 'top-full mt-1'
+                }`
           }
         >
           {mobileSheet && (
-            <div className="flex items-center justify-between border-b border-[var(--yr-line)] px-3 py-2 sm:hidden">
+            <div className="flex shrink-0 items-center justify-between border-b border-[var(--yr-line)] px-3 py-2 sm:hidden">
               <h2 className="text-base font-semibold text-ink">Filters</h2>
               <button
                 type="button"
@@ -188,7 +214,7 @@ const CombinedFilterDropdown = ({
               </button>
             </div>
           )}
-          <div className="flex flex-wrap border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)]">
+          <div className="flex shrink-0 flex-wrap border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)]">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
@@ -217,13 +243,7 @@ const CombinedFilterDropdown = ({
             ))}
           </div>
 
-          <div
-            className={
-              mobileSheet
-                ? 'max-h-[calc(85dvh-7rem)] overflow-y-auto p-3 sm:max-h-none sm:overflow-visible'
-                : 'p-3'
-            }
-          >
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
             {activeTab.filterMode && activeTab.setFilterMode && activeTab.selected.length >= 2 && (
               <div className="mb-3">
                 <VennDiagramToggle mode={activeTab.filterMode} setMode={activeTab.setFilterMode} />
@@ -250,12 +270,19 @@ const CombinedFilterDropdown = ({
               </button>
             )}
 
-            <fieldset className="space-y-1 pt-1 max-h-[220px] overflow-y-auto">
+            {activeTab.note && <p className="mb-2 text-xs text-muted">{activeTab.note}</p>}
+
+            <fieldset className={optionListClassName(twoColumnOptions)}>
               <legend className="sr-only">{activeTab.label} filters</legend>
-              {getFilteredOptions(activeTab).map((option) => {
+              {getFilteredOptions(activeTab).map((option, optionIndex) => {
                 const isSelected = activeTab.selected.includes(option);
                 const colors = activeTab.colorFn?.(option);
                 const optionLabel = activeTab.labelFn ? activeTab.labelFn(option) : option;
+                const optionDetail = activeTab.optionDetailFn?.(option);
+                const optionIdBase = `${optionIdPrefix}-${activeTab.key}-${optionIndex}`;
+                const optionLabelId = optionDetail ? `${optionIdBase}-label` : undefined;
+                const optionDetailId = optionDetail ? `${optionIdBase}-detail` : undefined;
+                const optionLabelClassName = twoColumnOptions ? 'min-w-0 break-words' : 'truncate';
 
                 return (
                   <label
@@ -269,6 +296,8 @@ const CombinedFilterDropdown = ({
                     <input
                       type="checkbox"
                       checked={isSelected}
+                      aria-labelledby={optionLabelId}
+                      aria-describedby={optionDetailId}
                       onChange={() => {
                         activeTab.setSelected((prev) =>
                           isSelected ? prev.filter((v) => v !== option) : [...prev, option],
@@ -290,17 +319,26 @@ const CombinedFilterDropdown = ({
                       >
                         {optionLabel}
                       </span>
+                    ) : optionDetail ? (
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span id={optionLabelId} className={optionLabelClassName}>
+                          {optionLabel}
+                        </span>
+                        <span id={optionDetailId} className="yr-num text-xs text-muted">
+                          {optionDetail}
+                        </span>
+                      </span>
                     ) : (
-                      <span className="truncate">{optionLabel}</span>
+                      <span className={optionLabelClassName}>{optionLabel}</span>
                     )}
                   </label>
                 );
               })}
               {getFilteredOptions(activeTab).length === 0 && (
-                <p className="px-3 py-2 text-sm text-muted">No options found</p>
+                <p className="px-3 py-2 text-sm text-muted sm:col-span-2">No options found</p>
               )}
               {activeTab.maxDisplay && activeTab.options.length > activeTab.maxDisplay && (
-                <p className="px-3 py-2 text-xs text-muted text-center">
+                <p className="px-3 py-2 text-xs text-muted text-center sm:col-span-2">
                   Showing first {activeTab.maxDisplay}. Type to search more...
                 </p>
               )}
@@ -308,7 +346,7 @@ const CombinedFilterDropdown = ({
           </div>
 
           {totalFilters > 0 && (
-            <div className="border-t border-[var(--yr-line)] px-3 py-2 bg-[var(--yr-panel-muted)]">
+            <div className="shrink-0 border-t border-[var(--yr-line)] px-3 py-2 bg-[var(--yr-panel-muted)]">
               <button
                 onClick={handleClearAll}
                 className="w-full text-sm text-muted hover:text-ink py-1.5 rounded-card hover:bg-[var(--yr-panel-muted)] transition-colors yr-focus-ring"

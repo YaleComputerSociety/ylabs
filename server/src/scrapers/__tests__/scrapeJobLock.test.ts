@@ -63,6 +63,9 @@ describe('scrape job locks', () => {
 
   it('returns lock-held when a concurrent create loses the unique-key race', async () => {
     vi.spyOn(ScrapeJobLock, 'findOneAndUpdate').mockResolvedValue(null as any);
+    vi.spyOn(ScrapeJobLock, 'findOne').mockReturnValue({
+      lean: () => Promise.resolve(null),
+    } as any);
     vi.spyOn(ScrapeJobLock, 'create').mockRejectedValue({ code: 11000 });
 
     const result = await acquireScrapeJobLock({

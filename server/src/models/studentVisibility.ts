@@ -79,3 +79,83 @@ export const studentVisibilityFields = {
 
 export const isStudentVisibilityTier = (value: unknown): value is StudentVisibilityTier =>
   typeof value === 'string' && studentVisibilityTiers.includes(value as StudentVisibilityTier);
+
+export const holdingStudentVisibilityOverrideTiers: readonly StudentVisibilityTier[] = [
+  'operator_review',
+  'suppressed',
+];
+
+export const isHoldingOverrideTier = (value: unknown): value is StudentVisibilityTier =>
+  typeof value === 'string' &&
+  (holdingStudentVisibilityOverrideTiers as readonly string[]).includes(value);
+
+/**
+ * An operator hold outranks the stored tier, which only the gate rewrites and which a
+ * rematerialize or any other writer can leave above the hold, so every serve path reads
+ * the tier through this function or `servedStudentVisibilityTierFilter` (#5783).
+ */
+export const effectiveStudentVisibilityTier = (
+  record: Record<string, any> | null | undefined,
+): string => {
+  if (isHoldingOverrideTier(record?.studentVisibilityOverrideTier)) {
+    return record!.studentVisibilityOverrideTier;
+  }
+  return typeof record?.studentVisibilityTier === 'string' ? record.studentVisibilityTier : '';
+};
+
+export const servesStudentVisibilityTier = (
+  record: Record<string, any> | null | undefined,
+  tiers: readonly StudentVisibilityTier[] = publicStudentVisibilityTiers,
+): boolean => (tiers as readonly string[]).includes(effectiveStudentVisibilityTier(record));
+
+/**
+ * The Mongo form of `servesStudentVisibilityTier`. The plain clause covers every
+ * student-facing set; a set naming a hold tier is wrapped in `$and` so a caller that
+ * adds its own `$or` or appends to `$and` keeps both conditions.
+ */
+export const servedStudentVisibilityTierFilter = (
+  tiers: readonly StudentVisibilityTier[] = publicStudentVisibilityTiers,
+): Record<string, unknown> => {
+  const unheldStoredTierClause = {
+    studentVisibilityTier: { $in: [...tiers] },
+    studentVisibilityOverrideTier: { $nin: [...holdingStudentVisibilityOverrideTiers] },
+  };
+  const requestedHoldTiers = tiers.filter(isHoldingOverrideTier);
+  if (requestedHoldTiers.length === 0) return unheldStoredTierClause;
+  return {
+    $and: [
+      {
+        $or: [
+          { studentVisibilityOverrideTier: { $in: requestedHoldTiers } },
+          unheldStoredTierClause,
+        ],
+      },
+    ],
+  };
+};
+
+/** The aggregation form of `effectiveStudentVisibilityTier`, for grouping rows by tier. */
+export const effectiveStudentVisibilityTierExpression = (): Record<string, unknown> => ({
+  $cond: [
+    {
+      $in: [
+        { $ifNull: ['$studentVisibilityOverrideTier', ''] },
+        [...holdingStudentVisibilityOverrideTiers],
+      ],
+    },
+    '$studentVisibilityOverrideTier',
+    '$studentVisibilityTier',
+  ],
+});
+
+/**
+ * The rows a student can be served: a served tier no operator hold outranks, not archived.
+ * Instruments that count served rows read this rather than the stored tier, so a held row
+ * is never counted as served.
+ */
+export const servedResearchEntityRowFilter = (
+  tiers: readonly StudentVisibilityTier[] = publicStudentVisibilityTiers,
+): Record<string, unknown> => ({
+  ...servedStudentVisibilityTierFilter(tiers),
+  archived: { $ne: true },
+});

@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import { updateOneKeepingLastCitation } from '../services/lastCitationGuard';
 import { Signal } from '../models/signal';
 import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
@@ -28,6 +29,8 @@ import {
 } from './repairSupersededEntitySourceUrlsCore';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import { connectScriptMongo } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -123,6 +126,7 @@ export function assertRepairSupersededEntitySourceUrlsApplyAllowed(
 export interface RepairSupersededEntitySourceUrlsResult extends EntitySourceUrlRepairSummary {
   mode: 'dry-run' | 'apply';
   citationsRewritten: number;
+  lastCitationsKept: number;
   signalCitationsRepointed: number;
   rows: EntitySourceUrlRepairRow[];
 }
@@ -252,6 +256,7 @@ export async function runRepairSupersededEntitySourceUrls(options: {
   const selected = options.limit ? targets.slice(0, options.limit) : targets;
   const rows: EntitySourceUrlRepairRow[] = [];
   let citationsRewritten = 0;
+  let lastCitationsKept = 0;
   let signalCitationsRepointed = 0;
 
   for (const target of selected) {
@@ -296,7 +301,8 @@ export async function runRepairSupersededEntitySourceUrls(options: {
       row.before,
       row.after,
     );
-    const entityResult = await ResearchEntity.updateOne(
+    const entityResult = await updateOneKeepingLastCitation(
+      ResearchEntity,
       { _id: target.entityId },
       {
         $set: {
@@ -311,7 +317,8 @@ export async function runRepairSupersededEntitySourceUrls(options: {
       },
     );
     citationsRewritten += entityResult.modifiedCount || 0;
-    if (entity) entity.sourceUrls = rewritten;
+    if (entityResult.withheld.length > 0) lastCitationsKept += 1;
+    if (entity && entityResult.modifiedCount > 0) entity.sourceUrls = rewritten;
 
     const signals = await Signal.find({
       researchEntityId: target.entityId,
@@ -335,6 +342,7 @@ export async function runRepairSupersededEntitySourceUrls(options: {
     ...summarizeEntitySourceUrlRepair(entities.length, rows),
     mode: options.apply ? 'apply' : 'dry-run',
     citationsRewritten,
+    lastCitationsKept,
     signalCitationsRepointed,
     rows,
   };
@@ -359,6 +367,7 @@ export function stdoutReport(
     inconclusive: result.inconclusive,
     mode: result.mode,
     citationsRewritten: result.citationsRewritten,
+    lastCitationsKept: result.lastCitationsKept,
     signalCitationsRepointed: result.signalCitationsRepointed,
     rowsOmittedFromSample: repaired.length - sample.length,
     rows: sample.map((row) => ({
@@ -371,6 +380,7 @@ export function stdoutReport(
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseRepairSupersededEntitySourceUrlsArgs(process.argv.slice(2));
   assertRepairSupersededEntitySourceUrlsApplyAllowed(options);
 
@@ -408,7 +418,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
+      writeReportFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
       console.log(`Saved repair report to ${safeOutput}`);
     }
     console.log(JSON.stringify(stdoutReport(result), null, 2));

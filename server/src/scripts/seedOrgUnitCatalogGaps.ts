@@ -14,6 +14,7 @@ import {
   type ExistingOrgUnitRow,
   type OrgUnitSeedPlan,
 } from './seedOrgUnitCatalogGapsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -94,6 +95,15 @@ export async function runOrgUnitCatalogGapSeed(options: { dryRun: boolean }): Pr
         );
         continue;
       }
+      if (row.action === 'reactivate-org-unit' || row.action === 'retire-department') {
+        const live = row.action === 'reactivate-org-unit';
+        await OrgUnit.updateOne(
+          { _id: row.targetId },
+          { $set: { archived: !live, status: live ? 'ACTIVE' : 'INACTIVE' } },
+          { runValidators: true },
+        );
+        continue;
+      }
       if (row.action === 'rename-department') {
         await OrgUnit.updateOne(
           { _id: row.targetId },
@@ -144,7 +154,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(
+      writeReportFileSync(
         safeOutput,
         JSON.stringify(
           { generatedAt: new Date().toISOString(), environment: guard.environment, ...result },

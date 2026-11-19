@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import {
   candidateIdentifierScanPaths,
+  decodeEscapedBody,
   findDirectoryDumpFindings,
   findFixtureAddressFindings,
   findPersonIdentifierFindings,
@@ -43,7 +44,7 @@ const readTrackedFiles = () => {
 };
 
 if (bodyFile) {
-  const content = fs.readFileSync(bodyFile, 'utf8');
+  const content = decodeEscapedBody(fs.readFileSync(bodyFile, 'utf8'));
   const findings = findPersonIdentifierFindings([{ label, content }]);
 
   if (hasBlockingFindings(findings)) {

@@ -19,13 +19,17 @@ import {
 } from '../utils/grantEnrichmentTarget';
 import { grantAwardIdentity } from '../utils/grantAwardIdentity';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
+import {
+  withCreditedInvestigator,
+  withInvestigatorsUnioned,
+  type GrantInvestigator,
+} from '../utils/grantInvestigators';
 import { readFirstSheetRows } from '../utils/xlsxSheetRows';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 export const DOE_PAMS_AWARD_SEARCH_URL =
   'https://pamspublic.science.energy.gov/WebPAMSExternal/Interface/Awards/AwardSearchExternal.aspx';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 120_000;
 const DEFAULT_LOOKBACK_YEARS = 6;
 const MAX_GRANTS_PER_ROW = 10;
@@ -74,6 +78,7 @@ export interface RecentGrantRecord {
   dollarAmount?: number;
   url: string;
   role: 'pi';
+  investigators?: GrantInvestigator[];
 }
 
 export type DoeAwardRefusal = 'notYale' | 'noAwardNumber' | 'noPi' | 'undated' | 'outsideWindow';
@@ -218,14 +223,20 @@ export interface RowAwards {
   slug: string;
   researcherIds: Set<string>;
   awards: DoeScienceAward[];
+  creditedResearcherIds?: Map<DoeScienceAward, string>;
 }
 
 export function buildResearchEntityObservations(row: RowAwards): ObservationInput[] {
   const byIdentity = new Map<string, RecentGrantRecord>();
   for (const award of row.awards) {
-    const record = grantToRecord(award);
+    const record = withCreditedInvestigator(
+      grantToRecord(award),
+      row.creditedResearcherIds?.get(award),
+    );
     const identity = grantAwardIdentity(record);
-    if (identity && !byIdentity.has(identity)) byIdentity.set(identity, record);
+    if (!identity) continue;
+    const held = byIdentity.get(identity);
+    byIdentity.set(identity, held ? withInvestigatorsUnioned(held, record) : record);
   }
   const records = [...byIdentity.values()];
   const base = {
@@ -323,7 +334,6 @@ async function pamsRequest(
       maxRedirects: 0,
       data: form ? new URLSearchParams(form).toString() : undefined,
       headers: {
-        'User-Agent': USER_AGENT,
         Accept: responseType === 'text' ? 'text/html,*/*' : '*/*',
         ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
         ...(jar.size > 0 ? { Cookie: cookieHeaderFrom(undefined, jar) } : {}),
@@ -490,9 +500,11 @@ export class DoeScienceAwardScraper implements IScraper {
         slug: target.slug,
         researcherIds: new Set<string>(),
         awards: [],
+        creditedResearcherIds: new Map<DoeScienceAward, string>(),
       };
       row.researcherIds.add(target.researcherId);
       row.awards.push(...awards);
+      for (const award of awards) row.creditedResearcherIds?.set(award, target.researcherId);
       rows.set(target.slug, row);
     }
 

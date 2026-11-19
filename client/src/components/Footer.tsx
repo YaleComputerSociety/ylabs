@@ -1,6 +1,9 @@
 /**
- * Site footer displaying sponsor logos.
+ * Site footer displaying the privacy link and sponsor logos.
  */
+import { Link } from 'react-router-dom';
+
+import { PRIVACY_LINK_LABEL, PRIVACY_PATH } from '../utils/privacyNotice';
 import Wordmark from './Wordmark';
 
 const Footer = () => {
@@ -11,6 +14,12 @@ const Footer = () => {
           <img src="/brand/yale-research-mark.svg" alt="" width={24} height={24} />
           <Wordmark className="text-lg" />
         </div>
+        <Link
+          to={PRIVACY_PATH}
+          className="yr-link yr-focus-ring inline-flex min-h-[44px] items-center rounded-control px-2 text-sm"
+        >
+          {PRIVACY_LINK_LABEL}
+        </Link>
         <div className="flex items-center justify-center gap-4">
           <a
             href="https://www.hudsonrivertrading.com/"

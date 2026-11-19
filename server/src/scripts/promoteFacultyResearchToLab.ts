@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { Source } from '../models/source';
@@ -30,6 +31,7 @@ import {
   type FacultyResearchPromotionRow,
   type LabNameAdmissibility,
 } from './promoteFacultyResearchToLabCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 /**
  * The promotion is evidence-backed rather than a bare field write. `entityType` is
@@ -182,7 +184,7 @@ const ORGANIZATION_NOUN_ENDING_RE =
   /\b(?:lab|labs|laboratory|laboratories|group|center|centre|institute|program)$/i;
 
 const PERSON_NAME_SEGMENT_RE =
-  /^(?:dr\.?\s+)?([A-Z][a-z'-]+)(?:\s+[A-Z]\.?)*\s+([A-Z][A-Za-z'-]+)(?:,?\s+(?:M\.?D\.?|Ph\.?D\.?|MD|PhD))*$/;
+  /^(?:dr\.?\s+)?([A-Z][a-z'-]+)(?:\s+[A-Z]\.?)*\s+([A-Z][A-Za-z'-]+)(?:,?\s+(?:M\.?D\.?|Ph\.?D\.?))*$/;
 
 /**
  * Whether a title segment is another known researcher's name: the site is then that
@@ -428,6 +430,7 @@ export async function runFacultyResearchPromotion(options: {
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseFacultyResearchPromotionArgs(process.argv.slice(2));
   assertFacultyResearchPromotionApplyAllowed(options);
   const apply = !options.dryRun;
@@ -457,7 +460,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
+      writeReportFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
       console.log(`Saved faculty-research promotion report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));

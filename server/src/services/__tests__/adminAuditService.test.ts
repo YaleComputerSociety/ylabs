@@ -49,6 +49,15 @@ describe('recordAdminAuditEvent', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('records an agent identifier as the actor instead of refusing it', async () => {
+    const create = vi.spyOn(AdminAuditEvent, 'create').mockResolvedValue({} as any);
+
+    await recordAdminAuditEvent({ actorNetid: 'Agent:Fixture-Bot', action: 'listing.update' });
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect((create.mock.calls[0][0] as any).actorNetid).toBe('agent:fixture-bot');
+  });
+
   it('does not write when the action is not a dotted slug', async () => {
     const create = vi.spyOn(AdminAuditEvent, 'create').mockResolvedValue({} as any);
 
@@ -139,6 +148,16 @@ describe('listAdminAuditEvents', () => {
     expect(result.page).toBe(3);
     expect(result.totalPages).toBe(3);
     expect(result.events[0].action).toBe('admin_grant.revoke');
+  });
+
+  it('filters to an agent actor rather than dropping the filter', async () => {
+    const chain = findChain([]);
+    const find = vi.spyOn(AdminAuditEvent, 'find').mockReturnValue(chain as any);
+    vi.spyOn(AdminAuditEvent, 'countDocuments').mockResolvedValue(0 as any);
+
+    await listAdminAuditEvents({ actor: ' Agent:Fixture-Bot ' });
+
+    expect(find).toHaveBeenCalledWith({ actorNetid: 'agent:fixture-bot' });
   });
 
   it('ignores an out-of-range pageSize and invalid actor filter', async () => {

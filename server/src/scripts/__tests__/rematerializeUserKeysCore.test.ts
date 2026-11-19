@@ -1,0 +1,139 @@
+import { describe, expect, it } from 'vitest';
+import {
+  parseRematerializeUserKeysArgs,
+  summarizeUserKeyPass,
+  userKeysFromJson,
+} from '../rematerializeUserKeysCore';
+
+describe('observations:rematerialize-user-keys arguments', () => {
+  it('is a dry run by default and requires the confirm flag to apply', () => {
+    const required = ['--keys-file=/tmp/k.json', '--output=/tmp/r.json'];
+    expect(parseRematerializeUserKeysArgs(required)).toMatchObject({
+      apply: false,
+      passes: 1,
+      output: '/tmp/r.json',
+    });
+    expect(() => parseRematerializeUserKeysArgs([...required, '--apply'])).toThrow(/confirm/);
+    expect(
+      parseRematerializeUserKeysArgs([
+        ...required,
+        '--apply',
+        '--confirm-rematerialize-user-keys',
+        '--passes=2',
+      ]),
+    ).toMatchObject({ apply: true, passes: 2 });
+    expect(() => parseRematerializeUserKeysArgs(['--apply', '--output=/tmp/r.json'])).toThrow(
+      /keys-file/,
+    );
+    expect(() => parseRematerializeUserKeysArgs(['--keys-file=/tmp/k.json'])).toThrow(/output/);
+    expect(() => parseRematerializeUserKeysArgs([...required, '--passes=9'])).toThrow();
+    expect(() => parseRematerializeUserKeysArgs([...required, '--passes=2'])).toThrow(/apply/);
+  });
+
+  it('takes --mint-listed-keys only together with a field scope (#5875)', () => {
+    const base = ['--keys-file=keys.json', '--output=tmp/out.json'];
+    expect(() => parseRematerializeUserKeysArgs([...base, '--mint-listed-keys'])).toThrow(
+      /--mint-listed-keys requires --only-fields/,
+    );
+    expect(
+      parseRematerializeUserKeysArgs([...base, '--only-fields=displayName', '--mint-listed-keys'])
+        .mintListedKeys,
+    ).toBe(true);
+    expect(
+      parseRematerializeUserKeysArgs([...base, '--only-fields=displayName']).mintListedKeys,
+    ).toBe(false);
+  });
+
+  it('counts minting keys in a pass summary only when a key minted (#5875)', () => {
+    const quiet = summarizeUserKeyPass(1, [{ entityKey: 'a', fieldsWritten: 0, plannedPaths: [] }]);
+    expect(quiet).not.toHaveProperty('keysMinting');
+    const minting = summarizeUserKeyPass(1, [
+      { entityKey: 'a', fieldsWritten: 3, plannedPaths: ['displayName'], created: true },
+      { entityKey: 'b', fieldsWritten: 0, plannedPaths: [] },
+    ]);
+    expect(minting.keysMinting).toBe(1);
+  });
+
+  it('counts a dry run that would mint as a minting key (#5875)', () => {
+    const dryRun = summarizeUserKeyPass(1, [
+      {
+        entityKey: 'a',
+        fieldsWritten: 0,
+        plannedPaths: ['displayName'],
+        skipped: 'dry-run-would-mint-researcher',
+      },
+      {
+        entityKey: 'b',
+        fieldsWritten: 0,
+        plannedPaths: [],
+        skipped: 'dry-run-would-mint-researcher',
+      },
+      { entityKey: 'c', fieldsWritten: 0, plannedPaths: [], skipped: 'no-observations' },
+    ]);
+    expect(dryRun.keysMinting).toBe(2);
+    expect(dryRun.skipped).toEqual({ 'dry-run-would-mint-researcher': 2, 'no-observations': 1 });
+  });
+
+  it('reads a JSON array of keys, de-duplicated, and refuses anything else', () => {
+    expect(userKeysFromJson('["netid:fx1", " dept:a:fx ", "netid:fx1"]')).toEqual([
+      'netid:fx1',
+      'dept:a:fx',
+    ]);
+    expect(() => userKeysFromJson('{"a":1}')).toThrow();
+    expect(() => userKeysFromJson('["", "netid:fx1"]')).toThrow();
+  });
+
+  it('summarizes a pass by writing keys, fields, skips and errors', () => {
+    expect(
+      summarizeUserKeyPass(2, [
+        { entityKey: 'a', fieldsWritten: 0, plannedPaths: [] },
+        { entityKey: 'b', fieldsWritten: 3, plannedPaths: ['profile.title'] },
+        { entityKey: 'c', fieldsWritten: 0, plannedPaths: [], skipped: 'office-mailbox-user-key' },
+        { entityKey: 'd', fieldsWritten: 0, plannedPaths: [], error: 'x' },
+      ]),
+    ).toEqual({
+      pass: 2,
+      keys: 4,
+      keysWriting: 1,
+      fieldsWritten: 3,
+      skipped: { 'office-mailbox-user-key': 1 },
+      errors: 1,
+      plannedPathSet: ['profile.title'],
+      outOfScopePathSet: [],
+    });
+  });
+
+  it('parses a field scope and reports the planned and out-of-scope path sets (#5816)', () => {
+    const required = ['--keys-file=/tmp/k.json', '--output=/tmp/r.json'];
+    expect(parseRematerializeUserKeysArgs(required).onlyFields).toEqual([]);
+    expect(
+      parseRematerializeUserKeysArgs([...required, '--only-fields=email,profileFieldWriters'])
+        .onlyFields,
+    ).toEqual(['identifiers.email', 'profileFieldWriters']);
+    expect(() =>
+      parseRematerializeUserKeysArgs([...required, '--only-fields=identifiers.netid']),
+    ).toThrow(/Unsupported --only-fields field/);
+    expect(() => parseRematerializeUserKeysArgs([...required, '--only-fields'])).toThrow(
+      /requires a value/,
+    );
+    expect(
+      summarizeUserKeyPass(1, [
+        {
+          entityKey: 'a',
+          fieldsWritten: 1,
+          plannedPaths: ['identifiers.email'],
+          outOfScopePaths: ['profile.title'],
+        },
+        {
+          entityKey: 'b',
+          fieldsWritten: 0,
+          plannedPaths: [],
+          outOfScopePaths: ['displayName', 'profile.title'],
+        },
+      ]),
+    ).toMatchObject({
+      plannedPathSet: ['identifiers.email'],
+      outOfScopePathSet: ['displayName', 'profile.title'],
+    });
+  });
+});

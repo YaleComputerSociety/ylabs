@@ -1,22 +1,40 @@
 /**
  * Dashboard page. Every signed-in account sees the same read view organized into
- * two surfaces:
- *   - Dashboard: the saved research an account is tracking (canonical
+ * two tabs:
+ *   - Saved research: the saved research an account is tracking (canonical
  *     ResearchPlan RESEARCH_ENTITY targets), with notes and the always-available
  *     next step of opening a home to find its official profile and reach out.
- *   - Program Watch: the programs and fellowships an account is watching
+ *   - Watched programs: the programs and fellowships an account is watching
  *     (canonical ResearchPlan PROGRAM targets), with deadline, accepting status,
  *     and eligibility.
+ * Below the tabs, a "Your data" section offers account export and deletion when
+ * the accountDataControls release flag is on.
  * There is no faculty self-edit surface and no faculty/student branching; public
  * profiles are source-derived and admin-curated.
  */
-import { useState } from 'react';
+import { useCallback, useContext, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import AccountDataControls from '../components/accounts/AccountDataControls';
+import DirectoryRemovalRequest from '../components/accounts/DirectoryRemovalRequest';
 import PlanningOverview from '../components/accounts/PlanningOverview';
 import ProgramWatch from '../components/accounts/ProgramWatch';
 import SavedResearchPlans from '../components/accounts/SavedResearchPlans';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import useRovingTabs from '../hooks/useRovingTabs';
+import ConfigContext from '../contexts/ConfigContext';
+import {
+  ACCOUNT_DATA_CONTROLS_FLAG,
+  ACCOUNT_DATA_DELETE_INTENT_PARAM,
+  ACCOUNT_DATA_DELETE_INTENT_VALUE,
+} from '../utils/accountData';
+import {
+  DEFAULT_PLAN_LIST_VIEW,
+  clearPlanListView,
+  parsePlanListView,
+  writePlanListView,
+  type PlanListView,
+} from '../utils/dashboardPlanListView';
+import type { ResearchPlanStageSurface } from '../utils/researchPlanStages';
 
 type DashboardSurface = 'dashboard' | 'programs';
 
@@ -29,22 +47,75 @@ type ProgramSummary = {
 };
 
 const SURFACES: DashboardSurface[] = ['dashboard', 'programs'];
+const PLAN_STAGE_SURFACE: Record<DashboardSurface, ResearchPlanStageSurface> = {
+  dashboard: 'research',
+  programs: 'program',
+};
+const DEFAULT_SURFACE: DashboardSurface = 'dashboard';
+
+const surfaceFromParam = (value: string | null): DashboardSurface =>
+  SURFACES.find((candidate) => candidate === value) ?? DEFAULT_SURFACE;
 
 const withCount = (label: string, count: number | null): string =>
   count === null ? label : `${label} (${count})`;
 
 const Dashboard = () => {
   useDocumentTitle('Dashboard');
-  const [searchParams] = useSearchParams();
-  const tabParam = searchParams.get('tab') as DashboardSurface | null;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSurface = surfaceFromParam(searchParams.get('tab'));
+  const writeSurfaceToUrl = (next: DashboardSurface) =>
+    setSearchParams(
+      (current) => {
+        const params = new URLSearchParams(current);
+        if (surfaceFromParam(params.get('tab')) !== next) clearPlanListView(params);
+        if (next === DEFAULT_SURFACE) params.delete('tab');
+        else params.set('tab', next);
+        return params;
+      },
+      { replace: true },
+    );
   const {
     activeTab: surface,
     activateTab: activateSurface,
+    followTab: followSurface,
     handleTabKeyDown,
     registerTab,
-  } = useRovingTabs<DashboardSurface>(
-    SURFACES,
-    tabParam && SURFACES.includes(tabParam) ? tabParam : 'dashboard',
+  } = useRovingTabs<DashboardSurface>(SURFACES, requestedSurface, writeSurfaceToUrl);
+  const requestedListView = parsePlanListView(searchParams, PLAN_STAGE_SURFACE[requestedSurface]);
+  const listViewFor = (target: DashboardSurface): PlanListView =>
+    target === requestedSurface ? requestedListView : DEFAULT_PLAN_LIST_VIEW;
+  const writeListViewToUrl = useCallback(
+    (view: PlanListView) =>
+      setSearchParams(
+        (current) => {
+          const params = new URLSearchParams(current);
+          writePlanListView(params, view);
+          return params;
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
+  );
+  const [followedSurface, setFollowedSurface] = useState(requestedSurface);
+  if (followedSurface !== requestedSurface) {
+    setFollowedSurface(requestedSurface);
+    followSurface(requestedSurface);
+  }
+  const { features, selfServeAccountDeletion } = useContext(ConfigContext);
+  const accountDataControlsEnabled = features[ACCOUNT_DATA_CONTROLS_FLAG] === true;
+  const deleteIntent =
+    searchParams.get(ACCOUNT_DATA_DELETE_INTENT_PARAM) === ACCOUNT_DATA_DELETE_INTENT_VALUE;
+  const clearDeleteIntent = useCallback(
+    () =>
+      setSearchParams(
+        (current) => {
+          const params = new URLSearchParams(current);
+          params.delete(ACCOUNT_DATA_DELETE_INTENT_PARAM);
+          return params;
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
   );
   const [savedResearchCount, setSavedResearchCount] = useState<number | null>(null);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: null });
@@ -86,7 +157,7 @@ const Dashboard = () => {
               onKeyDown={handleTabKeyDown}
               className={tabClass(surface === 'dashboard')}
             >
-              {withCount('Dashboard', savedResearchCount)}
+              {withCount('Saved research', savedResearchCount)}
             </button>
             <button
               type="button"
@@ -100,7 +171,7 @@ const Dashboard = () => {
               onKeyDown={handleTabKeyDown}
               className={tabClass(surface === 'programs')}
             >
-              {withCount('Program Watch', programSummary.count)}
+              {withCount('Watched programs', programSummary.count)}
             </button>
           </div>
         </div>
@@ -112,7 +183,11 @@ const Dashboard = () => {
           tabIndex={0}
           className={surface === 'dashboard' ? '' : 'hidden'}
         >
-          <SavedResearchPlans onCountChange={setSavedResearchCount} />
+          <SavedResearchPlans
+            onCountChange={setSavedResearchCount}
+            listView={listViewFor('dashboard')}
+            onListViewChange={writeListViewToUrl}
+          />
         </div>
         <div
           id="dashboard-programs-panel"
@@ -121,8 +196,21 @@ const Dashboard = () => {
           tabIndex={0}
           className={surface === 'programs' ? '' : 'hidden'}
         >
-          <ProgramWatch onSummaryChange={setProgramSummary} />
+          <ProgramWatch
+            onSummaryChange={setProgramSummary}
+            listView={listViewFor('programs')}
+            onListViewChange={writeListViewToUrl}
+          />
         </div>
+
+        {accountDataControlsEnabled && (
+          <AccountDataControls
+            deletionAvailable={selfServeAccountDeletion}
+            openDeleteOnMount={deleteIntent}
+            onDeleteIntentConsumed={clearDeleteIntent}
+          />
+        )}
+        <DirectoryRemovalRequest />
       </div>
     </div>
   );

@@ -3,13 +3,14 @@ import {
   findSourceLinkHealthEntry,
   isLikelyUnavailableSourceLink,
   isSameActionDestination,
+  isRefusedResearchWebsitePageUrl,
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
   prefersOrgEngagementOutreach,
   resolveDecisionProfileUrl,
   resolveOutreachApplySource,
   resolveOutreachOfficialSource,
-  servedResearchWebsiteUrl,
+  servedLinkUrl,
   vettedJoinPageUrls,
 } from './researchDetailSources';
 import { safeHttpUrl } from './url';
@@ -41,8 +42,9 @@ export interface ResearchDetailActionLinkContext {
   hasLeadCard: boolean;
   profileNeedsOwnButton: boolean;
   preferOrgEngagementOutreach: boolean;
-  officialSource?: { url: string } | null;
+  officialSource?: { url: string; servedUrl: string } | null;
   hasApplyPage: boolean;
+  applyPageUrl?: string;
   wayInWithheld?: boolean;
 }
 
@@ -54,6 +56,7 @@ export interface ResearchDetailActionLinks {
   offersOrgEngagementPage: boolean;
   offersApplyPage: boolean;
   offersJoinLinkBesideWebsite: boolean;
+  offersOfficialPage: boolean;
   activityCheckUrl?: string;
   leadCardLinksProfile: boolean;
   profileOpenedAbove: boolean;
@@ -72,9 +75,9 @@ function resolveWithheldWayInActionLinks(
   const activityCheckUrl =
     (websiteUrl && !websiteRepeatsLeadCard ? websiteUrl : undefined) ||
     (leadCardLinksProfile ? undefined : profileUrl) ||
-    (officialSource?.url &&
-    !(hasLeadCard && isSameActionDestination(officialSource.url, profileUrl))
-      ? officialSource.url
+    (officialSource?.servedUrl &&
+    !(hasLeadCard && isSameActionDestination(officialSource.servedUrl, profileUrl))
+      ? officialSource.servedUrl
       : undefined);
   return {
     leadCardProfileUrl: profileUrl,
@@ -83,6 +86,7 @@ function resolveWithheldWayInActionLinks(
     offersOrgEngagementPage: false,
     offersApplyPage: false,
     offersJoinLinkBesideWebsite: false,
+    offersOfficialPage: false,
     ...(activityCheckUrl ? { activityCheckUrl } : {}),
     leadCardLinksProfile,
     profileOpenedAbove:
@@ -128,6 +132,13 @@ export function resolveResearchDetailActionLinks(
   const showsProfileButton = profileTakesWebsiteSlot;
 
   const leadCardLinksProfile = hasLeadCard && Boolean(leadCardProfileUrl);
+  const offersOfficialPage =
+    Boolean(officialSource) &&
+    !showsWebsiteCta &&
+    !offersOrgEngagementPage &&
+    !offersApplyPage &&
+    !showsProfileButton &&
+    !leadCardLinksProfile;
   return {
     leadCardProfileUrl,
     websiteCtaUrl: showsWebsiteCta ? websiteUrl : undefined,
@@ -136,6 +147,7 @@ export function resolveResearchDetailActionLinks(
     offersOrgEngagementPage,
     offersApplyPage,
     offersJoinLinkBesideWebsite,
+    offersOfficialPage,
     leadCardLinksProfile,
     profileOpenedAbove: !profileNeedsOwnButton || showsProfileButton,
     // Read before the CTA suppression, so the audit can separate "both slots would
@@ -173,8 +185,9 @@ export function resolveResearchDetailActionLinkContext({
   const primaryWebsiteUrl =
     group.websiteUrl &&
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
+    !isRefusedResearchWebsitePageUrl(group.websiteUrl, group.entityType) &&
     !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth as never)
-      ? servedResearchWebsiteUrl(group.websiteUrl, group.sourceLinkHealth as never)
+      ? servedLinkUrl(group.websiteUrl, group.sourceLinkHealth as never)
       : undefined;
   const isPrimaryWebsiteLikelyUnavailable = isLikelyUnavailableSourceLink(
     findSourceLinkHealthEntry(group.sourceLinkHealth as never, primaryWebsiteUrl),
@@ -239,13 +252,14 @@ export function resolveResearchDetailActionLinkContext({
     );
   return {
     websiteUrl: officialWebsiteUrl,
-    profileUrl: decisionProfileUrl,
+    profileUrl: servedLinkUrl(decisionProfileUrl, group.sourceLinkHealth as never),
     hasLeadCard: Boolean(singlePrincipalInvestigator),
     profileNeedsOwnButton:
       Boolean(decisionProfileUrl) && !singlePrincipalInvestigator && !leadProfilesLinkedInline,
     preferOrgEngagementOutreach,
     officialSource: outreachOfficialSource,
     hasApplyPage: Boolean(outreachApplySource),
+    ...(outreachApplySource ? { applyPageUrl: outreachApplySource.servedUrl } : {}),
     wayInWithheld: group.wayInWithheld === true,
   };
 }

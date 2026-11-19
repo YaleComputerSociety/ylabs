@@ -1,12 +1,18 @@
 /**
  * Shared types for the scraper subsystem.
  */
-import type { ObservedEntityType } from '../models/observation';
+import type { ObservationExtraction, ObservedEntityType } from '../models/observation';
+import type {
+  ObservationClassifierAdmission,
+  ObservationRefusedValue,
+} from './observationRefusals';
 import type { WorkPlannerMetrics } from './workPlanner';
 import type { HttpValidatorCacheStats } from './utils/httpValidatorCache';
 import type { SweepPageReuseStats } from './utils/sweepPageReuse';
+import type { KnownDeadUrlStats } from './utils/knownDeadUrls';
 import type { ThrottleRetryStats } from './utils/throttleRetryStats';
 import type { DatabaseWriteRetryStats } from './utils/databaseWriteRetry';
+import type { RekeyedPersonKeyRunSummary } from './rekeyedPersonKeyRetirement';
 
 export interface ObservationInput {
   entityType: ObservedEntityType;
@@ -24,6 +30,17 @@ export interface ObservationInput {
    * permission to retire a prior assertion (#2647).
    */
   assertsNoValueFor?: string[];
+  /**
+   * Values this read SAW on the page and refused, each stamped with the classifier and
+   * version that refused it. Carried on a witness row; field retraction retires an
+   * assertion of the identical value from the same page only when the refusing version
+   * is newer than the one in `admittedUnder` on that assertion (#5803).
+   */
+  refusedValues?: ObservationRefusedValue[];
+  /** The classifier versions that admitted this value, compared against later refusals (#5803). */
+  admittedUnder?: ObservationClassifierAdmission[];
+  reslugAdoption?: boolean;
+  extraction?: ObservationExtraction;
 }
 
 export interface ScraperContext {
@@ -124,6 +141,7 @@ export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMod
   attempts: ScraperFetchAttemptMetrics<TFetchMode>[];
   httpCache?: HttpValidatorCacheStats;
   sweepPageReuse?: SweepPageReuseStats;
+  knownDeadUrlSkip?: KnownDeadUrlStats;
   throttleRetry?: ThrottleRetryStats;
   databaseWriteRetry?: DatabaseWriteRetryStats;
   summary: {
@@ -177,6 +195,41 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
    * inconclusive; a zero reads as barren.
    */
   unitYields?: Record<string, number>;
+  /**
+   * research-page-text: the rows a host throttled, by host, so the next run can count how many
+   * are throttled again (#6166, #6195).
+   */
+  throttledRowsByHost?: Record<string, string[]>;
+  /** research-page-text: rows whose stored text holds a sentence addressed to an AI (#6396). */
+  aiDirectedInstructionRows?: number;
+  /** research-page-text: rows left for a later run because their host was paused, by host. */
+  deferredRowsByHost?: Record<string, { rows: number; resumesAt: string }>;
+  /**
+   * research-page-text: how each host it touched answered, so a host that was tried and refused
+   * can be told apart from one the run never asked (#6195).
+   */
+  hostReadOutcomes?: Record<
+    string,
+    { answered: number; refused: number; skipped: number; failed: number }
+  >;
+  /**
+   * research-page-text: hosts refused on at least 3 runs spanning 14 days or more with no answer
+   * between, and how many rows each run keeps unconfirmed; a flag, never a retirement (#6195).
+   */
+  sustainedRefusalHosts?: Record<
+    string,
+    { firstRefusedAt: string; confirmingRefusalAt: string; runs: number; rowsUnconfirmed: number }
+  >;
+  /**
+   * A keyed run's `user` keys whose page it read and stated a `title` for, so the title
+   * resolver can count those reads as fresh (#6197). Keys only, never names.
+   */
+  titleCoveredKeys?: string[];
+  removedByRequest?: number;
+  /** Observations the lane emitted, and per guard the ones the store held, by field (#6441). */
+  observationsEmitted?: number;
+  observationsHeldByGuard?: Record<string, Record<string, number>>;
+  rekeyedPersonKeys?: RekeyedPersonKeyRunSummary;
   descriptionSlotAttestation?: {
     vocabulary: number;
     empty: number;

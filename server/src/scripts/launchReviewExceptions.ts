@@ -11,8 +11,13 @@ import type {
 } from '../services/studentVisibilityGateService';
 import { planStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { classifyVisibilityRepairStage } from '../services/visibilityRepairQueueService';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -147,13 +152,13 @@ export function parseLaunchReviewExceptionArgs(argv: string[]): LaunchReviewExce
         '--decision-template-output',
       );
     } else if (arg === '--accepted-decisions') {
-      options.acceptedDecisions = resolveSafeJsonReportOutputPath(
+      options.acceptedDecisions = resolveSafeJsonReportPath(
         argv[index + 1],
         '--accepted-decisions',
       );
       index += 1;
     } else if (arg.startsWith('--accepted-decisions=')) {
-      options.acceptedDecisions = resolveSafeJsonReportOutputPath(
+      options.acceptedDecisions = resolveSafeJsonReportPath(
         arg.slice('--accepted-decisions='.length),
         '--accepted-decisions',
       );
@@ -323,7 +328,7 @@ export function readLaunchReviewExceptionDecisions(
   inputPath: string,
   options: { allowEmptyDecisions?: boolean } = {},
 ): LaunchReviewExceptionDecision[] {
-  const safeInputPath = resolveSafeJsonReportOutputPath(inputPath, '--accepted-decisions');
+  const safeInputPath = resolveSafeJsonReportPath(inputPath, '--accepted-decisions');
   if (!fs.existsSync(safeInputPath)) {
     if (options.allowEmptyDecisions) return [];
     throw new Error(`Accepted decisions file not found: ${safeInputPath}`);
@@ -338,7 +343,7 @@ export function writeLaunchReviewExceptionOutput(value: unknown, output?: string
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(value, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export function buildLaunchReviewExceptionOutput(

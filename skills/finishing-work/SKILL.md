@@ -13,7 +13,7 @@ Before finishing, run the **narrowest relevant** verification command. Prefer fo
 |---------|-----|
 | `yarn format:check` | Prettier check. **CI's first gate**, and the most common CI failure |
 | `yarn format` | Fix formatting in place |
-| `yarn lint` | ESLint. **A CI gate as of #3070**: an error fails the required check, a warning does not |
+| `yarn lint` | ESLint. **A CI gate as of #3070**: an error fails the required check, a warning does not. The script sets its own 6144 MB heap (#6115), so a local run and CI use the same limit |
 | `yarn lint:fix` | Fix the auto-fixable lint findings in place |
 | `yarn --cwd server test` | Server-side Vitest suite |
 | `yarn --cwd server test:guards` | The registration and inventory guards alone, in seconds. `guardSuiteInventory.test.ts` keeps the list to existing files that start no in-memory MongoDB |
@@ -51,7 +51,8 @@ Every job begins with step 1, and each check runs in exactly one job:
 14. `typecheck-and-build`: `yarn build`
 
 `E2E Smoke` (`.github/workflows/e2e-smoke.yml`, job `student-journey-smoke`) is the other required context.
-It starts the Playwright Chromium install in the background right after the dependency installs, builds the client, seeds and indexes synthetic entities and starts the API while the browser downloads, then waits for that install and fails if it failed before running the smokes.
+It starts the Playwright Chromium install in the background right after the dependency installs, builds the client, seeds and indexes synthetic entities and starts the API while the browser downloads, then waits for that download and fails if it failed.
+It then installs the apt system dependencies with time-bounded attempts, retries and backoff, tolerates an Ubuntu mirror outage only with a warning, and fails unless Chromium actually launches before running the smokes.
 
 `yarn test:changed` runs only the server and client test files whose import graph reaches a file changed since `origin/beta`, and falls back to the whole suite when a `package.json`, a Vitest config, or a setup file changed.
 It is a fast local pre-check, not a substitute for CI, which always runs every file.
@@ -68,6 +69,12 @@ Expect a lint error to turn the `checks` job red within seconds; the required `t
 Steps 12 and 13 gate at moderate. A low advisory below that gate is a judgement call, and the ones already judged are recorded in `docs/dependency-decisions.md` - read it before triaging a low Dependabot or audit PR. First check whether the patched version satisfies every parent's declared range: if it does, pin it in `resolutions` and the advisory is gone, and only if it does not is accepting it a judgement worth recording.
 
 None of the above verifies served output. When a change is meant to improve the copy students see, re-read the served surface with the scoreboard in `docs/served-corpus-scoreboard.md` (`yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`). It is read-only, renders a fixed slug set through the real serve path, and prints the served text rather than a diff count, because a changed description is not necessarily a fixed one.
+To read one route as an anonymous student over HTTP, run `yarn served-check /api/<path>`, never a plain request against your own dev server: worktrees keep `LOCAL_AUTH_BYPASS=true`, so that request is the bypass admin and records a login on Development (#5886). The command starts its own short-lived API with the bypass off and refuses to read unless `GET /api/check` reports an anonymous session; see `skills/auth-security/SKILL.md`.
+A route behind sign-in, such as `/api/programs/search`, answers `401` to that anonymous read, so re-read it with `yarn served-check --as student /api/<path>`, which reads as a synthetic signed-in undergraduate in a write-refusing process and reports `refusedWrites` (#6079).
+
+## Stop only what you started (#5222)
+
+At teardown, stop servers by the rule in `AGENTS.md` under "Worktree workflow": by your recorded PID or reserved port only, never by pattern, and never on ports 3000 or 4000.
 
 ## Review the final diff
 

@@ -1,3 +1,4 @@
+import { echoedQuery } from '../utils/echoedQuery';
 import {
   FormEvent,
   useCallback,
@@ -14,12 +15,17 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
 import { isResearchHomeResetState } from '../components/researchHomeNavigation';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
-import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
+import ResearchFilterDisclosure, {
+  focusResearchFiltersEntry,
+} from '../components/research/ResearchFilterDisclosure';
 import ResearchSearchDegradedNotice from '../components/research/ResearchSearchDegradedNotice';
 import SearchSpellingNotice from '../components/shared/SearchSpellingNotice';
 import ResearchStickyFilterBar from '../components/research/ResearchStickyFilterBar';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
 import ResearchProgramsHandoff from '../components/research/ResearchProgramsHandoff';
+import ResearchMoreTopicResults, {
+  type MoreTopicResultsAccessFilter,
+} from '../components/research/ResearchMoreTopicResults';
 import { queryCarriesProgramsIntent } from '../utils/researchProgramsHandoff';
 import ResearchSortDropdown, {
   ResearchSortField,
@@ -30,6 +36,8 @@ import useConfig from '../hooks/useConfig';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import useWatchedDeadlineSummary from '../hooks/useWatchedDeadlineSummary';
 import useMediaQuery from '../hooks/useMediaQuery';
+import { useRestoreOpenedResearchResultFocus } from '../hooks/useRestoreOpenedResearchResultFocus';
+import { forgetOpenedResearchResults } from '../utils/researchResultsReturn';
 import {
   approachingDeadlineAriaLabel,
   approachingDeadlineLabel,
@@ -47,11 +55,20 @@ import {
   ResearchEntitySearchResponse,
   StudentVisibilityTier,
 } from '../types/researchEntity';
-import type { ResearchSearchQueryCorrection } from '../types/researchGroup';
+import type {
+  ResearchSearchAcronymRewrite,
+  ResearchSearchTopicRewrite,
+  ResearchSearchFewCloseMatches,
+  ResearchSearchQueryCorrection,
+} from '../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
-import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
+import {
+  FEW_CLOSE_MATCHES_NOTICE,
+  isKnownResearchTypeFilterValue,
+} from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
 import { scrollViewportToTop } from '../utils/scrollViewportToTop';
+import { scrollBehavior } from '../utils/scrollBehavior';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
 import {
@@ -60,6 +77,12 @@ import {
   trackResearchEvent,
   trackResearchResultsView,
 } from '../utils/researchAnalytics';
+import ReachOutGuideLink from '../components/research/ReachOutGuideLink';
+import { GETTING_STARTED_LANDING_LINK_LABEL } from '../utils/gettingStartedGuide';
+import SearchClearButton, {
+  SEARCH_INPUT_CLEAR_BUTTON_PADDING,
+  SEARCH_INPUT_NATIVE_CANCEL_HIDDEN,
+} from '../components/shared/SearchClearButton';
 
 interface DepartmentResearchHomeConfig {
   abbreviation?: string;
@@ -80,6 +103,9 @@ type ResearchSearchFilters = PathwaySearchFilters & {
   kind?: string[];
   entityType?: string[];
   school?: string[];
+  hostsUndergrads?: boolean;
+  welcomesUndergrads?: boolean;
+  mentorsUndergrads?: boolean;
 };
 
 type ResearchQualityFilter = 'description-issue' | 'missing-lead' | 'profile-fallback';
@@ -113,9 +139,64 @@ const readSearchParamList = <T extends string>(
     });
 };
 
+// A "Search instead for" choice rides in the URL so a reload or a shared link keeps
+// searching what was typed instead of re-applying the rewrite the student declined.
+const LITERAL_SEARCH_PARAM = 'literal';
+
+type LiteralSearchChoices = Pick<
+  ResearchEntitySearchOptions,
+  'exactSpelling' | 'literalAcronym' | 'literalTopic'
+>;
+
+const LITERAL_SEARCH_PARAM_VALUES = [
+  ['spelling', 'exactSpelling'],
+  ['acronym', 'literalAcronym'],
+  ['topic', 'literalTopic'],
+] as const;
+
+const readLiteralSearchParam = (params: URLSearchParams): LiteralSearchChoices => {
+  const chosen = new Set(
+    readSearchParamList(
+      params,
+      LITERAL_SEARCH_PARAM,
+      LITERAL_SEARCH_PARAM_VALUES.map(([value]) => value),
+    ),
+  );
+  return Object.fromEntries(
+    LITERAL_SEARCH_PARAM_VALUES.filter(([value]) => chosen.has(value)).map(([, option]) => [
+      option,
+      true,
+    ]),
+  );
+};
+
+const literalSearchParamValue = (choices: LiteralSearchChoices | undefined): string =>
+  LITERAL_SEARCH_PARAM_VALUES.filter(([, option]) => choices?.[option] === true)
+    .map(([value]) => value)
+    .join(',');
+
+const HOSTS_UNDERGRADS_PARAM = 'undergrad';
+
+const readHostsUndergradsParam = (params: URLSearchParams): boolean =>
+  params.get(HOSTS_UNDERGRADS_PARAM) === '1';
+
+const WELCOMES_UNDERGRADS_PARAM = 'welcomes';
+
+const readWelcomesUndergradsParam = (params: URLSearchParams): boolean =>
+  params.get(WELCOMES_UNDERGRADS_PARAM) === '1';
+
+const MENTORS_UNDERGRADS_PARAM = 'mentors';
+
+const readMentorsUndergradsParam = (params: URLSearchParams): boolean =>
+  params.get(MENTORS_UNDERGRADS_PARAM) === '1';
+
+// The retired "Works with undergrads" umbrella (#5963). An old link carrying it opens
+// with no Undergrads option ticked, because no single option means what it meant.
+const RETIRED_WORKS_WITH_UNDERGRADS_PARAM = 'works';
+
 const readEntityTypeParam = (params: URLSearchParams): string => {
   const value = (params.get('type') || '').trim();
-  return isKnownResearchEntityType(value) ? value : '';
+  return isKnownResearchTypeFilterValue(value) ? value : '';
 };
 
 const emptyGroupedResults = (query: string): GroupedResearchResults =>
@@ -139,7 +220,34 @@ interface ResearchEntitySearchPage {
   depthLimited?: boolean;
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
+  acronymRewrite?: ResearchSearchAcronymRewrite;
+  topicRewrite?: ResearchSearchTopicRewrite;
+  fewCloseMatches?: ResearchSearchFewCloseMatches;
+  appliedFilters?: ResearchEntitySearchResponse['appliedFilters'];
+  moreTopicResults?: ResearchEntity[];
 }
+
+interface MoreTopicResults {
+  researchEntities: ResearchEntity[];
+  accessFilter: MoreTopicResultsAccessFilter;
+}
+
+const moreTopicResultsFor = (
+  researchEntities: ResearchEntity[],
+  filters: ResearchSearchFilters,
+): MoreTopicResults | null => {
+  if (researchEntities.length === 0) return null;
+  if (filters.hostsUndergrads === true) {
+    return { researchEntities, accessFilter: 'hostsUndergrads' };
+  }
+  if (filters.welcomesUndergrads === true) {
+    return { researchEntities, accessFilter: 'welcomesUndergrads' };
+  }
+  if (filters.mentorsUndergrads === true) {
+    return { researchEntities, accessFilter: 'mentorsUndergrads' };
+  }
+  return null;
+};
 
 interface ActiveResearchSearchRequest {
   submittedText: string;
@@ -150,7 +258,13 @@ interface ActiveResearchSearchRequest {
 
 interface ResearchFilterAnalyticsChange {
   operation: 'apply' | 'remove';
-  filter: 'school' | 'department' | 'research_type';
+  filter:
+    | 'school'
+    | 'department'
+    | 'research_type'
+    | 'hosts_undergrads'
+    | 'welcomes_undergrads'
+    | 'mentors_undergrads';
 }
 
 interface ResearchPageSnapshot {
@@ -166,12 +280,16 @@ interface ResearchPageSnapshot {
   selectedEntityType: string;
   selectedSchool: string;
   selectedDepartment: string;
+  selectedHostsUndergrads: boolean;
+  selectedWelcomesUndergrads: boolean;
+  selectedMentorsUndergrads: boolean;
   sortBy: ResearchSortField;
   sortOrder: 'asc' | 'desc';
   facetDistribution: Record<string, Record<string, number>>;
   browseFacetDistribution: Record<string, Record<string, number>>;
   groupedResults: GroupedResearchResults;
   searchResultResearchEntities: ResearchEntity[];
+  moreTopicResults: MoreTopicResults | null;
   searchPage: number;
   searchTotal: number;
   searchExhausted: boolean;
@@ -184,6 +302,9 @@ interface ResearchPageSnapshot {
   searchDegraded: boolean;
   defaultSearchDegraded: boolean;
   queryCorrection: ResearchSearchQueryCorrection | null;
+  acronymRewrite: ResearchSearchAcronymRewrite | null;
+  topicRewrite: ResearchSearchTopicRewrite | null;
+  fewCloseMatches: ResearchSearchFewCloseMatches | null;
 }
 
 interface ResearchEntitySearchOptions {
@@ -197,6 +318,9 @@ interface ResearchEntitySearchOptions {
   // telemetry does not report it as a query the student typed.
   suggestionProbe?: boolean;
   exactSpelling?: boolean;
+  literalAcronym?: boolean;
+  literalTopic?: boolean;
+  exactFilterValues?: boolean;
 }
 
 const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
@@ -233,6 +357,9 @@ const searchResearchEntities = async (
       ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
       ...(options.suggestionProbe ? { suggestionProbe: true } : {}),
       ...(options.exactSpelling ? { correctSpelling: false } : {}),
+      ...(options.literalAcronym ? { rewriteAcronym: false } : {}),
+      ...(options.literalTopic ? { extractSentenceTopic: false } : {}),
+      ...(options.exactFilterValues ? { resolveFilterValues: false } : {}),
     },
     { signal },
   );
@@ -246,6 +373,11 @@ const searchResearchEntities = async (
     depthLimited: normalized.depthLimited === true,
     degraded: normalized.degraded === true,
     queryCorrection: normalized.queryCorrection,
+    acronymRewrite: normalized.acronymRewrite,
+    topicRewrite: normalized.topicRewrite,
+    fewCloseMatches: normalized.fewCloseMatches,
+    appliedFilters: normalized.appliedFilters,
+    moreTopicResults: normalized.moreTopicResults,
   };
 };
 
@@ -296,12 +428,12 @@ const resultSummary = (
   if (loading) {
     return query === FILTERED_RESULT_QUERY_LABEL
       ? 'Searching your filters'
-      : `Searching for '${query}'`;
+      : `Searching for '${echoedQuery(query)}'`;
   }
   const loadedHomeCount = results.clusters.length;
   const matchingHomeCount = Math.max(totalMatchingHomeCount ?? loadedHomeCount, loadedHomeCount);
   if (degraded && matchingHomeCount === 0 && results.people.length === 0) {
-    return `No results could be confirmed for '${query}'.`;
+    return `No results could be confirmed for '${echoedQuery(query)}'.`;
   }
   if (departmentGapLabel && matchingHomeCount === 0 && results.people.length === 0) {
     return `No indexed research yet for ${departmentGapLabel}.`;
@@ -310,7 +442,7 @@ const resultSummary = (
   const homeSummary =
     query === FILTERED_RESULT_QUERY_LABEL
       ? `${homeCountLabel} match your filters`
-      : `${homeCountLabel} for '${query}'`;
+      : `${homeCountLabel} for '${echoedQuery(query)}'`;
   const parts = [homeSummary];
   if (results.people.length > 0) {
     parts.push(pluralize(results.people.length, 'contact', 'contacts'));
@@ -394,6 +526,7 @@ const researchClusterByEntity = new WeakMap<ResearchEntity, ResearchCluster>();
 
 const Research = () => {
   const location = useLocation();
+  useRestoreOpenedResearchResultFocus();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated, isLoading: isAuthLoading } = useContext(UserContext);
   const {
@@ -453,6 +586,15 @@ const Research = () => {
   const [selectedDepartment, setSelectedDepartment] = useState(
     () => restoredSnapshot?.selectedDepartment ?? searchParams.get('department') ?? '',
   );
+  const [selectedHostsUndergrads, setSelectedHostsUndergrads] = useState(
+    () => restoredSnapshot?.selectedHostsUndergrads ?? readHostsUndergradsParam(searchParams),
+  );
+  const [selectedWelcomesUndergrads, setSelectedWelcomesUndergrads] = useState(
+    () => restoredSnapshot?.selectedWelcomesUndergrads ?? readWelcomesUndergradsParam(searchParams),
+  );
+  const [selectedMentorsUndergrads, setSelectedMentorsUndergrads] = useState(
+    () => restoredSnapshot?.selectedMentorsUndergrads ?? readMentorsUndergradsParam(searchParams),
+  );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
     () => snapshotForThisPage?.sortBy ?? 'relevance',
   );
@@ -480,6 +622,9 @@ const Research = () => {
   const [searchResultResearchEntities, setSearchResultResearchEntities] = useState<
     ResearchEntity[]
   >(() => restoredSnapshot?.searchResultResearchEntities ?? []);
+  const [moreTopicResults, setMoreTopicResults] = useState<MoreTopicResults | null>(
+    () => restoredSnapshot?.moreTopicResults ?? null,
+  );
   const [searchPage, setSearchPage] = useState(() => restoredSnapshot?.searchPage ?? 1);
   const [searchTotal, setSearchTotal] = useState(() => restoredSnapshot?.searchTotal ?? 0);
   const [searchExhausted, setSearchExhausted] = useState(
@@ -506,6 +651,7 @@ const Research = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isApplyingFilters, setIsApplyingFilters] = useState(false);
+  const [searchResultSetId, setSearchResultSetId] = useState(0);
   const [defaultSearchLoading, setDefaultSearchLoading] = useState(false);
   const [hasFacetError, setHasFacetError] = useState(
     () => restoredSnapshot?.hasFacetError ?? false,
@@ -519,10 +665,27 @@ const Research = () => {
   const [queryCorrection, setQueryCorrection] = useState<ResearchSearchQueryCorrection | null>(
     () => restoredSnapshot?.queryCorrection ?? null,
   );
+  const [acronymRewrite, setAcronymRewrite] = useState<ResearchSearchAcronymRewrite | null>(
+    () => restoredSnapshot?.acronymRewrite ?? null,
+  );
+  const [topicRewrite, setTopicRewrite] = useState<ResearchSearchTopicRewrite | null>(
+    () => restoredSnapshot?.topicRewrite ?? null,
+  );
+  const [fewCloseMatches, setFewCloseMatches] = useState<ResearchSearchFewCloseMatches | null>(
+    () => restoredSnapshot?.fewCloseMatches ?? null,
+  );
   const [relaxedQuerySuggestion, setRelaxedQuerySuggestion] = useState<string | null>(null);
   const relaxProbeRequestIdRef = useRef(0);
   const relaxProbeAbortRef = useRef<AbortController | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const resultsSectionRef = useRef<HTMLElement | null>(null);
+  const resultSummaryRef = useRef<HTMLParagraphElement | null>(null);
+  const scrollToResults = () => {
+    // Deferred past the filter sheet's own focus return to its trigger, which cancels a smooth scroll started before it.
+    window.setTimeout(() =>
+      resultsSectionRef.current?.scrollIntoView({ block: 'start', behavior: scrollBehavior() }),
+    );
+  };
   const searchRequestIdRef = useRef(0);
   const defaultSearchRequestIdRef = useRef(0);
   const browseAnalyticsSessionRef = useRef(createResearchAnalyticsInteractionId('browse'));
@@ -586,6 +749,10 @@ const Research = () => {
       entityType?: string;
       school?: string;
       department?: string;
+      hostsUndergrads?: boolean;
+      welcomesUndergrads?: boolean;
+      mentorsUndergrads?: boolean;
+      literal?: LiteralSearchChoices;
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -597,6 +764,11 @@ const Research = () => {
     if (nextState.entityType?.trim()) params.set('type', nextState.entityType.trim());
     if (nextState.school?.trim()) params.set('school', nextState.school.trim());
     if (nextState.department?.trim()) params.set('department', nextState.department.trim());
+    if (nextState.hostsUndergrads) params.set(HOSTS_UNDERGRADS_PARAM, '1');
+    if (nextState.welcomesUndergrads) params.set(WELCOMES_UNDERGRADS_PARAM, '1');
+    if (nextState.mentorsUndergrads) params.set(MENTORS_UNDERGRADS_PARAM, '1');
+    const literal = nextQuery ? literalSearchParamValue(nextState.literal) : '';
+    if (literal) params.set(LITERAL_SEARCH_PARAM, literal);
 
     if (isAdmin) {
       if (nextState.showWeakest) params.set('weak', '1');
@@ -710,6 +882,8 @@ const Research = () => {
       preserveResults?: boolean;
       preserveDraftQuery?: boolean;
       exactSpelling?: boolean;
+      literalAcronym?: boolean;
+      literalTopic?: boolean;
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
@@ -735,6 +909,8 @@ const Research = () => {
       includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
       sort: currentSortRequestOptions(),
       exactSpelling: options.exactSpelling === true,
+      literalAcronym: options.literalAcronym === true,
+      literalTopic: options.literalTopic === true,
     });
     if (activeSearchKeyRef.current === requestKey) return;
     activeSearchKeyRef.current = requestKey;
@@ -753,6 +929,7 @@ const Research = () => {
     setSearchExhausted(false);
     if (!options.preserveResults) {
       setSearchResultResearchEntities([]);
+      setMoreTopicResults(null);
     }
     setActiveSearchRequest({
       submittedText: trimmed,
@@ -763,6 +940,9 @@ const Research = () => {
         includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
         ...currentSortRequestOptions(),
         ...(options.exactSpelling ? { exactSpelling: true } : {}),
+        ...(options.literalAcronym ? { literalAcronym: true } : {}),
+        ...(options.literalTopic ? { literalTopic: true } : {}),
+        ...(options.departmentSearch ? { exactFilterValues: true } : {}),
       },
     });
     if (!options.preserveDraftQuery) setQuery(trimmed);
@@ -770,6 +950,10 @@ const Research = () => {
     setDepartmentSearch(options.departmentSearch ?? null);
     if (!options.preserveResults) {
       setFacetDistribution({});
+    } else if (submittedQuery.trim().length === 0) {
+      // A filter applied from browse swaps in the search view's controls; seeding them with
+      // the browse counts keeps every option in place until the filtered counts land (#5963).
+      setFacetDistribution(browseFacetDistribution);
     }
     setSearchLoading(true);
     setIsLoadingMore(false);
@@ -777,7 +961,10 @@ const Research = () => {
     setHasFacetError(false);
     setSearchDegraded(false);
     setQueryCorrection(null);
+    setAcronymRewrite(null);
+    setTopicRewrite(null);
     if (!options.preserveResults) {
+      setFewCloseMatches(null);
       setGroupedResults(emptyGroupedResults(resultQueryLabel));
     }
     if (options.syncUrl !== false) {
@@ -788,6 +975,10 @@ const Research = () => {
           entityType: filters.entityType?.[0],
           school: filters.school?.[0],
           department: options.departmentSearch ? undefined : filters.departments?.[0],
+          hostsUndergrads: filters.hostsUndergrads === true,
+          welcomesUndergrads: filters.welcomesUndergrads === true,
+          mentorsUndergrads: filters.mentorsUndergrads === true,
+          literal: options,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -808,16 +999,87 @@ const Research = () => {
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
           ...currentSortRequestOptions(),
           ...(options.exactSpelling ? { exactSpelling: true } : {}),
+          ...(options.literalAcronym ? { literalAcronym: true } : {}),
+          ...(options.literalTopic ? { literalTopic: true } : {}),
+          ...(options.departmentSearch ? { exactFilterValues: true } : {}),
         },
       );
 
       if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
 
+      const appliedFilters = researchEntitiesPage.appliedFilters;
+      if (appliedFilters && !options.departmentSearch) {
+        const school = appliedFilters.school
+          ? (appliedFilters.school[0] ?? '')
+          : (filters.school?.[0] ?? '');
+        const department = appliedFilters.departments
+          ? (appliedFilters.departments[0] ?? '')
+          : (filters.departments?.[0] ?? '');
+        const entityType = appliedFilters.entityType
+          ? (appliedFilters.entityType[0] ?? '')
+          : (filters.entityType?.[0] ?? '');
+        const hostsUndergrads = filters.hostsUndergrads === true;
+        const welcomesUndergrads =
+          filters.welcomesUndergrads === true && appliedFilters.welcomesUndergrads !== false;
+        const mentorsUndergrads =
+          filters.mentorsUndergrads === true && appliedFilters.mentorsUndergrads !== false;
+        const appliedStudentFilters: ResearchSearchFilters = {
+          ...(entityType ? { entityType: [entityType] } : {}),
+          ...(school ? { school: [school] } : {}),
+          ...(department ? { departments: [department] } : {}),
+          ...(hostsUndergrads ? { hostsUndergrads: true } : {}),
+          ...(welcomesUndergrads ? { welcomesUndergrads: true } : {}),
+          ...(mentorsUndergrads ? { mentorsUndergrads: true } : {}),
+        };
+        setSelectedEntityType(entityType);
+        setSelectedSchool(school);
+        setSelectedDepartment(department);
+        setSelectedWelcomesUndergrads(welcomesUndergrads);
+        setSelectedMentorsUndergrads(mentorsUndergrads);
+        if (!trimmed && !hasStructuredFilters(appliedStudentFilters)) {
+          writeResearchSearchParams(
+            {
+              showWeakest: showWeakestProfilesFirst,
+              quality: qualityFilters,
+              trustTiers: trustTierFilters,
+            },
+            { replace: true, markPending: true },
+          );
+          return;
+        }
+        setActiveSearchRequest((current) =>
+          current ? { ...current, filters: appliedStudentFilters } : current,
+        );
+        writeResearchSearchParams(
+          {
+            query: trimmed,
+            entityType,
+            school,
+            department,
+            hostsUndergrads,
+            welcomesUndergrads,
+            mentorsUndergrads,
+            literal: options,
+            showWeakest: showWeakestProfilesFirst,
+            quality: qualityFilters,
+            trustTiers: trustTierFilters,
+          },
+          { replace: true, markPending: true },
+        );
+      }
+
       const researchEntities = researchEntitiesPage.researchEntities;
       setHasFacetError(false);
       setSearchDegraded(researchEntitiesPage.degraded === true);
       setQueryCorrection(researchEntitiesPage.queryCorrection ?? null);
+      setAcronymRewrite(researchEntitiesPage.acronymRewrite ?? null);
+      setTopicRewrite(researchEntitiesPage.topicRewrite ?? null);
+      setFewCloseMatches(researchEntitiesPage.fewCloseMatches ?? null);
+      setSearchResultSetId(requestId);
       setSearchResultResearchEntities(researchEntities);
+      setMoreTopicResults(
+        moreTopicResultsFor(researchEntitiesPage.moreTopicResults ?? [], filters),
+      );
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
       if (researchEntitiesPage.facetDistribution) {
         setFacetDistribution(researchEntitiesPage.facetDistribution);
@@ -859,6 +1121,11 @@ const Research = () => {
         setSearchDegraded(true);
         setHasFacetError(true);
         setSearchExhausted(true);
+        // Rows kept on screen while filters applied answer the previous request, so
+        // leaving them under the new filters would show results those filters exclude.
+        setSearchResultResearchEntities([]);
+        setMoreTopicResults(null);
+        setGroupedResults(emptyGroupedResults(resultQueryLabel));
         void trackResearchEvent({
           eventType: 'research_search',
           payload: {
@@ -962,19 +1229,41 @@ const Research = () => {
     school = selectedSchool,
     department = selectedDepartment,
     entityType = selectedEntityType,
+    hostsUndergrads = selectedHostsUndergrads,
+    welcomesUndergrads = selectedWelcomesUndergrads,
+    mentorsUndergrads = selectedMentorsUndergrads,
   ): ResearchSearchFilters => ({
     ...(entityType ? { entityType: [entityType] } : {}),
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
+    ...(hostsUndergrads ? { hostsUndergrads: true } : {}),
+    ...(welcomesUndergrads ? { welcomesUndergrads: true } : {}),
+    ...(mentorsUndergrads ? { mentorsUndergrads: true } : {}),
   });
 
   const activeSearchKeepsTypedSpelling = (text: string): boolean =>
     activeSearchRequest?.submittedText === text &&
     activeSearchRequest.options?.exactSpelling === true;
 
+  const activeSearchKeepsLiteralAcronym = (text: string): boolean =>
+    activeSearchRequest?.submittedText === text &&
+    activeSearchRequest.options?.literalAcronym === true;
+
+  const activeSearchKeepsLiteralTopic = (text: string): boolean =>
+    activeSearchRequest?.submittedText === text &&
+    activeSearchRequest.options?.literalTopic === true;
+
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!query.trim() && !selectedEntityType && !selectedSchool && !selectedDepartment) {
+    if (
+      !query.trim() &&
+      !selectedEntityType &&
+      !selectedSchool &&
+      !selectedDepartment &&
+      !selectedHostsUndergrads &&
+      !selectedWelcomesUndergrads &&
+      !selectedMentorsUndergrads
+    ) {
       setShowEmptySearchHint(true);
       searchInputRef.current?.focus();
       return;
@@ -997,9 +1286,13 @@ const Research = () => {
     setSelectedEntityType('');
     setSelectedSchool('');
     setSelectedDepartment('');
+    setSelectedHostsUndergrads(false);
+    setSelectedWelcomesUndergrads(false);
+    setSelectedMentorsUndergrads(false);
     setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
+    setMoreTopicResults(null);
     setSearchPage(1);
     setSearchTotal(0);
     setSearchExhausted(true);
@@ -1008,6 +1301,9 @@ const Research = () => {
     setHasFacetError(false);
     setSearchDegraded(false);
     setQueryCorrection(null);
+    setAcronymRewrite(null);
+    setTopicRewrite(null);
+    setFewCloseMatches(null);
     setSearchLoading(false);
     setIsLoadingMore(false);
     writeResearchSearchParams(
@@ -1021,6 +1317,16 @@ const Research = () => {
   };
 
   const hasSubmittedSearch = submittedQuery.trim().length > 0;
+  const [searchPaintedBeforeSession, setSearchPaintedBeforeSession] = useState<string | null>(null);
+  if (isAuthLoading && hasSubmittedSearch && searchPaintedBeforeSession !== submittedQuery) {
+    setSearchPaintedBeforeSession(submittedQuery);
+  } else if (
+    !isAuthLoading &&
+    searchPaintedBeforeSession !== null &&
+    searchPaintedBeforeSession !== submittedQuery
+  ) {
+    setSearchPaintedBeforeSession(null);
+  }
   const programsHandoffQuery =
     departmentSearch || submittedQuery === FILTERED_RESULT_QUERY_LABEL ? '' : submittedQuery.trim();
 
@@ -1052,11 +1358,36 @@ const Research = () => {
     ) {
       return;
     }
+    const unreadableFilterParams = [
+      searchParams.has('type') && !readEntityTypeParam(searchParams) ? 'type' : null,
+      searchParams.has(HOSTS_UNDERGRADS_PARAM) && !readHostsUndergradsParam(searchParams)
+        ? HOSTS_UNDERGRADS_PARAM
+        : null,
+      searchParams.has(WELCOMES_UNDERGRADS_PARAM) && !readWelcomesUndergradsParam(searchParams)
+        ? WELCOMES_UNDERGRADS_PARAM
+        : null,
+      searchParams.has(MENTORS_UNDERGRADS_PARAM) && !readMentorsUndergradsParam(searchParams)
+        ? MENTORS_UNDERGRADS_PARAM
+        : null,
+      searchParams.has(RETIRED_WORKS_WITH_UNDERGRADS_PARAM)
+        ? RETIRED_WORKS_WITH_UNDERGRADS_PARAM
+        : null,
+    ].filter((key): key is string => key !== null);
+    if (unreadableFilterParams.length > 0) {
+      const readableParams = new URLSearchParams(searchParams);
+      unreadableFilterParams.forEach((key) => readableParams.delete(key));
+      setSearchParams(readableParams, { replace: true });
+      return;
+    }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
     const urlEntityType = readEntityTypeParam(searchParams);
     const urlSchool = searchParams.get('school') || '';
     const urlDepartment = searchParams.get('department') || '';
+    const urlHostsUndergrads = readHostsUndergradsParam(searchParams);
+    const urlWelcomesUndergrads = readWelcomesUndergradsParam(searchParams);
+    const urlMentorsUndergrads = readMentorsUndergradsParam(searchParams);
+    const urlLiteral = readLiteralSearchParam(searchParams);
     const urlQualityFilters = urlQualityFiltersKey
       ? (urlQualityFiltersKey.split(',') as ResearchQualityFilter[])
       : [];
@@ -1097,12 +1428,27 @@ const Research = () => {
       setSelectedDepartment(urlDepartment);
       return;
     }
+    if (selectedHostsUndergrads !== urlHostsUndergrads) {
+      setSelectedHostsUndergrads(urlHostsUndergrads);
+      return;
+    }
+    if (selectedWelcomesUndergrads !== urlWelcomesUndergrads) {
+      setSelectedWelcomesUndergrads(urlWelcomesUndergrads);
+      return;
+    }
+    if (selectedMentorsUndergrads !== urlMentorsUndergrads) {
+      setSelectedMentorsUndergrads(urlMentorsUndergrads);
+      return;
+    }
     // Key order matches `studentSearchFilters` because the reconcile below
     // compares these objects with `JSON.stringify`.
     const studentFilters: ResearchSearchFilters = {
       ...(urlEntityType ? { entityType: [urlEntityType] } : {}),
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
+      ...(urlHostsUndergrads ? { hostsUndergrads: true } : {}),
+      ...(urlWelcomesUndergrads ? { welcomesUndergrads: true } : {}),
+      ...(urlMentorsUndergrads ? { mentorsUndergrads: true } : {}),
     };
 
     if (awaitingDepartmentConfig || awaitingAdminScope) return;
@@ -1136,7 +1482,9 @@ const Research = () => {
       if (
         !urlDepartmentLabel &&
         submittedQuery === urlQuery.trim() &&
-        JSON.stringify(activeSearchRequest?.filters || {}) === JSON.stringify(studentFilters)
+        JSON.stringify(activeSearchRequest?.filters || {}) === JSON.stringify(studentFilters) &&
+        literalSearchParamValue(activeSearchRequest?.options) ===
+          literalSearchParamValue(urlLiteral)
       ) {
         return;
       }
@@ -1144,6 +1492,7 @@ const Research = () => {
         filters: studentFilters,
         syncUrl: false,
         preserveResults: submittedQuery === urlQuery.trim(),
+        ...urlLiteral,
       });
       return;
     }
@@ -1181,6 +1530,7 @@ const Research = () => {
     setDepartmentSearch(null);
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
+    setMoreTopicResults(null);
     setSearchPage(1);
     setSearchTotal(0);
     setSearchExhausted(true);
@@ -1211,6 +1561,9 @@ const Research = () => {
     selectedEntityType,
     selectedSchool,
     selectedDepartment,
+    selectedHostsUndergrads,
+    selectedWelcomesUndergrads,
+    selectedMentorsUndergrads,
     departmentSearch,
     hasSubmittedSearch,
     submittedQuery,
@@ -1233,12 +1586,16 @@ const Research = () => {
       selectedEntityType,
       selectedSchool,
       selectedDepartment,
+      selectedHostsUndergrads,
+      selectedWelcomesUndergrads,
+      selectedMentorsUndergrads,
       sortBy,
       sortOrder,
       facetDistribution,
       browseFacetDistribution,
       groupedResults,
       searchResultResearchEntities,
+      moreTopicResults,
       searchPage: lastLoadedPage(searchPage, isLoadingMore),
       searchTotal,
       searchExhausted,
@@ -1251,6 +1608,9 @@ const Research = () => {
       searchDegraded,
       defaultSearchDegraded,
       queryCorrection,
+      acronymRewrite,
+      topicRewrite,
+      fewCloseMatches,
     };
   }, [
     hasSubmittedSearch,
@@ -1268,12 +1628,16 @@ const Research = () => {
     selectedEntityType,
     selectedSchool,
     selectedDepartment,
+    selectedHostsUndergrads,
+    selectedWelcomesUndergrads,
+    selectedMentorsUndergrads,
     sortBy,
     sortOrder,
     facetDistribution,
     browseFacetDistribution,
     groupedResults,
     searchResultResearchEntities,
+    moreTopicResults,
     searchPage,
     searchTotal,
     searchExhausted,
@@ -1286,6 +1650,9 @@ const Research = () => {
     searchDegraded,
     defaultSearchDegraded,
     queryCorrection,
+    acronymRewrite,
+    topicRewrite,
+    fewCloseMatches,
   ]);
 
   useEffect(() => {
@@ -1309,18 +1676,19 @@ const Research = () => {
     activeSearchRequest !== null &&
     searchResultResearchEntities.length === 0;
 
-  const hasRelaxedQueryCandidate =
-    isZeroResultSearch &&
-    activeSearchRequest !== null &&
-    Boolean(relaxResearchQuery(activeSearchRequest.searchQuery ?? ''));
+  // A filter that removed every match is what the student should change, and the
+  // panel already offers to clear it; a shorter query would drop the word they meant.
+  const zeroResultQueryToRelax =
+    isZeroResultSearch && activeSearchRequest && !hasStructuredFilters(activeSearchRequest.filters)
+      ? (activeSearchRequest.searchQuery ?? '')
+      : '';
+  const hasRelaxedQueryCandidate = Boolean(relaxResearchQuery(zeroResultQueryToRelax));
   if (!hasRelaxedQueryCandidate && relaxedQuerySuggestion !== null) {
     setRelaxedQuerySuggestion(null);
   }
 
   useEffect(() => {
-    const relaxedQuery = isZeroResultSearch
-      ? relaxResearchQuery(activeSearchRequest?.searchQuery ?? '')
-      : null;
+    const relaxedQuery = relaxResearchQuery(zeroResultQueryToRelax);
     if (!relaxedQuery || !activeSearchRequest) {
       relaxProbeRequestIdRef.current += 1;
       return;
@@ -1355,7 +1723,7 @@ const Research = () => {
     })();
 
     return () => controller.abort();
-  }, [isZeroResultSearch, activeSearchRequest]);
+  }, [zeroResultQueryToRelax, activeSearchRequest]);
 
   const activeResults = useMemo(() => groupedResults, [groupedResults]);
   const clustersForEntities = useCallback((entities: ResearchEntity[]): ResearchCluster[] => {
@@ -1376,12 +1744,17 @@ const Research = () => {
     () => clustersForEntities(searchResultResearchEntities),
     [clustersForEntities, searchResultResearchEntities],
   );
+  const moreTopicClusters = useMemo(
+    () => clustersForEntities(moreTopicResults?.researchEntities ?? []),
+    [clustersForEntities, moreTopicResults],
+  );
   const programsHandoffApplies =
     Boolean(programsHandoffQuery) && queryCarriesProgramsIntent(programsHandoffQuery);
   const showsProgramsHandoff = programsHandoffApplies && activeClusters.length > 0;
   const reservesProgramsHandoffSlot =
     programsHandoffApplies && searchLoading && activeClusters.length === 0;
   const showsProgramsHandoffSlot = showsProgramsHandoff || reservesProgramsHandoffSlot;
+  const appliedSchoolFilter = activeSearchRequest?.filters.school?.[0];
   const defaultClusters = useMemo(
     () => clustersForEntities(defaultResearchEntities),
     [clustersForEntities, defaultResearchEntities],
@@ -1403,27 +1776,33 @@ const Research = () => {
   const activeStudentFilterCount =
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
-    Number(Boolean(selectedDepartment));
+    Number(Boolean(selectedDepartment)) +
+    Number(selectedHostsUndergrads) +
+    Number(selectedWelcomesUndergrads) +
+    Number(selectedMentorsUndergrads);
   const hasStudentFacetSelection = activeStudentFilterCount > 0;
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled = searchLoading && !hasSubmittableChange;
-  const searchHelpText = query.trim()
-    ? ''
-    : hasStudentFacetSelection
-      ? 'Search with the selected filters.'
-      : showEmptySearchHint
-        ? 'Type a topic, professor, or lab to search.'
-        : '';
+  const searchHelpText =
+    !query.trim() && !hasStudentFacetSelection && showEmptySearchHint
+      ? 'Type a topic, professor, or lab to search.'
+      : '';
   const departmentFacetLabel = (department: string) =>
     getUniqueDepartmentLabels([department], departments)[0] || department;
   const applyStudentFilters = (next: {
     school?: string;
     department?: string;
     entityType?: string;
+    hostsUndergrads?: boolean;
+    welcomesUndergrads?: boolean;
+    mentorsUndergrads?: boolean;
   }) => {
     const school = next.school ?? selectedSchool;
     const department = next.department ?? selectedDepartment;
     const entityType = next.entityType ?? selectedEntityType;
+    const hostsUndergrads = next.hostsUndergrads ?? selectedHostsUndergrads;
+    const welcomesUndergrads = next.welcomesUndergrads ?? selectedWelcomesUndergrads;
+    const mentorsUndergrads = next.mentorsUndergrads ?? selectedMentorsUndergrads;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
     if (entityType !== selectedEntityType) {
       filterChanges.push({ operation: entityType ? 'apply' : 'remove', filter: 'research_type' });
@@ -1434,11 +1813,39 @@ const Research = () => {
     if (department !== selectedDepartment) {
       filterChanges.push({ operation: department ? 'apply' : 'remove', filter: 'department' });
     }
+    if (hostsUndergrads !== selectedHostsUndergrads) {
+      filterChanges.push({
+        operation: hostsUndergrads ? 'apply' : 'remove',
+        filter: 'hosts_undergrads',
+      });
+    }
+    if (welcomesUndergrads !== selectedWelcomesUndergrads) {
+      filterChanges.push({
+        operation: welcomesUndergrads ? 'apply' : 'remove',
+        filter: 'welcomes_undergrads',
+      });
+    }
+    if (mentorsUndergrads !== selectedMentorsUndergrads) {
+      filterChanges.push({
+        operation: mentorsUndergrads ? 'apply' : 'remove',
+        filter: 'mentors_undergrads',
+      });
+    }
     if (filterChanges.length > 0) scrollViewportToTop();
     setSelectedEntityType(entityType);
     setSelectedSchool(school);
     setSelectedDepartment(department);
-    const filters = studentSearchFilters(school, department, entityType);
+    setSelectedHostsUndergrads(hostsUndergrads);
+    setSelectedWelcomesUndergrads(welcomesUndergrads);
+    setSelectedMentorsUndergrads(mentorsUndergrads);
+    const filters = studentSearchFilters(
+      school,
+      department,
+      entityType,
+      hostsUndergrads,
+      welcomesUndergrads,
+      mentorsUndergrads,
+    );
     if (departmentSearch && !department) {
       void runSearch(departmentSearch.label, {
         searchQuery: '',
@@ -1468,6 +1875,8 @@ const Research = () => {
       filterChanges,
       preserveResults: true,
       exactSpelling: activeSearchKeepsTypedSpelling(textQuery),
+      literalAcronym: activeSearchKeepsLiteralAcronym(textQuery),
+      literalTopic: activeSearchKeepsLiteralTopic(textQuery),
     });
   };
   const clearSearchText = () => {
@@ -1509,6 +1918,8 @@ const Research = () => {
       preserveDraftQuery: true,
       syncUrl: false,
       exactSpelling: activeSearchRequest.options?.exactSpelling === true,
+      literalAcronym: activeSearchRequest.options?.literalAcronym === true,
+      literalTopic: activeSearchRequest.options?.literalTopic === true,
     });
   };
   const reloadDefaultResearchHomes = () => {
@@ -1586,6 +1997,15 @@ const Research = () => {
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
   const isWideFilterLayout = useMediaQuery('(min-width: 1280px)');
   const isCompactViewport = useMediaQuery('(max-width: 639px)');
+  const compactsSearchHeader = isCompactViewport && hasSubmittedSearch;
+  const hasApproachingWatchedDeadline = isAuthenticated && watchedDeadlineApproachingCount > 0;
+  const sessionSlotHoldsDeadline = compactsSearchHeader && hasApproachingWatchedDeadline;
+  // A search painted before the session answered keeps the slot at the guest copy's height,
+  // so the answer never moves the results (#4222); only a search submitted once the session
+  // is known may collapse it on a phone (#5166).
+  const sessionSlotReservesGuestCopy =
+    !compactsSearchHeader || !isAuthenticated || searchPaintedBeforeSession === submittedQuery;
+  const showsSessionSlot = sessionSlotReservesGuestCopy || sessionSlotHoldsDeadline;
   const searchPlaceholder = isCompactViewport
     ? 'Topic, professor, or lab'
     : isWideFilterLayout
@@ -1597,20 +2017,44 @@ const Research = () => {
     selectedEntityType,
     selectedSchool,
     selectedDepartment,
+    selectedHostsUndergrads,
+    selectedWelcomesUndergrads,
+    selectedMentorsUndergrads,
     isApplying: searchLoading,
     hasFacetError,
+    hasActiveQuery: hasSubmittedSearch,
     departmentLabel: departmentFacetLabel,
     onEntityTypeChange: (entityType: string) => applyStudentFilters({ entityType }),
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
-    onClearAll: () => applyStudentFilters({ school: '', department: '', entityType: '' }),
+    onHostsUndergradsChange: (hostsUndergrads: boolean) => applyStudentFilters({ hostsUndergrads }),
+    onWelcomesUndergradsChange: (welcomesUndergrads: boolean) =>
+      applyStudentFilters({ welcomesUndergrads }),
+    onMentorsUndergradsChange: (mentorsUndergrads: boolean) =>
+      applyStudentFilters({ mentorsUndergrads }),
+    onClearAll: () =>
+      applyStudentFilters({
+        school: '',
+        department: '',
+        entityType: '',
+        hostsUndergrads: false,
+        welcomesUndergrads: false,
+        mentorsUndergrads: false,
+      }),
+    resultCount: hasFacetError ? undefined : Math.max(searchTotal, activeClusters.length),
+    resultCountPending: searchLoading,
+    onShowResults: scrollToResults,
   };
 
   const browseFilterProps = {
     ...researchFilterProps,
     facetDistribution: browseFacetDistribution,
+    hasActiveQuery: false,
     isApplying: false,
+    isLoadingOptions: defaultSearchLoading,
     hasFacetError: false,
+    resultCount: defaultSearchTotal,
+    resultCountPending: defaultSearchLoading,
   };
 
   const retryRelaxedQuery = () => {
@@ -1624,13 +2068,38 @@ const Research = () => {
     });
   };
 
+  const focusResultSummary = () => resultSummaryRef.current?.focus({ preventScroll: true });
+
   const searchOriginalSpelling = () => {
     if (!queryCorrection) return;
+    focusResultSummary();
     const filters = studentSearchFilters();
     void runSearch(queryCorrection.originalQuery, {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
       exactSpelling: true,
+    });
+  };
+
+  const searchLiteralTopic = () => {
+    if (!topicRewrite) return;
+    focusResultSummary();
+    const filters = studentSearchFilters();
+    void runSearch(topicRewrite.originalQuery, {
+      filters,
+      hasFilterSelections: hasStructuredFilters(filters),
+      literalTopic: true,
+    });
+  };
+
+  const searchLiteralAcronym = () => {
+    if (!acronymRewrite) return;
+    focusResultSummary();
+    const filters = studentSearchFilters();
+    void runSearch(acronymRewrite.originalQuery, {
+      filters,
+      hasFilterSelections: hasStructuredFilters(filters),
+      literalAcronym: true,
     });
   };
 
@@ -1723,43 +2192,105 @@ const Research = () => {
     </div>
   );
 
+  const watchedDeadlineNotice = (withNotStartedEmphasis: boolean) => (
+    <>
+      <Link
+        to="/dashboard?tab=programs"
+        aria-label={approachingDeadlineAriaLabel(
+          watchedDeadlineApproachingCount,
+          watchedDeadlineNotStartedCount,
+        )}
+        className="-my-1.5 inline-block py-1.5 font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
+      >
+        {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
+      </Link>
+      {withNotStartedEmphasis && notStartedEmphasis(watchedDeadlineNotStartedCount) && (
+        <> - {notStartedEmphasis(watchedDeadlineNotStartedCount)}.</>
+      )}
+    </>
+  );
+
+  const searchedTopic = topicRewrite
+    ? (acronymRewrite?.rewrittenQuery ?? topicRewrite.topicQuery)
+    : undefined;
+
+  const searchResultSummary = (layoutClassName: string) => (
+    <p
+      ref={resultSummaryRef}
+      tabIndex={-1}
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      className={`font-medium text-ink-soft focus:outline-none ${layoutClassName}`}
+    >
+      {resultSummary(
+        activeResults,
+        searchedTopic ??
+          queryCorrection?.correctedQuery ??
+          acronymRewrite?.rewrittenQuery ??
+          submittedQuery,
+        searchLoading,
+        departmentSearch?.label,
+        searchTotal,
+        searchDegraded,
+      )}
+    </p>
+  );
+
+  const searchSpellingNotice = searchLoading ? null : topicRewrite && searchedTopic ? (
+    <SearchSpellingNotice
+      originalQuery={topicRewrite.originalQuery}
+      correctedQuery={searchedTopic}
+      searchedLabel="Searching for the topic"
+      onSearchOriginal={searchLiteralTopic}
+    />
+  ) : queryCorrection ? (
+    <SearchSpellingNotice
+      originalQuery={queryCorrection.originalQuery}
+      onSearchOriginal={searchOriginalSpelling}
+    />
+  ) : acronymRewrite ? (
+    <SearchSpellingNotice
+      originalQuery={acronymRewrite.originalQuery}
+      correctedQuery={acronymRewrite.rewrittenQuery}
+      searchedLabel="Searching for"
+      onSearchOriginal={searchLiteralAcronym}
+    />
+  ) : null;
+
+  const searchSortDropdown = (inFilterBar: boolean) => (
+    <ResearchSortDropdown
+      sortBy={sortBy}
+      sortOrder={sortOrder}
+      hasQuery={Boolean(submittedQuery)}
+      onSortByChange={(field) => applyResearchSort(field)}
+      onToggleSortDirection={toggleResearchSortDirection}
+      inFilterBar={inFilterBar}
+    />
+  );
+
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-(--breakpoint-2xl) px-5 py-5 sm:py-8 lg:px-8">
         <div className="grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
-          <header className="yr-panel rounded-card p-4 sm:p-6 xl:p-5 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
-            <h1 className="yr-display max-w-3xl text-[1.75rem] font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9">
-              Find a Yale lab that fits you.
+          <header className="yr-panel rounded-card p-4 sm:p-6 xl:px-5 xl:py-4 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
+            <h1
+              className={`yr-display max-w-3xl text-[1.75rem] font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9 ${compactsSearchHeader ? 'sr-only' : ''}`}
+            >
+              Find Yale research that fits you.
             </h1>
             <p
               id="research-search-context"
               className="mt-2 hidden max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:block sm:text-base sm:leading-6 xl:hidden"
             >
-              Search by interest, professor, course topic, method, or question.
+              Labs, centers, and faculty research in every field. Search by interest, professor,
+              course topic, method, or question.
             </p>
 
-            {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
-              <div
-                className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
-                role="status"
-              >
-                <Link
-                  to="/dashboard?tab=programs"
-                  aria-label={approachingDeadlineAriaLabel(
-                    watchedDeadlineApproachingCount,
-                    watchedDeadlineNotStartedCount,
-                  )}
-                  className="font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
-                >
-                  {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
-                </Link>
-                {notStartedEmphasis(watchedDeadlineNotStartedCount) && (
-                  <> - {notStartedEmphasis(watchedDeadlineNotStartedCount)}.</>
-                )}
-              </div>
-            )}
-
-            <form onSubmit={onSubmit} className="mt-3 sm:mt-7 xl:mt-4">
+            <form
+              onSubmit={onSubmit}
+              className={compactsSearchHeader ? undefined : 'mt-3 sm:mt-7 xl:mt-3'}
+            >
               <label
                 htmlFor="research-search"
                 className="mb-2 block text-sm font-semibold text-ink"
@@ -1767,23 +2298,35 @@ const Research = () => {
                 Search y/labs
               </label>
               <div className="flex flex-row gap-2 xl:flex-col">
-                <input
-                  id="research-search"
-                  ref={searchInputRef}
-                  type="search"
-                  value={query}
-                  onChange={(event) => {
-                    const nextQuery = event.target.value;
-                    setQuery(nextQuery);
-                    setShowEmptySearchHint(false);
-                    if (!nextQuery.trim() && hasSubmittedSearch) {
-                      clearSearchText();
-                    }
-                  }}
-                  aria-describedby="research-search-context research-search-help"
-                  placeholder={searchPlaceholder}
-                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14 xl:min-h-11"
-                />
+                <div className="relative flex min-w-0 flex-1">
+                  <input
+                    id="research-search"
+                    ref={searchInputRef}
+                    type="search"
+                    value={query}
+                    onChange={(event) => {
+                      const nextQuery = event.target.value;
+                      setQuery(nextQuery);
+                      setShowEmptySearchHint(false);
+                      if (!nextQuery.trim() && hasSubmittedSearch) {
+                        clearSearchText();
+                      }
+                    }}
+                    aria-describedby="research-search-context research-search-help"
+                    placeholder={searchPlaceholder}
+                    className={`yr-focus-ring min-h-12 w-full min-w-0 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14 xl:min-h-11 ${SEARCH_INPUT_NATIVE_CANCEL_HIDDEN} ${query ? SEARCH_INPUT_CLEAR_BUTTON_PADDING : ''}`}
+                  />
+                  {query && (
+                    <SearchClearButton
+                      onClear={() => {
+                        setQuery('');
+                        setShowEmptySearchHint(false);
+                        if (hasSubmittedSearch) clearSearchText();
+                        searchInputRef.current?.focus();
+                      }}
+                    />
+                  )}
+                </div>
                 <button
                   type="submit"
                   className="yr-focus-ring yr-pressable min-h-12 shrink-0 rounded-control bg-[var(--yr-blue)] px-5 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14 sm:px-6 xl:min-h-11"
@@ -1814,14 +2357,25 @@ const Research = () => {
               </p>
             </form>
 
-            {hasSubmittedSearch && isWideFilterLayout && (
-              <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-4 xl:pt-4">
-                <ResearchFilterDisclosure variant="sidebar" {...researchFilterProps} />
+            {!hasSubmittedSearch && !isWideFilterLayout && (
+              <ReachOutGuideLink label={GETTING_STARTED_LANDING_LINK_LABEL} />
+            )}
+
+            {hasApproachingWatchedDeadline && !sessionSlotHoldsDeadline && (
+              <div
+                className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
+                role="status"
+              >
+                {watchedDeadlineNotice(true)}
               </div>
             )}
-            {!hasSubmittedSearch && isWideFilterLayout && (
-              <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-4 xl:pt-4">
-                <ResearchFilterDisclosure variant="sidebar" {...browseFilterProps} />
+
+            {isWideFilterLayout && (
+              <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-3 xl:pt-3">
+                <ResearchFilterDisclosure
+                  variant="sidebar"
+                  {...(hasSubmittedSearch ? researchFilterProps : browseFilterProps)}
+                />
               </div>
             )}
             {!hasSubmittedSearch && isWideFilterLayout && isAdmin && (
@@ -1840,45 +2394,59 @@ const Research = () => {
                 {trustTierFilterChips}
               </section>
             )}
-            <div
-              aria-hidden={isAuthLoading || undefined}
-              className={`mt-3 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy sm:mt-4 ${isAuthLoading ? 'invisible' : ''} ${isAuthLoading || isAuthenticated ? 'xl:hidden' : ''}`}
-            >
-              <p
-                aria-hidden={isAuthenticated || undefined}
-                className={`col-start-1 row-start-1 ${isAuthenticated ? 'invisible' : ''}`}
+            {showsSessionSlot && (
+              <div
+                aria-hidden={isAuthLoading || undefined}
+                className={`mt-3 grid rounded-card border px-3 py-2 text-sm leading-relaxed sm:mt-4 xl:hidden ${sessionSlotHoldsDeadline ? 'items-center border-amber-200 bg-amber-50 text-amber-900' : 'border-line-brand bg-brand-soft text-brand-navy'} ${isAuthLoading ? 'invisible' : ''}`}
               >
-                You&apos;re browsing as a guest.{' '}
-                <Link
-                  to="/login"
-                  state={{ from: `${location.pathname}${location.search}` }}
-                  tabIndex={isAuthenticated ? -1 : undefined}
-                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
-                >
-                  Log in with Yale CAS
-                </Link>{' '}
-                to save research and reach out.
-              </p>
-              <p
-                aria-hidden={!isAuthenticated || undefined}
-                className={`col-start-1 row-start-1 ${isAuthenticated ? '' : 'invisible'}`}
-              >
-                You&apos;re signed in. Research you save is on{' '}
-                <Link
-                  to="/dashboard"
-                  tabIndex={isAuthenticated ? undefined : -1}
-                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
-                >
-                  your dashboard
-                </Link>
-                , ready to compare.
-              </p>
-            </div>
+                {sessionSlotReservesGuestCopy && (
+                  <p
+                    aria-hidden={isAuthenticated || undefined}
+                    className={`col-start-1 row-start-1 ${isAuthenticated ? 'invisible' : ''}`}
+                  >
+                    You&apos;re browsing as a guest.{' '}
+                    <Link
+                      to="/login"
+                      state={{ from: `${location.pathname}${location.search}` }}
+                      tabIndex={isAuthenticated ? -1 : undefined}
+                      className="yr-focus-ring -my-1.5 inline-block rounded-control py-1.5 font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                    >
+                      Log in with Yale CAS
+                    </Link>{' '}
+                    to save research and reach out.
+                  </p>
+                )}
+                {sessionSlotHoldsDeadline ? (
+                  <p role="status" className="col-start-1 row-start-1">
+                    {watchedDeadlineNotice(false)}
+                  </p>
+                ) : (
+                  <p
+                    aria-hidden={!isAuthenticated || undefined}
+                    className={`col-start-1 row-start-1 ${isAuthenticated ? '' : 'invisible'}`}
+                  >
+                    You&apos;re signed in. Research you save is on{' '}
+                    <Link
+                      to="/dashboard"
+                      tabIndex={isAuthenticated ? undefined : -1}
+                      className="yr-focus-ring -my-1.5 inline-block rounded-control py-1.5 font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                    >
+                      your dashboard
+                    </Link>
+                    , ready to compare.
+                  </p>
+                )}
+              </div>
+            )}
           </header>
 
           <div className="min-w-0">
             {!hasSubmittedSearch && (
-              <section aria-busy={defaultSearchLoading} aria-label="Research to explore">
+              <section
+                ref={resultsSectionRef}
+                aria-busy={defaultSearchLoading}
+                aria-label="Research to explore"
+              >
                 <div className="mb-3 flex flex-row flex-wrap items-end justify-between gap-3 sm:mb-4">
                   <div className="min-w-0">
                     <SectionHeading>Research to explore</SectionHeading>
@@ -1888,6 +2456,9 @@ const Research = () => {
                     >
                       {researchProfileCountLabel(defaultSearchTotal)}
                     </p>
+                    {isWideFilterLayout && (
+                      <ReachOutGuideLink label={GETTING_STARTED_LANDING_LINK_LABEL} />
+                    )}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-3">
                     <ResearchSortDropdown
@@ -1970,50 +2541,35 @@ const Research = () => {
             )}
 
             {hasSubmittedSearch && (
-              <section aria-busy={searchLoading} aria-label="Search results">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p
-                      role="status"
-                      aria-live="polite"
-                      aria-atomic="true"
-                      className="text-sm font-medium text-ink-soft"
-                    >
-                      {resultSummary(
-                        activeResults,
-                        queryCorrection?.correctedQuery ?? submittedQuery,
-                        searchLoading,
-                        departmentSearch?.label,
-                        searchTotal,
-                        searchDegraded,
-                      )}
-                    </p>
-                    {queryCorrection && !searchLoading && (
-                      <SearchSpellingNotice
-                        originalQuery={queryCorrection.originalQuery}
-                        onSearchOriginal={searchOriginalSpelling}
+              <section
+                ref={resultsSectionRef}
+                aria-busy={searchLoading}
+                aria-label="Search results"
+                className="max-xl:pt-3"
+              >
+                {isWideFilterLayout ? (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      {searchResultSummary('text-sm')}
+                      {searchSpellingNotice}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {searchSortDropdown(false)}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <ResearchStickyFilterBar>
+                      {searchResultSummary('truncate text-sm leading-5')}
+                      <ResearchFilterDisclosure
+                        {...researchFilterProps}
+                        isOpen={isFilterPanelOpen}
+                        onOpenChange={setIsFilterPanelOpen}
+                        trailingControl={searchSortDropdown(true)}
                       />
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <ResearchSortDropdown
-                      sortBy={sortBy}
-                      sortOrder={sortOrder}
-                      hasQuery={Boolean(submittedQuery)}
-                      onSortByChange={(field) => applyResearchSort(field)}
-                      onToggleSortDirection={toggleResearchSortDirection}
-                    />
-                  </div>
-                </div>
-
-                {!isWideFilterLayout && (
-                  <ResearchStickyFilterBar>
-                    <ResearchFilterDisclosure
-                      {...researchFilterProps}
-                      isOpen={isFilterPanelOpen}
-                      onOpenChange={setIsFilterPanelOpen}
-                    />
-                  </ResearchStickyFilterBar>
+                    </ResearchStickyFilterBar>
+                    {searchSpellingNotice}
+                  </>
                 )}
 
                 {searchDegraded && !searchLoading && activeClusters.length > 0 && (
@@ -2042,7 +2598,13 @@ const Research = () => {
                     </div>
                   ) : activeClusters.length > 0 ? (
                     <>
+                      {fewCloseMatches && (!searchLoading || isApplyingFilters) && (
+                        <p role="status" className="mb-3 text-sm leading-relaxed text-muted">
+                          {FEW_CLOSE_MATCHES_NOTICE}
+                        </p>
+                      )}
                       <div
+                        key={searchResultSetId}
                         aria-busy={isApplyingFilters}
                         className={`grid gap-5 transition-opacity ${
                           isApplyingFilters ? 'opacity-50' : ''
@@ -2056,6 +2618,7 @@ const Research = () => {
                               onSelect={exploreHome}
                               variant="compact"
                               openSource="search"
+                              filteredSchool={appliedSchoolFilter}
                             />
                           ))}
                         </div>
@@ -2078,11 +2641,26 @@ const Research = () => {
                       selectedEntityType={selectedEntityType}
                       selectedSchool={selectedSchool}
                       selectedDepartment={selectedDepartment}
+                      selectedHostsUndergrads={selectedHostsUndergrads}
+                      selectedWelcomesUndergrads={selectedWelcomesUndergrads}
+                      selectedMentorsUndergrads={selectedMentorsUndergrads}
                       departmentLabel={departmentFacetLabel}
                       onRemoveEntityType={() => applyStudentFilters({ entityType: '' })}
                       onRemoveSchool={() => applyStudentFilters({ school: '' })}
                       onRemoveDepartment={() => applyStudentFilters({ department: '' })}
-                      onClearAllFilters={researchFilterProps.onClearAll}
+                      onRemoveHostsUndergrads={() =>
+                        applyStudentFilters({ hostsUndergrads: false })
+                      }
+                      onRemoveWelcomesUndergrads={() =>
+                        applyStudentFilters({ welcomesUndergrads: false })
+                      }
+                      onRemoveMentorsUndergrads={() =>
+                        applyStudentFilters({ mentorsUndergrads: false })
+                      }
+                      onClearAllFilters={() => {
+                        researchFilterProps.onClearAll();
+                        focusResearchFiltersEntry();
+                      }}
                       relaxedQuery={relaxedQuerySuggestion}
                       onRelaxQuery={retryRelaxedQuery}
                       onBrowseAll={browseAllResearchHomes}
@@ -2090,6 +2668,20 @@ const Research = () => {
                     />
                   )}
                 </section>
+                {moreTopicResults && (
+                  <div
+                    key={searchResultSetId}
+                    aria-busy={isApplyingFilters}
+                    className={`transition-opacity ${isApplyingFilters ? 'opacity-50' : ''}`}
+                  >
+                    <ResearchMoreTopicResults
+                      clusters={moreTopicClusters}
+                      accessFilter={moreTopicResults.accessFilter}
+                      onSelect={exploreHome}
+                      filteredSchool={appliedSchoolFilter}
+                    />
+                  </div>
+                )}
               </section>
             )}
           </div>
@@ -2101,6 +2693,7 @@ const Research = () => {
 
 export const __resetResearchPageSnapshotForTests = () => {
   researchPageSnapshot = null;
+  forgetOpenedResearchResults();
 };
 
 export default Research;

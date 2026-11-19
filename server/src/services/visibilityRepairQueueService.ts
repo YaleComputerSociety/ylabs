@@ -1,6 +1,14 @@
+import {
+  currentDirectoryRemovalMintGuard,
+  REMOVED_BY_REQUEST,
+  researcherIsRemovedByRequest,
+  withDirectoryRemovalMintGuard,
+} from './directoryRemovalMintGuard';
 import { Fellowship } from '../models/fellowship';
 import { ResearchEntity } from '../models/researchEntity';
 import {
+  protectedRoleEdgeFor,
+  type ProtectedRoleEdge,
   pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
   roleAssignmentReattachWrite,
@@ -21,7 +29,18 @@ import {
   assessResearchEntityDescriptionQuality,
   deriveShortDescriptionFromFullDescription,
 } from '../utils/researchEntityDescriptionQuality';
-import { buildResearchEntityQualitySummary } from './researchEntityQuality';
+import {
+  buildResearchEntityQualitySummary,
+  researchEntityLeadStateForMembers,
+} from './researchEntityQuality';
+import { studentVisibilityGateLeadRows } from './studentVisibilityGateService';
+import { TRANSPARENCY_ONLY_VISIBILITY_REASONS } from './studentVisibilityTier';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
+import { recordAdminAuditEvent, type RecordAdminAuditEventInput } from './adminAuditService';
+import {
+  STUDENT_VISIBILITY_OVERRIDE_AUDIT,
+  withOverrideReasonEntry,
+} from '../scripts/studentVisibilityOverrideCore';
 import {
   repairStageForReasons,
   runStudentVisibilityGate,
@@ -30,6 +49,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isUncitableHostUrl } from '../utils/urlSafety';
 import { withResearchEntityWriteTransaction } from './researchEntityWriteTransaction';
+import { updateOneKeepingLastCitation } from './lastCitationGuard';
 import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
 import type { RecoverabilityBucket } from '../scripts/visibilityRecoverabilityAuditCore';
 
@@ -145,7 +165,7 @@ function toVisibilityRepairObjectId(value: unknown): mongoose.Types.ObjectId | u
   return id ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
-interface RepairDeps {
+export interface RepairDeps {
   findOpenQueueItems: (
     options: VisibilityRepairQueueOptions,
   ) => Promise<VisibilityRepairQueueItemInput[]>;
@@ -160,9 +180,19 @@ interface RepairDeps {
     userId: string,
     metadata: { sourceUrl: string; sourceName: string; confidence: number },
   ) => Promise<void>;
+  isRemovedByRequest?: (userId: string) => Promise<boolean>;
+  findLeadCandidateEntry: (
+    researchEntityId: string,
+    userId: string,
+  ) => Promise<{ holdsLiveLeadEdge: boolean; entry: Record<string, unknown> } | null>;
+  findProtectedLeadEdge: (
+    researchEntityId: string,
+    userId: string,
+  ) => Promise<ProtectedRoleEdge | null>;
   updateResearchEntity: (id: string, patch: Record<string, unknown>) => Promise<void>;
   findProgram: (id: string) => Promise<Record<string, any> | null>;
   updateProgram: (id: string, patch: Record<string, unknown>) => Promise<void>;
+  recordOverrideAudit?: (event: RecordAdminAuditEventInput) => Promise<void>;
   runGate: (
     collection: VisibilityReleaseQueueCollection,
     recordIds: string[],
@@ -233,6 +263,78 @@ export const QUEUE_AUTO_SUPPRESSIBLE_REASONS: ReadonlySet<string> = new Set([
   'research_infrastructure_only',
 ]);
 const suppressibleReasons = QUEUE_AUTO_SUPPRESSIBLE_REASONS;
+
+export const REPAIR_QUEUE_SUPPRESSION_REASON_CODE = 'visibility_repair_queue';
+export const REPAIR_QUEUE_AUDIT_ACTOR = 'agent:visibility-repair-queue';
+
+export function repairQueueSuppressionReason(blockerReasons: readonly string[]): string {
+  const suppressible = blockerReasons.filter((reason) => suppressibleReasons.has(reason));
+  return `${REPAIR_QUEUE_SUPPRESSION_REASON_CODE}: the release queue suppressed the row for ${suppressible.join('; ')}`;
+}
+
+const REPAIR_QUEUE_HOLD_AUDIT = {
+  research: {
+    action: STUDENT_VISIBILITY_OVERRIDE_AUDIT.research.actions.set,
+    targetType: STUDENT_VISIBILITY_OVERRIDE_AUDIT.research.targetType,
+  },
+  programs: {
+    action: STUDENT_VISIBILITY_OVERRIDE_AUDIT.programs.actions.set,
+    targetType: STUDENT_VISIBILITY_OVERRIDE_AUDIT.programs.targetType,
+  },
+} as const;
+
+function suppressionBlockedAttempt(plan: VisibilityRepairPlan): VisibilityRepairAttempt {
+  return {
+    plan,
+    applied: false,
+    status: 'blocked',
+    patchSummary: [],
+    remainingBlockers: plan.blockerReasons,
+    repairSource: '',
+  };
+}
+
+async function suppressNonLaunchRecord(
+  plan: VisibilityRepairPlan,
+  mode: VisibilityRepairMode,
+  deps: RepairDeps,
+): Promise<VisibilityRepairAttempt> {
+  if (!plan.blockerReasons.some((reason) => suppressibleReasons.has(reason))) {
+    return suppressionBlockedAttempt(plan);
+  }
+  const reason = repairQueueSuppressionReason(plan.blockerReasons);
+  if (mode === 'apply') {
+    const isResearch = plan.collection === 'research';
+    const stored = isResearch
+      ? await deps.findResearchEntity(plan.recordId)
+      : await deps.findProgram(plan.recordId);
+    const patch = {
+      studentVisibilityOverrideTier: 'suppressed',
+      studentVisibilitySuppressionReason: withOverrideReasonEntry(
+        stored?.studentVisibilitySuppressionReason,
+        reason,
+      ),
+      studentVisibilityReviewedAt: new Date(),
+    };
+    if (isResearch) await deps.updateResearchEntity(plan.recordId, patch);
+    else await deps.updateProgram(plan.recordId, patch);
+    await deps.recordOverrideAudit?.({
+      actorNetid: REPAIR_QUEUE_AUDIT_ACTOR,
+      ...REPAIR_QUEUE_HOLD_AUDIT[plan.collection],
+      targetId: plan.recordId,
+      summary: { fields: Object.keys(patch), note: reason, status: 'set' },
+      metadata: { script: 'visibility-repair-queue', queueItemId: plan.queueItemId },
+    });
+  }
+  return {
+    plan,
+    applied: true,
+    status: 'repaired',
+    patchSummary: ['set studentVisibilityOverrideTier=suppressed for non-launch record'],
+    remainingBlockers: [],
+    repairSource: 'visibility-release-queue',
+  };
+}
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -895,16 +997,15 @@ export function repairActionForStage(stage: VisibilityRepairStage, reasons: stri
   if (stage === 'suppression') {
     return 'Keep hidden unless a trusted source proves this record is current and undergraduate-relevant.';
   }
-  if (reasons.includes('formalization_only')) {
-    return 'Keep capped unless source evidence shows mentor matching, project placement, internship, RA program, or another real entry route.';
-  }
   return 'Queue for exception handling; no deterministic repair is available yet.';
 }
 
 export function buildVisibilityRepairPlan(
   item: VisibilityRepairQueueItemInput,
 ): VisibilityRepairPlan {
-  const blockerReasons = uniqueStrings(item.blockerReasons || []);
+  const blockerReasons = uniqueStrings(item.blockerReasons || []).filter(
+    (reason) => !TRANSPARENCY_ONLY_VISIBILITY_REASONS.has(reason),
+  );
   const repairStage = classifyVisibilityRepairStage(blockerReasons);
   const safeToAttempt = repairStage === 'source_description' || repairStage === 'pi_identity';
 
@@ -1052,6 +1153,7 @@ async function findOfficialProfileUserMatch(
   const user = await deps.findUserByProfileUrl(profileUrls);
   const userId = idValue(user?._id);
   if (!user || !userId || !userNameMatchesEntity(user, entity)) return null;
+  if (await deps.isRemovedByRequest?.(userId)) return null;
 
   const sourceUrl =
     profileUrls.find((url) =>
@@ -1123,30 +1225,7 @@ async function attemptResearchRepair(
   suppressUnsafe = false,
 ): Promise<VisibilityRepairAttempt> {
   if (suppressUnsafe && plan.repairStage === 'suppression') {
-    if (!plan.blockerReasons.some((reason) => suppressibleReasons.has(reason))) {
-      return {
-        plan,
-        applied: false,
-        status: 'blocked',
-        patchSummary: [],
-        remainingBlockers: plan.blockerReasons,
-        repairSource: '',
-      };
-    }
-    if (mode === 'apply') {
-      await deps.updateResearchEntity(plan.recordId, {
-        studentVisibilityOverrideTier: 'suppressed',
-        studentVisibilitySuppressionReason: plan.blockerReasons.join(', '),
-      });
-    }
-    return {
-      plan,
-      applied: true,
-      status: 'repaired',
-      patchSummary: ['set studentVisibilityOverrideTier=suppressed for non-launch record'],
-      remainingBlockers: [],
-      repairSource: 'visibility-release-queue',
-    };
+    return suppressNonLaunchRecord(plan, mode, deps);
   }
 
   if (plan.repairStage === 'pi_identity') {
@@ -1191,6 +1270,39 @@ async function attemptResearchRepair(
     }
 
     const userId = normalizeVisibilityRepairObjectId(user._id) || '';
+    if (await deps.isRemovedByRequest?.(userId)) {
+      return {
+        plan,
+        applied: false,
+        status: 'blocked',
+        patchSummary: [],
+        remainingBlockers: uniqueStrings([...plan.blockerReasons, REMOVED_BY_REQUEST]),
+        repairSource: sourceUrl,
+      };
+    }
+    const blocked = (reason: string): VisibilityRepairAttempt => ({
+      plan,
+      applied: false,
+      status: 'blocked',
+      patchSummary: [],
+      remainingBlockers: uniqueStrings([...plan.blockerReasons, reason]),
+      repairSource: sourceUrl,
+    });
+    const protectedEdge = await deps.findProtectedLeadEdge(plan.recordId, userId);
+    if (protectedEdge) {
+      return blocked(
+        protectedEdge === 'disputed' ? 'lead_edge_disputed' : 'lead_edge_operator_ended',
+      );
+    }
+    const candidate = await deps.findLeadCandidateEntry(plan.recordId, userId);
+    if (!candidate) return blocked('lead_candidate_unreadable');
+    if (candidate.holdsLiveLeadEdge) return blocked('lead_candidate_already_leads');
+    if (
+      researchEntityLeadStateForMembers(studentVisibilityGateLeadRows([candidate.entry])) !==
+      'lead_attached'
+    ) {
+      return blocked('lead_candidate_cannot_lead');
+    }
     if (mode === 'apply') {
       await deps.upsertResearchEntityMember(plan.recordId, userId, {
         sourceUrl,
@@ -1390,30 +1502,7 @@ async function attemptProgramRepair(
   suppressUnsafe = false,
 ): Promise<VisibilityRepairAttempt> {
   if (suppressUnsafe && plan.repairStage === 'suppression') {
-    if (!plan.blockerReasons.some((reason) => suppressibleReasons.has(reason))) {
-      return {
-        plan,
-        applied: false,
-        status: 'blocked',
-        patchSummary: [],
-        remainingBlockers: plan.blockerReasons,
-        repairSource: '',
-      };
-    }
-    if (mode === 'apply') {
-      await deps.updateProgram(plan.recordId, {
-        studentVisibilityOverrideTier: 'suppressed',
-        studentVisibilitySuppressionReason: plan.blockerReasons.join(', '),
-      });
-    }
-    return {
-      plan,
-      applied: true,
-      status: 'repaired',
-      patchSummary: ['set studentVisibilityOverrideTier=suppressed for non-launch record'],
-      remainingBlockers: [],
-      repairSource: 'visibility-release-queue',
-    };
+    return suppressNonLaunchRecord(plan, mode, deps);
   }
 
   if (plan.repairStage !== 'source_description') {
@@ -1495,7 +1584,7 @@ export async function attemptVisibilityRepair(
  */
 export const VISIBILITY_REPAIR_QUEUE_DRAIN_SORT = { firstSeenAt: 1, _id: 1 } as const;
 
-const defaultRepairDeps: RepairDeps = {
+export const defaultRepairDeps: RepairDeps = {
   async findOpenQueueItems(options) {
     const filter: Record<string, unknown> = { status: 'open' };
     if (options.collection && options.collection !== 'all') filter.collection = options.collection;
@@ -1574,6 +1663,60 @@ const defaultRepairDeps: RepairDeps = {
       .lean();
     return matches.length === 1 ? matches[0] : null;
   },
+  async isRemovedByRequest(userId) {
+    const guard = await currentDirectoryRemovalMintGuard();
+    const removed = await researcherIsRemovedByRequest(guard, toVisibilityRepairObjectId(userId));
+    if (removed) guard.recordRefusal();
+    return removed;
+  },
+  async findLeadCandidateEntry(researchEntityId, userId) {
+    const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
+    const personObjectId = toVisibilityRepairObjectId(userId);
+    if (!entityObjectId || !personObjectId) return null;
+    const person = (await Researcher.findById(personObjectId)
+      .select('_id displayName identifiers.netid profile.title')
+      .lean()) as {
+      _id: unknown;
+      displayName?: string;
+      identifiers?: { netid?: string };
+      profile?: { title?: string };
+    } | null;
+    if (!person) return null;
+    const holdsLiveLeadEdge = Boolean(
+      await RoleAssignment.exists({
+        personId: personObjectId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': entityObjectId,
+        role: { $in: LEAD_ROLE_CANONICAL_VALUES },
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
+      }),
+    );
+    return {
+      holdsLiveLeadEdge,
+      entry: {
+        researchEntityId: entityObjectId,
+        role: 'pi',
+        state: 'UNKNOWN',
+        personId: person._id,
+        name: person.displayName,
+        ...(person.identifiers?.netid ? { netid: person.identifiers.netid } : {}),
+        ...(person.profile?.title ? { title: person.profile.title } : {}),
+      },
+    };
+  },
+  async findProtectedLeadEdge(researchEntityId, userId) {
+    const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
+    const personObjectId = toVisibilityRepairObjectId(userId);
+    if (!entityObjectId || !personObjectId) return null;
+    return protectedRoleEdgeFor(
+      buildVisibilityRepairPiRoleAssignmentUpsert(personObjectId, entityObjectId, {
+        sourceUrl: '',
+        sourceName: '',
+        confidence: 0,
+      }).filter,
+    );
+  },
   async upsertResearchEntityMember(researchEntityId, userId, metadata) {
     const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
     const personObjectId = toVisibilityRepairObjectId(userId);
@@ -1587,6 +1730,7 @@ const defaultRepairDeps: RepairDeps = {
       entityObjectId,
       metadata,
     );
+    if (await protectedRoleEdgeFor(filter)) return;
     const liveFilter = await pinRoleAssignmentUpsertToLiveEdge(filter);
     const reattach = roleAssignmentReattachWrite(liveFilter, 'UNREVIEWED');
     await RoleAssignment.updateOne(liveFilter, update, options);
@@ -1602,7 +1746,12 @@ const defaultRepairDeps: RepairDeps = {
     const safeId = normalizeVisibilityRepairObjectId(id);
     if (!safeId) return;
     await withResearchEntityWriteTransaction((session) =>
-      ResearchEntity.updateOne({ _id: safeId }, { $set: patch }, { session }).then(() => undefined),
+      updateOneKeepingLastCitation(
+        ResearchEntity,
+        { _id: safeId },
+        { $set: patch },
+        { session },
+      ).then(() => undefined),
     );
   },
   async findProgram(id) {
@@ -1614,6 +1763,7 @@ const defaultRepairDeps: RepairDeps = {
     if (!safeId) return;
     await Fellowship.updateOne({ _id: safeId }, { $set: patch });
   },
+  recordOverrideAudit: recordAdminAuditEvent,
   async runGate(collection, recordIds, mode) {
     return runStudentVisibilityGate({ collection, recordIds, mode });
   },
@@ -1622,6 +1772,15 @@ const defaultRepairDeps: RepairDeps = {
 export async function runVisibilityRepairQueue(
   options: VisibilityRepairQueueOptions,
   deps: RepairDeps = defaultRepairDeps,
+): Promise<VisibilityRepairQueueReport> {
+  return withDirectoryRemovalMintGuard(() =>
+    runVisibilityRepairQueueUnderRemovalGuard(options, deps),
+  );
+}
+
+async function runVisibilityRepairQueueUnderRemovalGuard(
+  options: VisibilityRepairQueueOptions,
+  deps: RepairDeps,
 ): Promise<VisibilityRepairQueueReport> {
   const items = await deps.findOpenQueueItems(options);
   const allPlans = buildVisibilityRepairPlans(items);
@@ -1646,11 +1805,8 @@ export async function runVisibilityRepairQueue(
 
   const bucketSkipped: Record<string, number> = {};
   const routedPlans = allPlans.filter((plan) => {
-    // A reviewed cap is not a repair. `formalization_only` program items are capped at
-    // `limited_but_safe` on purpose, and because that is not a public tier the gate never
-    // resolves their queue rows, so they stay open forever and every sweep re-attempts
-    // them: they were the single largest blocked reason in a routed 500-item run.
-    // `acceptFormalizationReviewExceptions` is the script that closes them out.
+    // A review exception has no repair lane, so routing it would re-attempt the row on every
+    // sweep without changing it.
     if (plan.repairStage === 'review_exception') {
       bucketSkipped.review_exception = (bucketSkipped.review_exception || 0) + 1;
       return false;

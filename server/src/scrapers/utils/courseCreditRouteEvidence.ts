@@ -4,7 +4,6 @@ import {
   stripInlineUrls,
   stripLeadingSectionHeadingChrome,
 } from '../../utils/descriptionHygiene';
-import { redactDirectContactInfo } from '../../utils/contactRedaction';
 
 /**
  * Pure judging core for a department's for-credit undergraduate research route.
@@ -139,7 +138,7 @@ export function courseCreditRouteEvidenceSentences(page: CourseCreditRoutePage):
   const seen = new Set<string>();
   return sentenceList(stripInlineUrls(page.body))
     .map(stripLeadingSectionHeadingChrome)
-    .map((sentence) => normalizeText(redactDirectContactInfo(sentence)))
+    .map((sentence) => normalizeText(sentence))
     .filter((sentence) => sentence.length >= 40)
     .filter((sentence) => sentence.length <= COURSE_CREDIT_ROUTE_MAX_EVIDENCE_LENGTH)
     .filter((sentence) => /^[A-Z“"(]/.test(sentence))

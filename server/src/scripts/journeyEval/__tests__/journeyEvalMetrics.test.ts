@@ -6,7 +6,13 @@ import {
   checkDefaultBrowseOrderIsRepeatable,
   checkFacetAgreement,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
+  checkServiceCoresRankBelowResearch,
+  checkServiceCoresRankBelowResearchInBrowse,
+  checkPersonNameWordsAreNotRespelled,
+  checkNicknameExpansionReachesThePerson,
+  checkDictionaryWordsAreNotRespelled,
   checkQueryVariantServesTheBaseline,
+  checkSimilarRailRanksSharedNamesLast,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
   checkSortOrdering,
@@ -540,6 +546,27 @@ describe('checkQueryVariantServesTheBaseline', () => {
     ).toBe('fail');
   });
 
+  it('accepts the same rows in any order, and nothing extra or missing, when the row set is asserted', () => {
+    const check = (variantKeys: string[]) =>
+      checkQueryVariantServesTheBaseline('x', 'x', pair(variantKeys), still, still, 'sameRowSet')
+        .status;
+    expect(check(['b', 'a'])).toBe('pass');
+    expect(check(['a', 'b', 'c'])).toBe('fail');
+    expect(check(['a'])).toBe('fail');
+  });
+
+  it('accepts a variant sharing one baseline row when only a shared row is asserted', () => {
+    const sharing = pair(['c', 'b']);
+    expect(
+      checkQueryVariantServesTheBaseline('x', 'x', sharing, still, still, 'sharesABaselineRow')
+        .status,
+    ).toBe('pass');
+    expect(
+      checkQueryVariantServesTheBaseline('x', 'x', pair([]), still, still, 'sharesABaselineRow')
+        .status,
+    ).toBe('fail');
+  });
+
   it('is inconclusive when the baseline served nothing', () => {
     const empty = [{ baselineQuery: 'q', baselineKeys: [], variantQuery: 'q2', variantKeys: [] }];
     expect(checkQueryVariantServesTheBaseline('x', 'x', empty, still, still).status).toBe(
@@ -611,5 +638,216 @@ describe('checkMeshDescriptorOnlyRowsRankBelowOwnEvidence', () => {
       still,
     );
     expect(result.status).toBe('inconclusive');
+  });
+});
+
+describe('checkNicknameExpansionReachesThePerson', () => {
+  it('passes when every expanded nickname query serves the person, ignoring unexpanded ones', () => {
+    expect(
+      checkNicknameExpansionReachesThePerson([
+        { expandedToTheGivenName: true, rank: 1 },
+        { expandedToTheGivenName: false, rank: null },
+      ]).status,
+    ).toBe('pass');
+  });
+
+  it('fails when an expanded nickname query does not serve the person', () => {
+    const result = checkNicknameExpansionReachesThePerson([
+      { expandedToTheGivenName: true, rank: null },
+    ]);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toMatchObject({ expandedToTheGivenName: 1, unreached: 1 });
+  });
+
+  it('is inconclusive when no nickname query was attributable to the expansion', () => {
+    expect(
+      checkNicknameExpansionReachesThePerson([{ expandedToTheGivenName: false, rank: 2 }]).status,
+    ).toBe('inconclusive');
+  });
+});
+
+describe('checkPersonNameWordsAreNotRespelled', () => {
+  it('passes when no person-name query was respelled, whatever the ranks', () => {
+    expect(
+      checkPersonNameWordsAreNotRespelled([
+        { variant: 'prefix', respelled: false, rank: 1 },
+        { variant: 'typo', respelled: false, rank: null },
+      ]).status,
+    ).toBe('pass');
+  });
+
+  it('fails when a person-name query was respelled', () => {
+    const result = checkPersonNameWordsAreNotRespelled([
+      { variant: 'prefix', respelled: true, rank: null },
+    ]);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toMatchObject({ respelledByVariant: { prefix: 1, typo: 0 } });
+  });
+
+  it('is inconclusive when no person name was queried', () => {
+    expect(checkPersonNameWordsAreNotRespelled([]).status).toBe('inconclusive');
+  });
+});
+
+describe('checkDictionaryWordsAreNotRespelled', () => {
+  it('passes when every dictionary word was searched as typed', () => {
+    expect(
+      checkDictionaryWordsAreNotRespelled([
+        { respelledDictionaryWords: [] },
+        { respelledDictionaryWords: [] },
+      ]).status,
+    ).toBe('pass');
+  });
+
+  it('fails and counts the words when a dictionary word was respelled', () => {
+    const result = checkDictionaryWordsAreNotRespelled([
+      { respelledDictionaryWords: ['intro'] },
+      { respelledDictionaryWords: [] },
+    ]);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toMatchObject({ queried: 2, respelledWords: 1 });
+  });
+
+  it('is inconclusive when no query was sent', () => {
+    expect(checkDictionaryWordsAreNotRespelled([]).status).toBe('inconclusive');
+  });
+});
+
+describe('checkSimilarRailRanksSharedNamesLast', () => {
+  const still = { rowCount: 10, latestUpdatedAt: '2026-10-01T00:00:00.000Z' };
+  const moved = { rowCount: 11, latestUpdatedAt: '2026-10-01T00:00:01.000Z' };
+  const rail = (cardsShareAName: boolean[]) => ({ viewedSharesNames: true, cardsShareAName });
+
+  it('passes when every shared-name card follows the topical cards', () => {
+    expect(
+      checkSimilarRailRanksSharedNamesLast([rail([false, false, true])], still, still).status,
+    ).toBe('pass');
+  });
+
+  it('fails when a shared-name card ranks above a topical card, unless the corpus moved', () => {
+    expect(checkSimilarRailRanksSharedNamesLast([rail([true, false])], still, still).status).toBe(
+      'fail',
+    );
+    expect(checkSimilarRailRanksSharedNamesLast([rail([true, false])], still, moved).status).toBe(
+      'inconclusive',
+    );
+  });
+
+  it('is inconclusive when no rail belongs to a row with person names', () => {
+    expect(
+      checkSimilarRailRanksSharedNamesLast(
+        [{ viewedSharesNames: false, cardsShareAName: [false] }],
+        still,
+        still,
+      ).status,
+    ).toBe('inconclusive');
+  });
+});
+
+describe('checkServiceCoresRankBelowResearch', () => {
+  const still = { rowCount: 10, latestUpdatedAt: '2026-11-11T00:00:00.000Z' };
+  const moved = { rowCount: 11, latestUpdatedAt: '2026-11-11T00:05:00.000Z' };
+  const research = { placement: 'research' as const, reason: 'research' };
+  const demoted = { placement: 'demoted' as const, reason: 'core-facility' };
+  const exempt = { placement: 'exempt' as const, reason: 'query-names-the-row' };
+
+  it('passes when an exempt core outranks research and demoted cores sit below it', () => {
+    const result = checkServiceCoresRankBelowResearch(
+      [{ query: 'chemistry', placements: [exempt, research, research, demoted] }],
+      still,
+      still,
+    );
+    expect(result.status).toBe('pass');
+    expect(result.detail).toMatchObject({
+      queries: [{ demotedRanks: [4], exempt: [{ rank: 1, reason: 'query-names-the-row' }] }],
+    });
+  });
+
+  it('fails when a demoted core outranks a research row', () => {
+    const result = checkServiceCoresRankBelowResearch(
+      [{ query: 'chemistry', placements: [research, demoted, research] }],
+      still,
+      still,
+    );
+    expect(result.status).toBe('fail');
+  });
+
+  it('is inconclusive over an empty population or a corpus that moved', () => {
+    expect(
+      checkServiceCoresRankBelowResearch(
+        [{ query: 'chemistry', placements: [research] }],
+        still,
+        still,
+      ).status,
+    ).toBe('inconclusive');
+    expect(
+      checkServiceCoresRankBelowResearch(
+        [{ query: 'chemistry', placements: [demoted, research] }],
+        still,
+        moved,
+      ).status,
+    ).toBe('inconclusive');
+  });
+});
+
+describe('checkServiceCoresRankBelowResearchInBrowse', () => {
+  const still = { rowCount: 10, latestUpdatedAt: '2026-11-11T00:00:00.000Z' };
+  const moved = { rowCount: 11, latestUpdatedAt: '2026-11-11T00:05:00.000Z' };
+  const research = {
+    placement: 'research' as const,
+    reason: 'research',
+    rescoredSinceAdjustment: true,
+    indexedScoreMatchesStored: true,
+  };
+  const core = { ...research, placement: 'demoted' as const, reason: 'core-facility' };
+  const whole = (length: number) => ({ total: length, walked: length });
+
+  it('passes when demoted rows follow the last research row', () => {
+    const result = checkServiceCoresRankBelowResearchInBrowse(
+      [research, research, core],
+      whole(3),
+      still,
+      still,
+    );
+    expect(result.status).toBe('pass');
+    expect(result.detail).toMatchObject({ firstDemotedRank: 3, lastResearchRank: 2 });
+  });
+
+  it('fails and attributes each outranking row to its cause', () => {
+    const result = checkServiceCoresRankBelowResearchInBrowse(
+      [
+        { ...core, rescoredSinceAdjustment: false },
+        { ...core, indexedScoreMatchesStored: false },
+        core,
+        research,
+      ],
+      whole(4),
+      still,
+      still,
+    );
+    expect(result.status).toBe('fail');
+    expect(result.detail).toMatchObject({
+      demotedOutrankingResearch: 3,
+      outrankingNotRescoredSinceAdjustment: 1,
+      outrankingWithStaleIndexedScore: 1,
+      outrankingRescoredAndIndexed: 1,
+    });
+  });
+
+  it('is inconclusive on a partial walk, an empty population, or a corpus that moved', () => {
+    expect(
+      checkServiceCoresRankBelowResearchInBrowse(
+        [research, core],
+        { total: 3, walked: 2 },
+        still,
+        still,
+      ).status,
+    ).toBe('inconclusive');
+    expect(
+      checkServiceCoresRankBelowResearchInBrowse([research], whole(1), still, still).status,
+    ).toBe('inconclusive');
+    expect(
+      checkServiceCoresRankBelowResearchInBrowse([core, research], whole(2), still, moved).status,
+    ).toBe('inconclusive');
   });
 });

@@ -100,6 +100,7 @@ describe('Beta to Development sync guards', () => {
         development.db,
         [{ name: 'research_entities', category: 'research-discovery' }],
         ['scrape_snapshots'],
+        async () => undefined,
         async () => {
           throw new Error('verification failed');
         },
@@ -192,6 +193,7 @@ describe('Beta to Development sync guards', () => {
       ],
       [],
       async () => undefined,
+      async () => undefined,
     );
 
     expect(development.data.get('researchers')?.options).toEqual({
@@ -268,11 +270,11 @@ describe('Beta to Development sync guards', () => {
       options,
       [],
       [],
-      ['scrape_job_locks'],
+      ['scrape_snapshots'],
       ['lane_benchmarks'],
     );
     expect(summary.clearsDevelopmentNonMirrorData).toBe(true);
-    expect(summary.localCollectionsClearedOnApply).toEqual(['scrape_job_locks']);
+    expect(summary.localCollectionsClearedOnApply).toEqual(['scrape_snapshots']);
     expect(summary.localCollectionsPreservedOnApply).toEqual(['lane_benchmarks']);
     expect(summary.excludedOperationalCollections).toEqual(
       expect.arrayContaining([
@@ -298,7 +300,7 @@ describe('Beta to Development sync guards', () => {
     for (const preserved of PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS) {
       expect(cleared).not.toContain(preserved);
     }
-    expect(cleared).toEqual(['scrape_job_locks', 'scrape_snapshots']);
+    expect(cleared).toEqual(['scrape_snapshots']);
     expect(preservedDevelopmentCollectionNames(developmentCollections)).toEqual(
       [...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS].sort(),
     );
@@ -306,9 +308,14 @@ describe('Beta to Development sync guards', () => {
 
   it('pins the preserved collections so dropping one from the list fails', () => {
     expect([...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS].sort()).toEqual([
+      'account_deletion_requests',
       'accounts',
       'analytics_events',
+      'card_synthesis_derivations',
       'corpus_quality_snapshots',
+      'deleted_account_event_tallies',
+      'dev_write_launches',
+      'directory_removal_requests',
       'engine_benchmark_rows',
       'engine_benchmark_snapshots',
       'engine_benchmarks',
@@ -317,10 +324,15 @@ describe('Beta to Development sync guards', () => {
       'lane_benchmarks',
       'lane_scorecard_snapshots',
       'login_signal_tallies',
+      'model_call_usages',
       'research_plans',
+      'research_topics_derivations',
+      'scrape_job_locks',
+      'search_rerank_cache',
       'weekly_sweep_runs',
+      'written_description_derivations',
     ]);
-    expect(EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS).toEqual(['scrape_job_locks']);
+    expect(EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS).toEqual([]);
   });
 
   it('refuses an environment-local collection that is classified neither way', () => {
@@ -434,6 +446,7 @@ describe('Beta to Development sync guards', () => {
         [{ name: 'researchers', category: 'identity-spine' }],
         [],
         async () => undefined,
+        async () => undefined,
       ),
     ).rejects.toThrow(
       'Sync blocked: 1 researchers row carries an account _id in accountId; accounts are environment-local',
@@ -449,6 +462,36 @@ describe('Beta to Development sync guards', () => {
     expect(
       localNonMirrorCollectionNames(['accounts', 'research_entities'], ['research_entities']),
     ).toEqual([]);
+  });
+
+  it('classifies the writer cache exactly as the topic-derivation cache (#5537)', () => {
+    const listsNaming = (name: string) =>
+      [
+        ['never-copy', NEVER_COPY_COLLECTIONS],
+        ['preserved', PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS],
+        ['ephemeral', EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS],
+        [
+          'excluded-from-beta',
+          buildBetaToDevelopmentSummary(parseBetaToDevelopmentOptions([], baseEnv), [])
+            .excludedOperationalCollections,
+        ],
+      ]
+        .filter(([, list]) => (list as readonly string[]).includes(name))
+        .map(([label]) => label);
+    expect(listsNaming('written_description_derivations')).toEqual(
+      listsNaming('research_topics_derivations'),
+    );
+    expect(listsNaming('card_synthesis_derivations')).toEqual(
+      listsNaming('research_topics_derivations'),
+    );
+    expect(listsNaming('written_description_derivations')).toEqual([
+      'never-copy',
+      'preserved',
+      'excluded-from-beta',
+    ]);
+    expect(
+      collectionsForOptions({ includeObservations: true }).map(({ name }) => name),
+    ).not.toContain('written_description_derivations');
   });
 
   it('never copies research plans and never clears them from the target (#5092)', () => {

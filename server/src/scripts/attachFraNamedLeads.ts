@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { loadDirectoryRemovalMintGuard } from '../services/directoryRemovalMintGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
   applyStudentVisibilityGatePlans,
@@ -19,6 +20,7 @@ import {
   planFraLeadAttachment,
   type FraLeadResearcher,
 } from './attachFraNamedLeadsCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,9 +63,10 @@ async function main() {
     mongoUrl: process.env.MONGODBURL,
   });
   await initializeConnections();
+  const removalGuard = await loadDirectoryRemovalMintGuard();
 
   const researchers = await Researcher.find({ archived: { $ne: true } })
-    .select('_id displayName')
+    .select('_id displayName identifiers profileLinks')
     .lean();
   const byName = new Map<string, Array<FraLeadResearcher & { _id: unknown }>>();
   for (const researcher of researchers as any[]) {
@@ -105,6 +108,10 @@ async function main() {
       archived: { $ne: true },
     });
     if (existing > 0) continue;
+    if (removalGuard.refusesPerson(match as any)) {
+      removalGuard.recordRefusal();
+      continue;
+    }
     planned.push({
       entityId,
       personId,
@@ -161,6 +168,7 @@ async function main() {
     mode: args.apply ? 'apply' : 'dry-run',
     leadBlockedExamined: entities.length,
     refusedForWeakEvidence: nameOnlyRefused,
+    refusedAsRemovedByRequest: removalGuard.refusals,
     plannedAttachments: planned.length,
     plannedAttachmentsThatUnblock: unblocking.length,
     attached,
@@ -175,7 +183,7 @@ async function main() {
   if (args.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(args.output);
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
   console.log(JSON.stringify(report, null, 2));
   await mongoose.disconnect();

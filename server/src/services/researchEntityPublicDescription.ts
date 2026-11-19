@@ -4,6 +4,7 @@ import {
   isCardPageFragment,
   isThinButAccurateBody,
   withMemoizedDescriptionQuality,
+  type DescriptionQualityFlag,
   type ResearchEntityDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import {
@@ -27,24 +28,40 @@ import {
   isCurriculumVitaeShapedBody,
   isTeachingOrPastTraineeSentence,
   isTeachingOrPastTraineeWorkBody,
+  isWorkforceDevelopmentPracticeSentence,
   opensOnTeachingAppointment,
   opensOnResearchHomeSubject,
   researchStatementSentences,
   splitDescriptionSentences,
+  withoutOrganizationFocusAppositive,
 } from '../utils/careerBiographyDescription';
-import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
+import {
+  isBiographyRatherThanResearch,
+  statesScholarlySubject,
+} from '../utils/biographyRatherThanResearch';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import {
   isResearchAreaEchoDescription,
+  isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
-import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
+import {
+  bodyFitsAsItsOwnCard,
+  resolveServedShortDescription,
+} from '../utils/groundedCardSynthesis';
+import { WRITTEN_DESCRIPTION_SOURCE_NAME } from '../utils/writtenDescriptionSource';
 import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
 import { decideCreativePractice } from '../utils/creativePracticeDescription';
 import {
+  isEventNarrationText,
+  isJoiningInstructionsText,
+  isSourceNarrationText,
+} from '../utils/descriptionNonResearchBodyShape';
+import {
+  servableStoredCard,
   servedResearchEntityCardWithoutLastResort,
   servedResearchEntityCopy,
 } from './servedResearchEntityCard';
@@ -177,6 +194,14 @@ export function buildResearchEntityPublicDescriptionRepresentation(input: {
     );
     if (!narrowedBody) {
       const whole = derivePublicDescriptionRepresentation(input);
+      const nonResearchBodyCard = cardServedInPlaceOfANonResearchBody(input.entity, whole);
+      if (nonResearchBodyCard) {
+        const cardOnly = derivePublicDescriptionRepresentation({
+          ...input,
+          entity: { ...input.entity, fullDescription: nonResearchBodyCard },
+        });
+        return cardOnly.invariant.pass ? cardOnly : whole;
+      }
       const cardBody = cardServedInPlaceOfAResearchlessBiography(whole);
       if (!cardBody) return whole;
       const cardOnly = derivePublicDescriptionRepresentation({
@@ -389,7 +414,12 @@ function derivePublicDescriptionRepresentation({
     isProgramLike: programLike,
     entityType: sanitizedEntity.entityType,
   });
-  const quality = withThinButAccurateBodyUsable(strictQuality, programLike);
+  const quality = withWrittenBodyServedAsItsOwnCard(
+    withThinButAccurateBodyUsable(strictQuality, programLike),
+    sanitizedEntity,
+    servedCard,
+    programLike,
+  );
   // The public DTO runs a second read-time hygiene pass over the served copy
   // (`sanitizeResearchEntityShortDescription`/`sanitizeResearchEntityDescription`)
   // that the quality assessment above does not, so a card can clear the quality
@@ -540,12 +570,53 @@ function withThinButAccurateBodyUsable(
   return { ...quality, full, short, cardState: cardComplete ? 'complete' : quality.cardState };
 }
 
+const CARD_RESTATES_BODY_FLAGS: ReadonlySet<DescriptionQualityFlag> = new Set([
+  'same-as-full',
+  'copied-first-sentence',
+]);
+
+const comparableText = (value: unknown): string => textValue(value).toLowerCase();
+
+/**
+ * A written body that fits the card limits is its own card (owner decision 2026-11-12,
+ * #5537), so a served card that is that body is not refused for restating it. Every
+ * other card check still applies, and a body longer than a card keeps the refusal.
+ */
+function servesWrittenBodyAsItsOwnCard(entity: Record<string, any>, servedCard: unknown): boolean {
+  const body = textValue(entity.fullDescription);
+  return (
+    entity.fieldProvenance?.fullDescription?.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME &&
+    bodyFitsAsItsOwnCard(body) &&
+    comparableText(servedCard) === comparableText(body)
+  );
+}
+
+function withWrittenBodyServedAsItsOwnCard(
+  quality: ResearchEntityDescriptionQuality,
+  entity: Record<string, any>,
+  servedCard: unknown,
+  programLike: boolean,
+): ResearchEntityDescriptionQuality {
+  if (!servesWrittenBodyAsItsOwnCard(entity, servedCard)) return quality;
+  const flags = quality.short.flags.filter((flag) => !CARD_RESTATES_BODY_FLAGS.has(flag));
+  if (flags.length === quality.short.flags.length) return quality;
+  const short = { ...quality.short, flags, isUseful: flags.length === 0 };
+  const cardComplete = quality.full.isUseful && (short.isUseful || (programLike && !short.text));
+  return { ...quality, short, cardState: cardComplete ? 'complete' : quality.cardState };
+}
+
 const CITATION_LIKE_CARD =
   /\((?:19|20)\d{2}\)|\b(?:19|20)\d{2}\b[^.]{0,80}\b(?:Review|Journal|Studies|Quarterly|Press|Proceedings)\b|\b(?:Review|Journal|Studies|Quarterly)(?:\s+of\s+[A-Z][\p{L}]+(?:\s+[A-Z][\p{L}]+)*)?,?\s+\d{1,3}\b|\bet al\b/u;
 const DEGREE_FRAGMENT_CARD =
   /^(?:[A-Z]\.\s?){1,3}(?:[A-Z][a-z]|in\b)|\b(?:B\.?A|B\.?S|M\.?A|M\.?S|Ph\.?\s?D)\b[^.]{0,60}\b(?:University|College)\b/;
 const SITE_TAGLINE_CARD =
   /^(?:Official\s+(?:site|website|homepage|page)|Welcome\s+to|Home\s*page)\b/i;
+
+// The focus test reads an organization's focus, or a workforce the person develops, as
+// research because both carry a focus verb; neither states work a student could join.
+const describesThePersonsResearchFocus = (text: string): boolean =>
+  describesResearchFocus(withoutOrganizationFocusAppositive(text)) &&
+  !isWorkforceDevelopmentPracticeSentence(text);
 
 // A card speaks for the research only when it states the research itself. A citation,
 // a degree line, a site tagline or a career record in the card slot reads as research
@@ -555,19 +626,20 @@ function cardStatesResearchItself(card: unknown): boolean {
   const text = textValue(card);
   return (
     Boolean(text) &&
-    describesResearchFocus(text) &&
+    describesThePersonsResearchFocus(text) &&
     !isCurriculumVitaeRecordSentence(text) &&
     !CITATION_LIKE_CARD.test(text) &&
     !DEGREE_FRAGMENT_CARD.test(text) &&
     !SITE_TAGLINE_CARD.test(text) &&
-    !isTeachingOrPastTraineeSentence(text)
+    !isTeachingOrPastTraineeSentence(text) &&
+    !isSourceNarrationText(text)
   );
 }
 
 // A body sentence that names research topics counts as research unless it is itself a
 // career record or a citation, which name topics as titles rather than state work.
 const isResearchFocusSentenceOutsideTheRecord = (sentence: string): boolean =>
-  describesResearchFocus(sentence) &&
+  (describesThePersonsResearchFocus(sentence) || statesScholarlySubject(sentence)) &&
   !isCurriculumVitaeRecordSentence(sentence) &&
   !isTeachingOrPastTraineeSentence(sentence) &&
   !CITATION_LIKE_CARD.test(sentence);
@@ -622,6 +694,32 @@ function cardServedInPlaceOfAResearchlessBiography(
   return cardStatesResearchItself(card) ? card : '';
 }
 
+// A body that only says how to join, only narrates talks, awards or accepted papers, or
+// only reports what its source pages say, states no research, and the quality bar
+// withholds the row for it. The card is then the row's research text, so it is served as
+// the body even when that leaves no separate card, because a thin but accurate
+// description serves (owner decision, 2026-10-04). The stored
+// card is read when the served one is blank, because a card is grounded against the body
+// and this body grounds nothing; the caller still holds it to the body bar.
+function cardServedInPlaceOfANonResearchBody(
+  entity: Record<string, any>,
+  representation: ResearchEntityPublicDescriptionRepresentation,
+): string {
+  const storedBody = entity.fullDescription;
+  if (
+    !isJoiningInstructionsText(storedBody) &&
+    !isEventNarrationText(storedBody) &&
+    !isSourceNarrationText(storedBody)
+  ) {
+    return '';
+  }
+  const card = textValue(representation.servedCard) || textValue(servableStoredCard(entity));
+  return cardStatesResearchItself(card) &&
+    !isStudiesResearchAreaEchoDescription(card, entity.researchAreas)
+    ? card
+    : '';
+}
+
 /**
  * A person-scoped row whose served body is a CV or a biography and, after narrowing,
  * states no research at all: degrees, posts, exhibitions or a list of titles. Such a
@@ -652,14 +750,16 @@ export function servedBodyIsCareerBiographyWithoutResearch(
 }
 
 const statesResearchFocus = (sentence: string): boolean =>
-  describesResearchFocus(sentence) && !isTeachingOrPastTraineeSentence(sentence);
+  (describesThePersonsResearchFocus(sentence) || statesScholarlySubject(sentence)) &&
+  !isTeachingOrPastTraineeSentence(sentence);
 
 // The focus test reads a service or appointment sentence as research because it names
 // fields ("Associate Editor at the Review of ..."). Reading the sentence with the
 // biography detector itself drops those and keeps every research sentence measured on
 // the Development cohort (#4928).
 const statesResearchFocusRatherThanCareer = (sentence: string): boolean =>
-  statesResearchFocus(sentence) && !isBiographyRatherThanResearch(sentence);
+  statesResearchFocus(sentence) &&
+  (statesScholarlySubject(sentence) || !isBiographyRatherThanResearch(sentence));
 
 function servedBodyStatesNoResearch(
   representation: ResearchEntityPublicDescriptionRepresentation,

@@ -4,6 +4,9 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useLocation, useNavigationType } from 'react-router-dom';
 
+import { linkedMemberName } from '../../utils/linkedMember';
+import { linkedSectionElement } from '../../utils/linkedSection';
+
 const scrollPositions = new Map<string, number>();
 
 const nothingHoldsFocus = () =>
@@ -38,7 +41,7 @@ const RESTORE_TOLERANCE_PX = 2;
 const USER_SCROLL_INTENT_EVENTS = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const;
 
 const ScrollToTop = () => {
-  const { key: historyEntryKey, pathname } = useLocation();
+  const { hash, key: historyEntryKey, pathname, search } = useLocation();
   const navigationType = useNavigationType();
   const previousPathname = useRef<string | null>(null);
 
@@ -61,7 +64,7 @@ const ScrollToTop = () => {
     const isReturnToSavedEntry = navigationType === 'POP' && savedScrollTop !== undefined;
     const targetScrollTop = isReturnToSavedEntry
       ? savedScrollTop
-      : isFirstRender || isRouteChange
+      : (isFirstRender || isRouteChange) && !linkedSectionElement(hash)
         ? 0
         : null;
     const currentScrollTop = () => scrollContainer?.scrollTop ?? window.scrollY;
@@ -106,12 +109,15 @@ const ScrollToTop = () => {
       }
       animationFrame = window.requestAnimationFrame(keepRestoringUntilContentFits);
     };
-    if (targetScrollTop !== null) {
+    // A linked member scrolls itself into view once the page renders it, so a
+    // reset that keeps re-applying would pull the student back off that member.
+    const landsOnLinkedMember = linkedMemberName(search) !== undefined;
+    if (targetScrollTop !== null && !landsOnLinkedMember) {
       USER_SCROLL_INTENT_EVENTS.forEach((type) =>
         window.addEventListener(type, stopRestoring, { capture: true, passive: true }),
       );
       animationFrame = window.requestAnimationFrame(keepRestoringUntilContentFits);
-    } else {
+    } else if (targetScrollTop === null) {
       saveScrollPosition();
     }
 
@@ -122,7 +128,7 @@ const ScrollToTop = () => {
       stopRestoring();
       scrollTarget.removeEventListener('scroll', saveScrollPosition);
     };
-  }, [historyEntryKey, navigationType, pathname]);
+  }, [hash, historyEntryKey, navigationType, pathname, search]);
 
   return null;
 };

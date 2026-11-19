@@ -1,4 +1,5 @@
 import { researchEntityTypes, type ResearchEntityType } from '../types/researchGroup';
+import { WELCOMES_UNDERGRADS_LABEL } from './undergradInvitation';
 
 const KIND_LABELS: Record<string, string> = {
   lab: 'Lab',
@@ -7,9 +8,9 @@ const KIND_LABELS: Record<string, string> = {
   program: 'Program',
   initiative: 'Initiative',
   group: 'Group',
-  individual: 'Faculty Research',
-  solo: 'Faculty Research',
-  core_facility: 'Core Facility',
+  individual: 'Faculty research',
+  solo: 'Faculty research',
+  core_facility: 'Core facility',
 };
 
 const ENTITY_TYPE_TO_KIND: Record<string, string> = {
@@ -44,7 +45,7 @@ const researchHomeLabel = (entity?: ResearchEntityCopyInput | null): string =>
   KIND_LABELS[effectiveEntityKind(entity)]?.toLowerCase() || 'research';
 
 const RELATIONSHIP_TYPE_LABELS: Record<string, string> = {
-  AFFILIATED_LAB: 'Affiliated lab',
+  AFFILIATED_LAB: 'Affiliated',
   MEMBER_RESEARCH_AREA: 'Member',
 };
 
@@ -97,40 +98,51 @@ export const researchEntityTitle = (entity?: ResearchEntityCopyInput | null): st
 
 export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string => {
   if (isCreativePracticeEntity(entity)) return CREATIVE_PRACTICE_KIND_LABEL;
-  if (isFacultyResearchEntity(entity)) return 'Faculty Research';
+  if (isFacultyResearchEntity(entity)) return 'Faculty research';
   return KIND_LABELS[effectiveEntityKind(entity)] || 'Research';
 };
+
+export const CREATIVE_PRACTICE_TYPE_FILTER_VALUE = 'CREATIVE_PRACTICE';
+
+const researchTypeFilterValues: readonly string[] = [
+  ...researchEntityTypes,
+  CREATIVE_PRACTICE_TYPE_FILTER_VALUE,
+];
+
+type ResearchTypeFilterValue = ResearchEntityType | typeof CREATIVE_PRACTICE_TYPE_FILTER_VALUE;
 
 /**
  * The Type filter axis needs one distinct label per stored type, which is a
  * different job from `entityKindLabel`: two types can share a kind
  * (`FACULTY_RESEARCH_AREA` and `FACULTY_PROJECT` are both `individual`), so a
  * kind label would put two options with identical text in the same select. The
- * axis also only accepts the canonical `researchEntityTypes` enum, never the
- * retired values `ENTITY_TYPE_TO_KIND` still labels for unmigrated rows (#2219),
- * because a filter value has to round-trip through the `?type=` URL param.
+ * axis also only accepts the canonical `researchEntityTypes` enum plus the
+ * creative practice bucket the index derives from the served body (#5141), never
+ * the retired values `ENTITY_TYPE_TO_KIND` still labels for unmigrated rows
+ * (#2219), because a filter value has to round-trip through the `?type=` URL param.
  */
-const RESEARCH_ENTITY_TYPE_FILTER_LABELS: Record<ResearchEntityType, string> = {
+const RESEARCH_ENTITY_TYPE_FILTER_LABELS: Record<ResearchTypeFilterValue, string> = {
   LAB: 'Lab',
   CENTER: 'Center',
   INSTITUTE: 'Institute',
-  FACULTY_RESEARCH_AREA: 'Faculty Research',
-  FACULTY_PROJECT: 'Faculty Project',
+  FACULTY_RESEARCH_AREA: 'Faculty research',
+  FACULTY_PROJECT: 'Faculty project',
   INITIATIVE: 'Initiative',
-  CORE_FACILITY: 'Core Facility',
+  CORE_FACILITY: 'Core facility',
+  CREATIVE_PRACTICE: CREATIVE_PRACTICE_KIND_LABEL,
 };
 
-// `researchEntityTypes` rather than the label map's keys, so the accept-list has
-// one source, and `includes` rather than `Object.hasOwn`, which is ES2022 while
+// A fixed list rather than the label map's keys, so the accept-list has one
+// source, and `includes` rather than `Object.hasOwn`, which is ES2022 while
 // Vite's default `modules` build target floors at es2020 and esbuild does not
 // polyfill a built-in method: this runs on every browse facet response, so an
 // ES2022 built-in here takes the Research page down on Safari 14 rather than
 // degrading.
-export const isKnownResearchEntityType = (value?: string | null): boolean =>
-  researchEntityTypes.includes(value as ResearchEntityType);
+export const isKnownResearchTypeFilterValue = (value?: string | null): boolean =>
+  researchTypeFilterValues.includes(value ?? '');
 
 export const researchEntityTypeFilterLabel = (entityType: string): string =>
-  RESEARCH_ENTITY_TYPE_FILTER_LABELS[entityType as ResearchEntityType] || entityType;
+  RESEARCH_ENTITY_TYPE_FILTER_LABELS[entityType as ResearchTypeFilterValue] || entityType;
 
 export const researchWebsiteLabel = (entity?: ResearchEntityCopyInput | null): string => {
   if (isCreativePracticeEntity(entity)) return 'website';
@@ -337,6 +349,17 @@ export const sanitizeResearchEntityCopy = (
     ),
   );
 
+const RESEARCH_AT_POSSESSIVE_OBJECT_PATTERN =
+  /\b[Rr]esearch\s+at\s+(?:his|her|their|(?:(?:\p{Lu}[\p{L}'’-]*|\p{Lu}\.|(?:Dr|Prof|Mr|Mrs|Ms|Mx)\.)\s+){0,4}\p{Lu}[\p{L}.-]*['’]s?)$/u;
+
+const isObjectOfResearchAt = (possessive: string, offset: number, whole: string): boolean =>
+  RESEARCH_AT_POSSESSIVE_OBJECT_PATTERN.test(`${whole.slice(0, offset)}${possessive}`);
+
+const swapLabUnlessObjectOfResearchAt =
+  (researchVerbPhrase: string) =>
+  (match: string, possessive: string, offset: number, whole: string): string =>
+    isObjectOfResearchAt(possessive, offset, whole) ? match : `${possessive} ${researchVerbPhrase}`;
+
 export const sanitizeFacultyResearchCopy = (
   value: string,
   entity?: ResearchEntityCopyInput | null,
@@ -368,30 +391,69 @@ export const sanitizeFacultyResearchCopy = (
       `${possessive} research centers on`,
     )
     .replace(/\bResearch\s+Lab\b/g, 'research program')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+studies\b/gu, '$1 research studies')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+focuses\s+on\b/gu, '$1 research focuses on')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+uses\b/gu, '$1 research uses')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu, '$1 research develops')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu, '$1 research investigates')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu, '$1 research studies')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+studies\b/gu,
+      swapLabUnlessObjectOfResearchAt('research studies'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+focuses\s+on\b/gu,
+      swapLabUnlessObjectOfResearchAt('research focuses on'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+uses\b/gu,
+      swapLabUnlessObjectOfResearchAt('research uses'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu,
+      swapLabUnlessObjectOfResearchAt('research develops'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu,
+      swapLabUnlessObjectOfResearchAt('research investigates'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu,
+      swapLabUnlessObjectOfResearchAt('research studies'),
+    )
     .replace(
       /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu,
-      '$1 research focuses on',
+      swapLabUnlessObjectOfResearchAt('research focuses on'),
     )
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu, '$1 research uses')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu, '$1 research develops')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu,
+      swapLabUnlessObjectOfResearchAt('research uses'),
+    )
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu,
+      swapLabUnlessObjectOfResearchAt('research develops'),
+    )
     .replace(
       /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu,
-      '$1 research investigates',
+      swapLabUnlessObjectOfResearchAt('research investigates'),
     )
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g, '$1 research studies')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g, '$1 research focuses on')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g, '$1 research uses')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g, '$1 research develops')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g, '$1 research investigates')
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g,
+      swapLabUnlessObjectOfResearchAt('research studies'),
+    )
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g,
+      swapLabUnlessObjectOfResearchAt('research focuses on'),
+    )
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g,
+      swapLabUnlessObjectOfResearchAt('research uses'),
+    )
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g,
+      swapLabUnlessObjectOfResearchAt('research develops'),
+    )
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g,
+      swapLabUnlessObjectOfResearchAt('research investigates'),
+    )
     .replace(
       /\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g,
-      '$1 research examines',
+      swapLabUnlessObjectOfResearchAt('research examines'),
     )
     .replace(/^My\s+lab\s+focuses\s+on\b/i, 'This research focuses on')
     .replace(/^My\s+lab\s+studies\b/i, 'This research studies')
@@ -411,3 +473,16 @@ export const sanitizeFacultyResearchCopy = (
     .replace(/\byour\s+lab\b/gi, 'this research profile')
     .replace(/(^|[.!?]\s+)this research\b/g, '$1This research');
 };
+
+export const HOSTED_UNDERGRADUATES_LABEL = 'Has had undergrads';
+export const MENTORS_UNDERGRADUATES_LABEL = 'Advises undergrad research';
+export const UNDERGRADS_FILTER_GROUP_LABEL = 'Undergrads';
+export const TAKING_UNDERGRADS_NOW_FILTER_LABEL = WELCOMES_UNDERGRADS_LABEL;
+export const HAS_HAD_UNDERGRADS_FILTER_LABEL = `${HOSTED_UNDERGRADUATES_LABEL} before`;
+export const ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL = MENTORS_UNDERGRADUATES_LABEL;
+export const ADVISES_UNDERGRAD_RESEARCH_FILTER_HINT = 'e.g. supervised senior theses';
+export const UNDERGRADS_FILTER_COMBINATION_NOTE = 'Shows research matching every ticked option';
+export const UNDERGRADS_OPTION_UNAVAILABLE_NOTE =
+  'None match your other filters. Remove a filter to see more.';
+export const UNDERGRAD_ZERO_QUERY_ONLY_TIP = 'None match this search.';
+export const FEW_CLOSE_MATCHES_NOTICE = 'Only a few close matches. Related results below.';

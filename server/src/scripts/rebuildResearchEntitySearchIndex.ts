@@ -11,6 +11,7 @@ import {
   resolveSafeJsonReportOutputPath,
   type ScriptApplyGuardResult,
 } from './scriptWriteGuards';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -83,7 +84,7 @@ export function writeRebuildResearchEntitySearchIndexOutput(
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
 }
 
 export function assertRebuildResearchEntitySearchIndexAllowed(

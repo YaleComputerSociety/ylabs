@@ -32,25 +32,34 @@ export const resetMeiliAvailability = (): void => {
   unavailableUntil = 0;
 };
 
-export const withMeiliAvailability = async <T>(call: () => Promise<T>): Promise<T> => {
+export type MeiliCallRole = 'required' | 'optional';
+
+export const withMeiliAvailability = async <T>(
+  call: () => Promise<T>,
+  role: MeiliCallRole = 'required',
+): Promise<T> => {
   if (isMeiliKnownUnavailable()) throw new MeilisearchKnownUnavailableError();
   try {
     const value = await call();
     unavailableUntil = 0;
     return value;
   } catch (error) {
-    if (isMeiliUnreachableError(error)) {
+    if (role === 'required' && isMeiliUnreachableError(error)) {
       unavailableUntil = Date.now() + MEILISEARCH_UNAVAILABLE_COOLDOWN_MS;
     }
     throw error;
   }
 };
 
-export const withMeiliAvailabilityGuard = <T extends object>(index: T): T =>
+export const withMeiliAvailabilityGuard = <T extends object>(
+  index: T,
+  role: MeiliCallRole = 'required',
+): T =>
   new Proxy(index, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
       if (typeof value !== 'function' || property === 'then') return value;
-      return (...args: unknown[]) => withMeiliAvailability(async () => value.apply(target, args));
+      return (...args: unknown[]) =>
+        withMeiliAvailability(async () => value.apply(target, args), role);
     },
   });

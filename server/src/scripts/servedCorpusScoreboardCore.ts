@@ -1,7 +1,13 @@
+import { citationUrlsOf } from '../services/sourceCitations';
 import {
   parseOperatorDatabaseEnvironment,
   type OperatorDatabaseEnvironment,
 } from './operatorDatabaseEnvironment';
+import {
+  formatServedSustainedRefusalReadings,
+  NO_SUSTAINED_REFUSAL_RUN,
+  type ServedSustainedRefusalReadings,
+} from './servedSustainedRefusalReadings';
 
 export const SERVED_CORPUS_SCOREBOARD_ENVIRONMENTS = [
   'development',
@@ -92,6 +98,18 @@ export interface ServedCorpusScoreboardCorpusTotals {
   reachable?: number;
   servesNoPage?: number;
   servesNoPageSlugs?: string[];
+  /**
+   * Served rows with no citation at all, in `sourceUrls` or any provenance stamp. The gate
+   * reads that as silence rather than as dead, so a writer that removed a served row's last
+   * citation would hide an `all_citations_dead` hold here; writers keep that stamp (#6320).
+   */
+  servedWithNoCitation?: number;
+}
+
+export function countRowsCitingNothing(rows: Iterable<Record<string, unknown>>): number {
+  let count = 0;
+  for (const row of rows) if (citationUrlsOf(row).length === 0) count += 1;
+  return count;
 }
 
 export interface ServedCorpusScoreboard {
@@ -119,6 +137,7 @@ export interface ServedCorpusScoreboard {
   noLongerServedRows: Array<{ slug: string; tier: string; archived: boolean }>;
   changedRows: ServedBaselineRowComparison[];
   servedRows: ServedResearchEntityRow[];
+  sustainedRefusal: ServedSustainedRefusalReadings;
 }
 
 const usage = [
@@ -443,6 +462,7 @@ export function buildServedCorpusScoreboard(input: {
   corpus: ServedCorpusScoreboardCorpusTotals;
   baseline: ServedCorpusBaselineEntry[];
   rows: ServedResearchEntityRow[];
+  sustainedRefusal?: ServedSustainedRefusalReadings;
 }): ServedCorpusScoreboard {
   const bySlug = indexServedRowsBySlug(input.rows);
   const exportCaps = detectBaselineExportCaps(input.baseline);
@@ -512,6 +532,7 @@ export function buildServedCorpusScoreboard(input: {
     servedRows: input.baseline
       .map((entry) => bySlug.get(entry.slug))
       .filter((row): row is ServedResearchEntityRow => Boolean(row)),
+    sustainedRefusal: input.sustainedRefusal ?? NO_SUSTAINED_REFUSAL_RUN,
   };
 }
 
@@ -556,6 +577,27 @@ export function assertCollectionSetUnchanged(
 }
 
 /**
+ * A capped field can legitimately show no prefix row at all: once every baseline value at
+ * the cap has been rewritten, each one differs inside the cap and is a real change (#5579).
+ * What must never happen is a counted change whose served text merely continues the capped
+ * baseline, because that is exactly the row the cap-aware comparison exists to exclude.
+ */
+function countedPrefixChanges(
+  scoreboard: ServedCorpusScoreboard,
+  field: ServedBaselineComparedField,
+  cap: number,
+): number {
+  return scoreboard.changedRows
+    .flatMap((row) => row.changes)
+    .filter(
+      (change) =>
+        change.field === field &&
+        change.baseline.length === cap &&
+        change.served.slice(0, cap) === change.baseline,
+    ).length;
+}
+
+/**
  * Every figure this command prints is checked against its own population first.
  * Three measurement errors in this area in one hour all failed toward a
  * confident wrong number rather than toward an error, so a subset that exceeds
@@ -596,6 +638,11 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
     `baseline slugs still served (${baseline.stillServed}) exceeds the served population (${corpus.studentReadyNotArchived})`,
   );
   failIf(
+    corpus.servedWithNoCitation !== undefined &&
+      corpus.servedWithNoCitation > corpus.studentReadyNotArchived,
+    `served rows citing nothing (${corpus.servedWithNoCitation}) exceeds student_ready and not archived (${corpus.studentReadyNotArchived})`,
+  );
+  failIf(
     corpus.reachable !== undefined && corpus.reachable > corpus.studentReadyNotArchived,
     `reachable (${corpus.reachable}) exceeds student_ready and not archived (${corpus.studentReadyNotArchived})`,
   );
@@ -614,6 +661,12 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
     corpus.reachable === 0 && corpus.studentReadyNotArchived > 0,
     `no tier-admitted row in the corpus serves a page. Treat this as a broken route or a broken scoreboard, not as a corpus collapse.`,
   );
+  for (const host of scoreboard.sustainedRefusal.hosts) {
+    failIf(
+      host.servedReadingsUnconfirmed > corpus.studentReadyNotArchived,
+      `served readings unconfirmed on ${host.host} (${host.servedReadingsUnconfirmed}) exceeds the served population (${corpus.studentReadyNotArchived})`,
+    );
+  }
   failIf(
     baseline.comparedOnTruncatedPrefix > baseline.stillServed,
     `rows compared on a truncated prefix (${baseline.comparedOnTruncatedPrefix}) exceeds still served (${baseline.stillServed})`,
@@ -658,11 +711,11 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
       baseline.truncatedPrefixByField[field] > baseline.stillServed,
       `${field} compared on a truncated prefix (${baseline.truncatedPrefixByField[field]}) exceeds still served (${baseline.stillServed})`,
     );
+    const cap = scoreboard.baselineExportCaps[field];
+    const prefixChanges = cap === undefined ? 0 : countedPrefixChanges(scoreboard, field, cap);
     failIf(
-      scoreboard.baselineExportCaps[field] !== undefined &&
-        baseline.truncatedPrefixByField[field] === 0 &&
-        baseline.changedByField[field] > 0,
-      `${field} has a detected export cap of ${scoreboard.baselineExportCaps[field]} but no row was compared on a prefix, so the cap-aware comparison is not running`,
+      prefixChanges > 0,
+      `${field} has a detected export cap of ${cap} but ${prefixChanges} counted ${prefixChanges === 1 ? 'change serves' : 'changes serve'} text that only continues the capped baseline, so the cap-aware comparison is not running`,
     );
     failIf(
       baseline.changedByField[field] > baseline.changed,
@@ -693,6 +746,25 @@ export function formatServedCorpusScoreboardTable(scoreboards: ServedCorpusScore
     [
       '  serves no page',
       (s) => (s.corpus.servesNoPage === undefined ? 'not measured' : String(s.corpus.servesNoPage)),
+    ],
+    [
+      '  cites nothing',
+      (s) =>
+        s.corpus.servedWithNoCitation === undefined
+          ? 'not measured'
+          : String(s.corpus.servedWithNoCitation),
+    ],
+    [
+      'unconfirmed, sustained refusal',
+      (s) =>
+        s.sustainedRefusal.hosts.length === 0
+          ? 'none flagged'
+          : String(
+              s.sustainedRefusal.hosts.reduce(
+                (sum, host) => sum + host.servedReadingsUnconfirmed,
+                0,
+              ),
+            ),
     ],
     ['baseline slugs present', (s) => `${s.baseline.present}/${s.baseline.slugs}`],
     ['still served', (s) => `${s.baseline.stillServed}/${s.baseline.slugs}`],
@@ -769,6 +841,8 @@ export function formatServedCorpusScoreboardDetail(
     );
     lines.push(...scoreboard.corpus.servesNoPageSlugs.map((slug) => `  - ${slug}`));
   }
+
+  lines.push('', ...formatServedSustainedRefusalReadings(scoreboard.sustainedRefusal));
 
   const cappedFields = Object.entries(scoreboard.baselineExportCaps);
   if (cappedFields.length > 0) {

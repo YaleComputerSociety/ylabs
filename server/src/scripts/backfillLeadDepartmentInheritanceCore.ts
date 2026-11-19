@@ -9,10 +9,13 @@ export interface LeadDepartmentInheritanceOutcome {
 export interface LeadDepartmentInheritanceSummary {
   scanned: number;
   inherited: number;
+  refreshed: number;
+  sectionsAdded: number;
   indexSyncFailures: number;
   skipped: Record<string, number>;
   departmentsWritten: Array<[string, number]>;
   schoolsWritten: Array<[string, number]>;
+  sectionsAddedByName: Array<[string, number]>;
 }
 
 /**
@@ -29,12 +32,19 @@ export function summarizeLeadDepartmentInheritance(
   const skipped: Record<string, number> = {};
   const departments = new Map<string, number>();
   const schools = new Map<string, number>();
+  const addedSections = new Map<string, number>();
   let inherited = 0;
+  let refreshed = 0;
   let indexSyncFailures = 0;
 
   for (const outcome of outcomes) {
     if (outcome.result.inherited) {
       inherited += 1;
+      if (outcome.result.refreshed?.length) refreshed += 1;
+      if (outcome.result.addedSection) {
+        const section = outcome.result.addedSection;
+        addedSections.set(section, (addedSections.get(section) || 0) + 1);
+      }
       if (outcome.result.indexSyncFailed) indexSyncFailures += 1;
       for (const department of outcome.result.departments ?? []) {
         departments.set(department, (departments.get(department) || 0) + 1);
@@ -54,10 +64,13 @@ export function summarizeLeadDepartmentInheritance(
   return {
     scanned: outcomes.length,
     inherited,
+    refreshed,
+    sectionsAdded: [...addedSections.values()].reduce((total, count) => total + count, 0),
     indexSyncFailures,
     skipped,
     departmentsWritten: [...departments.entries()].sort(byCountDescending),
     schoolsWritten: [...schools.entries()].sort(byCountDescending),
+    sectionsAddedByName: [...addedSections.entries()].sort(byCountDescending),
   };
 }
 

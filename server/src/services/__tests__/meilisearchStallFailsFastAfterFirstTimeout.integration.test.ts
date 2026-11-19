@@ -64,13 +64,13 @@ const getDetail = async () => {
   return { status: response.status, payload: (await response.json()) as Record<string, any> };
 };
 
-const textSearch = async () => {
+const textSearch = async (request: Record<string, unknown> = { q: 'wetland carbon' }) => {
   const response = await fetch(`${baseUrl}/api/research/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q: 'wetland carbon' }),
+    body: JSON.stringify(request),
   });
-  return { status: response.status };
+  return { status: response.status, payload: (await response.json()) as Record<string, any> };
 };
 
 const meiliCallCount = () =>
@@ -141,7 +141,47 @@ describe('requests while Meilisearch is timing out', () => {
     const answers = [await textSearch(), await textSearch(), await textSearch()];
 
     expect(answers.map((answer) => answer.status)).toEqual([503, 503, 503]);
-    expect(meiliCallCount()).toBe(1);
+    expect(meili.getEmbedders).toHaveBeenCalledTimes(1);
+    expect(meili.search).toHaveBeenCalledTimes(1);
+    expect(meiliCallCount()).toBe(2);
+  }, 20000);
+
+  it('degrades only the search whose optional facet query failed, and answers the next one', async () => {
+    const filteredSearch = {
+      q: 'wetland carbon',
+      filters: { departments: ['Earth and Planetary Sciences'] },
+    };
+    const stored = await ResearchEntity.findOne({ slug: SLUG }).lean();
+    const indexHit = {
+      id: String(stored?._id),
+      slug: SLUG,
+      departments: ['Earth and Planetary Sciences'],
+    };
+    meili.getEmbedders.mockReset();
+    meili.getEmbedders.mockResolvedValue({});
+    let facetQueryFails = true;
+    meili.search.mockReset();
+    meili.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+      if (params.limit === 0 && facetQueryFails) {
+        facetQueryFails = false;
+        throw timedOut();
+      }
+      return {
+        hits: params.limit === 0 ? [] : [indexHit],
+        estimatedTotalHits: 1,
+        facetDistribution: { departments: { 'Earth and Planetary Sciences': 1 } },
+      };
+    });
+
+    const first = await textSearch(filteredSearch);
+    const second = await textSearch(filteredSearch);
+
+    expect(facetQueryFails).toBe(false);
+    expect(first.status).toBe(200);
+    expect(first.payload.degraded).toBe(true);
+    expect(second.status).toBe(200);
+    expect(second.payload.degraded).toBeFalsy();
+    expect(second.payload.researchEntities.map((entity: any) => entity.slug)).toEqual([SLUG]);
   }, 20000);
 
   it('asks Meilisearch again once the cooldown has passed, and serves the rail', async () => {

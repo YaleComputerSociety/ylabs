@@ -3,9 +3,14 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initializeConnections } from '../db/connections';
+import {
+  initializeConnections,
+  WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS,
+  scriptMongoConnectOptions,
+} from '../db/connections';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 dotenv.config({ quiet: true });
 
@@ -146,7 +151,7 @@ export function writeResearchEntityCollectionMigrationOutput(
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function collectionExists(db: MongoDb, name: string): Promise<boolean> {
@@ -436,15 +441,15 @@ async function dropLegacyCollections(db: MongoDb) {
   return { before, dropped, after };
 }
 
-async function main() {
-  const args = parseResearchEntityCollectionMigrationArgs(process.argv.slice(2));
+export async function runResearchEntityCollectionMigration(argv: string[]) {
+  const args = parseResearchEntityCollectionMigrationArgs(argv);
   const guard = assertResearchEntityCollectionMigrationWriteAllowed(
     args,
     process.env,
     process.env.MONGODBURL,
   );
   const mode = args.mode;
-  await initializeConnections();
+  await initializeConnections(scriptMongoConnectOptions(WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS));
   const db = mongoose.connection.db;
   if (!db) throw new Error('MongoDB connection is not initialized');
 
@@ -489,7 +494,7 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  main()
+  runResearchEntityCollectionMigration(process.argv.slice(2))
     .catch((error) => {
       console.error(
         'Failed to migrate dependent ResearchEntity collections:',

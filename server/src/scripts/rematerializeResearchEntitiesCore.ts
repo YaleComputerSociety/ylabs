@@ -5,12 +5,14 @@ import {
 } from '../scrapers/rowKeyedContactEvidence';
 import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { resolveSafeJsonReportOutputPath } from '../utils/reportOutputPath';
 import {
   materializerProjectionPathIsStorable,
   type UnbackedResearchAreaOutcome,
 } from '../scrapers/entityMaterializer';
 import { fieldProvenanceEntryIsUnbacked } from '../scrapers/neverBackedFieldProvenance';
 import type { AccessSignalChangePlan } from '../scrapers/accessMaterializer';
+import type { LeadEdgeResolution } from '../scrapers/entityMaterializer';
 
 export interface RematerializeResearchEntitiesArgs {
   slugs: string[];
@@ -69,6 +71,9 @@ function parseReclaimStrandedField(value: string | undefined): ReclaimableStrand
  * `contactEmail`, `contactName` and `contactRole` are absent because
  * `publicResearchDetailGroup` withholds them from every served payload, so tracking
  * them would print a withheld contact into a report an operator pastes around.
+ * `leadVerification` is not served, but the gate and the `leadEdges` resolve read the
+ * stored value rather than the lane's observations, so a new verdict reaches neither
+ * until a `--only-fields=leadVerification` pass projects it (#5962).
  */
 export const REMATERIALIZE_TRACKED_FIELDS = [
   'name',
@@ -90,6 +95,7 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'schools',
   'departments',
   'orgAffiliationLabels',
+  'statedAppointmentSchools',
   'undergradEvidenceQuote',
   'currentUndergradCount',
   'studentVisibilityTier',
@@ -97,6 +103,11 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'recentGrantPeriods',
   'recentGrantCount',
   'fundingAgencies',
+  'yaleStatusCache',
+  'activeAtYaleCache',
+  'yaleStatusReasonCache',
+  'leadVerification',
+  'emeritusListedLeadIds',
 ] as const;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/i;
@@ -114,6 +125,12 @@ function parseSlugList(value: string | undefined): string[] {
   return Array.from(new Set(slugs));
 }
 
+export const LEAD_EDGES_SCOPE = 'leadEdges';
+
+export function isLeadEdgesScope(onlyFields: readonly string[]): boolean {
+  return onlyFields.includes(LEAD_EDGES_SCOPE);
+}
+
 function parseOnlyFieldsList(value: string | undefined): string[] {
   if (!value) throw new Error('--only-fields requires a comma-separated list of fields');
   const fields = value
@@ -122,6 +139,7 @@ function parseOnlyFieldsList(value: string | undefined): string[] {
     .filter(Boolean);
   if (fields.length === 0) throw new Error('--only-fields requires at least one field');
   for (const field of fields) {
+    if (field === LEAD_EDGES_SCOPE) continue;
     if (!(REMATERIALIZE_TRACKED_FIELDS as readonly string[]).includes(field)) {
       throw new Error(`Unsupported --only-fields field: ${field}`);
     }
@@ -227,11 +245,11 @@ export function parseRematerializeResearchEntitiesArgs(
       continue;
     }
     if (arg.startsWith('--output=')) {
-      args.output = arg.slice('--output='.length);
+      args.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
       continue;
     }
     if (arg === '--output') {
-      args.output = argv[index + 1];
+      args.output = resolveSafeJsonReportOutputPath(argv[index + 1]);
       index += 1;
       continue;
     }
@@ -271,6 +289,21 @@ export function parseRematerializeResearchEntitiesArgs(
   }
   if (args.foreignContact && (args.unbackedProvenance || args.reclaimStrandedField)) {
     throw new Error('--foreign-contact writes contact fields only, so it runs on its own');
+  }
+  if (
+    isLeadEdgesScope(args.onlyFields) &&
+    (args.onlyFields.length > 1 ||
+      args.accessSignals ||
+      args.unbackedProvenance ||
+      args.foreignContact ||
+      args.unbackedResearchAreas ||
+      args.reclaimStrandedField ||
+      args.resynthesizeCutCards ||
+      args.resynthesizeWeakCards)
+  ) {
+    throw new Error(
+      `--only-fields=${LEAD_EDGES_SCOPE} resolves lead edges only, so it runs on its own`,
+    );
   }
   if (args.foreignContact && args.onlyFields.length > 0) {
     throw new Error('--foreign-contact is already scoped to the contact fields');
@@ -326,6 +359,13 @@ function normalizeForComparison(value: unknown): unknown {
   if (value === undefined || value === null) return null;
   if (Array.isArray(value)) {
     return value.map((entry) => withoutSubdocumentId(normalizeForComparison(entry)));
+  }
+  if (isPlainObject(value)) {
+    return withoutSubdocumentId(
+      Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [key, normalizeForComparison(entry)]),
+      ),
+    );
   }
   return value;
 }
@@ -595,7 +635,9 @@ export interface RematerializeEntityReport {
   changes: RematerializeReportedChange[];
   clearedContactFields?: string[];
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
+  lastCitationRemovalsWithheld?: string[];
   accessSignalChanges?: AccessSignalChangePlan;
+  leadEdgeResolution?: LeadEdgeResolution;
   cardSynthesisPending?: true;
   skipped?: string;
   error?: string;
@@ -615,6 +657,7 @@ export function rematerializeEntityReportFromChanges(input: {
   changes: RematerializeReportedChange[];
   foreignContact: boolean;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
+  lastCitationRemovalsWithheld?: string[];
   cardSynthesisPending?: boolean;
   skipped?: string;
 }): RematerializeEntityReport {
@@ -635,6 +678,9 @@ export function rematerializeEntityReportFromChanges(input: {
         }
       : {}),
     ...(input.unbackedResearchAreas ? { unbackedResearchAreas: input.unbackedResearchAreas } : {}),
+    ...(input.lastCitationRemovalsWithheld?.length
+      ? { lastCitationRemovalsWithheld: input.lastCitationRemovalsWithheld }
+      : {}),
     ...(input.cardSynthesisPending ? { cardSynthesisPending: true as const } : {}),
     skipped: input.skipped,
   };
@@ -672,8 +718,10 @@ export function summarizeRematerializeEntities(
   unbackedResearchAreas: Partial<Record<UnbackedResearchAreaOutcome, number>>;
   researchAreaChips: { added: number; removed: number };
   entitiesAwaitingCardSynthesis: number;
+  entitiesWithLastCitationKept: number;
 } {
   let entitiesChanged = 0;
+  let entitiesWithLastCitationKept = 0;
   let entitiesAwaitingCardSynthesis = 0;
   let fieldsWritten = 0;
   let clearedContactFields = 0;
@@ -687,6 +735,7 @@ export function summarizeRematerializeEntities(
     fieldsWritten += entity.changes.length;
     clearedContactFields += entity.clearedContactFields?.length ?? 0;
     if (entity.cardSynthesisPending) entitiesAwaitingCardSynthesis += 1;
+    if (entity.lastCitationRemovalsWithheld?.length) entitiesWithLastCitationKept += 1;
     if (entity.unbackedResearchAreas) {
       unbackedResearchAreas[entity.unbackedResearchAreas] =
         (unbackedResearchAreas[entity.unbackedResearchAreas] ?? 0) + 1;
@@ -699,6 +748,7 @@ export function summarizeRematerializeEntities(
     unbackedResearchAreas,
     researchAreaChips,
     entitiesAwaitingCardSynthesis,
+    entitiesWithLastCitationKept,
   };
 }
 
@@ -735,21 +785,92 @@ export function rematerializeFailureMessage(error: unknown): string {
 export async function collectRematerializeEntityReports(
   slugs: string[],
   processSlug: (slug: string) => Promise<RematerializeEntityReport>,
+  afterReport?: (report: RematerializeEntityReport) => Promise<void>,
 ): Promise<RematerializeEntityReport[]> {
   const reports: RematerializeEntityReport[] = [];
   for (const slug of slugs) {
+    let report: RematerializeEntityReport;
     try {
-      reports.push(await processSlug(slug));
+      report = await processSlug(slug);
     } catch (error) {
-      reports.push({
+      report = {
         slug,
         found: false,
         changes: [],
         error: rematerializeFailureMessage(error),
-      });
+      };
     }
+    reports.push(report);
+    if (afterReport) await afterReport(report);
   }
   return reports;
+}
+
+export const REMATERIALIZE_REGATE_CHUNK_SIZE = 50;
+
+export interface ChunkedRegater<Summary> {
+  add(entityIds: readonly string[]): Promise<void>;
+  finish(): Promise<{ summaries: Summary[]; error?: string }>;
+}
+
+/**
+ * Re-gates written rows chunk by chunk as the run writes them (#6370). Re-gating once at the
+ * end left every row an interrupted run had already written on its old tier, and a rerun
+ * re-gates only the rows it changes itself, so nothing ever re-gated them.
+ */
+export function createChunkedRegater<Summary>(
+  regate: (entityIds: string[]) => Promise<Summary>,
+  chunkSize: number = REMATERIALIZE_REGATE_CHUNK_SIZE,
+): ChunkedRegater<Summary> {
+  const summaries: Summary[] = [];
+  let pending: string[] = [];
+  const pendingIds = new Set<string>();
+  let error: string | undefined;
+  let leftUnregated = 0;
+  let queue: Promise<void> = Promise.resolve();
+
+  const flush = (entityIds: string[]) => {
+    queue = queue.then(async () => {
+      if (entityIds.length === 0) return;
+      if (error) {
+        leftUnregated += entityIds.length;
+        return;
+      }
+      try {
+        summaries.push(await regate(entityIds));
+      } catch (failure) {
+        error = rematerializeFailureMessage(failure);
+        leftUnregated += entityIds.length;
+      }
+    });
+    return queue;
+  };
+
+  const takeChunk = (size: number) => {
+    const chunk = pending.slice(0, size);
+    pending = pending.slice(size);
+    for (const entityId of chunk) pendingIds.delete(entityId);
+    return chunk;
+  };
+
+  return {
+    async add(entityIds) {
+      for (const entityId of entityIds) {
+        if (pendingIds.has(entityId)) continue;
+        pendingIds.add(entityId);
+        pending.push(entityId);
+      }
+      while (pending.length >= chunkSize) await flush(takeChunk(chunkSize));
+    },
+    async finish() {
+      await flush(takeChunk(pending.length));
+      if (!error) return { summaries };
+      return {
+        summaries,
+        error: `${error} (${leftUnregated} written row(s) left un-regated)`,
+      };
+    },
+  };
 }
 
 export interface RematerializeRegateCandidate {
@@ -758,6 +879,34 @@ export interface RematerializeRegateCandidate {
   skipped?: string;
   changes: RematerializeReportedChange[];
   accessSignalChanges?: AccessSignalChangePlan;
+  leadEdgeResolution?: LeadEdgeResolution;
+}
+
+function leadEdgesChanged(resolution: LeadEdgeResolution | undefined): boolean {
+  return Boolean(
+    resolution &&
+    (resolution.ended.length > 0 || resolution.asserted.some((edge) => edge.isNewEdge)),
+  );
+}
+
+export function summarizeLeadEdgeChanges(reports: readonly RematerializeRegateCandidate[]): {
+  entitiesChanged: number;
+  edgesCreated: number;
+  endedByReason: Record<string, number>;
+} {
+  const endedByReason: Record<string, number> = {};
+  let entitiesChanged = 0;
+  let edgesCreated = 0;
+  for (const report of reports) {
+    if (!leadEdgesChanged(report.leadEdgeResolution)) continue;
+    entitiesChanged += 1;
+    edgesCreated +=
+      report.leadEdgeResolution?.asserted.filter((edge) => edge.isNewEdge).length ?? 0;
+    for (const edge of report.leadEdgeResolution?.ended ?? []) {
+      endedByReason[edge.reason] = (endedByReason[edge.reason] ?? 0) + 1;
+    }
+  }
+  return { entitiesChanged, edgesCreated, endedByReason };
 }
 
 function accessSignalsChanged(changes: AccessSignalChangePlan | undefined): boolean {
@@ -793,7 +942,8 @@ export function selectRematerializeRegateEntityIds(
     if (!report.found || report.skipped || !report.entityId) continue;
     if (
       rematerializeChangeAffectsVisibilityGate(report.changes) ||
-      accessSignalsChanged(report.accessSignalChanges)
+      accessSignalsChanged(report.accessSignalChanges) ||
+      leadEdgesChanged(report.leadEdgeResolution)
     ) {
       entityIds.add(report.entityId);
     }

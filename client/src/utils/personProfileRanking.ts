@@ -1,3 +1,4 @@
+import { isYaleHostname } from './yaleHost';
 /**
  * Which Yale host is a school-wide directory, and which school it belongs to.
  *
@@ -92,7 +93,7 @@ export const personProfileSourceRoleLabel = (url: unknown): string | undefined =
   if (!host) return undefined;
   if (IDENTIFIER_PROFILE_LABEL[host]) return IDENTIFIER_PROFILE_LABEL[host];
   if (SCHOOL_DIRECTORY_HOST_SCHOOL[host]) return 'School directory profile';
-  if (host.endsWith('yale.edu')) return 'Department profile';
+  if (isYaleHostname(host)) return 'Department profile';
   return undefined;
 };
 
@@ -109,7 +110,7 @@ const rankingKey = (url: string, context: PersonProfileRankingContext): number[]
   const host = hostOf(url);
   return [
     isIdentifierRecordUrl(url) ? 1 : 0,
-    host && host.endsWith('yale.edu') ? 0 : 1,
+    host && isYaleHostname(host) ? 0 : 1,
     isCrossSchoolDirectoryProfileUrl(url, context.schools) ? 1 : 0,
     host && provenanceHosts.has(host) ? 0 : 1,
     parseHttpUrl(url)?.protocol === 'https:' ? 0 : 1,

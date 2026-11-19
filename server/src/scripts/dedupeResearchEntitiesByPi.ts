@@ -5,12 +5,17 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import {
+  mergeGroupJoinsDistinctPeople,
+  partitionMergeGroupsByDistinctPeopleVerdict,
+} from '../services/distinctPeopleVerdicts';
+import {
   archivedEntityUpdate,
   attributedArchiveSet,
   PI_DEDUPE_ARCHIVE_REASON,
   PI_DEDUPE_SELF_RELATIONSHIP_ARCHIVE_REASON,
 } from '../models/entityArchival';
 import {
+  deriveMergeSurvivorWebsite,
   rematerializeMergeCanonicalFillOnly,
   type MergeCanonicalRematerialization,
 } from '../services/researchEntityMergeRematerializeService';
@@ -20,14 +25,14 @@ import {
   buildOfficialLabUrlResearchEntityDedupePlan,
   buildMultiPersonEntityQuarantine,
   buildOrgNameResearchEntityDedupePlan,
-  buildNameAgreedSharedPersonResearchEntityDedupePlan,
+  buildNameAgreedSharedPersonAndRosterMailboxDedupePlan,
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   explainSpecificProfileLabUrlRefusals,
   buildWebsiteUrlResearchEntityDedupePlan,
-  normalizeWebsiteUrlIdentityKey,
+  groupEntitiesByWebsiteUrlIdentity,
   partitionPlanByPersonProfileConflation,
   personProfileIdentityFromUrl,
   specificProfileLabUrlIdentityKey,
@@ -53,9 +58,14 @@ import {
   type ArchivedEntityArtifactType,
   type ArchivedEntityDisposition,
 } from './repairArchivedEntityArtifactsCore';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  resolveSafeJsonReportPath,
+} from './scriptWriteGuards';
 import { isSweepStageEnabledByDefault } from './sweepStageFlags';
 import { deleteFromIndex } from '../services/meiliSyncService';
+import { loadRedirectLandingIdentityKeys } from '../services/websiteUrlRedirectLandings';
 import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndexSyncOutcome';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
 import {
@@ -86,7 +96,11 @@ import {
   LEAD_ROLE_CANONICAL_VALUES,
   LEAD_ROLE_LEGACY_LABELS,
 } from '../models/canonicalRoleMapping';
+import { loadRosterOwnerKeyRows } from '../scrapers/rosterOwnerKeyRows';
+import { rosterResearchEntitySlugPrefixForSlug } from '../scrapers/sources/departmentRosterScraper';
 import { connectScriptMongo } from '../db/connections';
+import { loadGrantCoPiListedLeadsByEntity } from '../services/grantCoPiListedLeads';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -340,17 +354,14 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
       continue;
     }
     if (arg.startsWith('--accepted-decisions=')) {
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
+      args.acceptedDecisions = resolveSafeJsonReportPath(
         arg.slice('--accepted-decisions='.length),
         '--accepted-decisions',
       );
       continue;
     }
     if (arg === '--accepted-decisions') {
-      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
-        argv[index + 1],
-        '--accepted-decisions',
-      );
+      args.acceptedDecisions = resolveSafeJsonReportPath(argv[index + 1], '--accepted-decisions');
       index += 1;
       continue;
     }
@@ -456,12 +467,14 @@ export interface ResearchEntityDedupeApplyOutcome {
   deletedEntities?: number;
   deferredAsWouldDemote?: boolean;
   deferredAsWouldSwapPinnedCanonical?: boolean;
+  refusedAsDistinctPeople?: boolean;
 }
 
 export interface ResearchEntityDedupeApplyDeferrals {
   appliedGroups: number;
   deferredAsWouldDemoteGroups: number;
   deferredAsWouldSwapPinnedCanonicalGroups: number;
+  refusedAsDistinctPeopleGroups: number;
 }
 
 /**
@@ -478,11 +491,18 @@ export function countResearchEntityDedupeApplyDeferrals(
   const deferredAsWouldSwapPinnedCanonicalGroups = applied.filter(
     (result) => result.deferredAsWouldSwapPinnedCanonical === true,
   ).length;
+  const refusedAsDistinctPeopleGroups = applied.filter(
+    (result) => result.refusedAsDistinctPeople === true,
+  ).length;
   return {
     appliedGroups:
-      applied.length - deferredAsWouldDemoteGroups - deferredAsWouldSwapPinnedCanonicalGroups,
+      applied.length -
+      deferredAsWouldDemoteGroups -
+      deferredAsWouldSwapPinnedCanonicalGroups -
+      refusedAsDistinctPeopleGroups,
     deferredAsWouldDemoteGroups,
     deferredAsWouldSwapPinnedCanonicalGroups,
+    refusedAsDistinctPeopleGroups,
   };
 }
 
@@ -492,6 +512,7 @@ export interface UrlIdentityDedupeStageDelta {
   appliedGroups: number;
   deferredAsWouldDemoteGroups: number;
   deferredAsWouldSwapPinnedCanonicalGroups: number;
+  refusedAsDistinctPeopleGroups: number;
   deferredByCapGroups: number;
   archivedEntities: number;
   deletedEntities: number;
@@ -549,6 +570,7 @@ export function buildUrlIdentityDedupeStageDelta(input: {
   quarantinedSameNameGroups: DedupeQuarantineCount;
   quarantinedMultiPersonEntities: DedupeQuarantineCount;
   quarantinedConflatedPersonProfileGroups: number;
+  plannedRefusedAsDistinctPeopleGroups?: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
   canonicalIndexSyncFailures: number;
@@ -564,6 +586,8 @@ export function buildUrlIdentityDedupeStageDelta(input: {
     appliedGroups: deferrals.appliedGroups,
     deferredAsWouldDemoteGroups: deferrals.deferredAsWouldDemoteGroups,
     deferredAsWouldSwapPinnedCanonicalGroups: deferrals.deferredAsWouldSwapPinnedCanonicalGroups,
+    refusedAsDistinctPeopleGroups:
+      (input.plannedRefusedAsDistinctPeopleGroups ?? 0) + deferrals.refusedAsDistinctPeopleGroups,
     deferredByCapGroups: input.deferredByCapGroups,
     archivedEntities: sumApplied((result) => result.archivedEntities),
     deletedEntities: sumApplied((result) => result.deletedEntities),
@@ -602,7 +626,7 @@ export function writeResearchEntityPiDedupeOutput(
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildResearchEntityPiDedupeOutput<T extends Record<string, unknown>>(
@@ -634,7 +658,7 @@ export function writeResearchEntityPiDedupeDecisionTemplate(
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output, '--decision-template-output');
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-  fs.writeFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
+  writeReportFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
 }
 
 function researchEntityPiDedupePlanId(group: {
@@ -680,7 +704,7 @@ export function readResearchEntityPiDedupeDecisions(
   inputPath: string,
   options: { allowEmpty?: boolean } = {},
 ): ResearchEntityPiDedupeDecision[] {
-  const safeInputPath = resolveSafeJsonReportOutputPath(inputPath, '--accepted-decisions');
+  const safeInputPath = resolveSafeJsonReportPath(inputPath, '--accepted-decisions');
   if (!fs.existsSync(safeInputPath) && options.allowEmpty) {
     return [];
   }
@@ -1062,6 +1086,55 @@ function primaryAppointmentProfileUrlFromLinks(urls: unknown): string | undefine
     .find((url) => Boolean(personProfileIdentityFromUrl(url)));
 }
 
+/**
+ * Rows grouped by the roster mailbox they were read under, one group per person whose
+ * live roster rows sit on two or more rosters (#5969). The lead-keyed loader cannot see
+ * these when the person's rows resolved to two lead researchers.
+ */
+export async function loadRosterMailboxCandidateRows(): Promise<ResearchEntityPiDedupeRow[]> {
+  const byOwnerKey = await loadRosterOwnerKeyRows(
+    (slug) => rosterResearchEntitySlugPrefixForSlug(slug),
+    () => '',
+  );
+  const groups = [...byOwnerKey.entries()].filter(
+    ([, rows]) => new Set(rows.map((row) => row.rosterPrefix)).size >= 2,
+  );
+  if (groups.length === 0) return [];
+  const docs = (await ResearchEntity.find({
+    _id: { $in: groups.flatMap(([, rows]) => rows.map((row) => row.id)) },
+    archived: { $ne: true },
+  })
+    .select(
+      '_id slug name kind entityType websiteUrl fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies fieldProvenance.slug.sourceUrl',
+    )
+    .lean()) as any[];
+  const byId = new Map(docs.map((doc) => [serializedDocumentId(doc._id) || '', doc]));
+  return groups.map(([ownerKey, rows]) => ({
+    userId: `roster-mailbox:${ownerKey}`,
+    normalizedName: `roster-mailbox:${ownerKey}`,
+    entities: rows
+      .map((row) => byId.get(row.id))
+      .filter(Boolean)
+      .map((entity: any) => ({
+        id: serializedDocumentId(entity._id) || '',
+        slug: entity.slug,
+        name: entity.name,
+        kind: entity.kind,
+        entityType: entity.entityType,
+        websiteUrl: entity.websiteUrl,
+        fullDescription: entity.fullDescription,
+        shortDescription: entity.shortDescription,
+        sourceUrls: entity.sourceUrls,
+        departments: entity.departments,
+        researchAreas: entity.researchAreas,
+        recentGrants: entity.recentGrants,
+        recentGrantCount: entity.recentGrantCount,
+        fundingAgencies: entity.fundingAgencies,
+        identitySourceUrl: entity.fieldProvenance?.slug?.sourceUrl,
+      })),
+  }));
+}
+
 export async function loadSamePiCandidateRows(
   limit: number,
   options: {
@@ -1152,9 +1225,20 @@ export async function loadSamePiCandidateRows(
     },
     { $limit: limit },
   ]);
+  const grantCoPiListedLeads = await loadGrantCoPiListedLeadsByEntity(
+    rows.flatMap((row: any) => (row.entities || []).map((entity: { id?: string }) => entity.id)),
+  );
 
   return Promise.all(
     rows.map(async (row: any) => {
+      const isGrantCoPiListing = (entity: { id?: string }) =>
+        Boolean(entity.id && grantCoPiListedLeads.get(entity.id)?.has(row._id.userId));
+      const grantCoPiListedEntityIds = (row.entities || [])
+        .filter(isGrantCoPiListing)
+        .map((entity: { id: string }) => entity.id);
+      const roleJoinedEntities = (row.entities || []).filter(
+        (entity: { id?: string }) => !isGrantCoPiListing(entity),
+      );
       const displayNameParts = String(row.piDisplayName || '')
         .trim()
         .split(/\s+/)
@@ -1184,8 +1268,9 @@ export async function loadSamePiCandidateRows(
         primaryAppointmentProfileUrl: primaryAppointmentProfileUrlFromLinks(
           row.piPrimaryIdentityUrls,
         ),
+        ...(grantCoPiListedEntityIds.length > 0 ? { grantCoPiListedEntityIds } : {}),
         entities: [
-          ...(row.entities || []).map((entity: { id?: string }) => ({
+          ...roleJoinedEntities.map((entity: { id?: string }) => ({
             ...entity,
             piRoleCorroborated: true,
           })),
@@ -1478,9 +1563,9 @@ async function loadSpecificProfileLabUrlCandidateRows(
   return attachLeadPersonIds(candidates);
 }
 
-async function attachLeadPersonIds(
-  rows: OfficialLabUrlDedupeRow[],
-): Promise<OfficialLabUrlDedupeRow[]> {
+async function attachLeadPersonIds<
+  Row extends { entities: Array<{ id: string; leadPersonIds?: string[] }> },
+>(rows: Row[]): Promise<Row[]> {
   const entityIds = Array.from(
     new Set(rows.flatMap((row) => row.entities.map((entity) => entity.id))),
   )
@@ -1571,7 +1656,10 @@ async function loadOrgNameCandidateRows(limit: number): Promise<OrgNameDedupeEnt
   ]).then((rows) => rows as OrgNameDedupeEntity[]);
 }
 
-async function loadWebsiteUrlCandidateRows(limit: number): Promise<WebsiteUrlDedupeRow[]> {
+export async function loadWebsiteUrlCandidateRows(
+  limit: number,
+  landings?: ReadonlyMap<string, string>,
+): Promise<WebsiteUrlDedupeRow[]> {
   const entities = await ResearchEntity.aggregate([
     {
       $match: {
@@ -1621,18 +1709,12 @@ async function loadWebsiteUrlCandidateRows(limit: number): Promise<WebsiteUrlDed
     { $sort: { id: 1 } },
   ]);
 
-  const byKey = new Map<string, WebsiteUrlDedupeRow>();
-  for (const entity of entities as ResearchEntityPiDedupeRow['entities']) {
-    const key = normalizeWebsiteUrlIdentityKey(entity.websiteUrl);
-    if (!key) continue;
-    const existing = byKey.get(key);
-    if (existing) existing.entities.push(entity);
-    else byKey.set(key, { websiteUrl: entity.websiteUrl || '', entities: [entity] });
-  }
-
-  return Array.from(byKey.values())
-    .filter((row) => row.entities.length > 1)
-    .slice(0, limit);
+  return attachLeadPersonIds(
+    groupEntitiesByWebsiteUrlIdentity(
+      entities as ResearchEntityPiDedupeRow['entities'],
+      landings ?? (await loadRedirectLandingIdentityKeys()),
+    ).slice(0, limit),
+  );
 }
 
 async function loadDuplicateCurrentMemberRows(limit: number) {
@@ -2363,7 +2445,14 @@ export interface NonDemotingMergeResolution {
 export type PlannedMergeCarry = Pick<
   ResearchEntityDedupeMergeGroup,
   'mergedDepartments' | 'mergedResearchAreas' | 'mergedSourceUrls'
->;
+> & { carriesProse?: boolean };
+
+export const SURVIVOR_KEEPS_ITS_OWN_CARD: PlannedMergeCarry = {
+  mergedDepartments: [],
+  mergedResearchAreas: [],
+  mergedSourceUrls: [],
+  carriesProse: false,
+};
 
 const carriedStrings = (values: unknown): string[] =>
   Array.isArray(values) ? values.map((value) => String(value)).filter(Boolean) : [];
@@ -2405,6 +2494,7 @@ export async function resolveNonDemotingMerge(
       ? carriedStrings(plannedCarry.mergedDepartments)
       : docs.flatMap((doc) => carriedStrings(doc.departments)),
   };
+  const carriesProse = plannedCarry?.carriesProse !== false;
   const storedAfterMerge = (
     survivor: Record<string, any>,
     field: keyof typeof carriedByMerge,
@@ -2440,7 +2530,7 @@ export async function resolveNonDemotingMerge(
   for (const candidateId of candidateOrder) {
     const doc = docById.get(String(candidateId));
     if (!doc) continue;
-    const keepsOwnProse = mergeSurvivorHoldsOwnProse(doc);
+    const keepsOwnProse = !carriesProse || mergeSurvivorHoldsOwnProse(doc);
     const hypothetical = {
       ...doc,
       fullDescription: keepsOwnProse ? doc.fullDescription : bestFull || doc.fullDescription,
@@ -2539,6 +2629,10 @@ export async function applyResearchEntityDedupeMergeGroup(
   ) {
     return zeroedResult();
   }
+  const joinedVerdictPairs = await mergeGroupJoinsDistinctPeople(group);
+  if (joinedVerdictPairs.length > 0) {
+    return { ...zeroedResult(), refusedAsDistinctPeople: true, joinedVerdictPairs };
+  }
   const now = new Date();
 
   let canonicalId = requestedCanonicalId;
@@ -2587,21 +2681,17 @@ export async function applyResearchEntityDedupeMergeGroup(
   }
 
   const canonicalIdentitySet: Record<string, unknown> = { lastObservedAt: new Date() };
-  // `canonicalName`/`canonicalWebsiteUrl` are the identity a donor twin should lend to
-  // the entity the plan named as canonical, gated on that entity carrying no concrete
-  // website of its own. A never-demote swap makes a different twin the survivor, and
-  // the gate was never evaluated for it, so carrying the pair over would rename a
-  // third entity and repoint it at another lab's site.
+  // `canonicalName` is the name a donor twin should lend to the entity the plan named
+  // as canonical. A never-demote swap makes a different twin the survivor, and the gate
+  // was never evaluated for it, so carrying the name over would rename a third entity.
+  // The planned website is never written here: `deriveMergeSurvivorWebsite` derives it
+  // from evidence after the fold (#6323).
   const survivorIsPlannedCanonical = canonicalId.equals(requestedCanonicalId);
   const carriedName = survivorIsPlannedCanonical ? String(group.canonicalName || '').trim() : '';
-  const carriedWebsiteUrl = survivorIsPlannedCanonical
-    ? String(group.canonicalWebsiteUrl || '').trim()
-    : '';
   if (carriedName) {
     canonicalIdentitySet.name = carriedName;
     canonicalIdentitySet.displayName = carriedName;
   }
-  if (carriedWebsiteUrl) canonicalIdentitySet.websiteUrl = carriedWebsiteUrl;
   const carriedFullDescription =
     (hydratedFullDescription || '').trim() || String(group.canonicalFullDescription || '').trim();
   const carriedShortDescription =
@@ -2768,6 +2858,8 @@ export async function applyResearchEntityDedupeMergeGroup(
       ? await rematerializeMergeCanonicalFillOnly(canonicalId)
       : ({ attempted: false } as MergeCanonicalRematerialization);
 
+  const survivorWebsiteDerivation = await deriveMergeSurvivorWebsite(canonicalId);
+
   const survivorVisibility = await repairMergeSurvivorVisibility(canonicalId);
 
   // A merge relinks roster members and lead assignments onto the survivor, so its
@@ -2785,6 +2877,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     canonicalEntityId: String(canonicalId),
     duplicateEntityIds: duplicateIds.map(String),
     canonicalUpdated: canonicalUpdate.modifiedCount || 0,
+    survivorWebsiteDerivation,
     archivedEntities: archived.modifiedCount || 0,
     deletedEntities: deleted.deletedCount || 0,
     retiredConflictingMembers: retiredConflictingMembers.modifiedCount || 0,
@@ -2920,6 +3013,8 @@ async function main() {
           includeNameOnly: !deleteDuplicates,
           includeRetiredPiLinks: deleteDuplicates,
         });
+  const rosterMailboxRows: ResearchEntityPiDedupeRow[] =
+    sharedPersonId && requireNameAgreement ? await loadRosterMailboxCandidateRows() : [];
   const rows = officialLabUrlOnly
     ? officialLabUrlRows
     : profileLabUrlOnly
@@ -2938,7 +3033,7 @@ async function main() {
   const multiPersonEntityQuarantine: MultiPersonEntityQuarantine[] = sharedPersonId
     ? buildMultiPersonEntityQuarantine(piRows)
     : [];
-  const { plan: allPlan, quarantine: conflatedPersonProfileQuarantine } =
+  const { plan: conflationScreenedPlan, quarantine: conflatedPersonProfileQuarantine } =
     partitionPlanByPersonProfileConflation(
       dedupePlannedGroups(
         officialLabUrlOnly
@@ -2951,13 +3046,18 @@ async function main() {
                 ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
                 : sharedPersonId
                   ? requireNameAgreement
-                    ? buildNameAgreedSharedPersonResearchEntityDedupePlan(piRows)
+                    ? buildNameAgreedSharedPersonAndRosterMailboxDedupePlan(
+                        piRows,
+                        rosterMailboxRows,
+                      )
                     : buildSharedPersonIdResearchEntityDedupePlan(piRows)
                   : fundingOnly
                     ? buildFundingResearchEntityDedupePlan(piRows)
                     : buildResearchEntityPiDedupePlan(piRows),
       ),
     );
+  const { kept: allPlan, refused: distinctPeopleRefusals } =
+    await partitionMergeGroupsByDistinctPeopleVerdict(conflationScreenedPlan);
   const slugFilteredPlan = slug
     ? allPlan.filter((group) => group.canonicalSlug === slug || group.duplicateSlugs.includes(slug))
     : allPlan;
@@ -3125,6 +3225,16 @@ async function main() {
     ),
     conflatedPersonProfileQuarantine,
     quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
+    plannedRefusedAsDistinctPeopleGroups: distinctPeopleRefusals.length,
+    refusedAsDistinctPeople: distinctPeopleRefusals.map(({ group, joinedVerdictPairs }) => ({
+      canonicalSlug: group.canonicalSlug,
+      duplicateSlugs: group.duplicateSlugs,
+      joinedVerdictPairs,
+    })),
+    withheldGrantCoPiListings: piRows.reduce(
+      (sum, row) => sum + (row.grantCoPiListedEntityIds?.length ?? 0),
+      0,
+    ),
     ...(profileLabUrlOnly
       ? {
           refusedCandidatesByReason: countProfileLabUrlRefusalsByReason(profileLabUrlRefusals),
@@ -3165,6 +3275,7 @@ async function main() {
               multiPersonEntityQuarantine,
             ),
             quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
+            plannedRefusedAsDistinctPeopleGroups: distinctPeopleRefusals.length,
             visibilityRecomputed,
             canonicalEntitiesResynced,
             canonicalIndexSyncFailures,

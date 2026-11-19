@@ -19,6 +19,10 @@ import {
   resolveOrCreateResearcherIdForIdentity,
 } from '../canonicalMembershipMaterializer';
 import { getResearchEntityRoster } from '../../services/researchEntityMembershipAccessor';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
 
 type WithObjectId<T> = T & { _id: mongoose.Types.ObjectId };
 
@@ -158,7 +162,7 @@ describe('canonical membership materialization (integration)', () => {
   });
 
   const entityId = () => new mongoose.Types.ObjectId().toString();
-  const ORCID = '9999-9999-9999-9994';
+  const ORCID = SYNTHETIC_ORCID_1;
 
   it('creates a Researcher holding the identity and a CURRENT RoleAssignment, but no Account, for a netid-backed member', async () => {
     const id = entityId();
@@ -522,6 +526,42 @@ describe('canonical membership materialization (integration)', () => {
     expect(roster[0].name).toBe('Eta Seven');
   });
 
+  it('resolves a noisy spelling onto a stored clean name-only researcher instead of minting a second one', async () => {
+    const id = entityId();
+    const stored = await Researcher.create({
+      displayName: 'Theta Eight',
+      profileLinks: [],
+      archived: false,
+    });
+    await materializeCanonicalMembership(
+      id,
+      {
+        legacyRole: 'staff',
+        displayName: 'Photo of THETA EIGHT, PhD.',
+        isCurrentMember: true,
+        confidence: 0.5,
+      },
+      { displayName: 'Photo of THETA EIGHT, PhD.' },
+    );
+    expect(await Researcher.countDocuments({})).toBe(1);
+    const assignment = await RoleAssignment.findOne({}).lean<WithObjectId<RoleAssignmentRecord>>();
+    expect(String(assignment?.personId)).toBe(String(stored._id));
+  });
+
+  it('reaches one researcher whichever spelling of a new name-only person arrives first', async () => {
+    for (const [first, second] of [
+      ['Iota Nine', 'Photo of Iota Nine.'],
+      ['Photo of Kappa Ten.', 'Kappa Ten'],
+    ]) {
+      const firstId = await resolveOrCreateResearcherIdForIdentity({ displayName: first });
+      const secondId = await resolveOrCreateResearcherIdForIdentity({ displayName: second });
+      expect(String(secondId)).toBe(String(firstId));
+    }
+    expect(await Researcher.countDocuments({})).toBe(2);
+    const names = (await Researcher.find({}).lean<ResearcherRecord[]>()).map((r) => r.displayName);
+    expect(names.sort()).toEqual(['Iota Nine', 'Kappa Ten']);
+  });
+
   it('creates only one name-only researcher when the same identity resolves concurrently', async () => {
     const identity = { displayName: 'Concurrent Name-Only Person' };
     const ids = await Promise.all(
@@ -537,7 +577,7 @@ describe('canonical membership materialization (integration)', () => {
     const id = entityId();
     await Researcher.create({
       displayName: 'Zeta Six',
-      identifiers: { orcid: '9999-9000-9999-9005' },
+      identifiers: { orcid: SYNTHETIC_ORCID_2 },
       profileLinks: [],
       archived: false,
     });

@@ -24,6 +24,7 @@ import {
   type SchoolProfileHostPlanRow,
   type SchoolProfileHostSummary,
 } from './backfillSchoolFromProfileHostCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -93,6 +94,7 @@ interface EntityRow {
   departments?: unknown;
   websiteUrl?: unknown;
   sourceUrls?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 export async function runSchoolProfileHostBackfill(options: {
@@ -112,7 +114,9 @@ export async function runSchoolProfileHostBackfill(options: {
   };
 
   const query = ResearchEntity.find(filter)
-    .select('_id slug name entityType school schools departments websiteUrl sourceUrls')
+    .select(
+      '_id slug name entityType school schools departments websiteUrl sourceUrls fieldValueRefusals',
+    )
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
   const entities = (await query.lean()) as EntityRow[];
@@ -131,6 +135,7 @@ export async function runSchoolProfileHostBackfill(options: {
           departments: entity.departments,
           websiteUrl: entity.websiteUrl,
           sourceUrls: entity.sourceUrls,
+          fieldValueRefusals: entity.fieldValueRefusals,
         },
         observedAt,
       ),
@@ -215,7 +220,7 @@ async function main(): Promise<void> {
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+      writeReportFileSync(safeOutput, JSON.stringify(payload, null, 2));
       console.log(`Saved school-from-profile-host backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result.summary, null, 2));

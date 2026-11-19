@@ -1963,3 +1963,56 @@ describe('a person-named row takes its description only from a cited page that n
     expect(full?.sourceUrl).toBe('https://medicine.example.edu/programs/signal-group/research');
   });
 });
+
+describe("a non-Yale page unconfirmed as the lead's own supplies no methods (#5777)", () => {
+  const SITE = 'https://coastal-foundation.example.org/';
+  const PROSE =
+    'combines sediment coring with isotope ratio mass spectrometry to reconstruct how coastal marshes stored carbon across the last three thousand years of sea level change.';
+
+  async function runRow(pageText: string) {
+    const { ctx, emitted } = makeContext();
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map([['entity-1', 'Robin Fixturely']]),
+      }),
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'fixturely-lab',
+          name: 'Fixturely Lab',
+          kind: 'lab',
+          websiteUrl: SITE,
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage: vi.fn(async (url: string) => {
+        if (url === SITE) return { url: SITE, html: `<main><p>${pageText}</p></main>` };
+        throw new Error('not found');
+      }),
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription: '',
+        shortDescription: '',
+        topics: [],
+        methods: ['sediment coring', 'isotope ratio mass spectrometry'],
+      }),
+    });
+    await scraper.run(ctx);
+    return emitted;
+  }
+
+  it('withholds the page methods when the page never names the lead', async () => {
+    const emitted = await runRow(`The foundation ${PROSE}`);
+    expect(emitted.some((obs) => obs.field === 'methods')).toBe(false);
+    expect(emitted.some((obs) => obs.field === 'fullDescription')).toBe(false);
+  });
+
+  it('keeps the page methods when the page names the lead', async () => {
+    const emitted = await runRow(`Robin Fixturely directs a group that ${PROSE}`);
+    expect(emitted.find((obs) => obs.field === 'methods')?.value).toEqual([
+      'sediment coring',
+      'isotope ratio mass spectrometry',
+    ]);
+  });
+});

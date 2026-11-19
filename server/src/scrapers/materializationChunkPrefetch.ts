@@ -64,6 +64,85 @@ function groupBy<T>(items: readonly T[], keyOf: (item: T) => string | undefined)
   return grouped;
 }
 
+export interface UserKeyReference {
+  entityKey?: string;
+  entityId?: string;
+}
+
+export interface UserKeyJoinEvidence {
+  researcherId: string | undefined;
+  titleObservations: unknown[];
+  departmentObservations: unknown[];
+}
+
+export function userKeyReferenceId(reference: UserKeyReference): string {
+  return reference.entityKey ? `key:${reference.entityKey}` : `id:${reference.entityId ?? ''}`;
+}
+
+/**
+ * The person keys that reach each researcher, which researcher each key's engine join
+ * reached, and which of a researcher's official pages no other live researcher claims,
+ * reused across one chunk because every key of a person pools the same set (#5578). All
+ * three read researcher and account identity, so any write to that identity clears them.
+ * Each first-hand lane's latest full-coverage run is read once per chunk too; no identity
+ * write changes it, so it outlives `forgetAll`.
+ */
+export class UserIdentityJoinCache {
+  private readonly candidatesByResearcher = new Map<string, UserKeyReference[]>();
+  private readonly joinsByKey = new Map<string, UserKeyJoinEvidence>();
+  private readonly soleClaimedPagesByResearcher = new Map<string, ReadonlySet<string>>();
+  private latestFullRunIds: ReadonlyMap<string, string> | undefined;
+  private coveringKeyedRunIds: ReadonlyMap<string, ReadonlyMap<string, string>> | undefined;
+
+  candidatesFor(researcherId: string): UserKeyReference[] | undefined {
+    return this.candidatesByResearcher.get(researcherId);
+  }
+
+  rememberCandidates(researcherId: string, candidates: UserKeyReference[]): void {
+    this.candidatesByResearcher.set(researcherId, candidates);
+  }
+
+  joinFor(reference: UserKeyReference): UserKeyJoinEvidence | undefined {
+    return this.joinsByKey.get(userKeyReferenceId(reference));
+  }
+
+  rememberJoin(reference: UserKeyReference, evidence: UserKeyJoinEvidence): void {
+    this.joinsByKey.set(userKeyReferenceId(reference), evidence);
+  }
+
+  soleClaimedPagesFor(researcherId: string): ReadonlySet<string> | undefined {
+    return this.soleClaimedPagesByResearcher.get(researcherId);
+  }
+
+  rememberSoleClaimedPages(researcherId: string, pageKeys: ReadonlySet<string>): void {
+    this.soleClaimedPagesByResearcher.set(researcherId, pageKeys);
+  }
+
+  latestFullRunIdByLane(): ReadonlyMap<string, string> | undefined {
+    return this.latestFullRunIds;
+  }
+
+  rememberLatestFullRunIdByLane(byLane: ReadonlyMap<string, string>): void {
+    this.latestFullRunIds = byLane;
+  }
+
+  coveringKeyedRunIdsByLaneAndKey(): ReadonlyMap<string, ReadonlyMap<string, string>> | undefined {
+    return this.coveringKeyedRunIds;
+  }
+
+  rememberCoveringKeyedRunIdsByLaneAndKey(
+    byLane: ReadonlyMap<string, ReadonlyMap<string, string>>,
+  ): void {
+    this.coveringKeyedRunIds = byLane;
+  }
+
+  forgetAll(): void {
+    this.candidatesByResearcher.clear();
+    this.joinsByKey.clear();
+    this.soleClaimedPagesByResearcher.clear();
+  }
+}
+
 /**
  * The reads `materializeEntity` will accept from somewhere other than the live
  * collections. Named as an interface rather than left as the prefetch class's shape
@@ -94,6 +173,8 @@ export interface MaterializationReadSource {
   liveEntityDocForId(entityType: string, entityId: unknown): PrefetchLookup<unknown | null>;
   hasNoMergedInRows(survivorId: unknown): boolean;
   soleLeadPersonId(entityId: unknown): PrefetchLookup<string>;
+  pageStatedNamePeers(names: readonly string[]): PrefetchLookup<unknown[]>;
+  readonly userIdentityJoins?: UserIdentityJoinCache;
 }
 
 /**
@@ -119,6 +200,7 @@ export class MaterializationChunkPrefetch implements MaterializationReadSource {
   private readonly touchedIds = new Set<string>();
   private readonly touchedKeys = new Set<string>();
   private createdInChunk = false;
+  readonly userIdentityJoins = new UserIdentityJoinCache();
 
   constructor(readonly entityType: ObservedEntityType) {}
 
@@ -196,6 +278,10 @@ export class MaterializationChunkPrefetch implements MaterializationReadSource {
     const id = prefetchObjectIdString(entityId);
     if (!id || this.isTouched(id) || !this.soleLeadPersonIdByEntityId.has(id)) return MISS;
     return hit(this.soleLeadPersonIdByEntityId.get(id) as string);
+  }
+
+  pageStatedNamePeers(): PrefetchLookup<unknown[]> {
+    return MISS;
   }
 
   private async loadObservations(

@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -32,6 +31,7 @@ import {
   type FullDescriptionObservationLike,
 } from './grantCorpusSynthesisCore';
 import { writerModelClientFor } from './coverageSynthesisCore';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,6 +44,7 @@ export interface GrantCorpusEntityReport {
   synthesized: boolean;
   written: boolean;
   observationDropped?: boolean;
+  observationDroppedBy?: string[];
   gainedSchool: boolean;
   wouldPromoteToStudentReady: boolean;
   school?: string;
@@ -287,7 +288,10 @@ async function main() {
   };
   console.log(JSON.stringify(report, null, 2));
   if (args.output) {
-    fs.writeFileSync(resolveSafeJsonReportOutputPath(args.output), JSON.stringify(report, null, 2));
+    writeReportFileSync(
+      resolveSafeJsonReportOutputPath(args.output),
+      JSON.stringify(report, null, 2),
+    );
   }
 }
 

@@ -32,17 +32,24 @@ import {
   type GoldRegression,
   scoreGoldLabels,
   scoreLaneReplay,
+  scoreLeadVerificationPerLead,
+  scoresLeadVerification,
   summarizeGoldRuns,
   summarizeLiveModelRuns,
   type BenchmarkLabel,
   type GoldLabel,
+  type OwnerLeadLabel,
 } from './laneScorecardCore';
+import { readOwnerLeadBallot, type OwnerLeadBallot } from './leadVerificationOwnerBallot';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { summarizeWriterSteps } from './coverageSynthesisBenchmark';
+import { writeReportFileSync } from '../utils/reportFileWriter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'lane:scorecard';
+const REPOSITORY_ROOT = path.resolve(__dirname, '../../..');
 export const CONFIRM_FLAG = '--confirm-lane-scorecard';
 
 export interface LaneScorecardArgs {
@@ -51,6 +58,18 @@ export interface LaneScorecardArgs {
   benchmarkId?: string;
   output?: string;
   liveModelRuns?: number;
+  leadBallot?: string;
+}
+
+/** A ballot quotes pages that name people, so it is read only from outside the repository. */
+export function resolveLeadBallotDirectory(value: string, repositoryRoot = REPOSITORY_ROOT) {
+  const directory = value.trim();
+  if (!directory) throw new Error('--lead-ballot requires a directory');
+  const resolved = path.resolve(directory);
+  const relative = path.relative(path.resolve(repositoryRoot), resolved);
+  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative)))
+    throw new Error('--lead-ballot must point outside the repository');
+  return resolved;
 }
 
 export function parseLaneScorecardArgs(argv: string[]): LaneScorecardArgs {
@@ -72,6 +91,8 @@ export function parseLaneScorecardArgs(argv: string[]): LaneScorecardArgs {
         throw new Error('--runs must be an integer of 2 or more');
     } else if (arg.startsWith('--benchmark='))
       options.benchmarkId = arg.slice('--benchmark='.length).trim();
+    else if (arg.startsWith('--lead-ballot='))
+      options.leadBallot = resolveLeadBallotDirectory(arg.slice('--lead-ballot='.length));
     else if (arg === '--output') {
       options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
@@ -100,6 +121,8 @@ interface StoredBenchmark {
   codeSha?: string;
   capturedAt?: Date;
   supersedes?: string;
+  retiredAt?: Date;
+  retiredReason?: string;
 }
 
 /**
@@ -151,6 +174,7 @@ export async function replayBenchmark(
   benchmark: StoredBenchmark,
   pages: readonly CapturedPage[],
   replayOptions: { liveModel?: boolean } = {},
+  ownerLeadLabels: readonly OwnerLeadLabel[] = [],
 ) {
   beginBenchmarkReplay(pages, replayOptions);
   let run;
@@ -179,7 +203,18 @@ export async function replayBenchmark(
     runClockFieldsFor(benchmark.sourceName),
   );
   const gold = scoreGoldLabels(run.observations, benchmark.goldLabels ?? [], slugByEntityId);
-  return { refusedReason: undefined, score, gold, replay, truncated: run.truncated };
+  const leadVerification = scoresLeadVerification(benchmark.sourceName)
+    ? scoreLeadVerificationPerLead(run.observations, ownerLeadLabels, slugByEntityId)
+    : undefined;
+  return {
+    refusedReason: undefined,
+    score,
+    gold,
+    leadVerification,
+    replay,
+    truncated: run.truncated,
+    writerRows: run.writerRows,
+  };
 }
 
 async function main(): Promise<void> {
@@ -194,6 +229,9 @@ async function main(): Promise<void> {
   console.log(
     `Environment: ${guard.environment}; Mongo target: ${guard.dbLabel}; mode: ${options.dryRun ? 'dry-run' : 'apply'}`,
   );
+  const ownerBallot: OwnerLeadBallot | undefined = options.leadBallot
+    ? readOwnerLeadBallot(options.leadBallot)
+    : undefined;
   await initializeConnections();
 
   const stored = (await LaneBenchmark.find(
@@ -204,8 +242,17 @@ async function main(): Promise<void> {
   if (options.benchmarkId && stored.length === 0) {
     throw new Error(`No benchmark ${options.benchmarkId}`);
   }
-  const { replay: benchmarks, superseded } = benchmarksToReplay(stored, options.benchmarkId);
+  const {
+    replay: benchmarks,
+    superseded,
+    retired,
+  } = benchmarksToReplay(stored, options.benchmarkId);
 
+  const ballotApplies = (benchmarkId: string) => ownerBallot?.benchmarkId === benchmarkId;
+  if (ownerBallot && !benchmarks.some((benchmark) => ballotApplies(benchmark.benchmarkId)))
+    throw new Error(
+      `--lead-ballot was drawn from ${ownerBallot.benchmarkId}, which this run does not replay`,
+    );
   const codeSha = currentCodeSha();
   const databaseName = mongoose.connection.db?.databaseName ?? 'unknown';
   const results: Array<Record<string, unknown>> = [];
@@ -245,12 +292,13 @@ async function main(): Promise<void> {
       });
       continue;
     }
-    const replayed = await replayBenchmark(benchmark, pages);
+    const ballotForBenchmark = ballotApplies(benchmark.benchmarkId) ? ownerBallot : undefined;
+    const replayed = await replayBenchmark(benchmark, pages, {}, ballotForBenchmark?.labels);
     if (replayed.refusedReason) {
       unscored.push({ benchmarkId: benchmark.benchmarkId, reason: replayed.refusedReason });
       continue;
     }
-    const { score, gold, replay, truncated } = replayed;
+    const { score, gold, leadVerification, replay, truncated, writerRows } = replayed;
     const priorRuns = (await LaneScorecardSnapshot.find({ benchmarkId: benchmark.benchmarkId })
       .select('codeSha pagesMissed measuredAt gold')
       .lean()) as unknown as ComparableReplayRun[];
@@ -280,7 +328,28 @@ async function main(): Promise<void> {
       gold,
     };
     if (!options.dryRun) await LaneScorecardSnapshot.create(snapshot);
-    results.push({ ...snapshot, networkBlocks: replay.networkBlocks, truncated });
+    results.push({
+      ...snapshot,
+      networkBlocks: replay.networkBlocks,
+      truncated,
+      ...(writerRows ? { writerSteps: summarizeWriterSteps(writerRows), writerRows } : {}),
+      ...(leadVerification
+        ? {
+            leadVerification: {
+              ...leadVerification,
+              ...(ballotForBenchmark
+                ? {
+                    ownerBallot: {
+                      items: ballotForBenchmark.items,
+                      marked: ballotForBenchmark.marked,
+                      unmarked: ballotForBenchmark.unmarked.length,
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
+    });
   }
 
   const report = {
@@ -289,14 +358,25 @@ async function main(): Promise<void> {
     benchmarks: results.length,
     stored: options.dryRun ? 0 : results.length,
     superseded,
+    retired,
     unscored,
     regressions,
+    ...(ownerBallot
+      ? {
+          ownerBallot: {
+            benchmarkId: ownerBallot.benchmarkId,
+            items: ownerBallot.items,
+            marked: ownerBallot.marked,
+            unmarked: ownerBallot.unmarked,
+          },
+        }
+      : {}),
     results,
   };
   console.log(JSON.stringify(report, null, 2));
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
+    writeReportFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
   }
   await mongoose.disconnect();
   if (unscored.length > 0 || regressions.length > 0) process.exitCode = 1;
